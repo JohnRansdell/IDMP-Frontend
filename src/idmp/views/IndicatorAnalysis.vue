@@ -1,6 +1,6 @@
 <template>
   <div class="idmp-page indicator-analysis">
-    <PageHeader title="指标分析 / 手术患者并发症发生率">
+    <PageHeader :title="`指标分析 / ${currentProfile.name}`">
       <template #actions>
         <div class="page-toolbar">
           <el-button :icon="Connection" @click="showSceneCompare">场景对比</el-button>
@@ -11,10 +11,10 @@
 
     <section class="summary-grid" aria-label="指标核心数据">
       <article
-        v-for="item in analysisSummary"
+        v-for="item in currentProfile.summary"
         :key="item.label"
         class="surface-card summary-card"
-        :class="{ 'summary-card--danger': item.tone === 'danger' }"
+        :class="{ 'summary-card--danger': item.tone === 'danger', 'summary-card--success': item.tone === 'success' }"
       >
         <span>{{ item.label }}</span>
         <strong>{{ item.value }}</strong>
@@ -24,11 +24,11 @@
     <section class="surface-card scene-comparison" aria-label="不同场景计算值对比">
       <div class="scene-comparison__label">
         <span>不同场景对比</span>
-        <small>同一指标在不同场景下的计算口径存在差异</small>
+        <small>同一指标在不同场景下的计算口径可能存在差异</small>
       </div>
       <div class="scene-tags">
         <button
-          v-for="scene in sceneComparisons"
+          v-for="scene in currentProfile.sceneComparisons"
           :key="scene.name"
           type="button"
           class="scene-tag"
@@ -37,8 +37,7 @@
         >
           <span>{{ scene.name }}</span>
           <strong>{{ scene.value }}</strong>
-          <em v-if="scene.difference">{{ scene.difference }}</em>
-          <em v-else>当前场景</em>
+          <em>{{ scene.difference || '当前场景' }}</em>
         </button>
       </div>
     </section>
@@ -71,13 +70,13 @@
           <div class="table-heading">
             <div>
               <h2>科室指标排名</h2>
-              <p>按手术患者并发症发生率由高到低排序</p>
+              <p>按 {{ currentProfile.name }} 由高到低排序</p>
             </div>
             <span>统计周期：2024 年度</span>
           </div>
           <div class="table-scroll">
             <el-table
-              :data="analysisRankRows"
+              :data="currentProfile.rankRows"
               table-layout="fixed"
               class="analysis-table rank-table"
             >
@@ -96,8 +95,8 @@
                   </strong>
                 </template>
               </el-table-column>
-              <el-table-column prop="numerator" label="分子（例）" width="130" />
-              <el-table-column prop="denominator" label="分母（人）" width="130" />
+              <el-table-column prop="numerator" label="分子" width="130" />
+              <el-table-column prop="denominator" label="分母" width="130" />
               <el-table-column label="较上期" width="120">
                 <template #default="{ row }">
                   <span :class="changeClass(row.change)">{{ row.change }}</span>
@@ -128,29 +127,29 @@
         <el-tab-pane label="下钻明细" name="drill">
           <div class="table-heading">
             <div>
-              <h2>并发症病例下钻明细</h2>
-              <p>患者标识已按演示数据脱敏处理</p>
+              <h2>{{ currentProfile.name }}下钻明细</h2>
+              <p>明细记录已按演示数据脱敏处理，后续可切换为接口返回结果</p>
             </div>
-            <span>共 {{ analysisDrillRows.length }} 条演示记录</span>
+            <span>共 {{ currentProfile.drillRows.length }} 条演示记录</span>
           </div>
           <div class="table-scroll">
             <el-table
-              :data="analysisDrillRows"
+              :data="currentProfile.drillRows"
               table-layout="fixed"
               class="analysis-table drill-table"
             >
-              <el-table-column prop="patientId" label="患者标识" width="130" />
-              <el-table-column prop="admissionNo" label="住院号" width="140" />
-              <el-table-column prop="admissionDate" label="入院日期" width="130" />
-              <el-table-column prop="surgeryDate" label="手术日期" width="130" />
-              <el-table-column label="手术级别" width="110">
+              <el-table-column prop="subjectId" label="对象标识" width="130" />
+              <el-table-column prop="recordNo" label="记录号" width="140" />
+              <el-table-column prop="startDate" label="开始日期" width="130" />
+              <el-table-column prop="eventDate" label="事件日期" width="130" />
+              <el-table-column label="记录级别" width="110">
                 <template #default="{ row }">
                   <span class="status-pill is-info">{{ row.level }}</span>
                 </template>
               </el-table-column>
               <el-table-column
-                prop="complication"
-                label="并发症类型"
+                prop="event"
+                label="事件类型"
                 min-width="180"
                 show-overflow-tooltip
               />
@@ -160,7 +159,7 @@
                   <button
                     type="button"
                     class="action-link"
-                    @click="showTableAction(`查看病例 ${row.admissionNo}`)"
+                    @click="showTableAction(`查看记录 ${row.recordNo}`)"
                   >
                     查看
                   </button>
@@ -175,36 +174,34 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Connection, Download } from '@element-plus/icons-vue'
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
+import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
 import {
-  analysisDrillRows,
-  analysisRankRows,
-  analysisSummary,
-  analysisTrendByPeriod
-} from '@/idmp/data/demo'
+  DEFAULT_ANALYSIS_INDICATOR,
+  getAnalysisProfile,
+  periodOptions,
+  updateMortalityProfileFromChain
+} from '@/idmp/features/analysis/indicatorProfiles'
 
+const route = useRoute()
 const activeTab = ref('trend')
 const period = ref('月度')
-const periodOptions = ['月度', '季度', '年度']
 
-const sceneComparisons = [
-  { name: '绩效考核', value: '2.1%', difference: '当前场景', current: true },
-  { name: '医院评审', value: '2.5%', difference: '较当前 +0.4%' },
-  { name: '专业质控', value: '2.3%', difference: '较当前 +0.2%' }
-]
-
-const currentTrend = computed(() => analysisTrendByPeriod[period.value])
+const indicatorCode = computed(() => String(route.query.indicator || DEFAULT_ANALYSIS_INDICATOR))
+const currentProfile = computed(() => getAnalysisProfile(indicatorCode.value))
+const currentTrend = computed(() => currentProfile.value.trends[period.value] || currentProfile.value.trends.月度)
 
 const trendOption = computed(() => ({
   animationDuration: 450,
   color: ['#1890ff', '#91d5ff'],
   tooltip: {
     trigger: 'axis',
-    valueFormatter: (value) => `${value}%`
+    valueFormatter: (value) => `${value}${currentProfile.value.unit || ''}`
   },
   legend: {
     top: 2,
@@ -226,11 +223,10 @@ const trendOption = computed(() => ({
   yAxis: {
     type: 'value',
     min: 0,
-    max: 4,
-    interval: 1,
-    name: '单位：%',
+    max: currentProfile.value.yAxisMax,
+    name: currentProfile.value.unit ? `单位：${currentProfile.value.unit}` : '指标值',
     nameTextStyle: { color: '#8c8c8c', padding: [0, 0, 4, 0] },
-    axisLabel: { color: '#8c8c8c', formatter: '{value}%' },
+    axisLabel: { color: '#8c8c8c', formatter: `{value}${currentProfile.value.unit || ''}` },
     splitLine: { lineStyle: { color: '#eef0f3', type: 'dashed' } }
   },
   series: [
@@ -260,12 +256,12 @@ const trendOption = computed(() => ({
         silent: true,
         symbol: 'none',
         label: {
-          formatter: '目标值 3%',
+          formatter: currentProfile.value.targetLabel,
           color: '#f5222d',
           position: 'insideEndTop'
         },
         lineStyle: { color: '#ff7875', type: 'dashed', width: 1 },
-        data: [{ yAxis: 3 }]
+        data: [{ yAxis: currentProfile.value.markLineValue }]
       }
     },
     {
@@ -307,6 +303,20 @@ const showSceneValue = (scene) => {
 const showTableAction = (message) => {
   ElMessage.success(`${message}操作已触发`)
 }
+
+async function refreshMortalityAnalysis() {
+  if (indicatorCode.value !== 'MORTALITY_INPATIENT') return
+  try {
+    const chain = await fetchMortalityReadonlyChain()
+    updateMortalityProfileFromChain(chain)
+  } catch {
+    ElMessage.warning('住院死亡率后端结果暂不可用，已使用演示数据')
+  }
+}
+
+onMounted(() => {
+  refreshMortalityAnalysis()
+})
 </script>
 
 <style scoped lang="scss">
@@ -358,6 +368,16 @@ const showTableAction = (message) => {
 
   strong {
     color: #f5222d;
+  }
+}
+
+.summary-card--success {
+  &::before {
+    background: #95de64;
+  }
+
+  strong {
+    color: #389e0d;
   }
 }
 
