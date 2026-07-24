@@ -26,7 +26,7 @@
         <span class="dashboard-editor-panel__label">数据组件</span>
         <el-select v-model="selectedDataCode" class="dashboard-editor-panel__data-select" aria-label="指标数据">
           <el-option
-            v-for="source in mockIndicatorDataSources"
+            v-for="source in indicatorDataSources"
             :key="source.code"
             :label="source.name"
             :value="source.code"
@@ -272,6 +272,7 @@ const hasCustomLayout = ref(false)
 const activeWidgetId = ref('')
 const selectedDataCode = ref(mockIndicatorDataSources[0].code)
 const addWidgetType = ref('kpi')
+const indicatorDataSources = ref(cloneIndicatorSources(mockIndicatorDataSources))
 const dashboardLayout = ref(createDefaultLayout())
 const editSnapshot = ref([])
 const backendDashboard = ref(null)
@@ -286,7 +287,7 @@ const dashboardKpiIndicatorCodes = [
 ]
 
 const selectedDataSource = computed(() =>
-  mockIndicatorDataSources.find((source) => source.code === selectedDataCode.value)
+  indicatorDataSources.value.find((source) => source.code === selectedDataCode.value)
 )
 
 const activeWidget = computed(() =>
@@ -306,7 +307,7 @@ const departmentMultiplier = computed(() => {
 
 const visibleKpis = computed(() => dashboardKpis.map((item, index) => {
   if (index === 0) {
-    return createKpiData(getIndicatorSource('MORTALITY_INPATIENT') || mockIndicatorDataSources[0])
+    return createKpiData(getDashboardIndicatorSource('MORTALITY_INPATIENT') || indicatorDataSources.value[0])
   }
   if (department.value === '全院' || index > 2) return item
   const numeric = Number.parseFloat(item.value)
@@ -421,10 +422,14 @@ function isChartWidget(widget) {
 
 function getWidgetKpi(widget) {
   if (typeof widget.kpiIndex === 'number') {
-    return visibleKpis.value[widget.kpiIndex] || createKpiData(mockIndicatorDataSources[0])
+    return visibleKpis.value[widget.kpiIndex] || createKpiData(indicatorDataSources.value[0])
   }
   if (widget.data) return widget.data
-  return createKpiData(getIndicatorSource(widget.sourceCode) || mockIndicatorDataSources[0])
+  return createKpiData(getDashboardIndicatorSource(widget.sourceCode) || indicatorDataSources.value[0])
+}
+
+function getDashboardIndicatorSource(code) {
+  return indicatorDataSources.value.find((source) => source.code === code)
 }
 
 function getKpiIndicatorCode(index, item) {
@@ -620,7 +625,7 @@ function loadDashboardLayout() {
   try {
     const saved = JSON.parse(localStorage.getItem(DASHBOARD_LAYOUT_STORAGE_KEY) || 'null')
     if (Array.isArray(saved) && saved.length) {
-      dashboardLayout.value = normalizeLayout(saved, getIndicatorSource)
+      dashboardLayout.value = normalizeLayout(saved, getDashboardIndicatorSource)
       hasCustomLayout.value = true
     }
   } catch {
@@ -640,8 +645,12 @@ async function loadBackendDashboardContract() {
 async function loadMortalityReadonlyChain() {
   try {
     const chain = await fetchMortalityReadonlyChain()
-    const source = applyMortalityReadonlyChain(mockIndicatorDataSources, chain)
+    const source = applyMortalityReadonlyChain(indicatorDataSources.value, chain)
     if (source) {
+      applyMortalityReadonlyChain(mockIndicatorDataSources, chain)
+      indicatorDataSources.value = indicatorDataSources.value.map((item) =>
+        item.code === source.code ? { ...source } : item
+      )
       mortalityChain.value = chain
       refreshMortalityWidgets(source)
     }
@@ -659,6 +668,15 @@ function refreshMortalityWidgets(source) {
       data: createKpiData(source)
     }
   })
+}
+
+function cloneIndicatorSources(sources) {
+  return sources.map((source) => ({
+    ...source,
+    trendData: Array.isArray(source.trendData) ? [...source.trendData] : source.trendData,
+    departmentData: Array.isArray(source.departmentData) ? source.departmentData.map((item) => ({ ...item })) : source.departmentData,
+    pieData: Array.isArray(source.pieData) ? source.pieData.map((item) => ({ ...item })) : source.pieData
+  }))
 }
 
 const goAlerts = () => router.push('/alerts')

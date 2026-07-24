@@ -174,7 +174,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Connection, Download } from '@element-plus/icons-vue'
@@ -191,9 +191,13 @@ import {
 const route = useRoute()
 const activeTab = ref('trend')
 const period = ref('月度')
+const profileRefreshVersion = ref(0)
 
 const indicatorCode = computed(() => String(route.query.indicator || DEFAULT_ANALYSIS_INDICATOR))
-const currentProfile = computed(() => getAnalysisProfile(indicatorCode.value))
+const currentProfile = computed(() => {
+  profileRefreshVersion.value
+  return getAnalysisProfile(indicatorCode.value)
+})
 const currentTrend = computed(() => currentProfile.value.trends[period.value] || currentProfile.value.trends.月度)
 
 const trendOption = computed(() => ({
@@ -309,12 +313,17 @@ async function refreshMortalityAnalysis() {
   try {
     const chain = await fetchMortalityReadonlyChain()
     updateMortalityProfileFromChain(chain)
+    profileRefreshVersion.value += 1
   } catch {
     ElMessage.warning('住院死亡率后端结果暂不可用，已使用演示数据')
   }
 }
 
 onMounted(() => {
+  refreshMortalityAnalysis()
+})
+
+watch(indicatorCode, () => {
   refreshMortalityAnalysis()
 })
 </script>
