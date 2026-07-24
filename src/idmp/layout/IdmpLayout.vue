@@ -27,9 +27,9 @@
 
     <header class="idmp-topbar">
       <div class="idmp-breadcrumb" aria-label="面包屑">
-        <template v-for="(item, index) in breadcrumbs" :key="`${item}-${index}`">
+        <template v-for="(item, index) in displayBreadcrumbs" :key="`${item}-${index}`">
           <span>{{ item }}</span>
-          <span v-if="index < breadcrumbs.length - 1" class="separator">/</span>
+          <span v-if="index < displayBreadcrumbs.length - 1" class="separator">/</span>
         </template>
       </div>
 
@@ -73,6 +73,7 @@ import {
   TrendCharts
 } from '@element-plus/icons-vue'
 import { sceneOptions } from '@/idmp/data/demo'
+import { DEFAULT_ANALYSIS_INDICATOR, getAnalysisProfile } from '@/idmp/features/analysis/indicatorProfiles'
 
 const route = useRoute()
 const currentScene = ref(sceneOptions[0])
@@ -92,4 +93,11 @@ const navItems = [
 
 const activePath = computed(() => route.meta.activeMenu || route.path)
 const breadcrumbs = computed(() => route.meta.breadcrumb || ['首页'])
+const displayBreadcrumbs = computed(() => {
+  if (route.name === 'IndicatorAnalysis') {
+    const indicatorCode = String(route.query.indicator || DEFAULT_ANALYSIS_INDICATOR)
+    return ['首页', '指标分析', getAnalysisProfile(indicatorCode).name]
+  }
+  return breadcrumbs.value
+})
 </script>

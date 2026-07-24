@@ -7,11 +7,14 @@ export const mortalityChainConfig = {
   dischargeDomainCode: 'INPATIENT_DISCHARGE_RECORD',
   deathFactorVersionId: '101996817981379181',
   deathFactorBatchId: '101996817981379186',
+  deathFactorArtifactId: '101996817981379182',
   dischargeFactorVersionId: '101996817981379184',
   dischargeFactorBatchId: '101996817981379196',
+  dischargeFactorArtifactId: '101996817981379185',
   indicatorId: '101996817981379208',
   indicatorVersionId: '101996817981379209',
   indicatorBatchId: '101996817981379215',
+  indicatorFormulaArtifactId: '101996817981379212',
   periodStart: '2000-01-01T00:00:00',
   periodEnd: '2030-01-01T00:00:00'
 }
@@ -65,6 +68,10 @@ export function fetchAsyncTask(taskId) {
 
 export function fetchCalcBatch(batchId) {
   return requestJson(`/calc/batches/${batchId}`)
+}
+
+export function fetchCompileArtifact(artifactId) {
+  return requestJson(`/compile-artifacts/${artifactId}`)
 }
 
 export function fetchFactorTrialResults(versionId, batchId, page = 1, size = 100) {
@@ -184,12 +191,24 @@ export async function runMortalityFactorCreation(suffix = createBusinessSuffix()
 
 export async function fetchMortalityReadonlyChain() {
   const config = mortalityChainConfig
-  const [deathFactor, dischargeFactor, indicatorResult, asyncTask, calcBatch] = await Promise.allSettled([
+  const [
+    deathFactor,
+    dischargeFactor,
+    indicatorResult,
+    asyncTask,
+    calcBatch,
+    deathFactorArtifact,
+    dischargeFactorArtifact,
+    indicatorFormulaArtifact
+  ] = await Promise.allSettled([
     fetchFactorTrialResults(config.deathFactorVersionId, config.deathFactorBatchId),
     fetchFactorTrialResults(config.dischargeFactorVersionId, config.dischargeFactorBatchId),
     fetchIndicatorTrialResults(config.indicatorVersionId, config.indicatorBatchId),
     fetchAsyncTask(config.indicatorBatchId),
-    fetchCalcBatch(config.indicatorBatchId)
+    fetchCalcBatch(config.indicatorBatchId),
+    fetchCompileArtifact(config.deathFactorArtifactId),
+    fetchCompileArtifact(config.dischargeFactorArtifactId),
+    fetchCompileArtifact(config.indicatorFormulaArtifactId)
   ])
 
   return {
@@ -198,7 +217,10 @@ export async function fetchMortalityReadonlyChain() {
     dischargeFactor: unwrapSettled(dischargeFactor),
     indicatorResult: unwrapSettled(indicatorResult),
     asyncTask: unwrapSettled(asyncTask),
-    calcBatch: unwrapSettled(calcBatch)
+    calcBatch: unwrapSettled(calcBatch),
+    deathFactorArtifact: unwrapSettled(deathFactorArtifact),
+    dischargeFactorArtifact: unwrapSettled(dischargeFactorArtifact),
+    indicatorFormulaArtifact: unwrapSettled(indicatorFormulaArtifact)
   }
 }
 

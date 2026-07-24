@@ -42,6 +42,37 @@
       </div>
     </section>
 
+    <section v-if="showMortalityChainPanel" class="surface-card chain-panel" aria-label="住院死亡率计算链路">
+      <div class="chain-panel__header">
+        <div>
+          <h2>住院死亡率计算链路</h2>
+          <p>展示第16章后端链路中的数据域、因子试算、公式结果、异步任务与编译状态</p>
+        </div>
+        <span class="chain-status" :class="{ 'is-loading': mortalityChainLoading }">
+          {{ mortalityChainLoading ? '同步中' : mortalityChainStatusText }}
+        </span>
+      </div>
+
+      <div class="chain-equation">
+        <span>死亡患者记录数</span>
+        <strong>{{ chainDeathValue }}</strong>
+        <em>÷</em>
+        <span>出院病案记录数</span>
+        <strong>{{ chainDischargeValue }}</strong>
+        <em>=</em>
+        <span>住院死亡率</span>
+        <strong>{{ chainDisplayValue }}</strong>
+      </div>
+
+      <div class="chain-grid">
+        <article v-for="node in mortalityChainNodes" :key="node.label" class="chain-node">
+          <span>{{ node.label }}</span>
+          <strong>{{ node.value }}</strong>
+          <small>{{ node.meta }}</small>
+        </article>
+      </div>
+    </section>
+
     <section class="surface-card analysis-panel">
       <el-tabs v-model="activeTab" class="analysis-tabs">
         <el-tab-pane label="趋势分析" name="trend">
@@ -192,6 +223,8 @@ const route = useRoute()
 const activeTab = ref('trend')
 const period = ref('月度')
 const profileRefreshVersion = ref(0)
+const mortalityChain = ref(null)
+const mortalityChainLoading = ref(false)
 
 const indicatorCode = computed(() => String(route.query.indicator || DEFAULT_ANALYSIS_INDICATOR))
 const currentProfile = computed(() => {
@@ -199,6 +232,8 @@ const currentProfile = computed(() => {
   return getAnalysisProfile(indicatorCode.value)
 })
 const currentTrend = computed(() => currentProfile.value.trends[period.value] || currentProfile.value.trends.月度)
+
+const showMortalityChainPanel = computed(() => indicatorCode.value === 'MORTALITY_INPATIENT')
 
 const trendOption = computed(() => ({
   animationDuration: 450,
@@ -280,6 +315,66 @@ const trendOption = computed(() => ({
   ]
 }))
 
+const mortalityDeathRecord = computed(() => mortalityChain.value?.deathFactor?.results?.records?.[0])
+const mortalityDischargeRecord = computed(() => mortalityChain.value?.dischargeFactor?.results?.records?.[0])
+const mortalityIndicatorRecord = computed(() => mortalityChain.value?.indicatorResult?.results?.records?.[0])
+const chainDeathValue = computed(() => formatCount(mortalityDeathRecord.value?.valueDecimal))
+const chainDischargeValue = computed(() => formatCount(mortalityDischargeRecord.value?.valueDecimal))
+const chainDisplayValue = computed(() => mortalityIndicatorRecord.value?.displayValue || currentProfile.value.summary?.[0]?.value || '-')
+const chainRawValue = computed(() => formatDecimal(mortalityIndicatorRecord.value?.resultValue))
+const mortalityChainStatusText = computed(() => {
+  if (!mortalityChain.value) return '使用演示链路'
+  const batchStatus = mortalityChain.value.indicatorResult?.batchStatus || mortalityChain.value.calcBatch?.batchStatus || '-'
+  const qualityStatus = mortalityChain.value.indicatorResult?.qualityStatus || mortalityChain.value.calcBatch?.qualityStatus || '-'
+  return `${batchStatus} / ${qualityStatus}`
+})
+const mortalityChainNodes = computed(() => {
+  const chain = mortalityChain.value
+  const config = chain?.config || {}
+  return [
+    {
+      label: '死亡数据域',
+      value: config.deathDomainCode || 'INPATIENT_DEATH_RECORD',
+      meta: config.deathSourceTable || 'vmq_deathpatientdetail'
+    },
+    {
+      label: '出院数据域',
+      value: config.dischargeDomainCode || 'INPATIENT_DISCHARGE_RECORD',
+      meta: config.dischargeSourceTable || 'vmq_basicinformationba'
+    },
+    {
+      label: '分子因子',
+      value: chainDeathValue.value,
+      meta: `版本 ${config.deathFactorVersionId || '-'}`
+    },
+    {
+      label: '分母因子',
+      value: chainDischargeValue.value,
+      meta: `版本 ${config.dischargeFactorVersionId || '-'}`
+    },
+    {
+      label: '公式结果',
+      value: chainDisplayValue.value,
+      meta: `原始值 ${chainRawValue.value}`
+    },
+    {
+      label: '异步任务',
+      value: chain?.asyncTask?.status || '-',
+      meta: `任务 ${config.indicatorBatchId || '-'}`
+    },
+    {
+      label: '计算批次',
+      value: chain?.calcBatch?.batchStatus || chain?.indicatorResult?.batchStatus || '-',
+      meta: chain?.calcBatch?.qualityStatus || chain?.indicatorResult?.qualityStatus || '-'
+    },
+    {
+      label: '编译产物',
+      value: buildArtifactStatus(chain),
+      meta: '死亡因子 / 出院因子 / 指标公式'
+    }
+  ]
+})
+
 const rankStatusClass = (status) => {
   if (status === '超标') return 'is-danger'
   if (status === '预警') return 'is-warning'
@@ -308,13 +403,36 @@ const showTableAction = (message) => {
   ElMessage.success(`${message}操作已触发`)
 }
 
+function formatCount(value) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number.toLocaleString('zh-CN') : '-'
+}
+
+function formatDecimal(value) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number.toFixed(8) : '-'
+}
+
+function buildArtifactStatus(chain) {
+  return [
+    chain?.deathFactorArtifact?.status,
+    chain?.dischargeFactorArtifact?.status,
+    chain?.indicatorFormulaArtifact?.status
+  ].filter(Boolean).join(' / ') || '-'
+}
+
 async function refreshMortalityAnalysis() {
   if (indicatorCode.value !== 'MORTALITY_INPATIENT') return
+  mortalityChainLoading.value = true
   try {
     const chain = await fetchMortalityReadonlyChain()
+    mortalityChain.value = chain
     updateMortalityProfileFromChain(chain)
     profileRefreshVersion.value += 1
+    mortalityChainLoading.value = false
   } catch {
+    mortalityChain.value = null
+    mortalityChainLoading.value = false
     ElMessage.warning('住院死亡率后端结果暂不可用，已使用演示数据')
   }
 }
@@ -474,6 +592,123 @@ watch(indicatorCode, () => {
     color: #8c8c8c;
     font-size: 12px;
     font-style: normal;
+    white-space: nowrap;
+  }
+}
+
+.chain-panel {
+  min-width: 0;
+  margin-bottom: 16px;
+  padding: 16px 18px;
+}
+
+.chain-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 12px;
+
+  h2 {
+    margin: 0 0 4px;
+    color: #262626;
+    font-size: 15px;
+    line-height: 22px;
+  }
+
+  p {
+    margin: 0;
+    color: #8c8c8c;
+    font-size: 12px;
+    line-height: 18px;
+  }
+}
+
+.chain-status {
+  flex: 0 0 auto;
+  padding: 4px 9px;
+  border: 1px solid #b7eb8f;
+  border-radius: 4px;
+  background: #f6ffed;
+  color: #389e0d;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+
+  &.is-loading {
+    border-color: #91d5ff;
+    background: #e6f7ff;
+    color: #1890ff;
+  }
+}
+
+.chain-equation {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  padding: 10px 12px;
+  border: 1px solid #e6f4ff;
+  border-radius: 6px;
+  background: #f7fbff;
+
+  span,
+  em {
+    color: #8c8c8c;
+    font-size: 12px;
+    font-style: normal;
+    line-height: 20px;
+  }
+
+  strong {
+    color: #1890ff;
+    font-size: 18px;
+    font-weight: 650;
+    line-height: 24px;
+  }
+}
+
+.chain-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.chain-node {
+  display: flex;
+  min-width: 0;
+  min-height: 82px;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 11px 12px;
+  border: 1px solid #e5e8ef;
+  border-radius: 6px;
+  background: #fff;
+
+  span {
+    color: #8c8c8c;
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  strong {
+    overflow: hidden;
+    color: #262626;
+    font-size: 16px;
+    font-weight: 650;
+    line-height: 22px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  small {
+    overflow: hidden;
+    color: #a0a3a8;
+    font-size: 12px;
+    line-height: 18px;
+    text-overflow: ellipsis;
     white-space: nowrap;
   }
 }
