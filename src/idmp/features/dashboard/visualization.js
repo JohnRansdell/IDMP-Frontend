@@ -7,6 +7,8 @@ export function getIndicatorSource(code) {
 
 export function formatIndicatorValue(source) {
   if (!source) return ''
+  if (source.currentValue === null || source.currentValue === undefined || source.currentValue === '') return '暂无数据'
+  if (typeof source.currentValue === 'string') return source.currentValue
   return `${source.currentValue}${source.unit || ''}`
 }
 
@@ -37,7 +39,7 @@ export function createDashboardChartOption(widget, presetOptions = {}) {
 }
 
 function createVirtualBarOption(widget) {
-  const source = getIndicatorSource(widget.sourceCode) || mockIndicatorDataSources[0]
+  const source = getWidgetSource(widget)
   const rows = source.departmentData || []
   return {
     color: ['#1890ff'],
@@ -50,7 +52,7 @@ function createVirtualBarOption(widget) {
 }
 
 function createVirtualLineOption(widget) {
-  const source = getIndicatorSource(widget.sourceCode) || mockIndicatorDataSources[0]
+  const source = getWidgetSource(widget)
   return {
     color: ['#13c2c2'],
     tooltip: { trigger: 'axis' },
@@ -62,7 +64,7 @@ function createVirtualLineOption(widget) {
 }
 
 function createVirtualPieOption(widget) {
-  const source = getIndicatorSource(widget.sourceCode) || mockIndicatorDataSources[0]
+  const source = getWidgetSource(widget)
   return {
     color: ['#1890ff', '#52c41a', '#faad14', '#f5222d'],
     tooltip: { trigger: 'item', formatter: '{b}: {d}%' },
@@ -77,4 +79,8 @@ function createVirtualPieOption(widget) {
       }
     ]
   }
+}
+
+function getWidgetSource(widget) {
+  return widget.sourceSnapshot || getIndicatorSource(widget.sourceCode) || mockIndicatorDataSources[0]
 }

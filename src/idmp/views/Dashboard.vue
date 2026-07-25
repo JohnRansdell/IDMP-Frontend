@@ -24,7 +24,12 @@
     <section v-if="isEditing" class="surface-card dashboard-editor-panel">
       <div class="dashboard-editor-panel__left">
         <span class="dashboard-editor-panel__label">数据组件</span>
-        <el-select v-model="selectedDataCode" class="dashboard-editor-panel__data-select" aria-label="指标数据">
+        <el-select
+          v-model="selectedDataCode"
+          class="dashboard-editor-panel__data-select"
+          aria-label="指标数据"
+          :loading="indicatorSourceLoading"
+        >
           <el-option
             v-for="source in indicatorDataSources"
             :key="source.code"
@@ -32,7 +37,7 @@
             :value="source.code"
           >
             <span>{{ source.name }}</span>
-            <span class="dashboard-editor-panel__option-meta">{{ source.category }}</span>
+            <span class="dashboard-editor-panel__option-meta">{{ source.category }} · {{ source.originLabel }}</span>
           </el-option>
         </el-select>
         <el-select v-model="addWidgetType" class="dashboard-editor-panel__select" aria-label="展示类型">
@@ -236,6 +241,7 @@ import {
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import { fetchDashboardBootstrap } from '@/idmp/api/modules/analysisDashboard'
+import { fetchIndicators } from '@/idmp/api/modules/indicators'
 import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
 import {
   categoryRates,
@@ -273,6 +279,7 @@ const activeWidgetId = ref('')
 const selectedDataCode = ref(mockIndicatorDataSources[0].code)
 const addWidgetType = ref('kpi')
 const indicatorDataSources = ref(cloneIndicatorSources(mockIndicatorDataSources))
+const indicatorSourceLoading = ref(false)
 const dashboardLayout = ref(createDefaultLayout())
 const editSnapshot = ref([])
 const backendDashboard = ref(null)
@@ -490,6 +497,7 @@ function addDashboardWidget() {
     id,
     sourceCode: source.code,
     sourceName: source.name,
+    sourceSnapshot: cloneIndicatorSource(source),
     visualType: type,
     x: position.x,
     y: position.y
@@ -634,6 +642,24 @@ function loadDashboardLayout() {
   }
 }
 
+async function loadBackendIndicatorSources() {
+  indicatorSourceLoading.value = true
+  try {
+    const rows = await fetchIndicators()
+    const backendSources = Array.isArray(rows) ? rows.map(toDashboardIndicatorSource).filter(Boolean) : []
+    if (!backendSources.length) return
+
+    indicatorDataSources.value = mergeIndicatorSources(backendSources, indicatorDataSources.value)
+    if (!selectedDataSource.value) {
+      selectedDataCode.value = indicatorDataSources.value[0]?.code || ''
+    }
+  } catch {
+    indicatorDataSources.value = cloneIndicatorSources(mockIndicatorDataSources)
+  } finally {
+    indicatorSourceLoading.value = false
+  }
+}
+
 async function loadBackendDashboardContract() {
   backendDashboard.value = await fetchDashboardBootstrap(DASHBOARD_CODE, {
     year: 2025,
@@ -679,6 +705,49 @@ function cloneIndicatorSources(sources) {
   }))
 }
 
+function toDashboardIndicatorSource(item, index) {
+  if (!item?.code || !item?.name) return null
+  const demoSource = mockIndicatorDataSources.find((source) => source.code === item.code) ||
+    mockIndicatorDataSources[index % mockIndicatorDataSources.length] ||
+    mockIndicatorDataSources[0]
+
+  return {
+    ...cloneIndicatorSource(demoSource),
+    code: item.code,
+    name: item.name,
+    category: item.category || item.categoryName || item.domainName || '后端指标',
+    unit: item.unit || item.unitCode || demoSource?.unit || '',
+    status: item.status === 'DISABLED' ? 'warning' : demoSource?.status || 'success',
+    origin: 'backend',
+    originLabel: '后端'
+  }
+}
+
+function mergeIndicatorSources(backendSources, currentSources) {
+  const merged = new Map()
+  cloneIndicatorSources(currentSources).forEach((source) => {
+    merged.set(source.code, {
+      ...source,
+      origin: source.origin || 'demo',
+      originLabel: source.originLabel || '演示'
+    })
+  })
+  backendSources.forEach((source) => {
+    const current = merged.get(source.code)
+    merged.set(source.code, current ? { ...current, ...source } : source)
+  })
+  return Array.from(merged.values())
+}
+
+function cloneIndicatorSource(source) {
+  return {
+    ...source,
+    trendData: Array.isArray(source?.trendData) ? [...source.trendData] : source?.trendData,
+    departmentData: Array.isArray(source?.departmentData) ? source.departmentData.map((item) => ({ ...item })) : source?.departmentData,
+    pieData: Array.isArray(source?.pieData) ? source.pieData.map((item) => ({ ...item })) : source?.pieData
+  }
+}
+
 const goAlerts = () => router.push('/alerts')
 const goIndicatorAnalysis = (indicatorCode) => {
   router.push({
@@ -687,8 +756,9 @@ const goIndicatorAnalysis = (indicatorCode) => {
   })
 }
 
-onMounted(() => {
+onMounted(async () => {
   loadDashboardLayout()
+  await loadBackendIndicatorSources()
   loadBackendDashboardContract()
   loadMortalityReadonlyChain()
 })

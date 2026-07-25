@@ -3,6 +3,27 @@
     <PageHeader :title="`指标分析 / ${currentProfile.name}`">
       <template #actions>
         <div class="page-toolbar">
+          <el-select
+            v-model="selectedIndicatorCode"
+            filterable
+            class="header-indicator-select"
+            placeholder="请选择指标"
+            :loading="indicatorOptionsLoading"
+          >
+            <el-option
+              v-for="item in analysisIndicatorOptions"
+              :key="item.optionKey || item.code"
+              :label="item.name"
+              :value="item.code"
+              :disabled="item.disabled"
+            >
+              <div class="indicator-option">
+                <span>{{ item.name }}</span>
+                <small>{{ item.backendCode || item.code }} · {{ item.disabled ? '暂未配置分析页' : item.source }}</small>
+              </div>
+            </el-option>
+          </el-select>
+          <el-button type="primary" @click="switchIndicatorAnalysis">查看分析</el-button>
           <el-button :icon="Connection" @click="showSceneCompare">场景对比</el-button>
           <el-button :icon="Download" @click="showUnavailable">导出PDF</el-button>
         </div>
@@ -206,27 +227,39 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Connection, Download } from '@element-plus/icons-vue'
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
+import { fetchIndicators } from '@/idmp/api/modules/indicators'
 import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
 import {
   DEFAULT_ANALYSIS_INDICATOR,
+  getAnalysisProfileOptions,
   getAnalysisProfile,
   periodOptions,
   updateMortalityProfileFromChain
 } from '@/idmp/features/analysis/indicatorProfiles'
 
 const route = useRoute()
+const router = useRouter()
 const activeTab = ref('trend')
 const period = ref('月度')
 const profileRefreshVersion = ref(0)
 const mortalityChain = ref(null)
 const mortalityChainLoading = ref(false)
+const selectedIndicatorCode = ref(String(route.query.indicator || DEFAULT_ANALYSIS_INDICATOR))
+const backendIndicators = ref([])
+const indicatorOptionsLoading = ref(false)
 
 const indicatorCode = computed(() => String(route.query.indicator || DEFAULT_ANALYSIS_INDICATOR))
+const localAnalysisOptions = computed(() => getAnalysisProfileOptions())
+const analysisIndicatorOptions = computed(() =>
+  backendIndicators.value.length
+    ? createBackendAnalysisOptions(backendIndicators.value, localAnalysisOptions.value)
+    : localAnalysisOptions.value.map((item) => ({ ...item, source: '本地配置' }))
+)
 const currentProfile = computed(() => {
   profileRefreshVersion.value
   return getAnalysisProfile(indicatorCode.value)
@@ -421,6 +454,70 @@ function buildArtifactStatus(chain) {
   ].filter(Boolean).join(' / ') || '-'
 }
 
+function switchIndicatorAnalysis() {
+  if (!selectedIndicatorCode.value) return
+  if (selectedIndicatorCode.value === indicatorCode.value) {
+    ElMessage.info('当前已是所选指标分析页')
+    return
+  }
+  router.push({
+    path: '/analysis',
+    query: { indicator: selectedIndicatorCode.value }
+  })
+}
+
+async function loadBackendAnalysisIndicators() {
+  indicatorOptionsLoading.value = true
+  try {
+    const rows = await fetchIndicators()
+    backendIndicators.value = Array.isArray(rows) ? rows : []
+  } catch {
+    backendIndicators.value = []
+    ElMessage.warning('后端指标列表暂不可用，已使用本地分析配置')
+  } finally {
+    indicatorOptionsLoading.value = false
+  }
+}
+
+function createBackendAnalysisOptions(indicators, profileOptions) {
+  const fallbackOptions = profileOptions.map((item) => ({ ...item, source: '本地配置' }))
+  const mappedOptions = indicators.map((item) => {
+    const profile = matchAnalysisProfile(item, profileOptions)
+    return {
+      optionKey: `${item.id || item.indicatorId || item.code || item.name}`,
+      code: profile?.code || `UNSUPPORTED:${item.code || item.id || item.name}`,
+      name: item.name || profile?.name || item.code || '未命名指标',
+      backendCode: item.code,
+      source: '后端指标',
+      disabled: !profile
+    }
+  })
+  const enabledCodes = new Set(mappedOptions.filter((item) => !item.disabled).map((item) => item.code))
+  const missingLocalOptions = fallbackOptions
+    .filter((item) => !enabledCodes.has(item.code))
+    .map((item) => ({ ...item, source: '本地配置' }))
+  return [...mappedOptions, ...missingLocalOptions]
+}
+
+function matchAnalysisProfile(indicator, profileOptions) {
+  const code = String(indicator?.code || '')
+  const name = String(indicator?.name || '')
+  const exact = profileOptions.find((item) => item.code === code)
+  if (exact) return exact
+  if (/MORTALITY|DEATH/i.test(code) || normalizeText(name).includes('住院死亡')) {
+    return profileOptions.find((item) => item.code === 'MORTALITY_INPATIENT')
+  }
+  return profileOptions.find((item) => {
+    const profileName = normalizeText(item.name)
+    const indicatorName = normalizeText(name)
+    return indicatorName && (profileName.includes(indicatorName) || indicatorName.includes(profileName))
+  })
+}
+
+function normalizeText(value) {
+  return String(value || '').replace(/\s/g, '').replace(/[（）()]/g, '')
+}
+
 async function refreshMortalityAnalysis() {
   if (indicatorCode.value !== 'MORTALITY_INPATIENT') return
   mortalityChainLoading.value = true
@@ -438,10 +535,12 @@ async function refreshMortalityAnalysis() {
 }
 
 onMounted(() => {
+  loadBackendAnalysisIndicators()
   refreshMortalityAnalysis()
 })
 
 watch(indicatorCode, () => {
+  selectedIndicatorCode.value = indicatorCode.value
   refreshMortalityAnalysis()
 })
 </script>
@@ -449,6 +548,38 @@ watch(indicatorCode, () => {
 <style scoped lang="scss">
 .indicator-analysis {
   min-width: 0;
+}
+
+.page-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.header-indicator-select {
+  width: 300px;
+}
+
+.indicator-option {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  small {
+    flex: 0 0 auto;
+    color: #8c8c8c;
+    font-size: 12px;
+  }
 }
 
 .summary-grid {
@@ -842,6 +973,10 @@ watch(indicatorCode, () => {
 }
 
 @media (max-width: 1450px) {
+  .header-indicator-select {
+    width: 260px;
+  }
+
   .summary-grid {
     gap: 10px;
   }

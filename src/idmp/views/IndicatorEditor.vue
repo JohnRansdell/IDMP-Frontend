@@ -94,6 +94,16 @@
               </el-form-item>
             </div>
           </el-form>
+          <div class="business-action-bar">
+            <div>
+              <span>基本信息操作</span>
+              <small>{{ indicatorWorkflow.indicatorId ? `已保存指标 ${indicatorWorkflow.indicatorId}` : '先保存基本信息，再创建可配置版本' }}</small>
+            </div>
+            <el-button :loading="workflowLoading.basic" @click="saveIndicatorBasicInfo">保存基本信息</el-button>
+            <el-button type="primary" :disabled="!indicatorWorkflow.indicatorId" :loading="workflowLoading.version" @click="createIndicatorDraftVersion">
+              创建指标版本
+            </el-button>
+          </div>
         </section>
       </el-tab-pane>
 
@@ -204,6 +214,29 @@
             <div class="factor-library__footer">
               <el-button :icon="Plus" @click="demoResult('新建因子')">新建因子</el-button>
               <el-button :icon="Upload" @click="unavailable">导入因子</el-button>
+            </div>
+            <div class="business-action-bar formula-actions">
+              <div>
+                <span>公式与试算操作</span>
+                <small>{{ indicatorWorkflow.versionId ? `当前版本 ${indicatorWorkflow.versionId}` : '请先在基本信息页签创建指标版本' }}</small>
+              </div>
+              <el-button :disabled="!indicatorWorkflow.versionId" :loading="workflowLoading.formula" @click="saveIndicatorFormulaOnly">
+                保存公式
+              </el-button>
+              <el-button :disabled="!indicatorWorkflow.formulaSaved" :loading="workflowLoading.compile" @click="compileIndicatorFormulaOnly">
+                公式校验
+              </el-button>
+              <el-button type="primary" :disabled="!indicatorWorkflow.compiled" :loading="workflowLoading.trial" @click="trialIndicatorOnly">
+                发起试算
+              </el-button>
+              <el-button :disabled="!indicatorWorkflow.batchId" :loading="workflowLoading.result" @click="loadIndicatorTrialResultOnly">
+                查看结果
+              </el-button>
+            </div>
+            <div v-if="indicatorWorkflow.displayValue" class="workflow-result">
+              <span>试算结果</span>
+              <strong>{{ indicatorWorkflow.displayValue }}</strong>
+              <small>批次 {{ indicatorWorkflow.batchId }}</small>
             </div>
           </div>
 
@@ -360,6 +393,16 @@ import {
 } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import {
+  compileIndicatorFormula,
+  createIndicator,
+  createIndicatorVersion,
+  fetchIndicatorTrialResults,
+  saveIndicatorFormula,
+  trialIndicatorVersion
+} from '@/idmp/api/modules/indicators'
+import { fetchAsyncTask, fetchCalcBatch } from '@/idmp/api/modules/calculation'
+import { mortalityChainConfig } from '@/idmp/api/modules/mortality'
+import {
   editorFactors,
   editorPolicyRows,
   editorSceneRows
@@ -369,6 +412,26 @@ const route = useRoute()
 const isNew = computed(() => route.params.id === 'new')
 const activeTab = ref('basic')
 const formRef = ref()
+const formulaFactorVersionId = ref(mortalityChainConfig.deathFactorVersionId)
+const indicatorWorkflow = reactive({
+  indicatorId: '',
+  versionId: '',
+  resourceVersion: 0,
+  formulaSaved: false,
+  compiled: false,
+  taskId: '',
+  batchId: '',
+  displayValue: '',
+  resultValue: ''
+})
+const workflowLoading = reactive({
+  basic: false,
+  version: false,
+  formula: false,
+  compile: false,
+  trial: false,
+  result: false
+})
 const sourceOptions = ['HIS', '手术麻醉', 'EMR', 'LIS', 'PACS', '病案', '药事', '财务']
 const policyOptions = ['绩效考核2024版', '2011年版指标', '医院评审2025版', 'NCIS 8.0']
 
@@ -497,6 +560,216 @@ const removeCondition = id => {
   if (conditions.length > 1) conditions.splice(conditions.findIndex(item => item.id === id), 1)
 }
 
+function resetIndicatorWorkflowAfterBasic(indicatorId) {
+  Object.assign(indicatorWorkflow, {
+    indicatorId,
+    versionId: '',
+    resourceVersion: 0,
+    formulaSaved: false,
+    compiled: false,
+    taskId: '',
+    batchId: '',
+    displayValue: '',
+    resultValue: ''
+  })
+}
+
+async function saveIndicatorBasicInfo() {
+  try {
+    await formRef.value?.validate()
+  } catch {
+    activeTab.value = 'basic'
+    ElMessage.warning('请先完善指标基本信息')
+    return
+  }
+
+  workflowLoading.basic = true
+  try {
+    const suffix = createBackendCodeSuffix()
+    const indicatorCode = normalizeBusinessCode(form.code) || `FRONTEND_INDICATOR_${suffix}`
+    const indicator = await createIndicator({
+      code: `${indicatorCode}_${suffix}`,
+      name: form.name || `前端指标 ${suffix}`,
+      description: form.definition || '前端指标配置流程创建'
+    })
+    resetIndicatorWorkflowAfterBasic(indicator.id)
+    ElMessage.success('指标基本信息已保存到后端')
+  } catch (error) {
+    ElMessage.error(error?.message || '指标基本信息保存失败')
+  } finally {
+    workflowLoading.basic = false
+  }
+}
+
+async function createIndicatorDraftVersion() {
+  if (!indicatorWorkflow.indicatorId) {
+    ElMessage.warning('请先保存指标基本信息')
+    return
+  }
+
+  workflowLoading.version = true
+  try {
+    const version = await createIndicatorVersion(indicatorWorkflow.indicatorId, {})
+    Object.assign(indicatorWorkflow, {
+      versionId: version.id,
+      resourceVersion: version.version || 0,
+      formulaSaved: false,
+      compiled: false,
+      taskId: '',
+      batchId: '',
+      displayValue: '',
+      resultValue: ''
+    })
+    activeTab.value = 'formula'
+    ElMessage.success('指标版本已创建，可以配置公式')
+  } catch (error) {
+    ElMessage.error(error?.message || '指标版本创建失败')
+  } finally {
+    workflowLoading.version = false
+  }
+}
+
+async function saveIndicatorFormulaOnly() {
+  if (!indicatorWorkflow.versionId) {
+    ElMessage.warning('请先创建指标版本')
+    return
+  }
+
+  workflowLoading.formula = true
+  try {
+    const savedFormula = await saveIndicatorFormula(
+      indicatorWorkflow.versionId,
+      createSingleFactorFormulaPayload(indicatorWorkflow.resourceVersion)
+    )
+    indicatorWorkflow.resourceVersion = savedFormula.version
+    indicatorWorkflow.formulaSaved = true
+    indicatorWorkflow.compiled = false
+    indicatorWorkflow.displayValue = ''
+    ElMessage.success('计算公式已保存')
+  } catch (error) {
+    ElMessage.error(error?.message || '计算公式保存失败')
+  } finally {
+    workflowLoading.formula = false
+  }
+}
+
+async function compileIndicatorFormulaOnly() {
+  if (!indicatorWorkflow.formulaSaved) {
+    ElMessage.warning('请先保存计算公式')
+    return
+  }
+
+  workflowLoading.compile = true
+  try {
+    const artifact = await compileIndicatorFormula(indicatorWorkflow.versionId, {
+      resourceVersion: indicatorWorkflow.resourceVersion
+    })
+    indicatorWorkflow.compiled = artifact.status === 'VALID'
+    if (indicatorWorkflow.compiled) {
+      ElMessage.success('公式校验通过')
+    } else {
+      ElMessage.warning(`公式校验状态：${artifact.status || '未知'}`)
+    }
+  } catch (error) {
+    indicatorWorkflow.compiled = false
+    ElMessage.error(error?.message || '公式校验失败')
+  } finally {
+    workflowLoading.compile = false
+  }
+}
+
+async function trialIndicatorOnly() {
+  if (!indicatorWorkflow.compiled) {
+    ElMessage.warning('请先完成公式校验')
+    return
+  }
+
+  workflowLoading.trial = true
+  try {
+    const suffix = createBackendCodeSuffix()
+    const trial = await trialIndicatorVersion(
+      indicatorWorkflow.versionId,
+      { periodStart: '2000-01-01T00:00:00', periodEnd: '2030-01-01T00:00:00' },
+      `indicator-workflow-${suffix}`
+    )
+    indicatorWorkflow.taskId = trial.taskId
+    indicatorWorkflow.batchId = trial.batchId
+    const task = await pollBackendTask(trial.taskId)
+    if (task.status === 'SUCCEEDED') {
+      ElMessage.success('指标试算已完成，可以查看结果')
+    } else {
+      ElMessage.warning(`指标试算任务状态：${task.status || '未知'}`)
+    }
+  } catch (error) {
+    ElMessage.error(error?.message || '指标试算失败')
+  } finally {
+    workflowLoading.trial = false
+  }
+}
+
+async function loadIndicatorTrialResultOnly() {
+  if (!indicatorWorkflow.batchId) {
+    ElMessage.warning('请先发起指标试算')
+    return
+  }
+
+  workflowLoading.result = true
+  try {
+    await fetchCalcBatch(indicatorWorkflow.batchId)
+    const resultSet = await fetchIndicatorTrialResults(indicatorWorkflow.versionId, indicatorWorkflow.batchId)
+    const record = resultSet.results?.records?.[0]
+    indicatorWorkflow.displayValue = record?.displayValue || '-'
+    indicatorWorkflow.resultValue = record?.resultValue ?? ''
+    ElMessage.success('试算结果已读取')
+  } catch (error) {
+    ElMessage.error(error?.message || '试算结果读取失败')
+  } finally {
+    workflowLoading.result = false
+  }
+}
+
+function createSingleFactorFormulaPayload(resourceVersion) {
+  return {
+    resourceVersion,
+    formula: {
+      schemaVersion: '1.0',
+      astType: 'INDICATOR_FORMULA',
+      root: {
+        nodeId: 'factor_ref',
+        nodeType: 'FACTOR_REF',
+        factorVersionId: Number(formulaFactorVersionId.value)
+      },
+      display: {
+        format: 'NUMBER',
+        multiplier: '1',
+        scale: 0,
+        roundingMode: 'HALF_UP'
+      }
+    }
+  }
+}
+
+async function pollBackendTask(taskId) {
+  let task = await fetchAsyncTask(taskId)
+  for (let index = 0; index < 10 && !['SUCCEEDED', 'FAILED', 'CANCELED'].includes(task.status); index += 1) {
+    await delay(1000)
+    task = await fetchAsyncTask(taskId)
+  }
+  return task
+}
+
+function delay(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+function normalizeBusinessCode(value) {
+  return String(value || '').trim().replace(/[^\w]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '')
+}
+
+function createBackendCodeSuffix() {
+  return new Date().toISOString().replace(/\D/g, '').slice(0, 14)
+}
+
 const validateAndConfirm = async action => {
   try {
     await formRef.value?.validate()
@@ -534,6 +807,65 @@ const confirmAction = text => {
 .editor-tabs {
   :deep(.el-tabs__content) {
     overflow: visible;
+  }
+}
+
+.business-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #f0f0f0;
+
+  > div {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    margin-right: auto;
+    gap: 2px;
+  }
+
+  span {
+    color: #262626;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+  }
+
+  small {
+    color: #8c8c8c;
+    font-size: 12px;
+    line-height: 18px;
+  }
+}
+
+.formula-actions {
+  margin: 0 16px 0;
+  padding-bottom: 14px;
+}
+
+.workflow-result {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin: 0 16px 16px;
+  padding: 10px 12px;
+  border: 1px solid #e6f4ff;
+  border-radius: 6px;
+  background: #f7fbff;
+
+  span,
+  small {
+    color: #8c8c8c;
+    font-size: 12px;
+  }
+
+  strong {
+    color: #1890ff;
+    font-size: 18px;
   }
 }
 
@@ -925,6 +1257,10 @@ const confirmAction = text => {
   .form-card {
     padding-right: 20px;
     padding-left: 20px;
+  }
+
+  .backend-chain-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .condition-row {

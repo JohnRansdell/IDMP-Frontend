@@ -69,6 +69,7 @@ import {
   Histogram,
   Link,
   List,
+  Monitor,
   Setting,
   TrendCharts
 } from '@element-plus/icons-vue'
@@ -87,8 +88,9 @@ const navItems = [
   { label: '指标映射', path: '/mapping', icon: markRaw(Link) },
   { label: '指标分析', path: '/analysis', icon: markRaw(TrendCharts) },
   { label: '预警中心', path: '/alerts', icon: markRaw(Bell) },
-  { label: '数据管理', path: '', icon: markRaw(Folder), disabled: true },
-  { label: '系统管理', path: '', icon: markRaw(Setting), disabled: true }
+  { label: '计算任务中心', path: '/calc', icon: markRaw(Monitor) },
+  { label: '数据管理', path: '/data', icon: markRaw(Folder) },
+  { label: '系统管理', path: '/system', icon: markRaw(Setting) }
 ]
 
 const activePath = computed(() => route.meta.activeMenu || route.path)

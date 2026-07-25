@@ -173,6 +173,10 @@ export function getAnalysisProfile(code) {
   return analysisProfiles[code] || analysisProfiles[DEFAULT_ANALYSIS_INDICATOR]
 }
 
+export function getAnalysisProfileOptions() {
+  return Object.values(analysisProfiles).map(({ code, name }) => ({ code, name }))
+}
+
 export function updateMortalityProfileFromChain(chain) {
   const profile = analysisProfiles.MORTALITY_INPATIENT
   const indicatorRecord = chain?.indicatorResult?.results?.records?.[0]
