@@ -64,6 +64,7 @@
       <div class="table-scroll">
         <el-table
           :data="pagedRows"
+          v-loading="tableLoading"
           row-key="code"
           @selection-change="selectedRows = $event"
         >
@@ -146,11 +147,12 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Download, Grid, Menu, Plus, RefreshLeft, Search, Upload } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
+import { fetchIndicators } from '@/idmp/api/modules/indicators'
 import { indicatorRows } from '@/idmp/data/demo'
 
 const router = useRouter()
@@ -158,6 +160,8 @@ const viewMode = ref('table')
 const currentPage = ref(1)
 const pageSize = ref(8)
 const selectedRows = ref([])
+const tableLoading = ref(false)
+const backendIndicatorRows = ref([])
 
 const emptyFilters = () => ({
   code: '',
@@ -170,10 +174,11 @@ const emptyFilters = () => ({
 
 const filters = reactive(emptyFilters())
 const appliedFilters = ref(emptyFilters())
-const categories = [...new Set(indicatorRows.map(item => item.category))]
-const statuses = ['已启用', '草稿', '待审核', '已停用']
+const sourceRows = computed(() => backendIndicatorRows.value.length ? backendIndicatorRows.value : indicatorRows)
+const categories = computed(() => [...new Set(sourceRows.value.map(item => item.category).filter(Boolean))])
+const statuses = computed(() => [...new Set(sourceRows.value.map(item => item.status).filter(Boolean))])
 
-const filteredRows = computed(() => indicatorRows.filter(row => {
+const filteredRows = computed(() => sourceRows.value.filter(row => {
   const query = appliedFilters.value
   return (!query.code || row.code.toLowerCase().includes(query.code.toLowerCase()))
     && (!query.name || row.name.includes(query.name))
@@ -203,6 +208,32 @@ const resetFilters = () => {
   currentPage.value = 1
 }
 
+const loadBackendIndicators = async () => {
+  tableLoading.value = true
+  try {
+    const rows = await fetchIndicators()
+    backendIndicatorRows.value = Array.isArray(rows) ? rows.map(toIndicatorRow) : []
+  } catch {
+    backendIndicatorRows.value = []
+  } finally {
+    tableLoading.value = false
+  }
+}
+
+const toIndicatorRow = item => ({
+  code: item.code,
+  name: item.name,
+  category: item.category || '后端指标',
+  attribute: item.attribute || '定量',
+  version: item.versionNo ? `V${item.versionNo}` : 'V1',
+  direction: item.direction || '监测比较',
+  source: item.source || '后端接口',
+  status: item.status || '未知',
+  scenes: item.scenes || 0,
+  description: item.description,
+  id: item.id
+})
+
 const openEditor = id => router.push(`/indicator/edit/${id}`)
 const unavailable = () => ElMessage.info('演示版暂不可用')
 const showDetails = row => ElMessage.success(`正在查看：${row.name}`)
@@ -217,7 +248,10 @@ const showMore = row => {
 const statusClass = status => ({
   '草稿': 'is-warning',
   '待审核': 'is-info',
-  '已停用': 'is-muted'
+  '已停用': 'is-muted',
+  DRAFT: 'is-warning',
+  PUBLISHED: '',
+  DISABLED: 'is-muted'
 }[status] || '')
 
 const directionClass = direction => {
@@ -225,6 +259,10 @@ const directionClass = direction => {
   if (direction.includes('降低')) return 'direction-down'
   return 'direction-neutral'
 }
+
+onMounted(() => {
+  loadBackendIndicators()
+})
 </script>
 
 <style scoped lang="scss">

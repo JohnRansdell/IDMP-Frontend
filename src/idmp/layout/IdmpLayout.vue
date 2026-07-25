@@ -27,9 +27,9 @@
 
     <header class="idmp-topbar">
       <div class="idmp-breadcrumb" aria-label="面包屑">
-        <template v-for="(item, index) in breadcrumbs" :key="`${item}-${index}`">
+        <template v-for="(item, index) in displayBreadcrumbs" :key="`${item}-${index}`">
           <span>{{ item }}</span>
-          <span v-if="index < breadcrumbs.length - 1" class="separator">/</span>
+          <span v-if="index < displayBreadcrumbs.length - 1" class="separator">/</span>
         </template>
       </div>
 
@@ -69,10 +69,12 @@ import {
   Histogram,
   Link,
   List,
+  Monitor,
   Setting,
   TrendCharts
 } from '@element-plus/icons-vue'
 import { sceneOptions } from '@/idmp/data/demo'
+import { DEFAULT_ANALYSIS_INDICATOR, getAnalysisProfile } from '@/idmp/features/analysis/indicatorProfiles'
 
 const route = useRoute()
 const currentScene = ref(sceneOptions[0])
@@ -86,10 +88,18 @@ const navItems = [
   { label: '指标映射', path: '/mapping', icon: markRaw(Link) },
   { label: '指标分析', path: '/analysis', icon: markRaw(TrendCharts) },
   { label: '预警中心', path: '/alerts', icon: markRaw(Bell) },
-  { label: '数据管理', path: '', icon: markRaw(Folder), disabled: true },
-  { label: '系统管理', path: '', icon: markRaw(Setting), disabled: true }
+  { label: '计算任务中心', path: '/calc', icon: markRaw(Monitor) },
+  { label: '数据管理', path: '/data', icon: markRaw(Folder) },
+  { label: '系统管理', path: '/system', icon: markRaw(Setting) }
 ]
 
 const activePath = computed(() => route.meta.activeMenu || route.path)
 const breadcrumbs = computed(() => route.meta.breadcrumb || ['首页'])
+const displayBreadcrumbs = computed(() => {
+  if (route.name === 'IndicatorAnalysis') {
+    const indicatorCode = String(route.query.indicator || DEFAULT_ANALYSIS_INDICATOR)
+    return ['首页', '指标分析', getAnalysisProfile(indicatorCode).name]
+  }
+  return breadcrumbs.value
+})
 </script>

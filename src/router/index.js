@@ -64,6 +64,24 @@ const routes = [
         name: 'AlertCenter',
         component: () => import('@/idmp/views/AlertCenter.vue'),
         meta: { title: '预警中心', breadcrumb: ['首页', '预警中心'] }
+      },
+      {
+        path: 'calc',
+        name: 'CalculationTaskCenter',
+        component: () => import('@/idmp/views/CalculationTaskCenter.vue'),
+        meta: { title: '计算任务中心', breadcrumb: ['首页', '计算任务中心'] }
+      },
+      {
+        path: 'data',
+        name: 'DataAssetManagement',
+        component: () => import('@/idmp/views/DataAssetManagement.vue'),
+        meta: { title: '数据管理', breadcrumb: ['首页', '数据管理'] }
+      },
+      {
+        path: 'system',
+        name: 'SystemManagement',
+        component: () => import('@/idmp/views/SystemManagement.vue'),
+        meta: { title: '系统管理', breadcrumb: ['首页', '系统管理'] }
       }
     ]
   },

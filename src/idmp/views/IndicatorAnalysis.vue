@@ -1,8 +1,29 @@
 <template>
   <div class="idmp-page indicator-analysis">
-    <PageHeader title="指标分析 / 手术患者并发症发生率">
+    <PageHeader :title="`指标分析 / ${currentProfile.name}`">
       <template #actions>
         <div class="page-toolbar">
+          <el-select
+            v-model="selectedIndicatorCode"
+            filterable
+            class="header-indicator-select"
+            placeholder="请选择指标"
+            :loading="indicatorOptionsLoading"
+          >
+            <el-option
+              v-for="item in analysisIndicatorOptions"
+              :key="item.optionKey || item.code"
+              :label="item.name"
+              :value="item.code"
+              :disabled="item.disabled"
+            >
+              <div class="indicator-option">
+                <span>{{ item.name }}</span>
+                <small>{{ item.backendCode || item.code }} · {{ item.disabled ? '暂未配置分析页' : item.source }}</small>
+              </div>
+            </el-option>
+          </el-select>
+          <el-button type="primary" @click="switchIndicatorAnalysis">查看分析</el-button>
           <el-button :icon="Connection" @click="showSceneCompare">场景对比</el-button>
           <el-button :icon="Download" @click="showUnavailable">导出PDF</el-button>
         </div>
@@ -11,10 +32,10 @@
 
     <section class="summary-grid" aria-label="指标核心数据">
       <article
-        v-for="item in analysisSummary"
+        v-for="item in currentProfile.summary"
         :key="item.label"
         class="surface-card summary-card"
-        :class="{ 'summary-card--danger': item.tone === 'danger' }"
+        :class="{ 'summary-card--danger': item.tone === 'danger', 'summary-card--success': item.tone === 'success' }"
       >
         <span>{{ item.label }}</span>
         <strong>{{ item.value }}</strong>
@@ -24,11 +45,11 @@
     <section class="surface-card scene-comparison" aria-label="不同场景计算值对比">
       <div class="scene-comparison__label">
         <span>不同场景对比</span>
-        <small>同一指标在不同场景下的计算口径存在差异</small>
+        <small>同一指标在不同场景下的计算口径可能存在差异</small>
       </div>
       <div class="scene-tags">
         <button
-          v-for="scene in sceneComparisons"
+          v-for="scene in currentProfile.sceneComparisons"
           :key="scene.name"
           type="button"
           class="scene-tag"
@@ -37,9 +58,39 @@
         >
           <span>{{ scene.name }}</span>
           <strong>{{ scene.value }}</strong>
-          <em v-if="scene.difference">{{ scene.difference }}</em>
-          <em v-else>当前场景</em>
+          <em>{{ scene.difference || '当前场景' }}</em>
         </button>
+      </div>
+    </section>
+
+    <section v-if="showMortalityChainPanel" class="surface-card chain-panel" aria-label="住院死亡率计算链路">
+      <div class="chain-panel__header">
+        <div>
+          <h2>住院死亡率计算链路</h2>
+          <p>展示第16章后端链路中的数据域、因子试算、公式结果、异步任务与编译状态</p>
+        </div>
+        <span class="chain-status" :class="{ 'is-loading': mortalityChainLoading }">
+          {{ mortalityChainLoading ? '同步中' : mortalityChainStatusText }}
+        </span>
+      </div>
+
+      <div class="chain-equation">
+        <span>死亡患者记录数</span>
+        <strong>{{ chainDeathValue }}</strong>
+        <em>÷</em>
+        <span>出院病案记录数</span>
+        <strong>{{ chainDischargeValue }}</strong>
+        <em>=</em>
+        <span>住院死亡率</span>
+        <strong>{{ chainDisplayValue }}</strong>
+      </div>
+
+      <div class="chain-grid">
+        <article v-for="node in mortalityChainNodes" :key="node.label" class="chain-node">
+          <span>{{ node.label }}</span>
+          <strong>{{ node.value }}</strong>
+          <small>{{ node.meta }}</small>
+        </article>
       </div>
     </section>
 
@@ -71,13 +122,13 @@
           <div class="table-heading">
             <div>
               <h2>科室指标排名</h2>
-              <p>按手术患者并发症发生率由高到低排序</p>
+              <p>按 {{ currentProfile.name }} 由高到低排序</p>
             </div>
             <span>统计周期：2024 年度</span>
           </div>
           <div class="table-scroll">
             <el-table
-              :data="analysisRankRows"
+              :data="currentProfile.rankRows"
               table-layout="fixed"
               class="analysis-table rank-table"
             >
@@ -96,8 +147,8 @@
                   </strong>
                 </template>
               </el-table-column>
-              <el-table-column prop="numerator" label="分子（例）" width="130" />
-              <el-table-column prop="denominator" label="分母（人）" width="130" />
+              <el-table-column prop="numerator" label="分子" width="130" />
+              <el-table-column prop="denominator" label="分母" width="130" />
               <el-table-column label="较上期" width="120">
                 <template #default="{ row }">
                   <span :class="changeClass(row.change)">{{ row.change }}</span>
@@ -128,29 +179,29 @@
         <el-tab-pane label="下钻明细" name="drill">
           <div class="table-heading">
             <div>
-              <h2>并发症病例下钻明细</h2>
-              <p>患者标识已按演示数据脱敏处理</p>
+              <h2>{{ currentProfile.name }}下钻明细</h2>
+              <p>明细记录已按演示数据脱敏处理，后续可切换为接口返回结果</p>
             </div>
-            <span>共 {{ analysisDrillRows.length }} 条演示记录</span>
+            <span>共 {{ currentProfile.drillRows.length }} 条演示记录</span>
           </div>
           <div class="table-scroll">
             <el-table
-              :data="analysisDrillRows"
+              :data="currentProfile.drillRows"
               table-layout="fixed"
               class="analysis-table drill-table"
             >
-              <el-table-column prop="patientId" label="患者标识" width="130" />
-              <el-table-column prop="admissionNo" label="住院号" width="140" />
-              <el-table-column prop="admissionDate" label="入院日期" width="130" />
-              <el-table-column prop="surgeryDate" label="手术日期" width="130" />
-              <el-table-column label="手术级别" width="110">
+              <el-table-column prop="subjectId" label="对象标识" width="130" />
+              <el-table-column prop="recordNo" label="记录号" width="140" />
+              <el-table-column prop="startDate" label="开始日期" width="130" />
+              <el-table-column prop="eventDate" label="事件日期" width="130" />
+              <el-table-column label="记录级别" width="110">
                 <template #default="{ row }">
                   <span class="status-pill is-info">{{ row.level }}</span>
                 </template>
               </el-table-column>
               <el-table-column
-                prop="complication"
-                label="并发症类型"
+                prop="event"
+                label="事件类型"
                 min-width="180"
                 show-overflow-tooltip
               />
@@ -160,7 +211,7 @@
                   <button
                     type="button"
                     class="action-link"
-                    @click="showTableAction(`查看病例 ${row.admissionNo}`)"
+                    @click="showTableAction(`查看记录 ${row.recordNo}`)"
                   >
                     查看
                   </button>
@@ -175,36 +226,54 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Connection, Download } from '@element-plus/icons-vue'
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
+import { fetchIndicators } from '@/idmp/api/modules/indicators'
+import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
 import {
-  analysisDrillRows,
-  analysisRankRows,
-  analysisSummary,
-  analysisTrendByPeriod
-} from '@/idmp/data/demo'
+  DEFAULT_ANALYSIS_INDICATOR,
+  getAnalysisProfileOptions,
+  getAnalysisProfile,
+  periodOptions,
+  updateMortalityProfileFromChain
+} from '@/idmp/features/analysis/indicatorProfiles'
 
+const route = useRoute()
+const router = useRouter()
 const activeTab = ref('trend')
 const period = ref('月度')
-const periodOptions = ['月度', '季度', '年度']
+const profileRefreshVersion = ref(0)
+const mortalityChain = ref(null)
+const mortalityChainLoading = ref(false)
+const selectedIndicatorCode = ref(String(route.query.indicator || DEFAULT_ANALYSIS_INDICATOR))
+const backendIndicators = ref([])
+const indicatorOptionsLoading = ref(false)
 
-const sceneComparisons = [
-  { name: '绩效考核', value: '2.1%', difference: '当前场景', current: true },
-  { name: '医院评审', value: '2.5%', difference: '较当前 +0.4%' },
-  { name: '专业质控', value: '2.3%', difference: '较当前 +0.2%' }
-]
+const indicatorCode = computed(() => String(route.query.indicator || DEFAULT_ANALYSIS_INDICATOR))
+const localAnalysisOptions = computed(() => getAnalysisProfileOptions())
+const analysisIndicatorOptions = computed(() =>
+  backendIndicators.value.length
+    ? createBackendAnalysisOptions(backendIndicators.value, localAnalysisOptions.value)
+    : localAnalysisOptions.value.map((item) => ({ ...item, source: '本地配置' }))
+)
+const currentProfile = computed(() => {
+  profileRefreshVersion.value
+  return getAnalysisProfile(indicatorCode.value)
+})
+const currentTrend = computed(() => currentProfile.value.trends[period.value] || currentProfile.value.trends.月度)
 
-const currentTrend = computed(() => analysisTrendByPeriod[period.value])
+const showMortalityChainPanel = computed(() => indicatorCode.value === 'MORTALITY_INPATIENT')
 
 const trendOption = computed(() => ({
   animationDuration: 450,
   color: ['#1890ff', '#91d5ff'],
   tooltip: {
     trigger: 'axis',
-    valueFormatter: (value) => `${value}%`
+    valueFormatter: (value) => `${value}${currentProfile.value.unit || ''}`
   },
   legend: {
     top: 2,
@@ -226,11 +295,10 @@ const trendOption = computed(() => ({
   yAxis: {
     type: 'value',
     min: 0,
-    max: 4,
-    interval: 1,
-    name: '单位：%',
+    max: currentProfile.value.yAxisMax,
+    name: currentProfile.value.unit ? `单位：${currentProfile.value.unit}` : '指标值',
     nameTextStyle: { color: '#8c8c8c', padding: [0, 0, 4, 0] },
-    axisLabel: { color: '#8c8c8c', formatter: '{value}%' },
+    axisLabel: { color: '#8c8c8c', formatter: `{value}${currentProfile.value.unit || ''}` },
     splitLine: { lineStyle: { color: '#eef0f3', type: 'dashed' } }
   },
   series: [
@@ -260,12 +328,12 @@ const trendOption = computed(() => ({
         silent: true,
         symbol: 'none',
         label: {
-          formatter: '目标值 3%',
+          formatter: currentProfile.value.targetLabel,
           color: '#f5222d',
           position: 'insideEndTop'
         },
         lineStyle: { color: '#ff7875', type: 'dashed', width: 1 },
-        data: [{ yAxis: 3 }]
+        data: [{ yAxis: currentProfile.value.markLineValue }]
       }
     },
     {
@@ -279,6 +347,66 @@ const trendOption = computed(() => ({
     }
   ]
 }))
+
+const mortalityDeathRecord = computed(() => mortalityChain.value?.deathFactor?.results?.records?.[0])
+const mortalityDischargeRecord = computed(() => mortalityChain.value?.dischargeFactor?.results?.records?.[0])
+const mortalityIndicatorRecord = computed(() => mortalityChain.value?.indicatorResult?.results?.records?.[0])
+const chainDeathValue = computed(() => formatCount(mortalityDeathRecord.value?.valueDecimal))
+const chainDischargeValue = computed(() => formatCount(mortalityDischargeRecord.value?.valueDecimal))
+const chainDisplayValue = computed(() => mortalityIndicatorRecord.value?.displayValue || currentProfile.value.summary?.[0]?.value || '-')
+const chainRawValue = computed(() => formatDecimal(mortalityIndicatorRecord.value?.resultValue))
+const mortalityChainStatusText = computed(() => {
+  if (!mortalityChain.value) return '使用演示链路'
+  const batchStatus = mortalityChain.value.indicatorResult?.batchStatus || mortalityChain.value.calcBatch?.batchStatus || '-'
+  const qualityStatus = mortalityChain.value.indicatorResult?.qualityStatus || mortalityChain.value.calcBatch?.qualityStatus || '-'
+  return `${batchStatus} / ${qualityStatus}`
+})
+const mortalityChainNodes = computed(() => {
+  const chain = mortalityChain.value
+  const config = chain?.config || {}
+  return [
+    {
+      label: '死亡数据域',
+      value: config.deathDomainCode || 'INPATIENT_DEATH_RECORD',
+      meta: config.deathSourceTable || 'vmq_deathpatientdetail'
+    },
+    {
+      label: '出院数据域',
+      value: config.dischargeDomainCode || 'INPATIENT_DISCHARGE_RECORD',
+      meta: config.dischargeSourceTable || 'vmq_basicinformationba'
+    },
+    {
+      label: '分子因子',
+      value: chainDeathValue.value,
+      meta: `版本 ${config.deathFactorVersionId || '-'}`
+    },
+    {
+      label: '分母因子',
+      value: chainDischargeValue.value,
+      meta: `版本 ${config.dischargeFactorVersionId || '-'}`
+    },
+    {
+      label: '公式结果',
+      value: chainDisplayValue.value,
+      meta: `原始值 ${chainRawValue.value}`
+    },
+    {
+      label: '异步任务',
+      value: chain?.asyncTask?.status || '-',
+      meta: `任务 ${config.indicatorBatchId || '-'}`
+    },
+    {
+      label: '计算批次',
+      value: chain?.calcBatch?.batchStatus || chain?.indicatorResult?.batchStatus || '-',
+      meta: chain?.calcBatch?.qualityStatus || chain?.indicatorResult?.qualityStatus || '-'
+    },
+    {
+      label: '编译产物',
+      value: buildArtifactStatus(chain),
+      meta: '死亡因子 / 出院因子 / 指标公式'
+    }
+  ]
+})
 
 const rankStatusClass = (status) => {
   if (status === '超标') return 'is-danger'
@@ -307,11 +435,151 @@ const showSceneValue = (scene) => {
 const showTableAction = (message) => {
   ElMessage.success(`${message}操作已触发`)
 }
+
+function formatCount(value) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number.toLocaleString('zh-CN') : '-'
+}
+
+function formatDecimal(value) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number.toFixed(8) : '-'
+}
+
+function buildArtifactStatus(chain) {
+  return [
+    chain?.deathFactorArtifact?.status,
+    chain?.dischargeFactorArtifact?.status,
+    chain?.indicatorFormulaArtifact?.status
+  ].filter(Boolean).join(' / ') || '-'
+}
+
+function switchIndicatorAnalysis() {
+  if (!selectedIndicatorCode.value) return
+  if (selectedIndicatorCode.value === indicatorCode.value) {
+    ElMessage.info('当前已是所选指标分析页')
+    return
+  }
+  router.push({
+    path: '/analysis',
+    query: { indicator: selectedIndicatorCode.value }
+  })
+}
+
+async function loadBackendAnalysisIndicators() {
+  indicatorOptionsLoading.value = true
+  try {
+    const rows = await fetchIndicators()
+    backendIndicators.value = Array.isArray(rows) ? rows : []
+  } catch {
+    backendIndicators.value = []
+    ElMessage.warning('后端指标列表暂不可用，已使用本地分析配置')
+  } finally {
+    indicatorOptionsLoading.value = false
+  }
+}
+
+function createBackendAnalysisOptions(indicators, profileOptions) {
+  const fallbackOptions = profileOptions.map((item) => ({ ...item, source: '本地配置' }))
+  const mappedOptions = indicators.map((item) => {
+    const profile = matchAnalysisProfile(item, profileOptions)
+    return {
+      optionKey: `${item.id || item.indicatorId || item.code || item.name}`,
+      code: profile?.code || `UNSUPPORTED:${item.code || item.id || item.name}`,
+      name: item.name || profile?.name || item.code || '未命名指标',
+      backendCode: item.code,
+      source: '后端指标',
+      disabled: !profile
+    }
+  })
+  const enabledCodes = new Set(mappedOptions.filter((item) => !item.disabled).map((item) => item.code))
+  const missingLocalOptions = fallbackOptions
+    .filter((item) => !enabledCodes.has(item.code))
+    .map((item) => ({ ...item, source: '本地配置' }))
+  return [...mappedOptions, ...missingLocalOptions]
+}
+
+function matchAnalysisProfile(indicator, profileOptions) {
+  const code = String(indicator?.code || '')
+  const name = String(indicator?.name || '')
+  const exact = profileOptions.find((item) => item.code === code)
+  if (exact) return exact
+  if (/MORTALITY|DEATH/i.test(code) || normalizeText(name).includes('住院死亡')) {
+    return profileOptions.find((item) => item.code === 'MORTALITY_INPATIENT')
+  }
+  return profileOptions.find((item) => {
+    const profileName = normalizeText(item.name)
+    const indicatorName = normalizeText(name)
+    return indicatorName && (profileName.includes(indicatorName) || indicatorName.includes(profileName))
+  })
+}
+
+function normalizeText(value) {
+  return String(value || '').replace(/\s/g, '').replace(/[（）()]/g, '')
+}
+
+async function refreshMortalityAnalysis() {
+  if (indicatorCode.value !== 'MORTALITY_INPATIENT') return
+  mortalityChainLoading.value = true
+  try {
+    const chain = await fetchMortalityReadonlyChain()
+    mortalityChain.value = chain
+    updateMortalityProfileFromChain(chain)
+    profileRefreshVersion.value += 1
+    mortalityChainLoading.value = false
+  } catch {
+    mortalityChain.value = null
+    mortalityChainLoading.value = false
+    ElMessage.warning('住院死亡率后端结果暂不可用，已使用演示数据')
+  }
+}
+
+onMounted(() => {
+  loadBackendAnalysisIndicators()
+  refreshMortalityAnalysis()
+})
+
+watch(indicatorCode, () => {
+  selectedIndicatorCode.value = indicatorCode.value
+  refreshMortalityAnalysis()
+})
 </script>
 
 <style scoped lang="scss">
 .indicator-analysis {
   min-width: 0;
+}
+
+.page-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.header-indicator-select {
+  width: 300px;
+}
+
+.indicator-option {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  small {
+    flex: 0 0 auto;
+    color: #8c8c8c;
+    font-size: 12px;
+  }
 }
 
 .summary-grid {
@@ -358,6 +626,16 @@ const showTableAction = (message) => {
 
   strong {
     color: #f5222d;
+  }
+}
+
+.summary-card--success {
+  &::before {
+    background: #95de64;
+  }
+
+  strong {
+    color: #389e0d;
   }
 }
 
@@ -445,6 +723,123 @@ const showTableAction = (message) => {
     color: #8c8c8c;
     font-size: 12px;
     font-style: normal;
+    white-space: nowrap;
+  }
+}
+
+.chain-panel {
+  min-width: 0;
+  margin-bottom: 16px;
+  padding: 16px 18px;
+}
+
+.chain-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 12px;
+
+  h2 {
+    margin: 0 0 4px;
+    color: #262626;
+    font-size: 15px;
+    line-height: 22px;
+  }
+
+  p {
+    margin: 0;
+    color: #8c8c8c;
+    font-size: 12px;
+    line-height: 18px;
+  }
+}
+
+.chain-status {
+  flex: 0 0 auto;
+  padding: 4px 9px;
+  border: 1px solid #b7eb8f;
+  border-radius: 4px;
+  background: #f6ffed;
+  color: #389e0d;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+
+  &.is-loading {
+    border-color: #91d5ff;
+    background: #e6f7ff;
+    color: #1890ff;
+  }
+}
+
+.chain-equation {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  padding: 10px 12px;
+  border: 1px solid #e6f4ff;
+  border-radius: 6px;
+  background: #f7fbff;
+
+  span,
+  em {
+    color: #8c8c8c;
+    font-size: 12px;
+    font-style: normal;
+    line-height: 20px;
+  }
+
+  strong {
+    color: #1890ff;
+    font-size: 18px;
+    font-weight: 650;
+    line-height: 24px;
+  }
+}
+
+.chain-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.chain-node {
+  display: flex;
+  min-width: 0;
+  min-height: 82px;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 11px 12px;
+  border: 1px solid #e5e8ef;
+  border-radius: 6px;
+  background: #fff;
+
+  span {
+    color: #8c8c8c;
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  strong {
+    overflow: hidden;
+    color: #262626;
+    font-size: 16px;
+    font-weight: 650;
+    line-height: 22px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  small {
+    overflow: hidden;
+    color: #a0a3a8;
+    font-size: 12px;
+    line-height: 18px;
+    text-overflow: ellipsis;
     white-space: nowrap;
   }
 }
@@ -578,6 +973,10 @@ const showTableAction = (message) => {
 }
 
 @media (max-width: 1450px) {
+  .header-indicator-select {
+    width: 260px;
+  }
+
   .summary-grid {
     gap: 10px;
   }
