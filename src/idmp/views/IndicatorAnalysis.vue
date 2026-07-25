@@ -1,6 +1,18 @@
 <template>
   <div class="idmp-page indicator-analysis">
-    <PageHeader :title="`指标分析 / ${currentProfile.name}`">
+    <PageHeader
+      :title="`指标分析 / ${currentProfile.name}`"
+      eyebrow="总览与分析"
+      :description="analysisHeaderDescription"
+      :status-label="analysisSourceLabel"
+      status-tone="info"
+    >
+      <template #meta>
+        <span>指标版本 <strong class="mono-data">{{ analysisMetadata.version }}</strong></span>
+        <span>结果批次 <strong class="mono-data">{{ analysisMetadata.batch }}</strong></span>
+        <span>数据水位 <strong>{{ analysisMetadata.watermark }}</strong></span>
+        <span>更新时间 <strong class="mono-data">{{ analysisUpdatedAt }}</strong></span>
+      </template>
       <template #actions>
         <div class="page-toolbar">
           <el-select
@@ -8,6 +20,7 @@
             filterable
             class="header-indicator-select"
             placeholder="请选择指标"
+            aria-label="选择要查看的分析指标"
             :loading="indicatorOptionsLoading"
           >
             <el-option
@@ -24,25 +37,39 @@
             </el-option>
           </el-select>
           <el-button type="primary" @click="switchIndicatorAnalysis">查看分析</el-button>
-          <el-button :icon="Connection" @click="showSceneCompare">场景对比</el-button>
-          <el-button :icon="Download" @click="showUnavailable">导出PDF</el-button>
+          <el-button :icon="Connection" @click="scrollToSceneComparison">场景对比</el-button>
+          <el-button :icon="Download" @click="showUnavailable('PDF 导出')">导出PDF</el-button>
         </div>
       </template>
     </PageHeader>
 
-    <section class="summary-grid" aria-label="指标核心数据">
+    <section class="metric-overview" aria-label="指标核心数据">
+      <article class="surface-card primary-metric">
+        <div>
+          <span>当前指标值</span>
+          <StatusBadge status="ACTIVE" label="当前展示结果" />
+        </div>
+        <strong>{{ primaryMetric.value }}</strong>
+        <p>{{ currentProfile.targetLabel }} · {{ analysisSourceLabel }}</p>
+      </article>
       <article
-        v-for="item in currentProfile.summary"
+        v-for="item in factorMetrics"
         :key="item.label"
-        class="surface-card summary-card"
-        :class="{ 'summary-card--danger': item.tone === 'danger', 'summary-card--success': item.tone === 'success' }"
+        class="surface-card factor-metric"
       >
         <span>{{ item.label }}</span>
         <strong>{{ item.value }}</strong>
+        <small>{{ item.label === '分子' ? '计入事件数' : '统计对象总量' }}</small>
       </article>
+      <div class="surface-card supporting-metrics">
+        <article v-for="item in secondaryMetrics" :key="item.label">
+          <span>{{ item.label }}</span>
+          <strong :class="metricToneClass(item.tone)">{{ item.value }}</strong>
+        </article>
+      </div>
     </section>
 
-    <section class="surface-card scene-comparison" aria-label="不同场景计算值对比">
+    <section ref="sceneComparisonRef" class="surface-card scene-comparison" aria-label="不同场景计算值对比">
       <div class="scene-comparison__label">
         <span>不同场景对比</span>
         <small>同一指标在不同场景下的计算口径可能存在差异</small>
@@ -54,6 +81,7 @@
           type="button"
           class="scene-tag"
           :class="{ 'is-current': scene.current }"
+          :aria-pressed="scene.current ? 'true' : 'false'"
           @click="showSceneValue(scene)"
         >
           <span>{{ scene.name }}</span>
@@ -69,9 +97,10 @@
           <h2>住院死亡率计算链路</h2>
           <p>展示第16章后端链路中的数据域、因子试算、公式结果、异步任务与编译状态</p>
         </div>
-        <span class="chain-status" :class="{ 'is-loading': mortalityChainLoading }">
-          {{ mortalityChainLoading ? '同步中' : mortalityChainStatusText }}
-        </span>
+        <StatusBadge
+          :status="mortalityChainLoading ? 'RUNNING' : mortalityChainBatchStatus"
+          :label="mortalityChainLoading ? '同步中' : mortalityChainStatusText"
+        />
       </div>
 
       <div class="chain-equation">
@@ -115,16 +144,43 @@
               </el-radio-group>
             </div>
           </div>
-          <IdmpChart :option="trendOption" height="338px" />
+          <IdmpChart
+            :option="trendOption"
+            height="338px"
+            :updated-at="analysisUpdatedAt"
+            :aria-label="`${currentProfile.name}趋势图；本院实际值与同级医院均值对比`"
+            table-label="查看趋势数据表"
+          >
+            <template #table>
+              <div class="chart-table-scroll">
+                <table class="chart-data-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">周期</th>
+                      <th scope="col">本院实际值</th>
+                      <th scope="col">同级医院均值</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in trendTableRows" :key="row.label">
+                      <th scope="row">{{ row.label }}</th>
+                      <td>{{ row.actual }}{{ currentProfile.unit }}</td>
+                      <td>{{ row.peer }}{{ currentProfile.unit }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+          </IdmpChart>
         </el-tab-pane>
 
         <el-tab-pane label="科室排名" name="rank">
           <div class="table-heading">
             <div>
               <h2>科室指标排名</h2>
-              <p>按 {{ currentProfile.name }} 由高到低排序</p>
+              <p>本地 profile 演示排名，按 {{ currentProfile.name }} 由高到低排列；尚未接入服务端分页。</p>
             </div>
-            <span>统计周期：2024 年度</span>
+            <StatusBadge status="DRAFT" label="演示数据 · 2024 年度" tone="neutral" />
           </div>
           <div class="table-scroll">
             <el-table
@@ -156,9 +212,7 @@
               </el-table-column>
               <el-table-column label="达标状态" width="120">
                 <template #default="{ row }">
-                  <span class="status-pill" :class="rankStatusClass(row.status)">
-                    {{ row.status }}
-                  </span>
+                  <StatusBadge :label="row.status" :tone="rankStatusTone(row.status)" />
                 </template>
               </el-table-column>
               <el-table-column label="操作" width="112" fixed="right">
@@ -166,7 +220,7 @@
                   <button
                     type="button"
                     class="action-link"
-                    @click="showTableAction(`查看${row.department}明细`)"
+                    @click="openDepartmentDrill(row)"
                   >
                     查看明细
                   </button>
@@ -180,45 +234,15 @@
           <div class="table-heading">
             <div>
               <h2>{{ currentProfile.name }}下钻明细</h2>
-              <p>明细记录已按演示数据脱敏处理，后续可切换为接口返回结果</p>
+              <p>当前 profile 内含脱敏演示样例，但患者级权限、数据范围、访问目的、审计和服务端分页均未接入。</p>
             </div>
-            <span>共 {{ currentProfile.drillRows.length }} 条演示记录</span>
+            <StatusBadge status="DISABLED" label="患者级访问未授权" tone="neutral" />
           </div>
-          <div class="table-scroll">
-            <el-table
-              :data="currentProfile.drillRows"
-              table-layout="fixed"
-              class="analysis-table drill-table"
-            >
-              <el-table-column prop="subjectId" label="对象标识" width="130" />
-              <el-table-column prop="recordNo" label="记录号" width="140" />
-              <el-table-column prop="startDate" label="开始日期" width="130" />
-              <el-table-column prop="eventDate" label="事件日期" width="130" />
-              <el-table-column label="记录级别" width="110">
-                <template #default="{ row }">
-                  <span class="status-pill is-info">{{ row.level }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column
-                prop="event"
-                label="事件类型"
-                min-width="180"
-                show-overflow-tooltip
-              />
-              <el-table-column prop="occurredAt" label="发生日期" width="130" />
-              <el-table-column label="操作" width="108" fixed="right">
-                <template #default="{ row }">
-                  <button
-                    type="button"
-                    class="action-link"
-                    @click="showTableAction(`查看记录 ${row.recordNo}`)"
-                  >
-                    查看
-                  </button>
-                </template>
-              </el-table-column>
-            </el-table>
-          </div>
+          <StatePanel
+            type="permission"
+            title="患者级下钻尚未开放"
+            :description="drillPermissionDescription"
+          />
         </el-tab-pane>
       </el-tabs>
     </section>
@@ -232,6 +256,9 @@ import { ElMessage } from 'element-plus'
 import { Connection, Download } from '@element-plus/icons-vue'
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
+import StatePanel from '@/idmp/components/StatePanel.vue'
+import StatusBadge from '@/idmp/components/StatusBadge.vue'
+import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
 import { fetchIndicators } from '@/idmp/api/modules/indicators'
 import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
 import {
@@ -252,6 +279,8 @@ const mortalityChainLoading = ref(false)
 const selectedIndicatorCode = ref(String(route.query.indicator || DEFAULT_ANALYSIS_INDICATOR))
 const backendIndicators = ref([])
 const indicatorOptionsLoading = ref(false)
+const sceneComparisonRef = ref()
+const selectedDrillDepartment = ref('')
 
 const indicatorCode = computed(() => String(route.query.indicator || DEFAULT_ANALYSIS_INDICATOR))
 const localAnalysisOptions = computed(() => getAnalysisProfileOptions())
@@ -265,12 +294,64 @@ const currentProfile = computed(() => {
   return getAnalysisProfile(indicatorCode.value)
 })
 const currentTrend = computed(() => currentProfile.value.trends[period.value] || currentProfile.value.trends.月度)
+const primaryMetric = computed(() => currentProfile.value.summary?.[0] || { label: '当前值', value: '-' })
+const factorMetrics = computed(() => currentProfile.value.summary?.slice(4, 6) || [])
+const secondaryMetrics = computed(() => currentProfile.value.summary?.slice(1, 4) || [])
+const trendTableRows = computed(() =>
+  currentTrend.value.labels.map((label, index) => ({
+    label,
+    actual: currentTrend.value.actual[index] ?? '-',
+    peer: currentTrend.value.peer[index] ?? '-'
+  }))
+)
 
 const showMortalityChainPanel = computed(() => indicatorCode.value === 'MORTALITY_INPATIENT')
+const hasBackendMortalityData = computed(() => Boolean(
+  mortalityChain.value?.indicatorResult ||
+  mortalityChain.value?.deathFactor ||
+  mortalityChain.value?.dischargeFactor ||
+  mortalityChain.value?.calcBatch
+))
+const analysisSourceLabel = computed(() =>
+  hasBackendMortalityData.value ? '只读接口摘要 + 演示趋势' : '本地演示数据'
+)
+const analysisHeaderDescription = computed(() =>
+  hasBackendMortalityData.value
+    ? '住院死亡率摘要包含现有只读链路结果；趋势、场景、科室排名仍来自本地 profile 演示数据。'
+    : '摘要、趋势、场景和科室排名均来自本地 profile 演示数据；患者级下钻未接入权限、审计与分页。'
+)
+const analysisMetadata = computed(() => {
+  const chain = mortalityChain.value
+  const config = chain?.config || {}
+  return {
+    version: hasBackendMortalityData.value ? String(config.indicatorVersionId || '后端未返回') : '演示配置（无版本 ID）',
+    batch: hasBackendMortalityData.value ? String(config.indicatorBatchId || '后端未返回') : '未接入',
+    watermark: resolveChainWatermark(chain),
+  }
+})
+const analysisUpdatedAt = computed(() => {
+  const chain = mortalityChain.value
+  return firstPresent(
+    chain?.indicatorResult?.updatedAt,
+    chain?.indicatorResult?.finishedAt,
+    chain?.calcBatch?.finishedAt,
+    chain?.asyncTask?.finishedAt,
+    hasBackendMortalityData.value ? '后端未返回更新时间' : '2024-12-31（演示快照）'
+  )
+})
+const mortalityChainBatchStatus = computed(() =>
+  mortalityChain.value?.indicatorResult?.batchStatus ||
+  mortalityChain.value?.calcBatch?.batchStatus ||
+  (hasBackendMortalityData.value ? 'READY' : 'DRAFT')
+)
+const drillPermissionDescription = computed(() => {
+  const scope = selectedDrillDepartment.value ? `已选择“${selectedDrillDepartment.value}”，但` : ''
+  return `${scope}后端尚未完成患者级权限、数据范围、访问目的、脱敏审计与服务端分页契约；因此不展示本地样例为真实明细。`
+})
 
 const trendOption = computed(() => ({
   animationDuration: 450,
-  color: ['#1890ff', '#91d5ff'],
+  color: [IDMP_CHART_COLORS[0], IDMP_CHART_COLORS[4]],
   tooltip: {
     trigger: 'axis',
     valueFormatter: (value) => `${value}${currentProfile.value.unit || ''}`
@@ -280,7 +361,7 @@ const trendOption = computed(() => ({
     right: 8,
     itemWidth: 18,
     itemHeight: 8,
-    textStyle: { color: '#595959', fontSize: 12 },
+    textStyle: { fontSize: 12 },
     data: ['本院实际值', '同级医院均值']
   },
   grid: { top: 44, left: 50, right: 26, bottom: 40 },
@@ -288,18 +369,17 @@ const trendOption = computed(() => ({
     type: 'category',
     boundaryGap: false,
     data: currentTrend.value.labels,
-    axisLine: { lineStyle: { color: '#d9d9d9' } },
     axisTick: { show: false },
-    axisLabel: { color: '#8c8c8c', margin: 12 }
+    axisLabel: { margin: 12 }
   },
   yAxis: {
     type: 'value',
     min: 0,
     max: currentProfile.value.yAxisMax,
     name: currentProfile.value.unit ? `单位：${currentProfile.value.unit}` : '指标值',
-    nameTextStyle: { color: '#8c8c8c', padding: [0, 0, 4, 0] },
-    axisLabel: { color: '#8c8c8c', formatter: `{value}${currentProfile.value.unit || ''}` },
-    splitLine: { lineStyle: { color: '#eef0f3', type: 'dashed' } }
+    nameTextStyle: { padding: [0, 0, 4, 0] },
+    axisLabel: { formatter: `{value}${currentProfile.value.unit || ''}` },
+    splitLine: { lineStyle: { type: 'dashed' } }
   },
   series: [
     {
@@ -309,30 +389,17 @@ const trendOption = computed(() => ({
       symbol: 'circle',
       symbolSize: 7,
       lineStyle: { width: 3 },
-      itemStyle: { borderColor: '#fff', borderWidth: 2 },
-      areaStyle: {
-        color: {
-          type: 'linear',
-          x: 0,
-          y: 0,
-          x2: 0,
-          y2: 1,
-          colorStops: [
-            { offset: 0, color: 'rgba(24, 144, 255, 0.22)' },
-            { offset: 1, color: 'rgba(24, 144, 255, 0.02)' }
-          ]
-        }
-      },
+      itemStyle: { borderWidth: 2 },
       data: currentTrend.value.actual,
       markLine: {
         silent: true,
         symbol: 'none',
         label: {
           formatter: currentProfile.value.targetLabel,
-          color: '#f5222d',
+          color: '#b4232c',
           position: 'insideEndTop'
         },
-        lineStyle: { color: '#ff7875', type: 'dashed', width: 1 },
+        lineStyle: { color: '#b4232c', type: 'dashed', width: 1 },
         data: [{ yAxis: currentProfile.value.markLineValue }]
       }
     },
@@ -356,7 +423,7 @@ const chainDischargeValue = computed(() => formatCount(mortalityDischargeRecord.
 const chainDisplayValue = computed(() => mortalityIndicatorRecord.value?.displayValue || currentProfile.value.summary?.[0]?.value || '-')
 const chainRawValue = computed(() => formatDecimal(mortalityIndicatorRecord.value?.resultValue))
 const mortalityChainStatusText = computed(() => {
-  if (!mortalityChain.value) return '使用演示链路'
+  if (!hasBackendMortalityData.value) return '接口无可用结果 / 演示摘要'
   const batchStatus = mortalityChain.value.indicatorResult?.batchStatus || mortalityChain.value.calcBatch?.batchStatus || '-'
   const qualityStatus = mortalityChain.value.indicatorResult?.qualityStatus || mortalityChain.value.calcBatch?.qualityStatus || '-'
   return `${batchStatus} / ${qualityStatus}`
@@ -408,10 +475,10 @@ const mortalityChainNodes = computed(() => {
   ]
 })
 
-const rankStatusClass = (status) => {
-  if (status === '超标') return 'is-danger'
-  if (status === '预警') return 'is-warning'
-  return ''
+const rankStatusTone = (status) => {
+  if (status === '超标') return 'danger'
+  if (status === '预警') return 'warning'
+  return 'success'
 }
 
 const changeClass = (change) => {
@@ -420,20 +487,31 @@ const changeClass = (change) => {
   return 'text-muted'
 }
 
-const showUnavailable = () => {
-  ElMessage.info('演示版暂不可用')
+const metricToneClass = (tone) => {
+  if (tone === 'danger') return 'text-danger'
+  if (tone === 'success') return 'text-success'
+  return ''
 }
 
-const showSceneCompare = () => {
-  ElMessage.info('已展示当前指标的场景差异对比')
+const showUnavailable = (capability) => {
+  ElMessage.info(`${capability}尚未接入真实接口。`)
+}
+
+const scrollToSceneComparison = () => {
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  sceneComparisonRef.value?.scrollIntoView({
+    behavior: reducedMotion ? 'auto' : 'smooth',
+    block: 'center'
+  })
 }
 
 const showSceneValue = (scene) => {
-  ElMessage.info(`${scene.name}场景计算值为 ${scene.value}`)
+  ElMessage.info(`${scene.name}为本地演示场景值：${scene.value}，尚未接入场景结果接口。`)
 }
 
-const showTableAction = (message) => {
-  ElMessage.success(`${message}操作已触发`)
+const openDepartmentDrill = (row) => {
+  selectedDrillDepartment.value = row.department
+  activeTab.value = 'drill'
 }
 
 function formatCount(value) {
@@ -452,6 +530,21 @@ function buildArtifactStatus(chain) {
     chain?.dischargeFactorArtifact?.status,
     chain?.indicatorFormulaArtifact?.status
   ].filter(Boolean).join(' / ') || '-'
+}
+
+function firstPresent(...values) {
+  return values.find((value) => value !== undefined && value !== null && value !== '') || '-'
+}
+
+function resolveChainWatermark(chain) {
+  if (!hasBackendMortalityData.value) return '2024-12-31（演示快照）'
+  return firstPresent(
+    chain?.indicatorResult?.dataWatermark,
+    chain?.indicatorResult?.watermark,
+    chain?.calcBatch?.dataWatermark,
+    chain?.calcBatch?.watermark,
+    '后端未返回数据水位'
+  )
 }
 
 function switchIndicatorAnalysis() {
@@ -577,65 +670,108 @@ watch(indicatorCode, () => {
 
   small {
     flex: 0 0 auto;
-    color: #8c8c8c;
+    color: var(--idmp-text-helper);
     font-size: 12px;
   }
 }
 
-.summary-grid {
+.metric-overview {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 16px;
+  grid-template-columns: minmax(280px, 1.7fr) repeat(2, minmax(180px, 1fr));
+  gap: var(--idmp-space-3);
+  margin-bottom: var(--idmp-space-4);
 }
 
-.summary-card {
-  position: relative;
-  min-height: 92px;
-  overflow: hidden;
-  padding: 17px 18px 15px;
+.primary-metric {
+  grid-row: span 2;
+  min-height: 190px;
+  padding: var(--idmp-space-5);
+  border-left: 4px solid var(--idmp-interactive);
 
-  &::before {
-    position: absolute;
-    inset: 0 auto 0 0;
-    width: 3px;
-    background: #e6f7ff;
-    content: "";
+  > div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--idmp-space-3);
   }
 
   span {
+    color: var(--idmp-text-secondary);
+    font-size: 14px;
+    line-height: 18px;
+  }
+
+  > strong {
     display: block;
-    margin-bottom: 8px;
-    color: #8c8c8c;
-    font-size: 13px;
+    margin: var(--idmp-space-5) 0 var(--idmp-space-2);
+    color: var(--idmp-text-primary);
+    font-size: 42px;
+    font-weight: 650;
+    line-height: 48px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  p {
+    margin: 0;
+    color: var(--idmp-text-helper);
+    font-size: 12px;
+    line-height: 18px;
+  }
+}
+
+.factor-metric {
+  min-height: 112px;
+  padding: var(--idmp-space-4);
+
+  span,
+  small {
+    display: block;
+    color: var(--idmp-text-helper);
+    font-size: 12px;
     line-height: 18px;
   }
 
   strong {
-    color: #1f2329;
-    font-size: 25px;
+    display: block;
+    margin: var(--idmp-space-2) 0 var(--idmp-space-1);
+    color: var(--idmp-text-primary);
+    font-size: 22px;
     font-weight: 650;
-    line-height: 31px;
+    line-height: 28px;
+    font-variant-numeric: tabular-nums;
   }
 }
 
-.summary-card--danger {
-  &::before {
-    background: #ff7875;
+.supporting-metrics {
+  display: grid;
+  grid-column: 2 / 4;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-height: 66px;
+  padding: 0;
+
+  article {
+    min-width: 0;
+    padding: var(--idmp-space-3) var(--idmp-space-4);
+
+    & + article {
+      border-left: 1px solid var(--idmp-border-subtle);
+    }
+  }
+
+  span {
+    display: block;
+    color: var(--idmp-text-helper);
+    font-size: 12px;
+    line-height: 18px;
   }
 
   strong {
-    color: #f5222d;
-  }
-}
-
-.summary-card--success {
-  &::before {
-    background: #95de64;
-  }
-
-  strong {
-    color: #389e0d;
+    display: block;
+    margin-top: var(--idmp-space-1);
+    color: var(--idmp-text-primary);
+    font-size: 16px;
+    line-height: 22px;
+    font-variant-numeric: tabular-nums;
   }
 }
 
@@ -655,13 +791,13 @@ watch(indicatorCode, () => {
   gap: 3px;
 
   span {
-    color: #262626;
+    color: var(--idmp-text-primary);
     font-weight: 600;
     line-height: 22px;
   }
 
   small {
-    color: #a0a3a8;
+    color: var(--idmp-text-disabled);
     font-size: 12px;
     line-height: 18px;
   }
@@ -683,10 +819,10 @@ watch(indicatorCode, () => {
   align-items: center;
   min-height: 52px;
   padding: 8px 12px;
-  border: 1px solid #e5e8ef;
-  border-radius: 6px;
-  background: #fafafa;
-  color: #595959;
+  border: 1px solid var(--idmp-border-subtle);
+  border-radius: var(--idmp-radius-md);
+  background: var(--idmp-layer-02);
+  color: var(--idmp-text-secondary);
   cursor: pointer;
   text-align: left;
   transition:
@@ -694,18 +830,18 @@ watch(indicatorCode, () => {
     background 0.18s ease;
 
   &:hover {
-    border-color: #91d5ff;
-    background: #f7fbff;
+    border-color: var(--idmp-interactive);
+    background: var(--idmp-layer-hover);
   }
 
   &.is-current {
-    border-color: #91d5ff;
-    background: #e6f7ff;
+    border-color: var(--idmp-interactive);
+    background: var(--idmp-interactive-subtle);
   }
 
   span {
     overflow: hidden;
-    color: #3f4146;
+    color: var(--idmp-text-secondary);
     line-height: 20px;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -713,14 +849,14 @@ watch(indicatorCode, () => {
 
   strong {
     margin-left: 10px;
-    color: #1890ff;
+    color: var(--idmp-interactive);
     font-size: 18px;
     line-height: 24px;
   }
 
   em {
     margin-left: 10px;
-    color: #8c8c8c;
+    color: var(--idmp-text-helper);
     font-size: 12px;
     font-style: normal;
     white-space: nowrap;
@@ -742,34 +878,16 @@ watch(indicatorCode, () => {
 
   h2 {
     margin: 0 0 4px;
-    color: #262626;
+    color: var(--idmp-text-primary);
     font-size: 15px;
     line-height: 22px;
   }
 
   p {
     margin: 0;
-    color: #8c8c8c;
+    color: var(--idmp-text-helper);
     font-size: 12px;
     line-height: 18px;
-  }
-}
-
-.chain-status {
-  flex: 0 0 auto;
-  padding: 4px 9px;
-  border: 1px solid #b7eb8f;
-  border-radius: 4px;
-  background: #f6ffed;
-  color: #389e0d;
-  font-size: 12px;
-  line-height: 18px;
-  white-space: nowrap;
-
-  &.is-loading {
-    border-color: #91d5ff;
-    background: #e6f7ff;
-    color: #1890ff;
   }
 }
 
@@ -780,20 +898,20 @@ watch(indicatorCode, () => {
   flex-wrap: wrap;
   gap: 9px;
   padding: 10px 12px;
-  border: 1px solid #e6f4ff;
-  border-radius: 6px;
-  background: #f7fbff;
+  border: 1px solid var(--idmp-border-subtle);
+  border-radius: var(--idmp-radius-md);
+  background: var(--idmp-interactive-subtle);
 
   span,
   em {
-    color: #8c8c8c;
+    color: var(--idmp-text-helper);
     font-size: 12px;
     font-style: normal;
     line-height: 20px;
   }
 
   strong {
-    color: #1890ff;
+    color: var(--idmp-interactive);
     font-size: 18px;
     font-weight: 650;
     line-height: 24px;
@@ -814,19 +932,19 @@ watch(indicatorCode, () => {
   flex-direction: column;
   justify-content: space-between;
   padding: 11px 12px;
-  border: 1px solid #e5e8ef;
-  border-radius: 6px;
-  background: #fff;
+  border: 1px solid var(--idmp-border-subtle);
+  border-radius: var(--idmp-radius-md);
+  background: var(--idmp-layer-01);
 
   span {
-    color: #8c8c8c;
+    color: var(--idmp-text-helper);
     font-size: 12px;
     line-height: 18px;
   }
 
   strong {
     overflow: hidden;
-    color: #262626;
+    color: var(--idmp-text-primary);
     font-size: 16px;
     font-weight: 650;
     line-height: 22px;
@@ -836,7 +954,7 @@ watch(indicatorCode, () => {
 
   small {
     overflow: hidden;
-    color: #a0a3a8;
+    color: var(--idmp-text-disabled);
     font-size: 12px;
     line-height: 18px;
     text-overflow: ellipsis;
@@ -857,17 +975,17 @@ watch(indicatorCode, () => {
 
   :deep(.el-tabs__nav-wrap::after) {
     height: 1px;
-    background: #e5e8ef;
+    background: var(--idmp-border-subtle);
   }
 
   :deep(.el-tabs__item) {
     height: 47px;
     padding: 0 22px;
-    color: #595959;
+    color: var(--idmp-text-secondary);
   }
 
   :deep(.el-tabs__item.is-active) {
-    color: #1890ff;
+    color: var(--idmp-interactive);
     font-weight: 600;
   }
 
@@ -886,14 +1004,14 @@ watch(indicatorCode, () => {
 
   h2 {
     margin: 0 0 3px;
-    color: #262626;
+    color: var(--idmp-text-primary);
     font-size: 15px;
     line-height: 22px;
   }
 
   p {
     margin: 0;
-    color: #8c8c8c;
+    color: var(--idmp-text-helper);
     font-size: 12px;
     line-height: 18px;
   }
@@ -907,9 +1025,46 @@ watch(indicatorCode, () => {
 
 .period-range,
 .table-heading > span {
-  color: #8c8c8c;
+  color: var(--idmp-text-helper);
   font-size: 12px;
   white-space: nowrap;
+}
+
+.chart-table-scroll {
+  max-width: min(720px, 70vw);
+  max-height: 280px;
+  overflow: auto;
+}
+
+.chart-data-table {
+  width: 100%;
+  min-width: 480px;
+  border-collapse: collapse;
+  color: var(--idmp-text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+
+  th,
+  td {
+    padding: var(--idmp-space-2) var(--idmp-space-3);
+    border-bottom: 1px solid var(--idmp-border-subtle);
+    text-align: right;
+  }
+
+  th:first-child {
+    text-align: left;
+  }
+
+  thead th {
+    background: var(--idmp-layer-02);
+    color: var(--idmp-text-primary);
+    font-weight: 600;
+  }
+
+  tbody th {
+    color: var(--idmp-text-secondary);
+    font-weight: 500;
+  }
 }
 
 .table-scroll {
@@ -923,15 +1078,15 @@ watch(indicatorCode, () => {
   :deep(th.el-table__cell) {
     height: 44px;
     padding: 0;
-    color: #262626;
+    color: var(--idmp-text-primary);
     font-weight: 600;
-    background: #fafafa;
+    background: var(--idmp-layer-02);
   }
 
   :deep(td.el-table__cell) {
     height: 48px;
     padding: 0;
-    color: #3f4146;
+    color: var(--idmp-text-secondary);
   }
 }
 
@@ -939,37 +1094,33 @@ watch(indicatorCode, () => {
   min-width: 1060px;
 }
 
-.drill-table {
-  min-width: 1080px;
-}
-
 .rank-number {
   display: inline-grid;
   width: 25px;
   height: 25px;
   place-items: center;
-  border-radius: 4px;
-  background: #f0f2f5;
-  color: #8c8c8c;
+  border-radius: var(--idmp-radius-sm);
+  background: var(--idmp-layer-02);
+  color: var(--idmp-text-helper);
   font-size: 12px;
 
   &.is-top {
-    background: #e6f7ff;
-    color: #1890ff;
+    background: var(--idmp-interactive-subtle);
+    color: var(--idmp-interactive);
     font-weight: 600;
   }
 }
 
 .text-danger {
-  color: #f5222d;
+  color: var(--idmp-support-danger);
 }
 
 .text-success {
-  color: #52c41a;
+  color: var(--idmp-support-success);
 }
 
 .text-muted {
-  color: #8c8c8c;
+  color: var(--idmp-text-helper);
 }
 
 @media (max-width: 1450px) {
@@ -977,13 +1128,9 @@ watch(indicatorCode, () => {
     width: 260px;
   }
 
-  .summary-grid {
-    gap: 10px;
-  }
-
-  .summary-card {
-    padding-right: 14px;
-    padding-left: 14px;
+  .metric-overview {
+    grid-template-columns: minmax(250px, 1.45fr) repeat(2, minmax(150px, 1fr));
+    gap: var(--idmp-space-2);
   }
 
   .scene-comparison {
@@ -1000,6 +1147,22 @@ watch(indicatorCode, () => {
     em {
       display: none;
     }
+  }
+}
+
+@media (max-width: 1180px) {
+  .metric-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .primary-metric {
+    grid-column: 1 / 3;
+    grid-row: auto;
+    min-height: 150px;
+  }
+
+  .supporting-metrics {
+    grid-column: 1 / 3;
   }
 }
 </style>

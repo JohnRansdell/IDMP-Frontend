@@ -25,7 +25,7 @@ const routes = [
         component: () => import('@/idmp/views/IndicatorEditor.vue'),
         meta: {
           title: '指标编辑',
-          activeMenu: '/indicator/edit',
+          activeMenu: '/indicator',
           breadcrumb: ['首页', '指标管理', '编辑指标']
         }
       },

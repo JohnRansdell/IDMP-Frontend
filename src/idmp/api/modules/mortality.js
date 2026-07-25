@@ -145,12 +145,12 @@ export function createMortalityFormulaPayload({
         left: {
           nodeId: 'death_factor',
           nodeType: 'FACTOR_REF',
-          factorVersionId: Number(deathFactorVersionId)
+          factorVersionId: String(deathFactorVersionId)
         },
         right: {
           nodeId: 'discharge_factor',
           nodeType: 'FACTOR_REF',
-          factorVersionId: Number(dischargeFactorVersionId)
+          factorVersionId: String(dischargeFactorVersionId)
         },
         zeroDenominatorPolicy: 'RETURN_NULL'
       },

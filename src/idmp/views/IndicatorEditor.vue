@@ -1,14 +1,46 @@
 <template>
   <div class="idmp-page editor-page">
-    <PageHeader eyebrow="指标管理 / 新建指标" title="编辑指标">
+    <PageHeader
+      eyebrow="指标配置 / 指标目录"
+      :title="isNew ? '新建指标' : '编辑指标'"
+      description="按稳定指标、草稿版本、Formula AST、试算与发布门禁逐步配置。已发布版本的口径变更必须创建新版本。"
+      status="DRAFT"
+    >
+      <template #meta>
+        <span class="mono-data">指标 ID：{{ indicatorWorkflow.indicatorId || '尚未创建' }}</span>
+        <span class="mono-data">版本 ID：{{ indicatorWorkflow.versionId || '尚未创建' }}</span>
+        <span>当前路由标识：{{ route.params.id || '未提供' }}</span>
+      </template>
       <template #actions>
-        <el-button @click="validateAndConfirm('保存草稿')">保存草稿</el-button>
-        <el-button type="primary" @click="validateAndConfirm('提交审核')">提交审核</el-button>
+        <el-button @click="router.push('/indicator')">返回指标目录</el-button>
       </template>
     </PageHeader>
 
+    <section class="surface-card workflow-overview" aria-label="指标配置生命周期">
+      <div
+        v-for="(step, index) in workflowSteps"
+        :key="step.key"
+        class="workflow-step"
+        :class="`is-${step.state}`"
+      >
+        <span class="workflow-step__index">{{ index + 1 }}</span>
+        <span class="workflow-step__copy">
+          <strong>{{ step.label }}</strong>
+          <small>{{ step.description }}</small>
+        </span>
+      </div>
+    </section>
+
+    <div class="notice-strip is-warning editor-contract-note">
+      <el-icon><InfoFilled /></el-icon>
+      <span>
+        当前后端只覆盖创建指标/版本、保存固定因子 AST、编译与试算链路；详情读取、规则/场景持久化和发布接口尚未完整接入。
+        下方未接入能力会明确标注，不会显示假成功。
+      </span>
+    </div>
+
     <el-tabs v-model="activeTab" class="idmp-tabs editor-tabs">
-      <el-tab-pane label="基本信息" name="basic">
+      <el-tab-pane label="1 基础与版本" name="basic">
         <section class="surface-card form-card">
           <el-form ref="formRef" :model="form" :rules="rules" label-width="108px" status-icon>
             <div class="form-grid">
@@ -23,12 +55,12 @@
               </el-form-item>
               <el-form-item label="指标分类" prop="categoryMain">
                 <div class="category-row">
-                  <el-select v-model="form.categoryMain">
+                  <el-select v-model="form.categoryMain" aria-label="指标一级分类">
                     <el-option label="医疗质量" value="医疗质量" />
                     <el-option label="运营效率" value="运营效率" />
                   </el-select>
                   <el-icon><Right /></el-icon>
-                  <el-select v-model="form.categorySub">
+                  <el-select v-model="form.categorySub" aria-label="指标二级分类">
                     <el-option label="质量安全" value="质量安全" />
                     <el-option label="功能定位" value="功能定位" />
                     <el-option label="合理用药" value="合理用药" />
@@ -107,14 +139,22 @@
         </section>
       </el-tab-pane>
 
-      <el-tab-pane label="计算公式" name="formula">
+      <el-tab-pane label="2 公式与试算" name="formula">
         <section class="surface-card formula-card">
+          <div class="notice-strip is-warning formula-contract-note">
+            <el-icon><InfoFilled /></el-icon>
+            <span>
+              可视分子/分母目前仍是演示编辑器；当前真实保存请求只写入固定死亡率因子版本引用。
+              页面预览不等于已保存 Formula AST，不能作为发布依据。
+            </span>
+          </div>
           <h2>计算模式</h2>
           <div class="formula-modes">
             <el-button
               v-for="mode in formulaModes"
               :key="mode.name"
               :type="formulaMode === mode.name ? 'primary' : 'default'"
+              :aria-pressed="formulaMode === mode.name ? 'true' : 'false'"
               @click="formulaMode = mode.name"
             >
               {{ mode.name }}
@@ -145,7 +185,7 @@
                     text
                     circle
                     :icon="Close"
-                    aria-label="移除分子因子"
+                    :aria-label="`移除分子因子 ${factor.name}（${factor.code}）`"
                     @click="removeFactor('numerator', factor.code)"
                   />
                 </div>
@@ -173,7 +213,7 @@
                     text
                     circle
                     :icon="Close"
-                    aria-label="移除分母因子"
+                    :aria-label="`移除分母因子 ${factor.name}（${factor.code}）`"
                     @click="removeFactor('denominator', factor.code)"
                   />
                 </div>
@@ -188,8 +228,14 @@
             <div class="factor-library__head">
               <h3><el-icon><Box /></el-icon>可用因子（拖拽到上方编辑器槽位）</h3>
               <div class="factor-tools">
-                <el-input v-model="factorSearch" :prefix-icon="Search" placeholder="搜索因子..." clearable />
-                <el-select v-model="factorCategory">
+                <el-input
+                  v-model="factorSearch"
+                  :prefix-icon="Search"
+                  placeholder="搜索因子..."
+                  clearable
+                  aria-label="搜索可用因子"
+                />
+                <el-select v-model="factorCategory" aria-label="筛选因子分类">
                   <el-option label="全部分类" value="" />
                   <el-option v-for="item in factorCategories" :key="item" :label="item" :value="item" />
                 </el-select>
@@ -212,8 +258,16 @@
               </article>
             </div>
             <div class="factor-library__footer">
-              <el-button :icon="Plus" @click="demoResult('新建因子')">新建因子</el-button>
-              <el-button :icon="Upload" @click="unavailable">导入因子</el-button>
+              <el-button :icon="Plus" @click="router.push('/factor')">前往因子管理</el-button>
+              <el-tooltip content="当前后端尚未提供因子导入接口">
+                <span
+                  class="disabled-tooltip-trigger"
+                  tabindex="0"
+                  aria-label="导入因子不可用：当前后端尚未提供因子导入接口"
+                >
+                  <el-button :icon="Upload" disabled>导入因子</el-button>
+                </span>
+              </el-tooltip>
             </div>
             <div class="business-action-bar formula-actions">
               <div>
@@ -247,11 +301,11 @@
             </div>
             <div class="validation-state" :class="{ 'is-invalid': !formulaValid }">
               <el-icon><CircleCheckFilled v-if="formulaValid" /><CircleCloseFilled v-else /></el-icon>
-              <span>{{ formulaValid ? '校验通过：所有因子已注册，数据类型匹配，量纲一致' : '校验未通过：请补充分子和分母因子' }}</span>
+              <span>{{ formulaValid ? '本地结构检查通过：分子和分母均非空；类型、单位和依赖仍须服务端校验' : '本地结构检查未通过：请补充分子和分母因子' }}</span>
             </div>
             <div class="formula-settings">
               <label>分母为零策略</label>
-              <el-select v-model="zeroStrategy">
+              <el-select v-model="zeroStrategy" aria-label="分母为零策略">
                 <el-option label="返回 NULL" value="返回 NULL" />
                 <el-option label="返回 0" value="返回 0" />
                 <el-option label="标记异常" value="标记异常" />
@@ -263,14 +317,14 @@
         </section>
       </el-tab-pane>
 
-      <el-tab-pane label="排除条件" name="exclusion">
+      <el-tab-pane label="3 规则与排除" name="exclusion">
         <section class="surface-card exclusion-card">
           <div class="section-title">
             <h2>默认排除条件（全局生效，可被场景级配置覆盖）</h2>
           </div>
           <div class="logic-row">
             <span>排除满足以下</span>
-            <el-select v-model="exclusionLogic">
+            <el-select v-model="exclusionLogic" aria-label="默认排除条件逻辑">
               <el-option label="任意" value="任意" />
               <el-option label="全部" value="全部" />
             </el-select>
@@ -279,27 +333,48 @@
           <div class="condition-list">
             <div v-for="(condition, index) in conditions" :key="condition.id" class="condition-row">
               <span class="condition-index">条件{{ index + 1 }}</span>
-              <el-select v-model="condition.field" @change="resetCondition(condition)">
+              <el-select
+                v-model="condition.field"
+                :aria-label="`条件 ${index + 1} 字段`"
+                @change="resetCondition(condition)"
+              >
                 <el-option label="出院方式" value="出院方式" />
                 <el-option label="住院天数" value="住院天数" />
                 <el-option label="手术级别" value="手术级别" />
                 <el-option label="年龄" value="年龄" />
               </el-select>
-              <el-select v-model="condition.operator">
+              <el-select v-model="condition.operator" :aria-label="`条件 ${index + 1} 运算符`">
                 <el-option v-for="item in operatorOptions(condition.field)" :key="item" :label="item" :value="item" />
               </el-select>
-              <el-select v-if="condition.field === '出院方式'" v-model="condition.value" class="condition-value">
+              <el-select
+                v-if="condition.field === '出院方式'"
+                v-model="condition.value"
+                class="condition-value"
+                :aria-label="`条件 ${index + 1} 值`"
+              >
                 <el-option label="放弃治疗自动出院" value="放弃治疗自动出院" />
                 <el-option label="死亡" value="死亡" />
                 <el-option label="转院" value="转院" />
               </el-select>
-              <el-select v-else-if="condition.field === '手术级别'" v-model="condition.value" class="condition-value">
+              <el-select
+                v-else-if="condition.field === '手术级别'"
+                v-model="condition.value"
+                class="condition-value"
+                :aria-label="`条件 ${index + 1} 值`"
+              >
                 <el-option label="一级" value="一级" />
                 <el-option label="二级" value="二级" />
                 <el-option label="三级" value="三级" />
                 <el-option label="四级" value="四级" />
               </el-select>
-              <el-input-number v-else v-model="condition.value" :min="0" :controls="false" class="condition-value" />
+              <el-input-number
+                v-else
+                v-model="condition.value"
+                :min="0"
+                :controls="false"
+                class="condition-value"
+                :aria-label="`条件 ${index + 1} 数值`"
+              />
               <span class="condition-unit">{{ conditionUnit(condition.field) }}</span>
               <el-button
                 type="danger"
@@ -324,11 +399,19 @@
         </section>
       </el-tab-pane>
 
-      <el-tab-pane label="场景关联" name="scene">
+      <el-tab-pane label="4 场景关联" name="scene">
         <section class="surface-card table-card">
           <div class="section-title">
             <h2>关联应用场景</h2>
-            <el-button type="primary" :icon="Plus" @click="demoResult('添加场景')">添加场景</el-button>
+            <el-tooltip content="当前后端尚未提供场景关联写入接口">
+              <span
+                class="disabled-tooltip-trigger"
+                tabindex="0"
+                aria-label="添加场景不可用：当前后端尚未提供场景关联写入接口"
+              >
+                <el-button type="primary" :icon="Plus" disabled>添加场景</el-button>
+              </span>
+            </el-tooltip>
           </div>
           <div class="table-scroll">
             <el-table :data="editorSceneRows">
@@ -343,7 +426,15 @@
               <el-table-column prop="report" label="上报要求" min-width="180" />
               <el-table-column label="操作" width="120">
                 <template #default="{ row }">
-                  <button type="button" class="action-link" @click="confirmAction(`配置“${row.name}”覆盖`)">配置覆盖</button>
+                  <el-tooltip content="场景覆盖写入接口尚未接入">
+                    <span
+                      class="disabled-tooltip-trigger"
+                      tabindex="0"
+                      :aria-label="`配置 ${row.name} 场景覆盖不可用：场景覆盖写入接口尚未接入`"
+                    >
+                      <button type="button" class="action-link" disabled>配置覆盖</button>
+                    </span>
+                  </el-tooltip>
                 </template>
               </el-table-column>
             </el-table>
@@ -351,7 +442,7 @@
         </section>
       </el-tab-pane>
 
-      <el-tab-pane label="政策依据" name="policy">
+      <el-tab-pane label="5 政策依据" name="policy">
         <section class="surface-card table-card">
           <div class="section-title"><h2>政策依据</h2></div>
           <div class="table-scroll">
@@ -370,14 +461,42 @@
           </div>
         </section>
       </el-tab-pane>
+
+      <el-tab-pane label="6 发布检查" name="publish">
+        <section class="publish-layout">
+          <article class="surface-card publish-gates">
+            <div class="section-title">
+              <div>
+                <h2>发布门禁</h2>
+                <p class="section-title__description">仅展示当前前端能够判断的状态，不替代后端最终校验</p>
+              </div>
+            </div>
+            <ul>
+              <li v-for="gate in publishGates" :key="gate.label" :class="`is-${gate.state}`">
+                <span class="publish-gate__mark" aria-hidden="true" />
+                <div>
+                  <strong>{{ gate.label }}</strong>
+                  <p>{{ gate.description }}</p>
+                </div>
+                <span>{{ gate.stateLabel }}</span>
+              </li>
+            </ul>
+          </article>
+          <StatePanel
+            type="unavailable"
+            title="发布能力尚未接入"
+            description="当前实现没有可确认的指标发布接口。请先完成接口契约、乐观锁、试算 Hash 与质量门禁后再启用发布操作。"
+          />
+        </section>
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import {
   Box,
   CircleCheckFilled,
@@ -392,6 +511,7 @@ import {
   Upload
 } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
+import StatePanel from '@/idmp/components/StatePanel.vue'
 import {
   compileIndicatorFormula,
   createIndicator,
@@ -409,7 +529,8 @@ import {
 } from '@/idmp/data/demo'
 
 const route = useRoute()
-const isNew = computed(() => route.params.id === 'new')
+const router = useRouter()
+const isNew = computed(() => !route.params.id || route.params.id === 'new')
 const activeTab = ref('basic')
 const formRef = ref()
 const formulaFactorVersionId = ref(mortalityChainConfig.deathFactorVersionId)
@@ -432,6 +553,72 @@ const workflowLoading = reactive({
   trial: false,
   result: false
 })
+
+const workflowSteps = computed(() => [
+  {
+    key: 'identity',
+    label: '基础与版本',
+    description: indicatorWorkflow.versionId ? '稳定指标与草稿版本已创建' : '先创建稳定指标与首个草稿版本',
+    state: indicatorWorkflow.versionId ? 'complete' : indicatorWorkflow.indicatorId ? 'current' : 'pending'
+  },
+  {
+    key: 'formula',
+    label: '公式编译',
+    description: indicatorWorkflow.compiled ? '服务端编译状态为 VALID' : '保存 Formula AST 后执行服务端编译',
+    state: indicatorWorkflow.compiled ? 'complete' : indicatorWorkflow.versionId ? 'current' : 'pending'
+  },
+  {
+    key: 'rules',
+    label: '规则与场景',
+    description: '当前仅提供界面演示，写入接口未接入',
+    state: 'blocked'
+  },
+  {
+    key: 'trial',
+    label: '试算与质量',
+    description: indicatorWorkflow.displayValue
+      ? `已读取批次 ${indicatorWorkflow.batchId} 的结果`
+      : indicatorWorkflow.batchId
+        ? `试算批次 ${indicatorWorkflow.batchId} 已提交`
+        : '编译通过后发起异步试算',
+    state: indicatorWorkflow.displayValue ? 'complete' : indicatorWorkflow.batchId ? 'current' : 'pending'
+  },
+  {
+    key: 'publish',
+    label: '发布门禁',
+    description: '发布接口与完整门禁尚未接入',
+    state: 'blocked'
+  }
+])
+
+const publishGates = computed(() => [
+  {
+    label: '稳定指标与草稿版本',
+    description: indicatorWorkflow.versionId ? `版本 ${indicatorWorkflow.versionId}` : '尚未创建可发布的草稿版本',
+    state: indicatorWorkflow.versionId ? 'pass' : 'pending',
+    stateLabel: indicatorWorkflow.versionId ? '已具备' : '待完成'
+  },
+  {
+    label: 'Formula AST 服务端编译',
+    description: indicatorWorkflow.compiled ? '服务端返回 VALID' : '尚未取得有效编译产物',
+    state: indicatorWorkflow.compiled ? 'pass' : 'pending',
+    stateLabel: indicatorWorkflow.compiled ? '已通过' : '待完成'
+  },
+  {
+    label: '试算结果与配置一致性',
+    description: indicatorWorkflow.displayValue
+      ? '已读取试算结果，但当前接口未返回配置 Hash'
+      : '尚未取得可核验的试算结果',
+    state: indicatorWorkflow.displayValue ? 'warning' : 'pending',
+    stateLabel: indicatorWorkflow.displayValue ? '需核验 Hash' : '待完成'
+  },
+  {
+    label: '质量、政策、下钻与隐私',
+    description: '当前后端尚未返回完整门禁结果',
+    state: 'blocked',
+    stateLabel: '接口缺失'
+  }
+])
 const sourceOptions = ['HIS', '手术麻醉', 'EMR', 'LIS', 'PACS', '病案', '药事', '财务']
 const policyOptions = ['绩效考核2024版', '2011年版指标', '医院评审2025版', 'NCIS 8.0']
 
@@ -737,7 +924,7 @@ function createSingleFactorFormulaPayload(resourceVersion) {
       root: {
         nodeId: 'factor_ref',
         nodeType: 'FACTOR_REF',
-        factorVersionId: Number(formulaFactorVersionId.value)
+        factorVersionId: String(formulaFactorVersionId.value)
       },
       display: {
         format: 'NUMBER',
@@ -751,8 +938,10 @@ function createSingleFactorFormulaPayload(resourceVersion) {
 
 async function pollBackendTask(taskId) {
   let task = await fetchAsyncTask(taskId)
-  for (let index = 0; index < 10 && !['SUCCEEDED', 'FAILED', 'CANCELED'].includes(task.status); index += 1) {
-    await delay(1000)
+  const intervals = [1000, 2000, 3000, 5000, 10000]
+  const terminalStatuses = ['SUCCEEDED', 'PARTIAL_SUCCEEDED', 'FAILED', 'CANCELED', 'CANCELLED']
+  for (let index = 0; index < intervals.length && !terminalStatuses.includes(task.status); index += 1) {
+    await delay(intervals[index])
     task = await fetchAsyncTask(taskId)
   }
   return task
@@ -770,37 +959,6 @@ function createBackendCodeSuffix() {
   return new Date().toISOString().replace(/\D/g, '').slice(0, 14)
 }
 
-const validateAndConfirm = async action => {
-  try {
-    await formRef.value?.validate()
-    if (!formulaValid.value) {
-      activeTab.value = 'formula'
-      ElMessage.warning('请先完成计算公式配置')
-      return
-    }
-    await ElMessageBox.confirm(`确认${action}当前指标？`, action, {
-      confirmButtonText: '确认',
-      cancelButtonText: '取消',
-      type: action === '提交审核' ? 'warning' : 'info'
-    })
-    ElMessage.success(`${action}成功（演示）`)
-  } catch (error) {
-    if (error !== 'cancel' && error !== 'close') {
-      activeTab.value = 'basic'
-      ElMessage.warning('请完善必填信息后再操作')
-    }
-  }
-}
-
-const unavailable = () => ElMessage.info('演示版暂不可用')
-const demoResult = action => ElMessage.success(`${action}为演示操作`)
-const confirmAction = text => {
-  ElMessageBox.confirm(`${text}？`, '操作确认', {
-    confirmButtonText: '确认',
-    cancelButtonText: '取消',
-    type: 'info'
-  }).then(() => ElMessage.success('配置已确认（演示）')).catch(() => {})
-}
 </script>
 
 <style scoped lang="scss">
@@ -810,6 +968,171 @@ const confirmAction = text => {
   }
 }
 
+.disabled-tooltip-trigger {
+  display: inline-flex;
+}
+
+.workflow-overview {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  gap: 0;
+}
+
+.workflow-step {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  padding-right: 16px;
+  gap: 9px;
+
+  &::after {
+    position: absolute;
+    top: 11px;
+    right: 6px;
+    left: 30px;
+    z-index: 0;
+    height: 1px;
+    background: var(--idmp-border-strong);
+    content: "";
+  }
+
+  &:last-child::after {
+    display: none;
+  }
+}
+
+.workflow-step__index {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  border: 1px solid var(--idmp-border-strong);
+  border-radius: var(--idmp-radius-sm);
+  background: var(--idmp-layer-01);
+  color: var(--idmp-text-helper);
+  place-items: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.workflow-step__copy {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  min-width: 0;
+  padding-right: 6px;
+  background: var(--idmp-layer-01);
+  gap: 2px;
+
+  strong {
+    color: var(--idmp-text-primary);
+    font-size: 12px;
+    line-height: 20px;
+  }
+
+  small {
+    color: var(--idmp-text-helper);
+    font-size: 11px;
+    line-height: 16px;
+  }
+}
+
+.workflow-step.is-current .workflow-step__index {
+  border-color: var(--idmp-interactive);
+  background: var(--idmp-interactive-subtle);
+  color: var(--idmp-interactive);
+  font-weight: 650;
+}
+
+.workflow-step.is-complete .workflow-step__index {
+  border-color: var(--idmp-support-success);
+  background: var(--idmp-support-success-bg);
+  color: var(--idmp-support-success);
+}
+
+.workflow-step.is-blocked .workflow-step__index {
+  border-color: var(--idmp-support-warning);
+  background: var(--idmp-support-warning-bg);
+  color: var(--idmp-support-warning);
+}
+
+.editor-contract-note {
+  margin-bottom: 16px;
+}
+
+.formula-contract-note {
+  margin-bottom: 18px;
+}
+
+.publish-layout {
+  display: grid;
+  grid-template-columns: minmax(560px, 1.35fr) minmax(320px, 0.65fr);
+  gap: 16px;
+}
+
+.publish-gates {
+  padding: 18px;
+}
+
+.publish-gates ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.publish-gates li {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 60px;
+  padding: 8px 4px;
+  gap: 12px;
+  border-top: 1px solid var(--idmp-border-soft);
+
+  strong {
+    color: var(--idmp-text-primary);
+    font-size: 13px;
+  }
+
+  p {
+    margin: 2px 0 0;
+    color: var(--idmp-text-helper);
+    font-size: 11px;
+  }
+
+  > span:last-child {
+    color: var(--idmp-text-secondary);
+    font-size: 12px;
+  }
+}
+
+.publish-gate__mark {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--idmp-border-strong);
+}
+
+.publish-gates li.is-pass .publish-gate__mark {
+  background: var(--idmp-support-success);
+}
+
+.publish-gates li.is-warning .publish-gate__mark,
+.publish-gates li.is-blocked .publish-gate__mark {
+  background: var(--idmp-support-warning);
+}
+
+.action-link:disabled {
+  color: var(--idmp-text-disabled);
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
 .business-action-bar {
   display: flex;
   align-items: center;
@@ -817,7 +1140,7 @@ const confirmAction = text => {
   gap: 10px;
   margin-top: 16px;
   padding-top: 14px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--idmp-border-soft);
 
   > div {
     display: flex;
@@ -828,16 +1151,27 @@ const confirmAction = text => {
   }
 
   span {
-    color: #262626;
+    color: var(--idmp-text-primary);
     font-size: 14px;
     font-weight: 600;
     line-height: 20px;
   }
 
   small {
-    color: #8c8c8c;
+    color: var(--idmp-text-helper);
     font-size: 12px;
     line-height: 18px;
+  }
+}
+
+@media (max-width: 1280px) {
+  .workflow-overview {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px 0;
+  }
+
+  .publish-layout {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -853,18 +1187,18 @@ const confirmAction = text => {
   gap: 8px 10px;
   margin: 0 16px 16px;
   padding: 10px 12px;
-  border: 1px solid #e6f4ff;
+  border: 1px solid var(--idmp-border-subtle);
   border-radius: 6px;
-  background: #f7fbff;
+  background: var(--idmp-interactive-subtle);
 
   span,
   small {
-    color: #8c8c8c;
+    color: var(--idmp-text-helper);
     font-size: 12px;
   }
 
   strong {
-    color: #1890ff;
+    color: var(--idmp-interactive);
     font-size: 18px;
   }
 }
@@ -890,7 +1224,7 @@ const confirmAction = text => {
   gap: 6px;
 
   .el-icon {
-    color: #a8abb2;
+    color: var(--idmp-text-disabled);
   }
 }
 
@@ -907,7 +1241,7 @@ const confirmAction = text => {
 
   > h2 {
     margin: 0 0 14px;
-    color: #262626;
+    color: var(--idmp-text-primary);
     font-size: 16px;
   }
 }
@@ -928,10 +1262,10 @@ const confirmAction = text => {
   min-height: 42px;
   margin: 14px 0 18px;
   padding: 9px 14px;
-  border: 1px solid #bae7ff;
+  border: 1px solid var(--idmp-support-info);
   border-radius: 6px;
-  background: #e6f7ff;
-  color: #1677b8;
+  background: var(--idmp-support-info-bg);
+  color: var(--idmp-support-info);
   gap: 8px;
 }
 
@@ -941,34 +1275,34 @@ const confirmAction = text => {
 
 .formula-builder {
   padding: 20px;
-  border: 1px solid #e8ebf0;
+  border: 1px solid var(--idmp-border-soft);
   border-radius: 8px;
-  background: #fafbfc;
+  background: var(--idmp-field);
 }
 
 .factor-slot {
   min-height: 92px;
   padding: 14px 16px;
-  border: 2px solid #b7eb8f;
+  border: 2px solid var(--idmp-support-success);
   border-radius: 8px;
-  background: #f6ffed;
+  background: var(--idmp-support-success-bg);
   transition: border-color 0.18s ease;
 
   &.is-empty {
     border-style: dashed;
-    border-color: #91d5ff;
-    background: #f7fcff;
+    border-color: var(--idmp-interactive);
+    background: var(--idmp-interactive-subtle);
   }
 }
 
 .slot-label {
   margin-bottom: 8px;
-  color: #8c8c8c;
+  color: var(--idmp-text-helper);
   font-size: 12px;
 
   span {
     margin-left: 12px;
-    color: #bfbfbf;
+    color: var(--idmp-text-disabled);
   }
 }
 
@@ -984,36 +1318,36 @@ const confirmAction = text => {
   align-items: center;
   min-height: 34px;
   padding: 0 4px 0 12px;
-  border: 1px solid #91d5ff;
+  border: 1px solid var(--idmp-support-info);
   border-radius: 4px;
-  background: #e6f7ff;
+  background: var(--idmp-support-info-bg);
   gap: 8px;
 
   span {
-    color: #1677b8;
+    color: var(--idmp-support-info);
   }
 
   small {
-    color: #8c8c8c;
+    color: var(--idmp-text-helper);
   }
 
   button {
     padding: 0;
     border: 0;
     background: transparent;
-    color: #fa8c16;
+    color: var(--idmp-support-warning);
     cursor: pointer;
     font-size: 12px;
   }
 }
 
 .slot-placeholder {
-  color: #bfbfbf;
+  color: var(--idmp-text-disabled);
 }
 
 .formula-operator {
   padding: 8px 0;
-  color: #8c8c8c;
+  color: var(--idmp-text-helper);
   text-align: center;
   font-size: 20px;
 
@@ -1023,16 +1357,16 @@ const confirmAction = text => {
   }
 
   strong {
-    color: #262626;
+    color: var(--idmp-text-primary);
     font-size: 16px;
   }
 }
 
 .factor-library {
   margin-top: 16px;
-  border: 1px solid #e8ebf0;
+  border: 1px solid var(--idmp-border-soft);
   border-radius: 8px;
-  background: #fff;
+  background: var(--idmp-layer-01);
 }
 
 .factor-library__head {
@@ -1040,7 +1374,7 @@ const confirmAction = text => {
   align-items: center;
   justify-content: space-between;
   padding: 14px 16px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--idmp-border-soft);
   gap: 16px;
 
   h3 {
@@ -1080,21 +1414,21 @@ const confirmAction = text => {
   align-items: center;
   min-height: 62px;
   padding: 10px 12px;
-  border: 1px solid #e8ebf0;
+  border: 1px solid var(--idmp-border-soft);
   border-radius: 6px;
-  background: #fafbfc;
+  background: var(--idmp-field);
   cursor: grab;
   gap: 10px;
 
   &:active { cursor: grabbing; }
-  &:hover { border-color: #91d5ff; }
+  &:hover { border-color: var(--idmp-interactive); }
   &.is-dragging {
-    border-color: #1890ff;
-    background: #e6f7ff;
+    border-color: var(--idmp-interactive);
+    background: var(--idmp-interactive-subtle);
   }
 
   > .el-icon {
-    color: #1890ff;
+    color: var(--idmp-interactive);
     font-size: 19px;
   }
 
@@ -1105,35 +1439,35 @@ const confirmAction = text => {
 
   strong {
     margin-bottom: 4px;
-    color: #434343;
+    color: var(--idmp-text-secondary);
     font-size: 13px;
   }
 
   small {
-    color: #9a9ca0;
+    color: var(--idmp-text-disabled);
     font-size: 11px;
   }
 }
 
 .factor-library__footer {
   padding: 12px 16px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--idmp-border-soft);
 }
 
 .formula-preview {
   margin-top: 16px;
   padding: 16px;
-  border: 1px solid #d9f7be;
+  border: 1px solid var(--idmp-support-success);
   border-radius: 8px;
-  background: #fcfff8;
+  background: var(--idmp-support-success-bg);
 
   > div:first-child {
     display: flex;
     align-items: baseline;
     gap: 14px;
 
-    span { color: #8c8c8c; }
-    strong { color: #262626; }
+    span { color: var(--idmp-text-helper); }
+    strong { color: var(--idmp-text-primary); }
   }
 }
 
@@ -1141,10 +1475,10 @@ const confirmAction = text => {
   display: flex;
   align-items: center;
   margin: 12px 0;
-  color: #52c41a;
+  color: var(--idmp-support-success);
   gap: 7px;
 
-  &.is-invalid { color: #f5222d; }
+  &.is-invalid { color: var(--idmp-support-danger); }
 }
 
 .formula-settings {
@@ -1152,12 +1486,12 @@ const confirmAction = text => {
   align-items: center;
   flex-wrap: wrap;
   padding-top: 12px;
-  border-top: 1px solid #edf1e8;
-  color: #595959;
+  border-top: 1px solid var(--idmp-border-soft);
+  color: var(--idmp-text-secondary);
   gap: 10px;
 
   label {
-    color: #8c8c8c;
+    color: var(--idmp-text-helper);
   }
 
   .el-select {
@@ -1168,7 +1502,7 @@ const confirmAction = text => {
   i {
     width: 1px;
     height: 14px;
-    background: #d9d9d9;
+    background: var(--idmp-border-strong);
   }
 }
 
@@ -1180,7 +1514,7 @@ const confirmAction = text => {
   display: flex;
   align-items: center;
   margin-bottom: 16px;
-  color: #595959;
+  color: var(--idmp-text-secondary);
   gap: 10px;
 
   .el-select {
@@ -1199,14 +1533,14 @@ const confirmAction = text => {
   grid-template-columns: 70px 180px 140px minmax(200px, 1fr) 36px 96px;
   align-items: center;
   padding: 12px;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--idmp-border-soft);
   border-radius: 6px;
-  background: #fafafa;
+  background: var(--idmp-field);
   gap: 10px;
 }
 
 .condition-index {
-  color: #595959;
+  color: var(--idmp-text-secondary);
   font-weight: 600;
 }
 
@@ -1215,24 +1549,24 @@ const confirmAction = text => {
 }
 
 .condition-unit {
-  color: #8c8c8c;
+  color: var(--idmp-text-helper);
 }
 
 .readable-rule {
   margin-top: 18px;
   padding: 14px 16px;
-  border-left: 3px solid #1890ff;
+  border-left: 3px solid var(--idmp-interactive);
   border-radius: 3px;
-  background: #f7fbff;
+  background: var(--idmp-interactive-subtle);
 
   span {
     display: block;
     margin-bottom: 7px;
-    color: #8c8c8c;
+    color: var(--idmp-text-helper);
   }
 
   strong {
-    color: #434343;
+    color: var(--idmp-text-secondary);
     font-weight: 500;
   }
 }
@@ -1241,16 +1575,16 @@ const confirmAction = text => {
   display: flex;
   align-items: center;
   margin-top: 14px;
-  color: #8c8c8c;
+  color: var(--idmp-text-helper);
   gap: 7px;
 
   .el-icon {
-    color: #1890ff;
+    color: var(--idmp-interactive);
   }
 }
 
 .highlight-warning {
-  color: #fa8c16;
+  color: var(--idmp-support-warning);
 }
 
 @media (max-width: 1400px) {

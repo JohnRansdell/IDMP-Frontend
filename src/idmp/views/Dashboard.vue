@@ -1,6 +1,17 @@
 <template>
   <div class="idmp-page dashboard-page">
-    <PageHeader title="指标看板">
+    <PageHeader
+      eyebrow="总览与分析"
+      title="医疗质量指标总览"
+      description="集中查看医院核心质量信号、趋势、预警与科室差异。点击指标可进入分析页继续下钻。"
+    >
+      <template #meta>
+        <span class="data-source-badge" :class="{ 'is-live': dashboardSourceMode === 'mixed' }">
+          {{ dashboardSourceLabel }}
+        </span>
+        <span>数据期间：{{ period }}</span>
+        <span>统计范围：{{ department }}</span>
+      </template>
       <template #actions>
         <el-select v-model="period" class="dashboard-filter" aria-label="年度">
           <el-option label="2024年度" value="2024年度" />
@@ -20,6 +31,11 @@
         <el-button v-else type="primary" :icon="Edit" @click="startDashboardEdit">编辑看板</el-button>
       </template>
     </PageHeader>
+
+    <div v-if="dashboardLoadMessage" class="notice-strip is-warning dashboard-notice">
+      <el-icon><InfoFilled /></el-icon>
+      <span>{{ dashboardLoadMessage }}</span>
+    </div>
 
     <section v-if="isEditing" class="surface-card dashboard-editor-panel">
       <div class="dashboard-editor-panel__left">
@@ -51,45 +67,133 @@
         <el-button :icon="Plus" :disabled="!selectedDataSource" @click="addDashboardWidget">添加组件</el-button>
       </div>
       <div class="dashboard-editor-panel__right">
-        <span class="dashboard-editor-panel__hint">{{ activeWidgetName }}</span>
+        <span class="dashboard-editor-panel__hint" role="status" aria-live="polite">
+          {{ activeWidgetName }}
+        </span>
         <el-button :icon="Delete" :disabled="!activeWidget" @click="deleteActiveWidget">删除选中</el-button>
       </div>
     </section>
 
     <template v-if="!hasCustomLayout && !isEditing">
-      <section class="kpi-grid" aria-label="核心指标">
+      <section class="clinical-summary-grid" aria-label="核心指标">
         <article
-          v-for="(item, index) in visibleKpis"
-          :key="item.title"
-          class="surface-card kpi-card is-clickable"
+          class="surface-card primary-metric is-clickable"
           role="button"
           tabindex="0"
-          @click="goIndicatorAnalysis(getKpiIndicatorCode(index, item))"
-          @keydown.enter.prevent="goIndicatorAnalysis(getKpiIndicatorCode(index, item))"
-          @keydown.space.prevent="goIndicatorAnalysis(getKpiIndicatorCode(index, item))"
+          @click="goIndicatorAnalysis(getKpiIndicatorCode(0, visibleKpis[0]))"
+          @keydown.enter.prevent="goIndicatorAnalysis(getKpiIndicatorCode(0, visibleKpis[0]))"
+          @keydown.space.prevent="goIndicatorAnalysis(getKpiIndicatorCode(0, visibleKpis[0]))"
         >
-          <div class="kpi-card__top">
-            <span>{{ item.title }}</span>
-            <span class="kpi-dot" :class="`is-${item.status}`" />
+          <div class="primary-metric__head">
+            <div>
+              <span class="primary-metric__eyebrow">重点关注</span>
+              <h2>{{ visibleKpis[0].title }}</h2>
+            </div>
+            <span class="status-pill" :class="`is-${visibleKpis[0].status}`">
+              {{ visibleKpis[0].status === 'danger' ? '超出目标' : '在目标内' }}
+            </span>
           </div>
-          <strong>{{ item.value }}</strong>
-          <div class="kpi-change" :class="`is-${item.status}`">{{ item.change }}</div>
-          <div class="kpi-target">{{ item.target }}</div>
+          <div class="primary-metric__value clinical-metric">{{ visibleKpis[0].value }}</div>
+          <div class="primary-metric__change" :class="`is-${visibleKpis[0].status}`">
+            较上期 {{ visibleKpis[0].change }}
+          </div>
+          <dl class="primary-metric__meta">
+            <div><dt>管理目标</dt><dd>{{ visibleKpis[0].target }}</dd></div>
+            <div><dt>当前范围</dt><dd>{{ department }}</dd></div>
+            <div><dt>结果口径</dt><dd>活动结果优先</dd></div>
+          </dl>
+        </article>
+
+        <article class="surface-card supporting-metrics">
+          <div class="section-title supporting-metrics__title">
+            <div>
+              <h2>其他核心指标</h2>
+              <p class="section-title__description">按当前场景和统计范围展示</p>
+            </div>
+          </div>
+          <button
+            v-for="(item, index) in visibleKpis.slice(1)"
+            :key="item.title"
+            type="button"
+            class="supporting-metric"
+            @click="goIndicatorAnalysis(getKpiIndicatorCode(index + 1, item))"
+          >
+            <span class="supporting-metric__name">{{ item.title }}</span>
+            <strong class="clinical-metric">{{ item.value }}</strong>
+            <span class="supporting-metric__change" :class="`is-${item.status}`">{{ item.change }}</span>
+            <span class="supporting-metric__target">{{ item.target }}</span>
+          </button>
         </article>
       </section>
 
       <section class="chart-grid">
         <article class="surface-card chart-card">
           <div class="section-title">
-            <h2><el-icon><TrendCharts /></el-icon>指标趋势（近12月）</h2>
+            <div>
+              <h2><el-icon><TrendCharts /></el-icon>近 12 月质量趋势</h2>
+              <p class="section-title__description">比较死亡率、手术并发症率与抗菌药物使用强度</p>
+            </div>
           </div>
-          <IdmpChart :option="trendOption" height="278px" />
+          <IdmpChart
+            :option="trendOption"
+            height="278px"
+            aria-label="近 12 月医疗质量指标趋势"
+            updated-at="演示周期：2024 年 12 月"
+          >
+            <template #table>
+              <div class="table-scroll">
+                <table class="dashboard-chart-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">月份</th>
+                      <th scope="col">住院死亡率</th>
+                      <th scope="col">手术并发症率</th>
+                      <th scope="col">抗菌药物使用强度</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in trendTableRows" :key="row.period">
+                      <th scope="row">{{ row.period }}</th>
+                      <td>{{ row.mortality }}</td>
+                      <td>{{ row.complication }}</td>
+                      <td>{{ row.antibiotic }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+          </IdmpChart>
         </article>
         <article class="surface-card chart-card">
           <div class="section-title">
-            <h2><el-icon><PieChart /></el-icon>分类达标率</h2>
+            <div>
+              <h2><el-icon><PieChart /></el-icon>指标目标分布</h2>
+              <p class="section-title__description">达标、接近阈值与超标指标占比</p>
+            </div>
           </div>
-          <IdmpChart :option="rateOption" height="278px" />
+          <IdmpChart
+            :option="rateOption"
+            height="278px"
+            aria-label="指标目标达成分布"
+            updated-at="演示周期：2024 年 12 月"
+          >
+            <template #table>
+              <table class="dashboard-chart-table">
+                <thead>
+                  <tr>
+                    <th scope="col">状态</th>
+                    <th scope="col">指标数</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in categoryRates" :key="row.name">
+                    <th scope="row">{{ row.name }}</th>
+                    <td>{{ row.value }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </template>
+          </IdmpChart>
         </article>
       </section>
 
@@ -143,14 +247,21 @@
         class="editable-dashboard__item"
         :class="{ 'is-active': isEditing && activeWidgetId === widget.id }"
         :style="widgetStyle(widget)"
+        :tabindex="isEditing ? 0 : -1"
+        :role="isEditing ? 'group' : undefined"
+        :aria-label="isEditing ? getWidgetEditLabel(widget) : undefined"
+        :aria-keyshortcuts="isEditing ? 'ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight Delete Escape' : undefined"
         @pointerdown.stop="onWidgetPointerDown($event, widget)"
+        @focus="isEditing && (activeWidgetId = widget.id)"
+        @keydown="onWidgetKeydown($event, widget)"
       >
         <article
           v-if="isKpiWidget(widget)"
           class="surface-card kpi-card"
           :class="{ 'is-clickable': !isEditing }"
-          role="button"
-          tabindex="0"
+          :role="isEditing ? undefined : 'button'"
+          :tabindex="isEditing ? -1 : 0"
+          :aria-disabled="isEditing || undefined"
           @click.stop="goWidgetAnalysis(widget)"
           @keydown.enter.prevent.stop="goWidgetAnalysis(widget)"
           @keydown.space.prevent.stop="goWidgetAnalysis(widget)"
@@ -171,7 +282,41 @@
               {{ getWidgetTitle(widget) }}
             </h2>
           </div>
-          <IdmpChart :option="getWidgetChartOption(widget)" height="calc(100% - 38px)" />
+          <IdmpChart
+            :option="getWidgetChartOption(widget)"
+            height="calc(100% - 38px)"
+            :aria-label="`${getWidgetTitle(widget)}图表`"
+            updated-at="演示周期：2024 年 12 月"
+          >
+            <template #table>
+              <div class="table-scroll">
+                <table class="dashboard-chart-table">
+                  <thead>
+                    <tr>
+                      <th
+                        v-for="column in getWidgetTableColumns(widget)"
+                        :key="column.key"
+                        scope="col"
+                      >
+                        {{ column.label }}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(row, rowIndex) in getWidgetTableRows(widget)" :key="`${widget.id}-${rowIndex}`">
+                      <template
+                        v-for="(column, columnIndex) in getWidgetTableColumns(widget)"
+                        :key="column.key"
+                      >
+                        <th v-if="columnIndex === 0" scope="row">{{ row[column.key] }}</th>
+                        <td v-else>{{ row[column.key] }}</td>
+                      </template>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+          </IdmpChart>
         </article>
 
         <article v-else-if="widget.type === 'warnings'" class="surface-card list-card">
@@ -212,6 +357,7 @@
             :key="handle"
             class="editable-dashboard__handle"
             :class="`editable-dashboard__handle--${handle}`"
+            aria-hidden="true"
             @pointerdown.stop.prevent="onResizePointerDown($event, widget, handle)"
           />
         </template>
@@ -240,6 +386,7 @@ import {
 } from '@element-plus/icons-vue'
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
+import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
 import { fetchDashboardBootstrap } from '@/idmp/api/modules/analysisDashboard'
 import { fetchIndicators } from '@/idmp/api/modules/indicators'
 import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
@@ -280,6 +427,8 @@ const selectedDataCode = ref(mockIndicatorDataSources[0].code)
 const addWidgetType = ref('kpi')
 const indicatorDataSources = ref(cloneIndicatorSources(mockIndicatorDataSources))
 const indicatorSourceLoading = ref(false)
+const dashboardSourceMode = ref('demo')
+const dashboardLoadMessage = ref('')
 const dashboardLayout = ref(createDefaultLayout())
 const editSnapshot = ref([])
 const backendDashboard = ref(null)
@@ -297,13 +446,18 @@ const selectedDataSource = computed(() =>
   indicatorDataSources.value.find((source) => source.code === selectedDataCode.value)
 )
 
+const dashboardSourceLabel = computed(() => (
+  dashboardSourceMode.value === 'mixed' ? '接口元数据 + 演示指标值' : '演示数据'
+))
+
 const activeWidget = computed(() =>
   dashboardLayout.value.find((widget) => widget.id === activeWidgetId.value)
 )
 
 const activeWidgetName = computed(() => {
   if (!activeWidget.value) return '未选中组件'
-  return `已选中：${getWidgetTitle(activeWidget.value)}`
+  const widget = activeWidget.value
+  return `已选中：${getWidgetTitle(widget)}。位置 ${widget.x}, ${widget.y}；尺寸 ${widget.w} × ${widget.h}。方向键移动，Shift 加方向键调整尺寸，Delete 删除。`
 })
 
 const departmentMultiplier = computed(() => {
@@ -326,42 +480,44 @@ const visibleKpis = computed(() => dashboardKpis.map((item, index) => {
   }
 }))
 
+const trendTableRows = computed(() =>
+  dashboardTrend.months.map((month, index) => ({
+    period: month,
+    mortality: (dashboardTrend.mortality[index] * departmentMultiplier.value).toFixed(2),
+    complication: (dashboardTrend.complication[index] * departmentMultiplier.value).toFixed(2),
+    antibiotic: dashboardTrend.antibiotic[index]
+  }))
+)
+
 const boardHeight = computed(() => {
   const maxBottom = dashboardLayout.value.reduce((max, widget) => Math.max(max, widget.y + widget.h), 0)
   return Math.max(DEFAULT_DASHBOARD_HEIGHT, maxBottom)
 })
 
 const trendOption = computed(() => ({
-  animationDuration: 500,
-  color: ['#f5222d', '#faad14', '#1890ff'],
+  color: ['#b4232c', '#b75d00', IDMP_CHART_COLORS[0]],
   tooltip: { trigger: 'axis' },
   legend: {
     bottom: 0,
     itemWidth: 14,
-    itemHeight: 8,
-    textStyle: { color: '#595959', fontSize: 12 }
+    itemHeight: 8
   },
   grid: { top: 12, left: 44, right: 44, bottom: 46, containLabel: false },
   xAxis: {
     type: 'category',
     boundaryGap: false,
-    data: dashboardTrend.months,
-    axisLine: { lineStyle: { color: '#d9d9d9' } },
-    axisLabel: { color: '#8c8c8c' }
+    data: dashboardTrend.months
   },
   yAxis: [
     {
       type: 'value',
       min: 0,
-      max: 4,
-      axisLabel: { color: '#8c8c8c' },
-      splitLine: { lineStyle: { color: '#eeeeee' } }
+      max: 4
     },
     {
       type: 'value',
       min: 0,
       max: 50,
-      axisLabel: { color: '#8c8c8c' },
       splitLine: { show: false }
     }
   ],
@@ -392,14 +548,13 @@ const trendOption = computed(() => ({
 }))
 
 const rateOption = computed(() => ({
-  color: ['#52c41a', '#faad14', '#f5222d'],
+  color: ['#247a4d', '#b75d00', '#b4232c'],
   tooltip: { trigger: 'item', formatter: '{b}: {d}%' },
   legend: {
     bottom: 2,
     left: 'center',
     itemWidth: 18,
-    itemHeight: 10,
-    textStyle: { color: '#595959', fontSize: 12 }
+    itemHeight: 10
   },
   series: [
     {
@@ -409,7 +564,6 @@ const rateOption = computed(() => ({
       avoidLabelOverlap: true,
       label: {
         show: true,
-        color: '#595959',
         fontSize: 12,
         formatter: '{b}\n{d}%'
       },
@@ -477,6 +631,54 @@ function getWidgetChartOption(widget) {
   })
 }
 
+function getWidgetTableColumns(widget) {
+  if (widget.preset === 'trend' || widget.type === 'trend') {
+    return [
+      { key: 'period', label: '月份' },
+      { key: 'mortality', label: '住院死亡率' },
+      { key: 'complication', label: '手术并发症率' },
+      { key: 'antibiotic', label: '抗菌药物使用强度' }
+    ]
+  }
+  if (widget.preset === 'rate' || widget.type === 'rate') {
+    return [
+      { key: 'label', label: '状态' },
+      { key: 'value', label: '指标数' }
+    ]
+  }
+  return [
+    { key: 'label', label: widget.chartKind === 'line' ? '月份' : '数据项' },
+    { key: 'value', label: getWidgetTitle(widget) }
+  ]
+}
+
+function getWidgetTableRows(widget) {
+  if (widget.preset === 'trend' || widget.type === 'trend') return trendTableRows.value
+  if (widget.preset === 'rate' || widget.type === 'rate') {
+    return categoryRates.map((item) => ({ label: item.name, value: item.value }))
+  }
+
+  const source = widget.sourceSnapshot ||
+    getDashboardIndicatorSource(widget.sourceCode) ||
+    indicatorDataSources.value[0] ||
+    {}
+
+  if (widget.chartKind === 'bar') {
+    return (source.departmentData || []).map((item) => ({ label: item.name, value: item.value }))
+  }
+  if (widget.chartKind === 'pie') {
+    return (source.pieData || []).map((item) => ({ label: item.name, value: item.value }))
+  }
+  return dashboardTrend.months.map((month, index) => ({
+    label: month,
+    value: source.trendData?.[index] ?? '-'
+  }))
+}
+
+function getWidgetEditLabel(widget) {
+  return `${getWidgetTitle(widget)}编辑组件，位置 ${widget.x}, ${widget.y}，尺寸 ${widget.w} × ${widget.h}。使用方向键移动，Shift 加方向键调整尺寸，Delete 删除，Escape 取消选择。`
+}
+
 function getBoardScale() {
   if (!boardRef.value) return 1
   return boardRef.value.clientWidth / DASHBOARD_DESIGN_WIDTH || 1
@@ -539,6 +741,7 @@ function updateWidget(id, partial) {
 
 function onWidgetPointerDown(event, widget) {
   if (!isEditing.value) return
+  event.currentTarget?.focus()
   activeWidgetId.value = widget.id
   const scale = getBoardScale()
   const startX = event.clientX
@@ -558,6 +761,42 @@ function onWidgetPointerDown(event, widget) {
 
   window.addEventListener('pointermove', onMove)
   window.addEventListener('pointerup', onUp)
+}
+
+function onWidgetKeydown(event, widget) {
+  if (!isEditing.value || event.target !== event.currentTarget) return
+  const supportedKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Delete', 'Escape']
+  if (!supportedKeys.includes(event.key)) return
+
+  event.preventDefault()
+  event.stopPropagation()
+  activeWidgetId.value = widget.id
+
+  if (event.key === 'Delete') {
+    deleteActiveWidget()
+    return
+  }
+  if (event.key === 'Escape') {
+    activeWidgetId.value = ''
+    event.currentTarget.blur()
+    return
+  }
+
+  const step = event.altKey ? 1 : 8
+  if (event.shiftKey) {
+    const minW = widget.type === 'kpi' ? 150 : 300
+    const minH = widget.type === 'kpi' ? 128 : 220
+    updateWidget(widget.id, {
+      w: Math.max(minW, widget.w + (event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0)),
+      h: Math.max(minH, widget.h + (event.key === 'ArrowDown' ? step : event.key === 'ArrowUp' ? -step : 0))
+    })
+    return
+  }
+
+  updateWidget(widget.id, {
+    x: Math.max(0, widget.x + (event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0)),
+    y: Math.max(0, widget.y + (event.key === 'ArrowDown' ? step : event.key === 'ArrowUp' ? -step : 0))
+  })
 }
 
 function onResizePointerDown(event, widget, handle) {
@@ -647,25 +886,37 @@ async function loadBackendIndicatorSources() {
   try {
     const rows = await fetchIndicators()
     const backendSources = Array.isArray(rows) ? rows.map(toDashboardIndicatorSource).filter(Boolean) : []
-    if (!backendSources.length) return
+    if (!backendSources.length) {
+      dashboardSourceMode.value = 'demo'
+      dashboardLoadMessage.value = '指标接口未返回可用记录，当前明确展示演示指标。演示值不代表正式计算结果。'
+      return
+    }
 
     indicatorDataSources.value = mergeIndicatorSources(backendSources, indicatorDataSources.value)
+    dashboardSourceMode.value = 'mixed'
+    dashboardLoadMessage.value = '当前页面混合使用接口返回的指标元数据与演示指标值；正式结果接口接入前，请勿将数值用于业务决策。'
     if (!selectedDataSource.value) {
       selectedDataCode.value = indicatorDataSources.value[0]?.code || ''
     }
   } catch {
     indicatorDataSources.value = cloneIndicatorSources(mockIndicatorDataSources)
+    dashboardSourceMode.value = 'demo'
+    dashboardLoadMessage.value = '指标接口暂不可用，当前明确展示演示数据。可继续查看界面结构，但数值不代表正式计算结果。'
   } finally {
     indicatorSourceLoading.value = false
   }
 }
 
 async function loadBackendDashboardContract() {
-  backendDashboard.value = await fetchDashboardBootstrap(DASHBOARD_CODE, {
-    year: 2025,
-    month: 12,
-    deptCode: null
-  })
+  try {
+    backendDashboard.value = await fetchDashboardBootstrap(DASHBOARD_CODE, {
+      year: 2025,
+      month: 12,
+      deptCode: null
+    })
+  } catch {
+    backendDashboard.value = null
+  }
 }
 
 async function loadMortalityReadonlyChain() {
@@ -759,8 +1010,10 @@ const goIndicatorAnalysis = (indicatorCode) => {
 onMounted(async () => {
   loadDashboardLayout()
   await loadBackendIndicatorSources()
-  loadBackendDashboardContract()
-  loadMortalityReadonlyChain()
+  await Promise.allSettled([
+    loadBackendDashboardContract(),
+    loadMortalityReadonlyChain()
+  ])
 })
 </script>
 
@@ -787,7 +1040,7 @@ onMounted(async () => {
 }
 
 .dashboard-editor-panel__label {
-  color: #595959;
+  color: var(--idmp-text-secondary);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -803,15 +1056,174 @@ onMounted(async () => {
 .dashboard-editor-panel__option-meta {
   float: right;
   margin-left: 16px;
-  color: #b1b3b7;
+  color: var(--idmp-text-disabled);
   font-size: 12px;
 }
 
 .dashboard-editor-panel__hint {
   max-width: 280px;
   overflow: hidden;
-  color: #8c8c8c;
+  color: var(--idmp-text-helper);
   font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-notice {
+  margin-bottom: 16px;
+}
+
+.clinical-summary-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.72fr) minmax(560px, 1.45fr);
+  margin-bottom: 16px;
+  gap: 16px;
+}
+
+.primary-metric {
+  min-height: 246px;
+  padding: 20px 22px;
+}
+
+.primary-metric.is-clickable {
+  cursor: pointer;
+  transition: border-color 110ms ease;
+
+  &:hover {
+    border-color: var(--idmp-interactive);
+  }
+}
+
+.primary-metric__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.primary-metric__eyebrow {
+  color: var(--idmp-text-helper);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.primary-metric h2 {
+  margin: 4px 0 0;
+  color: var(--idmp-text-primary);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.primary-metric__value {
+  margin-top: 24px;
+  color: var(--idmp-text-primary);
+  font-size: 42px;
+  font-weight: 650;
+  line-height: 48px;
+}
+
+.primary-metric__change {
+  margin-top: 2px;
+  color: var(--idmp-support-danger);
+  font-size: 12px;
+
+  &.is-success {
+    color: var(--idmp-support-success);
+  }
+
+  &.is-warning {
+    color: var(--idmp-support-warning);
+  }
+}
+
+.primary-metric__meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 22px 0 0;
+  padding-top: 14px;
+  gap: 12px;
+  border-top: 1px solid var(--idmp-border-subtle);
+
+  div {
+    min-width: 0;
+  }
+
+  dt {
+    color: var(--idmp-text-helper);
+    font-size: 11px;
+  }
+
+  dd {
+    margin: 3px 0 0;
+    overflow: hidden;
+    color: var(--idmp-text-secondary);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.supporting-metrics {
+  padding: 16px 18px 12px;
+}
+
+.supporting-metrics__title {
+  margin-bottom: 4px;
+}
+
+.supporting-metric {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(180px, 1.4fr) 90px 72px minmax(96px, 0.8fr);
+  align-items: center;
+  min-height: 38px;
+  padding: 0 4px;
+  gap: 12px;
+  border: 0;
+  border-top: 1px solid var(--idmp-border-soft);
+  background: transparent;
+  color: var(--idmp-text-secondary);
+  cursor: pointer;
+  text-align: left;
+
+  &:hover {
+    background: var(--idmp-layer-hover);
+  }
+
+  strong {
+    color: var(--idmp-text-primary);
+    font-size: 17px;
+    font-weight: 650;
+    text-align: right;
+  }
+}
+
+.supporting-metric__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.supporting-metric__change {
+  color: var(--idmp-support-danger);
+  font-size: 12px;
+  text-align: right;
+
+  &.is-success {
+    color: var(--idmp-support-success);
+  }
+
+  &.is-warning {
+    color: var(--idmp-support-warning);
+  }
+}
+
+.supporting-metric__target {
+  overflow: hidden;
+  color: var(--idmp-text-helper);
+  font-size: 11px;
+  text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -830,15 +1242,10 @@ onMounted(async () => {
 
 .kpi-card.is-clickable {
   cursor: pointer;
-  transition:
-    border-color 0.18s ease,
-    box-shadow 0.18s ease,
-    transform 0.18s ease;
+  transition: border-color 110ms ease;
 
   &:hover {
-    border-color: #91d5ff;
-    box-shadow: 0 8px 22px rgb(24 144 255 / 10%);
-    transform: translateY(-1px);
+    border-color: var(--idmp-interactive);
   }
 }
 
@@ -848,7 +1255,7 @@ onMounted(async () => {
   justify-content: space-between;
   min-height: 40px;
   gap: 8px;
-  color: #6b6f76;
+  color: var(--idmp-text-helper);
   font-size: 13px;
   line-height: 20px;
 }
@@ -859,32 +1266,32 @@ onMounted(async () => {
   height: 8px;
   margin-top: 3px;
   border-radius: 50%;
-  background: #52c41a;
+  background: var(--idmp-support-success);
 
-  &.is-danger { background: #f5222d; }
-  &.is-warning { background: #faad14; }
+  &.is-danger { background: var(--idmp-support-danger); }
+  &.is-warning { background: var(--idmp-support-warning); }
 }
 
 .kpi-card strong {
   display: block;
   margin: 7px 0 4px;
-  color: #171717;
+  color: var(--idmp-text-primary);
   font-size: 27px;
   font-weight: 650;
   line-height: 34px;
 }
 
 .kpi-change {
-  color: #f5222d;
+  color: var(--idmp-support-danger);
   font-size: 12px;
 
-  &.is-success { color: #52c41a; }
-  &.is-warning { color: #fa8c16; }
+  &.is-success { color: var(--idmp-support-success); }
+  &.is-warning { color: var(--idmp-support-warning); }
 }
 
 .kpi-target {
   margin-top: 5px;
-  color: #a2a4a8;
+  color: var(--idmp-text-disabled);
   font-size: 12px;
 }
 
@@ -899,6 +1306,34 @@ onMounted(async () => {
 .chart-card {
   min-height: 336px;
   padding: 16px 18px 12px;
+}
+
+.dashboard-chart-table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+  color: var(--idmp-text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+
+  th,
+  td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--idmp-border-soft);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  th:first-child,
+  td:first-child {
+    text-align: left;
+  }
+
+  thead th {
+    background: var(--idmp-layer-02);
+    color: var(--idmp-text-primary);
+    font-weight: 600;
+  }
 }
 
 .list-card {
@@ -918,7 +1353,7 @@ onMounted(async () => {
   grid-template-columns: 30px minmax(0, 1fr) auto;
   align-items: center;
   min-height: 54px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--idmp-border-soft);
   gap: 10px;
 
   &:last-child {
@@ -926,7 +1361,7 @@ onMounted(async () => {
   }
 
   time {
-    color: #b1b3b7;
+    color: var(--idmp-text-disabled);
     font-size: 12px;
   }
 }
@@ -936,25 +1371,25 @@ onMounted(async () => {
   width: 26px;
   height: 26px;
   place-items: center;
-  border-radius: 50%;
-  background: #fff2f0;
-  color: #f5222d;
+  border-radius: var(--idmp-radius-sm);
+  background: var(--idmp-support-danger-bg);
+  color: var(--idmp-support-danger);
 
   &.is-warning {
-    background: #fffbe6;
-    color: #faad14;
+    background: var(--idmp-support-warning-bg);
+    color: var(--idmp-support-warning);
   }
 
   &.is-info {
-    background: #e6f7ff;
-    color: #1890ff;
+    background: var(--idmp-support-info-bg);
+    color: var(--idmp-support-info);
   }
 }
 
 .warning-text {
   min-width: 0;
   overflow: hidden;
-  color: #434343;
+  color: var(--idmp-text-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -973,37 +1408,37 @@ onMounted(async () => {
   height: 22px;
   place-items: center;
   border-radius: 4px;
-  background: #f0f2f5;
-  color: #8c8c8c;
+  background: var(--idmp-layer-02);
+  color: var(--idmp-text-helper);
   font-size: 12px;
 
   &.is-top {
-    background: #e6f7ff;
-    color: #1890ff;
+    background: var(--idmp-interactive-subtle);
+    color: var(--idmp-interactive);
     font-weight: 600;
   }
 }
 
 .department {
-  color: #434343;
+  color: var(--idmp-text-secondary);
 }
 
 .rank-bar {
   height: 6px;
   overflow: hidden;
   border-radius: 6px;
-  background: #f0f2f5;
+  background: var(--idmp-layer-02);
 
   i {
     display: block;
     height: 100%;
     border-radius: inherit;
-    background: linear-gradient(90deg, #69c0ff, #1890ff);
+    background: var(--idmp-interactive);
   }
 }
 
 .ranking-list strong {
-  color: #434343;
+  color: var(--idmp-text-secondary);
   text-align: right;
 }
 
@@ -1015,18 +1450,18 @@ onMounted(async () => {
 }
 
 .editable-dashboard.is-editing {
-  border: 1px dashed #91caff;
-  border-radius: 8px;
-  background:
-    linear-gradient(90deg, rgb(24 144 255 / 5%) 1px, transparent 1px),
-    linear-gradient(rgb(24 144 255 / 5%) 1px, transparent 1px),
-    transparent;
-  background-size: 24px 24px;
+  border: 1px dashed var(--idmp-interactive);
+  border-radius: var(--idmp-radius-sm);
+  background: var(--idmp-layer-02);
 }
 
 .editable-dashboard__item {
   position: absolute;
   min-width: 0;
+}
+
+.editable-dashboard__item:focus-visible {
+  z-index: 4;
 }
 
 .editable-dashboard.is-editing .editable-dashboard__item {
@@ -1063,11 +1498,10 @@ onMounted(async () => {
   z-index: 3;
   width: 10px;
   height: 10px;
+  margin: -5px 0 0 -5px;
   border: 1.5px solid var(--idmp-primary);
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 16%);
-  transform: translate(-50%, -50%);
+  border-radius: var(--idmp-radius-sm);
+  background: var(--idmp-layer-01);
 }
 
 .editable-dashboard__handle--n,
@@ -1117,6 +1551,11 @@ onMounted(async () => {
 }
 
 @media (max-width: 1420px) {
+  .clinical-summary-grid {
+    grid-template-columns: minmax(280px, 0.66fr) minmax(520px, 1.34fr);
+    gap: 12px;
+  }
+
   .kpi-grid {
     gap: 12px;
   }
@@ -1128,6 +1567,16 @@ onMounted(async () => {
 
   .kpi-card strong {
     font-size: 24px;
+  }
+}
+
+@media (max-width: 1200px) {
+  .clinical-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .primary-metric {
+    min-height: 220px;
   }
 }
 </style>
