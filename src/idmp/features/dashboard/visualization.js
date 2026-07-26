@@ -32,8 +32,8 @@ export function getVisualizationTitle(sourceName, visualType) {
 }
 
 export function createDashboardChartOption(widget, presetOptions = {}) {
-  if (widget.preset === 'trend' || widget.type === 'trend') return presetOptions.trendOption
-  if (widget.preset === 'rate' || widget.type === 'rate') return presetOptions.rateOption
+  if (widget.preset === 'trend') return presetOptions.trendOption
+  if (widget.preset === 'rate') return presetOptions.rateOption
   if (widget.chartKind === 'bar') return createVirtualBarOption(widget)
   if (widget.chartKind === 'pie') return createVirtualPieOption(widget)
   return createVirtualLineOption(widget)

@@ -72,15 +72,39 @@
       </div>
     </section>
 
-    <template v-if="!hasCustomLayout && !isEditing">
-      <section class="clinical-summary-grid" aria-label="核心指标">
+    <div class="dashboard-board-scroll">
+      <section
+        ref="boardRef"
+        class="editable-dashboard"
+        :class="{ 'is-editing': isEditing }"
+        :style="{ height: `${boardHeight}px`, minWidth: `${DASHBOARD_MIN_WIDTH}px` }"
+        aria-label="可编辑指标看板"
+        @pointerdown.self="activeWidgetId = ''"
+      >
+      <div
+        v-for="widget in effectiveDashboardLayout"
+        :key="widget.id"
+        class="editable-dashboard__item"
+        :class="{ 'is-active': isEditing && activeWidgetId === widget.id }"
+        :style="widgetStyle(widget)"
+        :tabindex="isEditing ? 0 : -1"
+        :role="isEditing ? 'group' : undefined"
+        :aria-label="isEditing ? getWidgetEditLabel(widget) : undefined"
+        :aria-keyshortcuts="isEditing ? 'ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight Delete Escape' : undefined"
+        @pointerdown.stop="onWidgetPointerDown($event, widget)"
+        @focus="isEditing && (activeWidgetId = widget.id)"
+        @keydown="onWidgetKeydown($event, widget)"
+      >
         <article
-          class="surface-card primary-metric is-clickable"
-          role="button"
-          tabindex="0"
-          @click="goIndicatorAnalysis(getKpiIndicatorCode(0, visibleKpis[0]))"
-          @keydown.enter.prevent="goIndicatorAnalysis(getKpiIndicatorCode(0, visibleKpis[0]))"
-          @keydown.space.prevent="goIndicatorAnalysis(getKpiIndicatorCode(0, visibleKpis[0]))"
+          v-if="widget.type === 'primary'"
+          class="surface-card primary-metric"
+          :class="{ 'is-clickable': !isEditing }"
+          :role="isEditing ? undefined : 'button'"
+          :tabindex="isEditing ? -1 : 0"
+          :aria-disabled="isEditing || undefined"
+          @click.stop="goPrimaryMetricAnalysis"
+          @keydown.enter.prevent.stop="goPrimaryMetricAnalysis"
+          @keydown.space.prevent.stop="goPrimaryMetricAnalysis"
         >
           <div class="primary-metric__head">
             <div>
@@ -102,7 +126,7 @@
           </dl>
         </article>
 
-        <article class="surface-card supporting-metrics">
+        <article v-else-if="widget.type === 'supporting'" class="surface-card supporting-metrics">
           <div class="section-title supporting-metrics__title">
             <div>
               <h2>其他核心指标</h2>
@@ -114,7 +138,8 @@
             :key="item.title"
             type="button"
             class="supporting-metric"
-            @click="goIndicatorAnalysis(getKpiIndicatorCode(index + 1, item))"
+            :tabindex="isEditing ? -1 : 0"
+            @click.stop="goIndicatorAnalysis(getKpiIndicatorCode(index + 1, item))"
           >
             <span class="supporting-metric__name">{{ item.title }}</span>
             <strong class="clinical-metric">{{ item.value }}</strong>
@@ -122,139 +147,9 @@
             <span class="supporting-metric__target">{{ item.target }}</span>
           </button>
         </article>
-      </section>
 
-      <section class="chart-grid">
-        <article class="surface-card chart-card">
-          <div class="section-title">
-            <div>
-              <h2><el-icon><TrendCharts /></el-icon>近 12 月质量趋势</h2>
-              <p class="section-title__description">比较死亡率、手术并发症率与抗菌药物使用强度</p>
-            </div>
-          </div>
-          <IdmpChart
-            :option="trendOption"
-            height="278px"
-            aria-label="近 12 月医疗质量指标趋势"
-            updated-at="演示周期：2024 年 12 月"
-          >
-            <template #table>
-              <div class="table-scroll">
-                <table class="dashboard-chart-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">月份</th>
-                      <th scope="col">住院死亡率</th>
-                      <th scope="col">手术并发症率</th>
-                      <th scope="col">抗菌药物使用强度</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="row in trendTableRows" :key="row.period">
-                      <th scope="row">{{ row.period }}</th>
-                      <td>{{ row.mortality }}</td>
-                      <td>{{ row.complication }}</td>
-                      <td>{{ row.antibiotic }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </template>
-          </IdmpChart>
-        </article>
-        <article class="surface-card chart-card">
-          <div class="section-title">
-            <div>
-              <h2><el-icon><PieChart /></el-icon>指标目标分布</h2>
-              <p class="section-title__description">达标、接近阈值与超标指标占比</p>
-            </div>
-          </div>
-          <IdmpChart
-            :option="rateOption"
-            height="278px"
-            aria-label="指标目标达成分布"
-            updated-at="演示周期：2024 年 12 月"
-          >
-            <template #table>
-              <table class="dashboard-chart-table">
-                <thead>
-                  <tr>
-                    <th scope="col">状态</th>
-                    <th scope="col">指标数</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="row in categoryRates" :key="row.name">
-                    <th scope="row">{{ row.name }}</th>
-                    <td>{{ row.value }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </template>
-          </IdmpChart>
-        </article>
-      </section>
-
-      <section class="dashboard-bottom">
-        <article class="surface-card list-card">
-          <div class="section-title">
-            <h2><el-icon><Bell /></el-icon>预警指标</h2>
-            <button type="button" class="action-link" @click="goAlerts">查看全部</button>
-          </div>
-          <ul class="warning-list">
-            <li v-for="warning in dashboardWarnings" :key="warning.text">
-              <span class="warning-icon" :class="`is-${warning.level}`">
-                <el-icon><WarningFilled v-if="warning.level !== 'info'" /><InfoFilled v-else /></el-icon>
-              </span>
-              <span class="warning-text">{{ warning.text }}</span>
-              <time>{{ warning.time }}</time>
-            </li>
-          </ul>
-        </article>
-
-        <article class="surface-card list-card">
-          <div class="section-title">
-            <h2><el-icon><TrophyBase /></el-icon>科室指标排名（手术并发症率）</h2>
-          </div>
-          <ol class="ranking-list">
-            <li v-for="row in departmentRanking" :key="row.department">
-              <span class="rank" :class="{ 'is-top': row.rank <= 3 }">{{ row.rank }}</span>
-              <span class="department">{{ row.department }}</span>
-              <span class="rank-bar">
-                <i :style="{ width: `${Math.max(14, parseFloat(row.value) * 16)}%` }" />
-              </span>
-              <strong>{{ row.value }}</strong>
-            </li>
-          </ol>
-        </article>
-      </section>
-    </template>
-
-    <section
-      v-else
-      ref="boardRef"
-      class="editable-dashboard"
-      :class="{ 'is-editing': isEditing }"
-      :style="{ height: `${boardHeight}px` }"
-      aria-label="可编辑指标看板"
-      @pointerdown.self="activeWidgetId = ''"
-    >
-      <div
-        v-for="widget in dashboardLayout"
-        :key="widget.id"
-        class="editable-dashboard__item"
-        :class="{ 'is-active': isEditing && activeWidgetId === widget.id }"
-        :style="widgetStyle(widget)"
-        :tabindex="isEditing ? 0 : -1"
-        :role="isEditing ? 'group' : undefined"
-        :aria-label="isEditing ? getWidgetEditLabel(widget) : undefined"
-        :aria-keyshortcuts="isEditing ? 'ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight Delete Escape' : undefined"
-        @pointerdown.stop="onWidgetPointerDown($event, widget)"
-        @focus="isEditing && (activeWidgetId = widget.id)"
-        @keydown="onWidgetKeydown($event, widget)"
-      >
         <article
-          v-if="isKpiWidget(widget)"
+          v-else-if="isKpiWidget(widget)"
           class="surface-card kpi-card"
           :class="{ 'is-clickable': !isEditing }"
           :role="isEditing ? undefined : 'button'"
@@ -273,46 +168,57 @@
           <div class="kpi-target">{{ getWidgetKpi(widget).target }}</div>
         </article>
 
-        <article v-else-if="isChartWidget(widget)" class="surface-card chart-card">
+        <article
+          v-else-if="isChartWidget(widget)"
+          class="surface-card chart-card"
+          :inert="isEditing"
+        >
           <div class="section-title">
-            <h2>
-              <el-icon><component :is="getWidgetIcon(widget)" /></el-icon>
-              {{ getWidgetTitle(widget) }}
-            </h2>
+            <div>
+              <h2>
+                <el-icon><component :is="getWidgetIcon(widget)" /></el-icon>
+                {{ getWidgetTitle(widget) }}
+              </h2>
+              <p v-if="getWidgetDescription(widget)" class="section-title__description">
+                {{ getWidgetDescription(widget) }}
+              </p>
+            </div>
           </div>
           <IdmpChart
             :option="getWidgetChartOption(widget)"
-            height="calc(100% - 38px)"
+            height="100%"
+            fit-container
             :aria-label="`${getWidgetTitle(widget)}图表`"
             updated-at="演示周期：2024 年 12 月"
           >
             <template #table>
-              <div class="table-scroll">
-                <table class="dashboard-chart-table">
-                  <thead>
-                    <tr>
-                      <th
-                        v-for="column in getWidgetTableColumns(widget)"
-                        :key="column.key"
-                        scope="col"
-                      >
-                        {{ column.label }}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="(row, rowIndex) in getWidgetTableRows(widget)" :key="`${widget.id}-${rowIndex}`">
-                      <template
-                        v-for="(column, columnIndex) in getWidgetTableColumns(widget)"
-                        :key="column.key"
-                      >
-                        <th v-if="columnIndex === 0" scope="row">{{ row[column.key] }}</th>
-                        <td v-else>{{ row[column.key] }}</td>
-                      </template>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+              <table
+                class="dashboard-chart-table"
+                :class="{ 'is-wide': getWidgetTableColumns(widget).length > 2 }"
+              >
+                <thead>
+                  <tr>
+                    <th
+                      v-for="column in getWidgetTableColumns(widget)"
+                      :key="column.key"
+                      scope="col"
+                    >
+                      {{ column.label }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, rowIndex) in getWidgetTableRows(widget)" :key="`${widget.id}-${rowIndex}`">
+                    <template
+                      v-for="(column, columnIndex) in getWidgetTableColumns(widget)"
+                      :key="column.key"
+                    >
+                      <th v-if="columnIndex === 0" scope="row">{{ row[column.key] }}</th>
+                      <td v-else>{{ row[column.key] }}</td>
+                    </template>
+                  </tr>
+                </tbody>
+              </table>
             </template>
           </IdmpChart>
         </article>
@@ -320,7 +226,7 @@
         <article v-else-if="widget.type === 'warnings'" class="surface-card list-card">
           <div class="section-title">
             <h2><el-icon><Bell /></el-icon>预警指标</h2>
-            <button type="button" class="action-link" @click="goAlerts">查看全部</button>
+            <button type="button" class="action-link" :tabindex="isEditing ? -1 : 0" @click.stop="goAlerts">查看全部</button>
           </div>
           <ul class="warning-list">
             <li v-for="warning in dashboardWarnings" :key="warning.text">
@@ -360,12 +266,13 @@
           />
         </template>
       </div>
-    </section>
+      </section>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Bell,
@@ -399,18 +306,25 @@ import {
   DASHBOARD_CODE,
   DASHBOARD_DESIGN_WIDTH,
   DASHBOARD_LAYOUT_STORAGE_KEY,
+  DASHBOARD_MIN_WIDTH,
   DEFAULT_DASHBOARD_HEIGHT,
-  LEGACY_DASHBOARD_LAYOUT_STORAGE_KEY,
+  OBSOLETE_DASHBOARD_LAYOUT_STORAGE_KEYS,
   resizeHandles,
   widgetTypeOptions
 } from '@/idmp/features/dashboard/constants'
-import { createDefaultLayout, cloneLayout, normalizeLayout, widgetStyle } from '@/idmp/features/dashboard/layout'
+import {
+  cloneLayout,
+  constrainWidget,
+  createDefaultLayout,
+  getWidgetConstraints,
+  normalizeLayout,
+  widgetStyle
+} from '@/idmp/features/dashboard/layout'
 import { mockIndicatorDataSources } from '@/idmp/features/dashboard/mockData'
 import { applyMortalityReadonlyChain } from '@/idmp/features/dashboard/mortalityAdapter'
 import {
   createDashboardChartOption,
   createKpiData,
-  getIndicatorSource,
   getVisualizationTitle
 } from '@/idmp/features/dashboard/visualization'
 
@@ -418,8 +332,8 @@ const router = useRouter()
 const period = ref('2024年度')
 const department = ref('全院')
 const boardRef = ref()
+const boardWidth = ref(0)
 const isEditing = ref(false)
-const hasCustomLayout = ref(false)
 const activeWidgetId = ref('')
 const selectedDataCode = ref(mockIndicatorDataSources[0].code)
 const addWidgetType = ref('kpi')
@@ -431,6 +345,7 @@ const dashboardLayout = ref(createDefaultLayout())
 const editSnapshot = ref([])
 const backendDashboard = ref(null)
 const mortalityChain = ref(null)
+let boardResizeObserver
 const dashboardKpiIndicatorCodes = [
   'MORTALITY_INPATIENT',
   'OUTPATIENT_DISCHARGE_RATIO',
@@ -448,8 +363,12 @@ const dashboardSourceLabel = computed(() => (
   dashboardSourceMode.value === 'mixed' ? '接口元数据 + 演示指标值' : '演示数据'
 ))
 
+const effectiveDashboardLayout = computed(() =>
+  normalizeLayout(dashboardLayout.value, getDashboardIndicatorSource, getBoardScale())
+)
+
 const activeWidget = computed(() =>
-  dashboardLayout.value.find((widget) => widget.id === activeWidgetId.value)
+  effectiveDashboardLayout.value.find((widget) => widget.id === activeWidgetId.value)
 )
 
 const activeWidgetName = computed(() => {
@@ -488,7 +407,10 @@ const trendTableRows = computed(() =>
 )
 
 const boardHeight = computed(() => {
-  const maxBottom = dashboardLayout.value.reduce((max, widget) => Math.max(max, widget.y + widget.h), 0)
+  const maxBottom = effectiveDashboardLayout.value.reduce(
+    (max, widget) => Math.max(max, widget.y + widget.h),
+    0
+  )
   return Math.max(DEFAULT_DASHBOARD_HEIGHT, maxBottom)
 })
 
@@ -576,7 +498,7 @@ function isKpiWidget(widget) {
 }
 
 function isChartWidget(widget) {
-  return widget.type === 'chart' || widget.type === 'trend' || widget.type === 'rate'
+  return widget.type === 'chart'
 }
 
 function getWidgetKpi(widget) {
@@ -606,19 +528,32 @@ function goWidgetAnalysis(widget) {
   goIndicatorAnalysis(getWidgetIndicatorCode(widget))
 }
 
+function goPrimaryMetricAnalysis() {
+  if (isEditing.value) return
+  goIndicatorAnalysis(getKpiIndicatorCode(0, visibleKpis.value[0]))
+}
+
 function getWidgetTitle(widget) {
+  if (widget.type === 'primary') return visibleKpis.value[0]?.title || '重点指标'
+  if (widget.type === 'supporting') return '其他核心指标'
   if (isKpiWidget(widget)) return getWidgetKpi(widget).title
   if (widget.type === 'warnings') return '预警指标'
   if (widget.type === 'ranking') return '科室指标排名'
-  if (widget.preset === 'trend' || widget.type === 'trend') return '指标趋势（近12月）'
-  if (widget.preset === 'rate' || widget.type === 'rate') return '分类达标率'
+  if (widget.preset === 'trend') return '近 12 月质量趋势'
+  if (widget.preset === 'rate') return '指标目标分布'
   if (widget.sourceName) return getVisualizationTitle(widget.sourceName, widget.chartKind)
   return widget.title || widgetTypeOptions.find((item) => item.value === widget.chartKind)?.label || '图表'
 }
 
+function getWidgetDescription(widget) {
+  if (widget.preset === 'trend') return '比较死亡率、手术并发症率与抗菌药物使用强度'
+  if (widget.preset === 'rate') return '达标、接近阈值与超标指标占比'
+  return ''
+}
+
 function getWidgetIcon(widget) {
   if (widget.chartKind === 'bar') return Histogram
-  if (widget.chartKind === 'pie' || widget.type === 'rate') return PieChart
+  if (widget.chartKind === 'pie' || widget.preset === 'rate') return PieChart
   return TrendCharts
 }
 
@@ -630,7 +565,7 @@ function getWidgetChartOption(widget) {
 }
 
 function getWidgetTableColumns(widget) {
-  if (widget.preset === 'trend' || widget.type === 'trend') {
+  if (widget.preset === 'trend') {
     return [
       { key: 'period', label: '月份' },
       { key: 'mortality', label: '住院死亡率' },
@@ -638,7 +573,7 @@ function getWidgetTableColumns(widget) {
       { key: 'antibiotic', label: '抗菌药物使用强度' }
     ]
   }
-  if (widget.preset === 'rate' || widget.type === 'rate') {
+  if (widget.preset === 'rate') {
     return [
       { key: 'label', label: '状态' },
       { key: 'value', label: '指标数' }
@@ -651,8 +586,8 @@ function getWidgetTableColumns(widget) {
 }
 
 function getWidgetTableRows(widget) {
-  if (widget.preset === 'trend' || widget.type === 'trend') return trendTableRows.value
-  if (widget.preset === 'rate' || widget.type === 'rate') {
+  if (widget.preset === 'trend') return trendTableRows.value
+  if (widget.preset === 'rate') {
     return categoryRates.map((item) => ({ label: item.name, value: item.value }))
   }
 
@@ -678,8 +613,8 @@ function getWidgetEditLabel(widget) {
 }
 
 function getBoardScale() {
-  if (!boardRef.value) return 1
-  return boardRef.value.clientWidth / DASHBOARD_DESIGN_WIDTH || 1
+  const currentWidth = boardWidth.value || boardRef.value?.clientWidth
+  return currentWidth ? currentWidth / DASHBOARD_DESIGN_WIDTH : 1
 }
 
 function getNextWidgetPosition() {
@@ -704,22 +639,22 @@ function addDashboardWidget() {
   }
 
   if (type === 'kpi') {
-    dashboardLayout.value.push({
+    dashboardLayout.value.push(constrainWidget({
       ...baseWidget,
       type: 'kpi',
       data: createKpiData(source),
       w: 240,
       h: 158
-    })
+    }))
   } else {
-    dashboardLayout.value.push({
+    dashboardLayout.value.push(constrainWidget({
       ...baseWidget,
       type: 'chart',
       chartKind: type,
       title: getVisualizationTitle(source.name, type),
       w: 520,
       h: 336
-    })
+    }))
   }
 
   activeWidgetId.value = id
@@ -733,7 +668,9 @@ function deleteActiveWidget() {
 
 function updateWidget(id, partial) {
   dashboardLayout.value = dashboardLayout.value.map((widget) =>
-    widget.id === id ? { ...widget, ...partial } : widget
+    widget.id === id
+      ? constrainWidget({ ...widget, ...partial })
+      : widget
   )
 }
 
@@ -782,11 +719,15 @@ function onWidgetKeydown(event, widget) {
 
   const step = event.altKey ? 1 : 8
   if (event.shiftKey) {
-    const minW = widget.type === 'kpi' ? 150 : 300
-    const minH = widget.type === 'kpi' ? 128 : 220
+    const { minW, minH } = getWidgetConstraints(widget, getBoardScale())
+    const widthDelta = event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0
+    const heightDelta = event.key === 'ArrowDown' ? step : event.key === 'ArrowUp' ? -step : 0
     updateWidget(widget.id, {
-      w: Math.max(minW, widget.w + (event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0)),
-      h: Math.max(minH, widget.h + (event.key === 'ArrowDown' ? step : event.key === 'ArrowUp' ? -step : 0))
+      w: Math.min(
+        DASHBOARD_DESIGN_WIDTH - widget.x,
+        Math.max(minW, widget.w + widthDelta)
+      ),
+      h: Math.max(minH, widget.h + heightDelta)
     })
     return
   }
@@ -802,8 +743,7 @@ function onResizePointerDown(event, widget, handle) {
   const startX = event.clientX
   const startY = event.clientY
   const start = { x: widget.x, y: widget.y, w: widget.w, h: widget.h }
-  const minW = widget.type === 'kpi' ? 150 : 300
-  const minH = widget.type === 'kpi' ? 128 : 220
+  const { minW, minH } = getWidgetConstraints(widget, scale)
 
   const onMove = (moveEvent) => {
     const dx = (moveEvent.clientX - startX) / scale
@@ -813,15 +753,22 @@ function onResizePointerDown(event, widget, handle) {
     let nextW = start.w
     let nextH = start.h
 
-    if (handle.includes('e')) nextW = Math.max(minW, start.w + dx)
+    if (handle.includes('e')) {
+      nextW = Math.min(
+        DASHBOARD_DESIGN_WIDTH - start.x,
+        Math.max(minW, start.w + dx)
+      )
+    }
     if (handle.includes('s')) nextH = Math.max(minH, start.h + dy)
     if (handle.includes('w')) {
-      nextW = Math.max(minW, start.w - dx)
-      nextX = start.x + (start.w - nextW)
+      const right = start.x + start.w
+      nextW = Math.min(right, Math.max(minW, start.w - dx))
+      nextX = right - nextW
     }
     if (handle.includes('n')) {
-      nextH = Math.max(minH, start.h - dy)
-      nextY = start.y + (start.h - nextH)
+      const bottom = start.y + start.h
+      nextH = Math.min(bottom, Math.max(minH, start.h - dy))
+      nextY = bottom - nextH
     }
 
     updateWidget(widget.id, {
@@ -846,37 +793,47 @@ function startDashboardEdit() {
 }
 
 function cancelDashboardEdit() {
-  dashboardLayout.value = cloneLayout(editSnapshot.value.length ? editSnapshot.value : createDefaultLayout())
+  dashboardLayout.value = normalizeLayout(
+    cloneLayout(editSnapshot.value.length ? editSnapshot.value : createDefaultLayout()),
+    getDashboardIndicatorSource
+  )
+  editSnapshot.value = []
   activeWidgetId.value = ''
   isEditing.value = false
 }
 
 function saveDashboardLayout() {
+  dashboardLayout.value = normalizeLayout(
+    dashboardLayout.value,
+    getDashboardIndicatorSource
+  )
   localStorage.setItem(DASHBOARD_LAYOUT_STORAGE_KEY, JSON.stringify(dashboardLayout.value))
-  hasCustomLayout.value = true
+  editSnapshot.value = []
   activeWidgetId.value = ''
   isEditing.value = false
 }
 
 function resetDashboardLayout() {
   dashboardLayout.value = createDefaultLayout()
-  localStorage.removeItem(DASHBOARD_LAYOUT_STORAGE_KEY)
-  localStorage.removeItem(LEGACY_DASHBOARD_LAYOUT_STORAGE_KEY)
-  hasCustomLayout.value = false
   activeWidgetId.value = ''
 }
 
 function loadDashboardLayout() {
+  OBSOLETE_DASHBOARD_LAYOUT_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key))
   try {
     const saved = JSON.parse(localStorage.getItem(DASHBOARD_LAYOUT_STORAGE_KEY) || 'null')
     if (Array.isArray(saved) && saved.length) {
-      dashboardLayout.value = normalizeLayout(saved, getDashboardIndicatorSource)
-      hasCustomLayout.value = true
+      const normalized = normalizeLayout(saved, getDashboardIndicatorSource)
+      if (normalized.length) {
+        dashboardLayout.value = normalized
+        return
+      }
+      localStorage.removeItem(DASHBOARD_LAYOUT_STORAGE_KEY)
     }
   } catch {
-    dashboardLayout.value = createDefaultLayout()
-    hasCustomLayout.value = false
+    localStorage.removeItem(DASHBOARD_LAYOUT_STORAGE_KEY)
   }
+  dashboardLayout.value = createDefaultLayout()
 }
 
 async function loadBackendIndicatorSources() {
@@ -1007,11 +964,24 @@ const goIndicatorAnalysis = (indicatorCode) => {
 
 onMounted(async () => {
   loadDashboardLayout()
+  if (typeof ResizeObserver !== 'undefined' && boardRef.value) {
+    boardWidth.value = boardRef.value.clientWidth
+    boardResizeObserver = new ResizeObserver(([entry]) => {
+      const nextWidth = Math.round(entry.contentRect.width)
+      if (!nextWidth || nextWidth === Math.round(boardWidth.value)) return
+      boardWidth.value = nextWidth
+    })
+    boardResizeObserver.observe(boardRef.value)
+  }
   await loadBackendIndicatorSources()
   await Promise.allSettled([
     loadBackendDashboardContract(),
     loadMortalityReadonlyChain()
   ])
+})
+
+onBeforeUnmount(() => {
+  boardResizeObserver?.disconnect()
 })
 </script>
 
@@ -1071,16 +1041,9 @@ onMounted(async () => {
   margin-bottom: 16px;
 }
 
-.clinical-summary-grid {
-  display: grid;
-  grid-template-columns: minmax(300px, 0.72fr) minmax(560px, 1.45fr);
-  margin-bottom: 16px;
-  gap: 16px;
-}
-
 .primary-metric {
   min-height: 246px;
-  padding: 20px 22px;
+  padding: 18px 22px;
 }
 
 .primary-metric.is-clickable {
@@ -1114,7 +1077,7 @@ onMounted(async () => {
 }
 
 .primary-metric__value {
-  margin-top: 24px;
+  margin-top: 22px;
   color: var(--idmp-text-primary);
   font-size: 42px;
   font-weight: 650;
@@ -1138,7 +1101,7 @@ onMounted(async () => {
 .primary-metric__meta {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin: 22px 0 0;
+  margin: 18px 0 0;
   padding-top: 14px;
   gap: 12px;
   border-top: 1px solid var(--idmp-border-subtle);
@@ -1175,7 +1138,7 @@ onMounted(async () => {
   width: 100%;
   grid-template-columns: minmax(180px, 1.4fr) 90px 72px minmax(96px, 0.8fr);
   align-items: center;
-  min-height: 38px;
+  min-height: 37px;
   padding: 0 4px;
   gap: 12px;
   border: 0;
@@ -1226,16 +1189,9 @@ onMounted(async () => {
   white-space: nowrap;
 }
 
-.kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  margin-bottom: 16px;
-  gap: 16px;
-}
-
 .kpi-card {
   min-height: 158px;
-  padding: 18px 16px;
+  padding: 16px;
 }
 
 .kpi-card.is-clickable {
@@ -1288,27 +1244,26 @@ onMounted(async () => {
 }
 
 .kpi-target {
-  margin-top: 5px;
+  margin-top: 4px;
   color: var(--idmp-text-disabled);
   font-size: 12px;
 }
 
-.chart-grid,
-.dashboard-bottom {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(360px, 1fr);
-  margin-bottom: 16px;
-  gap: 16px;
-}
-
 .chart-card {
+  display: flex;
+  flex-direction: column;
   min-height: 336px;
   padding: 16px 18px 12px;
 }
 
+.chart-card > .idmp-chart-frame {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .dashboard-chart-table {
   width: 100%;
-  min-width: 520px;
+  min-width: 0;
   border-collapse: collapse;
   color: var(--idmp-text-secondary);
   font-size: 12px;
@@ -1331,6 +1286,10 @@ onMounted(async () => {
     background: var(--idmp-layer-02);
     color: var(--idmp-text-primary);
     font-weight: 600;
+  }
+
+  &.is-wide {
+    min-width: 520px;
   }
 }
 
@@ -1440,11 +1399,19 @@ onMounted(async () => {
   text-align: right;
 }
 
+.dashboard-board-scroll {
+  box-sizing: border-box;
+  width: calc(100% + 12px);
+  margin: -6px -6px 10px;
+  padding: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 .editable-dashboard {
   position: relative;
   width: 100%;
-  min-height: 812px;
-  margin-bottom: 16px;
+  min-height: 0;
 }
 
 .editable-dashboard.is-editing {
@@ -1470,6 +1437,7 @@ onMounted(async () => {
 .editable-dashboard__item > .surface-card {
   width: 100%;
   height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -1549,15 +1517,6 @@ onMounted(async () => {
 }
 
 @media (max-width: 1420px) {
-  .clinical-summary-grid {
-    grid-template-columns: minmax(280px, 0.66fr) minmax(520px, 1.34fr);
-    gap: 12px;
-  }
-
-  .kpi-grid {
-    gap: 12px;
-  }
-
   .kpi-card {
     padding-right: 13px;
     padding-left: 13px;
@@ -1565,16 +1524,6 @@ onMounted(async () => {
 
   .kpi-card strong {
     font-size: 24px;
-  }
-}
-
-@media (max-width: 1200px) {
-  .clinical-summary-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .primary-metric {
-    min-height: 220px;
   }
 }
 </style>
