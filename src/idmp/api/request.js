@@ -19,22 +19,23 @@ export function clearAccessToken() {
 
 export async function requestJson(path, options = {}) {
   const token = getAccessToken()
+  const { headers: optionHeaders, ...fetchOptions } = options
   const headers = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...options.headers
+    ...optionHeaders
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers,
-    ...options
+    ...fetchOptions,
+    headers
   })
 
   const responseText = await response.text().catch(() => '')
   const payload = parseJsonPreservingLargeIntegers(responseText)
   if (!response.ok) {
     const message = payload?.message || `HTTP ${response.status}`
-    const error = new Error(payload?.traceId ? `${message}（traceId: ${payload.traceId}）` : message)
+    const error = new Error(payload?.traceId ? `${message} (traceId: ${payload.traceId})` : message)
     error.status = response.status
     error.path = path
     error.payload = payload
