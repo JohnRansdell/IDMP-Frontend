@@ -88,8 +88,8 @@
 
       <div class="form-block">
         <div class="block-title">
-          <h3>选择统计方式</h3>
-          <p>这里决定因子的核心计算方式，选择后下方只展示该方式需要补充的内容。</p>
+          <h3>第一步：这个因子要怎么统计？</h3>
+          <p>先选择最接近业务含义的统计方式。这里是唯一的计算方式入口，下方不会再重复选择。</p>
         </div>
         <div class="template-row">
           <button
@@ -106,15 +106,15 @@
         </div>
       </div>
 
-      <el-form :model="dslForm" label-width="140px" class="dsl-form">
+      <el-form :model="dslForm" label-position="top" class="dsl-form">
         <div class="form-block">
           <div class="block-title">
-            <h3>从哪里统计</h3>
-            <p>选择后端数据域和需要统计的业务字段。计数类因子默认统计记录数，不需要选择字段。</p>
+            <h3>第二步：从哪里取数，统计什么？</h3>
+            <p>选择数据来源后，系统会读取该数据域下的语义字段。计数类因子默认统计记录数。</p>
           </div>
           <el-row :gutter="18">
             <el-col :xs="24" :lg="12">
-              <el-form-item label="从哪类业务数据中统计">
+              <el-form-item label="数据来源">
                 <el-select
                   v-model="dslForm.domainCode"
                   filterable
@@ -129,10 +129,11 @@
                     :value="domain.domainCode"
                   />
                 </el-select>
+                <div class="field-help">选择这次统计要读取的后端业务数据，例如住院死亡记录、出院记录。</div>
               </el-form-item>
             </el-col>
             <el-col :xs="24" :lg="12">
-              <el-form-item label="具体统计什么">
+              <el-form-item label="统计对象">
                 <el-select
                   v-model="dslForm.fieldCode"
                   filterable
@@ -148,6 +149,7 @@
                     :value="field.fieldCode"
                   />
                 </el-select>
+                <div class="field-help">计数类默认统计记录条数；求和、平均值、去重计数需要选择字段。</div>
               </el-form-item>
             </el-col>
           </el-row>
@@ -155,20 +157,21 @@
 
         <div class="form-block">
           <div class="block-title">
-            <h3>限定统计范围</h3>
-            <p>如果该因子需要按指标统计周期取数，就选择“按统计周期限定”，并指定后端数据中的时间字段。</p>
+            <h3>第三步：是否限定统计范围？</h3>
+            <p>大多数指标需要按月、季度、年度等周期统计；如果只是验证全量数据，可以先不限定。</p>
           </div>
           <el-row :gutter="18">
             <el-col :xs="24" :lg="12">
-              <el-form-item label="是否按统计周期限定">
+              <el-form-item label="统计周期">
                 <el-radio-group v-model="dslForm.usePeriodFilter" class="period-radio">
                   <el-radio-button :label="false">不限定统计周期</el-radio-button>
                   <el-radio-button :label="true">按统计周期限定</el-radio-button>
                 </el-radio-group>
+                <div class="field-help">选择“不限定”会统计数据域内全部记录；选择“限定”会按试算或指标周期过滤。</div>
               </el-form-item>
             </el-col>
             <el-col :xs="24" :lg="12">
-              <el-form-item label="使用哪个时间字段">
+              <el-form-item label="时间字段">
                 <el-select
                   v-model="dslForm.periodFieldCode"
                   filterable
@@ -184,6 +187,7 @@
                     :value="field.fieldCode"
                   />
                 </el-select>
+                <div class="field-help">启用统计周期后，用这个字段判断记录是否落在统计周期内。</div>
               </el-form-item>
             </el-col>
           </el-row>
@@ -191,12 +195,12 @@
 
         <div class="form-block">
           <div class="block-title">
-            <h3>拆分统计结果</h3>
-            <p>默认输出一个总数。需要按科室、病区、医生等维度查看时，可以选择一个或多个分组字段。</p>
+            <h3>第四步：结果是否需要拆分？</h3>
+            <p>默认输出一个总数。需要按科室、病区、医生等维度查看时，再选择分组字段。</p>
           </div>
           <el-row :gutter="18">
             <el-col :xs="24" :lg="12">
-              <el-form-item label="按哪些维度拆分">
+              <el-form-item label="分组维度">
                 <el-select
                   v-model="dslForm.groupBy"
                   multiple
@@ -214,6 +218,7 @@
                     :value="field.fieldCode"
                   />
                 </el-select>
+                <div class="field-help">不选择时输出一个汇总值；选择后会按科室、病区等维度拆分结果。</div>
               </el-form-item>
             </el-col>
             <el-col :xs="24" :lg="12">
@@ -224,6 +229,7 @@
                   <el-option label="元" value="YUAN" />
                   <el-option label="条" value="RECORD" />
                 </el-select>
+                <div class="field-help">用于结果展示，不改变计算逻辑。</div>
               </el-form-item>
             </el-col>
           </el-row>
@@ -868,6 +874,22 @@ function goBack() {
   }
 }
 
+.dsl-form {
+  :deep(.el-form-item) {
+    margin-bottom: 18px;
+  }
+
+  :deep(.el-form-item__label) {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--idmp-text-primary, #262626);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 20px;
+    white-space: normal;
+  }
+}
+
 .saved-summary {
   display: flex;
   flex-wrap: wrap;
@@ -912,7 +934,7 @@ function goBack() {
 }
 
 .form-block {
-  padding: 16px 16px 4px;
+  padding: 16px 16px 0;
   margin-bottom: 14px;
   background: #fafafa;
   border: 1px solid #edf0f5;
@@ -935,6 +957,13 @@ function goBack() {
     font-size: 12px;
     line-height: 18px;
   }
+}
+
+.field-help {
+  margin-top: 6px;
+  color: var(--idmp-text-helper, #8c8c8c);
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .template-row {
@@ -990,6 +1019,12 @@ function goBack() {
 
   :deep(.el-radio-button__inner) {
     width: 100%;
+    min-height: 32px;
+    padding-right: 10px;
+    padding-left: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
