@@ -30,7 +30,8 @@ export async function requestJson(path, options = {}) {
     ...options
   })
 
-  const payload = await response.json().catch(() => null)
+  const responseText = await response.text().catch(() => '')
+  const payload = parseJsonPreservingLargeIntegers(responseText)
   if (!response.ok) {
     const message = payload?.message || `HTTP ${response.status}`
     throw new Error(message)
@@ -45,4 +46,22 @@ export async function requestJson(path, options = {}) {
   }
 
   return payload?.data ?? payload
+}
+
+function parseJsonPreservingLargeIntegers(text) {
+  if (!text) return null
+
+  try {
+    return JSON.parse(quoteUnsafeIntegers(text))
+  } catch {
+    try {
+      return JSON.parse(text)
+    } catch {
+      return null
+    }
+  }
+}
+
+function quoteUnsafeIntegers(text) {
+  return text.replace(/(:\s*)(-?\d{16,})(\s*[,}\]])/g, '$1"$2"$3')
 }

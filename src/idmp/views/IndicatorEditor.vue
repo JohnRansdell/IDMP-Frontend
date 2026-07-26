@@ -791,7 +791,7 @@ async function saveIndicatorBasicInfo() {
     }
     resetIndicatorWorkflowAfterBasic(
       indicatorId,
-      resolveIndicatorVersionId(indicator),
+      '',
       resolveResourceVersion(indicator)
     )
     ElMessage.success('指标基本信息已保存到后端')
