@@ -130,8 +130,11 @@
               <small>{{ indicatorWorkflow.indicatorId ? `已保存指标 ${indicatorWorkflow.indicatorId}` : '先保存基本信息，再创建可配置版本' }}</small>
             </div>
             <el-button :loading="workflowLoading.basic" @click="saveIndicatorBasicInfo">保存基本信息</el-button>
-            <el-button type="primary" :disabled="!indicatorWorkflow.indicatorId" :loading="workflowLoading.version" @click="createIndicatorDraftVersion">
+            <el-button :disabled="!indicatorWorkflow.indicatorId" :loading="workflowLoading.version" @click="createIndicatorDraftVersion">
               创建指标版本
+            </el-button>
+            <el-button type="primary" :loading="workflowLoading.basic || workflowLoading.version" @click="saveBasicAndCreateVersion">
+              保存并进入公式配置
             </el-button>
           </div>
         </section>
@@ -519,7 +522,11 @@ import {
   trialIndicatorVersion
 } from '@/idmp/api/modules/indicators'
 import { fetchAsyncTask, fetchCalcBatch } from '@/idmp/api/modules/calculation'
-import { mortalityChainConfig } from '@/idmp/api/modules/mortality'
+import {
+  createMortalityFormulaPayload,
+  createMortalityTrialPayload,
+  mortalityChainConfig
+} from '@/idmp/api/modules/mortality'
 import {
   editorFactors,
   editorPolicyRows,
@@ -531,7 +538,8 @@ const router = useRouter()
 const isNew = computed(() => !route.params.id || route.params.id === 'new')
 const activeTab = ref('basic')
 const formRef = ref()
-const formulaFactorVersionId = ref(mortalityChainConfig.deathFactorVersionId)
+const deathFactorVersionId = ref(mortalityChainConfig.deathFactorVersionId)
+const dischargeFactorVersionId = ref(mortalityChainConfig.dischargeFactorVersionId)
 const indicatorWorkflow = reactive({
   indicatorId: '',
   versionId: '',
@@ -745,11 +753,11 @@ const removeCondition = id => {
   if (conditions.length > 1) conditions.splice(conditions.findIndex(item => item.id === id), 1)
 }
 
-function resetIndicatorWorkflowAfterBasic(indicatorId) {
+function resetIndicatorWorkflowAfterBasic(indicatorId, versionId = '', resourceVersion = 0) {
   Object.assign(indicatorWorkflow, {
-    indicatorId,
-    versionId: '',
-    resourceVersion: 0,
+    indicatorId: toOpaqueId(indicatorId),
+    versionId: toOpaqueId(versionId),
+    resourceVersion,
     formulaSaved: false,
     compiled: false,
     taskId: '',
@@ -765,7 +773,7 @@ async function saveIndicatorBasicInfo() {
   } catch {
     activeTab.value = 'basic'
     ElMessage.warning('请先完善指标基本信息')
-    return
+    return false
   }
 
   workflowLoading.basic = true
@@ -777,10 +785,20 @@ async function saveIndicatorBasicInfo() {
       name: form.name || `前端指标 ${suffix}`,
       description: form.definition || '前端指标配置流程创建'
     })
-    resetIndicatorWorkflowAfterBasic(indicator.id)
+    const indicatorId = resolveIndicatorId(indicator)
+    if (!indicatorId) {
+      throw new Error('后端未返回指标 ID，无法继续创建指标版本')
+    }
+    resetIndicatorWorkflowAfterBasic(
+      indicatorId,
+      resolveIndicatorVersionId(indicator),
+      resolveResourceVersion(indicator)
+    )
     ElMessage.success('指标基本信息已保存到后端')
+    return true
   } catch (error) {
     ElMessage.error(error?.message || '指标基本信息保存失败')
+    return false
   } finally {
     workflowLoading.basic = false
   }
@@ -789,15 +807,19 @@ async function saveIndicatorBasicInfo() {
 async function createIndicatorDraftVersion() {
   if (!indicatorWorkflow.indicatorId) {
     ElMessage.warning('请先保存指标基本信息')
-    return
+    return false
   }
 
   workflowLoading.version = true
   try {
     const version = await createIndicatorVersion(indicatorWorkflow.indicatorId, {})
+    const versionId = resolveIndicatorVersionId(version)
+    if (!versionId) {
+      throw new Error('后端未返回指标版本 ID，无法保存公式')
+    }
     Object.assign(indicatorWorkflow, {
-      versionId: version.id,
-      resourceVersion: version.version || 0,
+      versionId,
+      resourceVersion: resolveResourceVersion(version),
       formulaSaved: false,
       compiled: false,
       taskId: '',
@@ -807,11 +829,26 @@ async function createIndicatorDraftVersion() {
     })
     activeTab.value = 'formula'
     ElMessage.success('指标版本已创建，可以配置公式')
+    return true
   } catch (error) {
     ElMessage.error(error?.message || '指标版本创建失败')
+    return false
   } finally {
     workflowLoading.version = false
   }
+}
+
+async function saveBasicAndCreateVersion() {
+  const basicSaved = await saveIndicatorBasicInfo()
+  if (!basicSaved) return
+
+  if (indicatorWorkflow.versionId) {
+    activeTab.value = 'formula'
+    ElMessage.success('指标与版本已就绪，可以配置公式')
+    return
+  }
+
+  await createIndicatorDraftVersion()
 }
 
 async function saveIndicatorFormulaOnly() {
@@ -824,9 +861,9 @@ async function saveIndicatorFormulaOnly() {
   try {
     const savedFormula = await saveIndicatorFormula(
       indicatorWorkflow.versionId,
-      createSingleFactorFormulaPayload(indicatorWorkflow.resourceVersion)
+      createIndicatorFormulaPayload(indicatorWorkflow.resourceVersion)
     )
-    indicatorWorkflow.resourceVersion = savedFormula.version
+    indicatorWorkflow.resourceVersion = resolveResourceVersion(savedFormula, indicatorWorkflow.resourceVersion)
     indicatorWorkflow.formulaSaved = true
     indicatorWorkflow.compiled = false
     indicatorWorkflow.displayValue = ''
@@ -849,11 +886,12 @@ async function compileIndicatorFormulaOnly() {
     const artifact = await compileIndicatorFormula(indicatorWorkflow.versionId, {
       resourceVersion: indicatorWorkflow.resourceVersion
     })
-    indicatorWorkflow.compiled = artifact.status === 'VALID'
+    const compileStatus = artifact.status || artifact.compileStatus
+    indicatorWorkflow.compiled = ['VALID', 'VALID_WITH_WARNINGS', 'COMPILED', 'COMPILED_WITH_WARNINGS'].includes(compileStatus)
     if (indicatorWorkflow.compiled) {
       ElMessage.success('公式校验通过')
     } else {
-      ElMessage.warning(`公式校验状态：${artifact.status || '未知'}`)
+      ElMessage.warning(`公式校验状态：${compileStatus || '未知'}`)
     }
   } catch (error) {
     indicatorWorkflow.compiled = false
@@ -874,12 +912,15 @@ async function trialIndicatorOnly() {
     const suffix = createBackendCodeSuffix()
     const trial = await trialIndicatorVersion(
       indicatorWorkflow.versionId,
-      { periodStart: '2000-01-01T00:00:00', periodEnd: '2030-01-01T00:00:00' },
+      createMortalityTrialPayload(),
       `indicator-workflow-${suffix}`
     )
-    indicatorWorkflow.taskId = trial.taskId
-    indicatorWorkflow.batchId = trial.batchId
-    const task = await pollBackendTask(trial.taskId)
+    indicatorWorkflow.taskId = resolveTaskId(trial)
+    indicatorWorkflow.batchId = resolveBatchId(trial)
+    if (!indicatorWorkflow.taskId || !indicatorWorkflow.batchId) {
+      throw new Error('后端未返回试算任务 ID 或批次 ID，无法继续读取结果')
+    }
+    const task = await pollBackendTask(indicatorWorkflow.taskId)
     if (task.status === 'SUCCEEDED') {
       ElMessage.success('指标试算已完成，可以查看结果')
     } else {
@@ -900,7 +941,7 @@ async function loadIndicatorTrialResultOnly() {
 
   workflowLoading.result = true
   try {
-    await fetchCalcBatch(indicatorWorkflow.batchId)
+    await pollBackendBatch(indicatorWorkflow.batchId)
     const resultSet = await fetchIndicatorTrialResults(indicatorWorkflow.versionId, indicatorWorkflow.batchId)
     const record = resultSet.results?.records?.[0]
     indicatorWorkflow.displayValue = record?.displayValue || '-'
@@ -913,25 +954,12 @@ async function loadIndicatorTrialResultOnly() {
   }
 }
 
-function createSingleFactorFormulaPayload(resourceVersion) {
-  return {
-    resourceVersion,
-    formula: {
-      schemaVersion: '1.0',
-      astType: 'INDICATOR_FORMULA',
-      root: {
-        nodeId: 'factor_ref',
-        nodeType: 'FACTOR_REF',
-        factorVersionId: String(formulaFactorVersionId.value)
-      },
-      display: {
-        format: 'NUMBER',
-        multiplier: '1',
-        scale: 0,
-        roundingMode: 'HALF_UP'
-      }
-    }
-  }
+function createIndicatorFormulaPayload(resourceVersion) {
+  return createMortalityFormulaPayload({
+    deathFactorVersionId: deathFactorVersionId.value,
+    dischargeFactorVersionId: dischargeFactorVersionId.value,
+    resourceVersion
+  })
 }
 
 async function pollBackendTask(taskId) {
@@ -945,6 +973,18 @@ async function pollBackendTask(taskId) {
   return task
 }
 
+async function pollBackendBatch(batchId) {
+  let batch = await fetchCalcBatch(batchId)
+  const intervals = [1000, 2000, 3000, 5000, 10000]
+  const status = () => batch.status || batch.batchStatus
+  const terminalStatuses = ['SUCCEEDED', 'PARTIAL_SUCCEEDED', 'FAILED', 'CANCELED', 'CANCELLED']
+  for (let index = 0; index < intervals.length && !terminalStatuses.includes(status()); index += 1) {
+    await delay(intervals[index])
+    batch = await fetchCalcBatch(batchId)
+  }
+  return batch
+}
+
 function delay(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
@@ -955,6 +995,62 @@ function normalizeBusinessCode(value) {
 
 function createBackendCodeSuffix() {
   return new Date().toISOString().replace(/\D/g, '').slice(0, 14)
+}
+
+function resolveIndicatorId(indicator) {
+  return toOpaqueId(
+    indicator?.indicatorId ??
+    indicator?.id ??
+    indicator?.indicator?.id ??
+    indicator?.indicator?.indicatorId
+  )
+}
+
+function resolveIndicatorVersionId(version) {
+  return toOpaqueId(
+    version?.indicatorVersionId ??
+    version?.versionId ??
+    version?.draftVersionId ??
+    version?.currentVersionId ??
+    version?.latestVersionId ??
+    version?.id ??
+    version?.version?.id ??
+    version?.version?.indicatorVersionId
+  )
+}
+
+function resolveResourceVersion(payload, fallback = 0) {
+  const value =
+    payload?.resourceVersion ??
+    payload?.versionResourceVersion ??
+    payload?.version ??
+    payload?.revision ??
+    payload?.version?.resourceVersion ??
+    fallback
+
+  return Number(value) || 0
+}
+
+function resolveTaskId(payload) {
+  return toOpaqueId(
+    payload?.taskId ??
+    payload?.asyncTaskId ??
+    payload?.task?.id ??
+    payload?.task?.taskId
+  )
+}
+
+function resolveBatchId(payload) {
+  return toOpaqueId(
+    payload?.batchId ??
+    payload?.calcBatchId ??
+    payload?.batch?.id ??
+    payload?.batch?.batchId
+  )
+}
+
+function toOpaqueId(value) {
+  return value === null || value === undefined ? '' : String(value)
 }
 
 </script>
