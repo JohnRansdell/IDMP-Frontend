@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 const AUTH_TOKEN_STORAGE_KEY = 'idmp_access_token'
 
 export function getAccessToken() {
@@ -34,7 +34,11 @@ export async function requestJson(path, options = {}) {
   const payload = parseJsonPreservingLargeIntegers(responseText)
   if (!response.ok) {
     const message = payload?.message || `HTTP ${response.status}`
-    throw new Error(message)
+    const error = new Error(payload?.traceId ? `${message}（traceId: ${payload.traceId}）` : message)
+    error.status = response.status
+    error.path = path
+    error.payload = payload
+    throw error
   }
 
   if (!payload) {

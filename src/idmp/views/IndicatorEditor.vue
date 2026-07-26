@@ -287,11 +287,65 @@
               <el-button :disabled="!indicatorWorkflow.batchId" :loading="workflowLoading.result" @click="loadIndicatorTrialResultOnly">
                 查看结果
               </el-button>
+              <el-button type="success" plain :loading="workflowLoading.selfTest" @click="runChapter16SelfTest">
+                第16章链路自检
+              </el-button>
             </div>
             <div v-if="indicatorWorkflow.displayValue" class="workflow-result">
               <span>试算结果</span>
               <strong>{{ indicatorWorkflow.displayValue }}</strong>
               <small>批次 {{ indicatorWorkflow.batchId }}</small>
+            </div>
+            <div v-if="workflowDebug.step" class="workflow-debug">
+              <div>
+                <span>最近一次后端请求</span>
+                <strong>{{ workflowDebug.step }}</strong>
+              </div>
+              <dl>
+                <template v-if="workflowDebug.endpoint">
+                  <dt>接口</dt>
+                  <dd>{{ workflowDebug.endpoint }}</dd>
+                </template>
+                <template v-if="workflowDebug.apiBaseUrl">
+                  <dt>API Base</dt>
+                  <dd class="mono-data">{{ workflowDebug.apiBaseUrl }}</dd>
+                </template>
+                <template v-if="workflowDebug.fullUrl">
+                  <dt>完整 URL</dt>
+                  <dd class="mono-data">{{ workflowDebug.fullUrl }}</dd>
+                </template>
+                <template v-if="workflowDebug.indicatorId">
+                  <dt>指标 ID</dt>
+                  <dd class="mono-data">{{ workflowDebug.indicatorId }}</dd>
+                </template>
+                <template v-if="workflowDebug.versionId">
+                  <dt>指标版本 ID</dt>
+                  <dd class="mono-data">{{ workflowDebug.versionId }}</dd>
+                </template>
+                <template v-if="workflowDebug.resourceVersion !== ''">
+                  <dt>资源版本</dt>
+                  <dd class="mono-data">{{ workflowDebug.resourceVersion }}</dd>
+                </template>
+                <dt>分子因子</dt>
+                <dd class="mono-data">{{ deathFactorVersionId }}</dd>
+                <dt>分母因子</dt>
+                <dd class="mono-data">{{ dischargeFactorVersionId }}</dd>
+                <dt>构建版本</dt>
+                <dd class="mono-data">{{ buildInfo.commit }} / {{ buildInfo.time }}</dd>
+                <template v-if="workflowDebug.idempotencyKey">
+                  <dt>幂等键</dt>
+                  <dd class="mono-data">{{ workflowDebug.idempotencyKey }}</dd>
+                </template>
+                <template v-if="workflowDebug.traceId">
+                  <dt>traceId</dt>
+                  <dd class="mono-data">{{ workflowDebug.traceId }}</dd>
+                </template>
+                <template v-if="workflowDebug.message">
+                  <dt>状态</dt>
+                  <dd>{{ workflowDebug.message }}</dd>
+                </template>
+              </dl>
+              <pre v-if="workflowDebug.requestBody">{{ workflowDebug.requestBody }}</pre>
             </div>
           </div>
 
@@ -513,6 +567,7 @@ import {
 } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
+import { API_BASE_URL } from '@/idmp/api/request'
 import {
   compileIndicatorFormula,
   createIndicator,
@@ -540,6 +595,10 @@ const activeTab = ref('basic')
 const formRef = ref()
 const deathFactorVersionId = ref(mortalityChainConfig.deathFactorVersionId)
 const dischargeFactorVersionId = ref(mortalityChainConfig.dischargeFactorVersionId)
+const buildInfo = {
+  commit: typeof __APP_GIT_COMMIT__ === 'undefined' ? 'dev' : __APP_GIT_COMMIT__,
+  time: typeof __APP_BUILD_TIME__ === 'undefined' ? 'dev' : __APP_BUILD_TIME__
+}
 const indicatorWorkflow = reactive({
   indicatorId: '',
   versionId: '',
@@ -551,13 +610,27 @@ const indicatorWorkflow = reactive({
   displayValue: '',
   resultValue: ''
 })
+const workflowDebug = reactive({
+  step: '',
+  endpoint: '',
+  apiBaseUrl: '',
+  fullUrl: '',
+  indicatorId: '',
+  versionId: '',
+  resourceVersion: '',
+  idempotencyKey: '',
+  traceId: '',
+  message: '',
+  requestBody: ''
+})
 const workflowLoading = reactive({
   basic: false,
   version: false,
   formula: false,
   compile: false,
   trial: false,
-  result: false
+  result: false,
+  selfTest: false
 })
 
 const workflowSteps = computed(() => [
@@ -859,16 +932,26 @@ async function saveIndicatorFormulaOnly() {
 
   workflowLoading.formula = true
   try {
+    const formulaPayload = createIndicatorFormulaPayload(indicatorWorkflow.resourceVersion)
+    recordWorkflowRequest({
+      step: '保存公式',
+      endpoint: `/api/v1/indicator-versions/${indicatorWorkflow.versionId}/formula`,
+      versionId: indicatorWorkflow.versionId,
+      resourceVersion: indicatorWorkflow.resourceVersion,
+      requestBody: formulaPayload
+    })
     const savedFormula = await saveIndicatorFormula(
       indicatorWorkflow.versionId,
-      createIndicatorFormulaPayload(indicatorWorkflow.resourceVersion)
+      formulaPayload
     )
     indicatorWorkflow.resourceVersion = resolveResourceVersion(savedFormula, indicatorWorkflow.resourceVersion)
     indicatorWorkflow.formulaSaved = true
     indicatorWorkflow.compiled = false
     indicatorWorkflow.displayValue = ''
+    recordWorkflowSuccess('保存公式成功')
     ElMessage.success('计算公式已保存')
   } catch (error) {
+    recordWorkflowError(error)
     ElMessage.error(error?.message || '计算公式保存失败')
   } finally {
     workflowLoading.formula = false
@@ -883,11 +966,20 @@ async function compileIndicatorFormulaOnly() {
 
   workflowLoading.compile = true
   try {
-    const artifact = await compileIndicatorFormula(indicatorWorkflow.versionId, {
+    const compilePayload = {
       resourceVersion: indicatorWorkflow.resourceVersion
+    }
+    recordWorkflowRequest({
+      step: '公式校验',
+      endpoint: `/api/v1/indicator-versions/${indicatorWorkflow.versionId}/formula/compile`,
+      versionId: indicatorWorkflow.versionId,
+      resourceVersion: indicatorWorkflow.resourceVersion,
+      requestBody: compilePayload
     })
+    const artifact = await compileIndicatorFormula(indicatorWorkflow.versionId, compilePayload)
     const compileStatus = artifact.status || artifact.compileStatus
     indicatorWorkflow.compiled = ['VALID', 'VALID_WITH_WARNINGS', 'COMPILED', 'COMPILED_WITH_WARNINGS'].includes(compileStatus)
+    recordWorkflowSuccess(`公式校验状态：${compileStatus || '未知'}`)
     if (indicatorWorkflow.compiled) {
       ElMessage.success('公式校验通过')
     } else {
@@ -895,6 +987,7 @@ async function compileIndicatorFormulaOnly() {
     }
   } catch (error) {
     indicatorWorkflow.compiled = false
+    recordWorkflowError(error)
     ElMessage.error(error?.message || '公式校验失败')
   } finally {
     workflowLoading.compile = false
@@ -909,24 +1002,31 @@ async function trialIndicatorOnly() {
 
   workflowLoading.trial = true
   try {
-    const suffix = createBackendCodeSuffix()
+    const trialPayload = createMortalityTrialPayload()
+    const idempotencyKey = createIdempotencyKey('indicator-workflow')
+    recordWorkflowRequest({
+      step: '发起试算',
+      endpoint: `/api/v1/indicator-versions/${indicatorWorkflow.versionId}/trial`,
+      versionId: indicatorWorkflow.versionId,
+      resourceVersion: indicatorWorkflow.resourceVersion,
+      idempotencyKey,
+      requestBody: trialPayload
+    })
     const trial = await trialIndicatorVersion(
       indicatorWorkflow.versionId,
-      createMortalityTrialPayload(),
-      `indicator-workflow-${suffix}`
+      trialPayload,
+      idempotencyKey
     )
     indicatorWorkflow.taskId = resolveTaskId(trial)
     indicatorWorkflow.batchId = resolveBatchId(trial)
     if (!indicatorWorkflow.taskId || !indicatorWorkflow.batchId) {
       throw new Error('后端未返回试算任务 ID 或批次 ID，无法继续读取结果')
     }
-    const task = await pollBackendTask(indicatorWorkflow.taskId)
-    if (task.status === 'SUCCEEDED') {
-      ElMessage.success('指标试算已完成，可以查看结果')
-    } else {
-      ElMessage.warning(`指标试算任务状态：${task.status || '未知'}`)
-    }
+    recordWorkflowSuccess(`试算已提交，任务 ${indicatorWorkflow.taskId}，批次 ${indicatorWorkflow.batchId}`)
+    ElMessage.success('指标试算已提交，可以稍后查看结果')
+    await refreshTrialTaskStatus()
   } catch (error) {
+    recordWorkflowError(error)
     ElMessage.error(error?.message || '指标试算失败')
   } finally {
     workflowLoading.trial = false
@@ -941,16 +1041,145 @@ async function loadIndicatorTrialResultOnly() {
 
   workflowLoading.result = true
   try {
+    recordWorkflowRequest({
+      step: '查看结果',
+      endpoint: `/api/v1/indicator-versions/${indicatorWorkflow.versionId}/trials/${indicatorWorkflow.batchId}/results?page=1&size=100`,
+      versionId: indicatorWorkflow.versionId
+    })
     await pollBackendBatch(indicatorWorkflow.batchId)
     const resultSet = await fetchIndicatorTrialResults(indicatorWorkflow.versionId, indicatorWorkflow.batchId)
     const record = resultSet.results?.records?.[0]
     indicatorWorkflow.displayValue = record?.displayValue || '-'
     indicatorWorkflow.resultValue = record?.resultValue ?? ''
+    recordWorkflowSuccess(`试算结果：${indicatorWorkflow.displayValue}`)
     ElMessage.success('试算结果已读取')
   } catch (error) {
+    recordWorkflowError(error)
     ElMessage.error(error?.message || '试算结果读取失败')
   } finally {
     workflowLoading.result = false
+  }
+}
+
+async function runChapter16SelfTest() {
+  workflowLoading.selfTest = true
+  const suffix = createBackendCodeSuffix()
+  const code = `FRONTEND_MORTALITY_SELFTEST_${suffix}`
+
+  try {
+    recordWorkflowRequest({
+      step: '第16章自检：创建指标',
+      endpoint: '/api/v1/indicators',
+      requestBody: {
+        code,
+        name: `前端第16章链路自检 ${suffix}`,
+        description: '前端页面内置自检：死亡患者记录数 / 出院病案记录数'
+      }
+    })
+    const indicator = await createIndicator({
+      code,
+      name: `前端第16章链路自检 ${suffix}`,
+      description: '前端页面内置自检：死亡患者记录数 / 出院病案记录数'
+    })
+    const indicatorId = resolveIndicatorId(indicator)
+    if (!indicatorId) throw new Error('自检失败：后端未返回指标 ID')
+
+    recordWorkflowRequest({
+      step: '第16章自检：创建版本',
+      endpoint: `/api/v1/indicators/${indicatorId}/versions`,
+      indicatorId,
+      requestBody: {}
+    })
+    const version = await createIndicatorVersion(indicatorId, {})
+    const versionId = resolveIndicatorVersionId(version)
+    let resourceVersion = resolveResourceVersion(version)
+    if (!versionId) throw new Error('自检失败：后端未返回指标版本 ID')
+
+    const formulaPayload = createMortalityFormulaPayload({
+      deathFactorVersionId: deathFactorVersionId.value,
+      dischargeFactorVersionId: dischargeFactorVersionId.value,
+      resourceVersion
+    })
+    recordWorkflowRequest({
+      step: '第16章自检：保存公式',
+      endpoint: `/api/v1/indicator-versions/${versionId}/formula`,
+      indicatorId,
+      versionId,
+      resourceVersion,
+      requestBody: formulaPayload
+    })
+    const savedFormula = await saveIndicatorFormula(versionId, formulaPayload)
+    resourceVersion = resolveResourceVersion(savedFormula, resourceVersion)
+
+    const compilePayload = { resourceVersion }
+    recordWorkflowRequest({
+      step: '第16章自检：公式校验',
+      endpoint: `/api/v1/indicator-versions/${versionId}/formula/compile`,
+      indicatorId,
+      versionId,
+      resourceVersion,
+      requestBody: compilePayload
+    })
+    const artifact = await compileIndicatorFormula(versionId, compilePayload)
+    const compileStatus = artifact.status || artifact.compileStatus
+    if (!['VALID', 'VALID_WITH_WARNINGS', 'COMPILED', 'COMPILED_WITH_WARNINGS'].includes(compileStatus)) {
+      throw new Error(`自检失败：公式校验状态 ${compileStatus || '未知'}`)
+    }
+
+    const trialPayload = createMortalityTrialPayload()
+    const idempotencyKey = createIdempotencyKey('chapter16-selftest')
+    recordWorkflowRequest({
+      step: '第16章自检：发起试算',
+      endpoint: `/api/v1/indicator-versions/${versionId}/trial`,
+      indicatorId,
+      versionId,
+      resourceVersion,
+      idempotencyKey,
+      requestBody: trialPayload
+    })
+    const trial = await trialIndicatorVersion(versionId, trialPayload, idempotencyKey)
+    const taskId = resolveTaskId(trial)
+    const batchId = resolveBatchId(trial)
+    if (!taskId || !batchId) throw new Error('自检失败：后端未返回 taskId 或 batchId')
+
+    Object.assign(indicatorWorkflow, {
+      indicatorId,
+      versionId,
+      resourceVersion,
+      formulaSaved: true,
+      compiled: true,
+      taskId,
+      batchId,
+      displayValue: '',
+      resultValue: ''
+    })
+
+    recordWorkflowRequest({
+      step: '第16章自检：轮询任务',
+      endpoint: `/api/v1/async-tasks/${taskId}`,
+      indicatorId,
+      versionId
+    })
+    await pollBackendTask(taskId)
+
+    recordWorkflowRequest({
+      step: '第16章自检：读取结果',
+      endpoint: `/api/v1/indicator-versions/${versionId}/trials/${batchId}/results?page=1&size=100`,
+      indicatorId,
+      versionId
+    })
+    await pollBackendBatch(batchId)
+    const resultSet = await fetchIndicatorTrialResults(versionId, batchId)
+    const record = resultSet.results?.records?.[0]
+    indicatorWorkflow.displayValue = record?.displayValue || '-'
+    indicatorWorkflow.resultValue = record?.resultValue ?? ''
+    recordWorkflowSuccess(`第16章自检通过，结果：${indicatorWorkflow.displayValue}`)
+    ElMessage.success(`第16章链路自检通过：${indicatorWorkflow.displayValue}`)
+  } catch (error) {
+    recordWorkflowError(error)
+    ElMessage.error(error?.message || '第16章链路自检失败')
+  } finally {
+    workflowLoading.selfTest = false
   }
 }
 
@@ -960,6 +1189,50 @@ function createIndicatorFormulaPayload(resourceVersion) {
     dischargeFactorVersionId: dischargeFactorVersionId.value,
     resourceVersion
   })
+}
+
+function recordWorkflowRequest({
+  step,
+  endpoint,
+  indicatorId = '',
+  versionId = '',
+  resourceVersion = '',
+  idempotencyKey = '',
+  requestBody = ''
+}) {
+  Object.assign(workflowDebug, {
+    step,
+    endpoint,
+    apiBaseUrl: API_BASE_URL,
+    fullUrl: resolveRequestUrl(endpoint),
+    indicatorId: toOpaqueId(indicatorId),
+    versionId: toOpaqueId(versionId),
+    resourceVersion: resourceVersion === null || resourceVersion === undefined ? '' : String(resourceVersion),
+    idempotencyKey,
+    traceId: '',
+    message: '请求已发起',
+    requestBody: requestBody ? JSON.stringify(requestBody, null, 2) : ''
+  })
+}
+
+function resolveRequestUrl(endpoint) {
+  const path = endpoint.startsWith('/api/v1/')
+    ? endpoint.slice('/api/v1'.length)
+    : endpoint
+  const base = API_BASE_URL.startsWith('http')
+    ? API_BASE_URL
+    : `${window.location.origin}${API_BASE_URL}`
+  return `${base}${path}`
+}
+
+function recordWorkflowSuccess(message) {
+  workflowDebug.message = message
+  workflowDebug.traceId = ''
+}
+
+function recordWorkflowError(error) {
+  workflowDebug.message = error?.message || '请求失败'
+  workflowDebug.traceId = error?.payload?.traceId || ''
 }
 
 async function pollBackendTask(taskId) {
@@ -995,6 +1268,10 @@ function normalizeBusinessCode(value) {
 
 function createBackendCodeSuffix() {
   return new Date().toISOString().replace(/\D/g, '').slice(0, 14)
+}
+
+function createIdempotencyKey(prefix) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`
 }
 
 function resolveIndicatorId(indicator) {
@@ -1051,6 +1328,28 @@ function resolveBatchId(payload) {
 
 function toOpaqueId(value) {
   return value === null || value === undefined ? '' : String(value)
+}
+
+async function refreshTrialTaskStatus() {
+  if (!indicatorWorkflow.taskId) return
+
+  try {
+    recordWorkflowRequest({
+      step: '轮询试算任务',
+      endpoint: `/api/v1/async-tasks/${indicatorWorkflow.taskId}`,
+      versionId: indicatorWorkflow.versionId
+    })
+    const task = await pollBackendTask(indicatorWorkflow.taskId)
+    recordWorkflowSuccess(`试算任务状态：${task.status || '未知'}，批次：${indicatorWorkflow.batchId}`)
+    if (task.status === 'SUCCEEDED') {
+      ElMessage.success('指标试算已完成，可以查看结果')
+    } else if (['FAILED', 'CANCELED', 'CANCELLED'].includes(task.status)) {
+      ElMessage.warning(`指标试算任务状态：${task.status}`)
+    }
+  } catch (error) {
+    recordWorkflowError(error)
+    ElMessage.warning('试算已提交，但任务状态轮询失败，请稍后点击查看结果或检查任务中心')
+  }
 }
 
 </script>
@@ -1294,6 +1593,66 @@ function toOpaqueId(value) {
   strong {
     color: var(--idmp-interactive);
     font-size: 18px;
+  }
+}
+
+.workflow-debug {
+  display: grid;
+  margin: 0 16px 16px;
+  padding: 12px;
+  border: 1px solid var(--idmp-border-subtle);
+  border-radius: 6px;
+  background: var(--idmp-layer-02);
+  gap: 10px;
+
+  > div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+
+    span {
+      color: var(--idmp-text-helper);
+      font-size: 12px;
+    }
+
+    strong {
+      color: var(--idmp-text-primary);
+      font-size: 13px;
+    }
+  }
+
+  dl {
+    display: grid;
+    grid-template-columns: 88px minmax(0, 1fr);
+    margin: 0;
+    gap: 6px 10px;
+    font-size: 12px;
+  }
+
+  dt {
+    color: var(--idmp-text-helper);
+  }
+
+  dd {
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+    color: var(--idmp-text-secondary);
+  }
+
+  pre {
+    max-height: 180px;
+    margin: 0;
+    padding: 10px;
+    overflow: auto;
+    border: 1px solid var(--idmp-border-subtle);
+    border-radius: 6px;
+    background: var(--idmp-layer-01);
+    color: var(--idmp-text-secondary);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
   }
 }
 
