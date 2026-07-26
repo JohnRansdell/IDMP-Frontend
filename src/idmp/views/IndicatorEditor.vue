@@ -1,9 +1,7 @@
 <template>
   <div class="idmp-page editor-page">
     <PageHeader
-      eyebrow="指标配置 / 指标目录"
       :title="isNew ? '新建指标' : '编辑指标'"
-      description="按稳定指标、草稿版本、Formula AST、试算与发布门禁逐步配置。已发布版本的口径变更必须创建新版本。"
       status="DRAFT"
     >
       <template #meta>

@@ -32,11 +32,6 @@
           </RouterLink>
         </section>
       </nav>
-
-      <div class="idmp-sidebar__foot">
-        Clinical Carbon UI<br />
-        业务能力以当前接口为准
-      </div>
     </aside>
 
     <header class="idmp-topbar">

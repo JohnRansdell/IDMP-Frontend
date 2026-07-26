@@ -1,9 +1,7 @@
 <template>
   <div class="idmp-page data-asset-page">
     <PageHeader
-      eyebrow="数据资产"
       title="数据管理"
-      description="查看数据域与语义字段，并通过现有接口维护来源映射和源表归属。"
     >
       <template #meta>
         <span class="data-source-badge is-live">真实接口</span>

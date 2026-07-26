@@ -1,9 +1,7 @@
 <template>
   <div class="idmp-page scene-management">
     <PageHeader
-      eyebrow="指标配置 / 场景管理"
       title="三级公立医院绩效考核"
-      description="查看场景口径、关联指标及演示计算结果；当前页面不提供场景配置写入能力。"
       status="ENABLED"
       status-label="演示场景"
       status-tone="info"

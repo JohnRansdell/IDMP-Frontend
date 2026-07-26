@@ -1,9 +1,7 @@
 <template>
   <div class="idmp-page alert-center">
     <PageHeader
-      eyebrow="总览与分析 / 预警中心"
       title="预警中心"
-      description="查看指标异常、触发阈值与处理状态；当前标记仅保存在本次演示会话。"
       status-label="演示数据"
       status-tone="info"
     >

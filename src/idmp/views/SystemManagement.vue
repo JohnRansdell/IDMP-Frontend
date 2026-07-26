@@ -1,9 +1,7 @@
 <template>
   <div class="idmp-page system-page">
     <PageHeader
-      eyebrow="平台管理"
       title="系统管理"
-      description="检查服务连通性、建立当前会话，并读取用户或创建角色。"
       :status="hasAccessToken ? 'ENABLED' : 'INACTIVE'"
       :status-label="hasAccessToken ? '已保存访问令牌' : '未登录'"
     >

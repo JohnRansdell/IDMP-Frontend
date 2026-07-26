@@ -2,8 +2,6 @@
   <div class="idmp-page indicator-analysis">
     <PageHeader
       :title="`指标分析 / ${currentProfile.name}`"
-      eyebrow="总览与分析"
-      :description="analysisHeaderDescription"
       :status-label="analysisSourceLabel"
       status-tone="info"
     >
@@ -314,11 +312,6 @@ const hasBackendMortalityData = computed(() => Boolean(
 ))
 const analysisSourceLabel = computed(() =>
   hasBackendMortalityData.value ? '只读接口摘要 + 演示趋势' : '本地演示数据'
-)
-const analysisHeaderDescription = computed(() =>
-  hasBackendMortalityData.value
-    ? '住院死亡率摘要包含现有只读链路结果；趋势、场景、科室排名仍来自本地 profile 演示数据。'
-    : '摘要、趋势、场景和科室排名均来自本地 profile 演示数据；患者级下钻未接入权限、审计与分页。'
 )
 const analysisMetadata = computed(() => {
   const chain = mortalityChain.value

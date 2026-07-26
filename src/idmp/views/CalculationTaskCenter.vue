@@ -1,9 +1,7 @@
 <template>
   <div class="idmp-page calc-task-page">
     <PageHeader
-      eyebrow="计算运行"
       title="计算任务中心"
-      description="通过真实接口创建计算批次，并按任务 ID 或批次 ID 核对执行状态与 DAG 节点。"
     >
       <template #meta>
         <span class="data-source-badge is-live">真实接口</span>

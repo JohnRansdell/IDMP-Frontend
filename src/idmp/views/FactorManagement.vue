@@ -2,8 +2,6 @@
   <div class="idmp-page factor-management">
     <PageHeader
       title="因子管理"
-      eyebrow="指标配置"
-      description="下方因子列表来自 demo.js；配置工作台调用现有因子接口，并使用页面内固定的住院死亡记录 COUNT 联调负载。"
       status-label="混合数据来源"
       status-tone="info"
     >

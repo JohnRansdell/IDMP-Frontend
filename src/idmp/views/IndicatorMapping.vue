@@ -1,9 +1,7 @@
 <template>
   <div class="idmp-page indicator-mapping">
     <PageHeader
-      eyebrow="指标配置 / 指标映射"
       title="指标映射管理"
-      description="核对跨政策文件的指标关系、置信度与差异说明；当前审核只保存在本次演示会话。"
       status-label="演示数据"
       status-tone="info"
     >

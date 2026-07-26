@@ -1,9 +1,7 @@
 <template>
   <div class="idmp-page dashboard-page">
     <PageHeader
-      eyebrow="总览与分析"
       title="医疗质量指标总览"
-      description="集中查看医院核心质量信号、趋势、预警与科室差异。点击指标可进入分析页继续下钻。"
     >
       <template #meta>
         <span class="data-source-badge" :class="{ 'is-live': dashboardSourceMode === 'mixed' }">

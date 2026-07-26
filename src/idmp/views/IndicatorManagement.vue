@@ -1,9 +1,7 @@
 <template>
   <div class="idmp-page indicator-page">
     <PageHeader
-      eyebrow="指标配置"
       title="指标目录"
-      description="管理指标稳定实体与版本状态。编辑入口沿用当前指标编码路由，待详情接口接入后再统一稳定 ID 语义。"
     >
       <template #meta>
         <span class="data-source-badge" :class="{ 'is-live': sourceMode === 'live' }">
