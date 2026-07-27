@@ -840,7 +840,7 @@ async function loadBackendIndicatorSources() {
   indicatorSourceLoading.value = true
   try {
     const rows = await fetchIndicators()
-    const backendSources = Array.isArray(rows) ? rows.map(toDashboardIndicatorSource).filter(Boolean) : []
+    const backendSources = normalizeList(rows).map(toDashboardIndicatorSource).filter(Boolean)
     if (!backendSources.length) {
       dashboardSourceMode.value = 'demo'
       dashboardLoadMessage.value = '指标接口未返回可用记录，当前明确展示演示指标。演示值不代表正式计算结果。'
@@ -860,6 +860,14 @@ async function loadBackendIndicatorSources() {
   } finally {
     indicatorSourceLoading.value = false
   }
+}
+
+function normalizeList(payload) {
+  if (Array.isArray(payload)) return payload
+  if (Array.isArray(payload?.records)) return payload.records
+  if (Array.isArray(payload?.list)) return payload.list
+  if (Array.isArray(payload?.items)) return payload.items
+  return []
 }
 
 async function loadBackendDashboardContract() {

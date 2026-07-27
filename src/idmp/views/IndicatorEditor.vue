@@ -32,9 +32,14 @@
     <div class="notice-strip is-warning editor-contract-note">
       <el-icon><InfoFilled /></el-icon>
       <span>
-        当前后端只覆盖创建指标/版本、保存固定因子 AST、编译与试算链路；详情读取、规则/场景持久化和发布接口尚未完整接入。
+        指标详情、版本、公式回显、试算和发布接口已接入；规则/场景持久化仍为界面演示。
         下方未接入能力会明确标注，不会显示假成功。
       </span>
+    </div>
+
+    <div v-if="!isNew && (editLoadState.loading || editLoadState.message)" class="notice-strip editor-contract-note" :class="editLoadState.detailReady ? 'is-success' : 'is-warning'">
+      <el-icon><InfoFilled /></el-icon>
+      <span>{{ editLoadState.loading ? '正在读取指标详情、版本与公式定义...' : editLoadState.message }}</span>
     </div>
 
     <el-tabs v-model="activeTab" class="idmp-tabs editor-tabs">
@@ -155,8 +160,7 @@
           <div class="notice-strip is-warning formula-contract-note">
             <el-icon><InfoFilled /></el-icon>
             <span>
-              可视分子/分母目前仍是演示编辑器；当前真实保存请求只写入固定死亡率因子版本引用。
-              页面预览不等于已保存 Formula AST，不能作为发布依据。
+              可视分子/分母会优先从后端版本公式回显；当前保存仍采用简单比率型 AST，规则/场景配置暂不随公式一起持久化。
             </span>
           </div>
           <h2>计算模式</h2>
@@ -252,7 +256,7 @@
                 </el-select>
               </div>
             </div>
-            <div class="factor-grid">
+            <div class="factor-grid" v-loading="workflowLoading.factors">
               <article
                 v-for="factor in availableFactors"
                 :key="factor.code"
@@ -296,6 +300,14 @@
               </el-button>
               <el-button :disabled="!indicatorWorkflow.batchId" :loading="workflowLoading.result" @click="loadIndicatorTrialResultOnly">
                 查看结果
+              </el-button>
+              <el-button
+                type="success"
+                :disabled="!indicatorWorkflow.versionId || indicatorWorkflow.published"
+                :loading="workflowLoading.publish"
+                @click="publishIndicatorVersionOnly"
+              >
+                发布指标版本
               </el-button>
             </div>
             <div v-if="indicatorWorkflow.displayValue" class="workflow-result">
@@ -544,11 +556,33 @@
               </li>
             </ul>
           </article>
-          <StatePanel
-            type="unavailable"
-            title="发布能力尚未接入"
-            description="当前实现没有可确认的指标发布接口。请先完成接口契约、乐观锁、试算 Hash 与质量门禁后再启用发布操作。"
-          />
+          <article class="surface-card publish-action-card">
+            <div class="section-title">
+              <div>
+                <h2>发布指标版本</h2>
+                <p class="section-title__description">调用当前后端接口发布已编译并试算通过的指标版本。</p>
+              </div>
+            </div>
+            <StatePanel
+              :type="indicatorWorkflow.published ? 'empty' : 'permission'"
+              :title="indicatorWorkflow.published ? '指标版本已发布' : '等待发布条件'"
+              :description="publishPanelDescription"
+            />
+            <div class="business-action-bar publish-actions">
+              <div>
+                <span>后端写入接口</span>
+                <small class="mono-data">POST /api/v1/indicator-versions/{{ indicatorWorkflow.versionId || '{id}' }}/publish</small>
+              </div>
+              <el-button
+                type="primary"
+                :disabled="!indicatorWorkflow.versionId || indicatorWorkflow.published"
+                :loading="workflowLoading.publish"
+                @click="publishIndicatorVersionOnly"
+              >
+                发布指标版本
+              </el-button>
+            </div>
+          </article>
         </section>
       </el-tab-pane>
     </el-tabs>
@@ -579,11 +613,17 @@ import {
   compileIndicatorFormula,
   createIndicator,
   createIndicatorVersion,
+  fetchIndicator,
+  fetchIndicatorFormula,
   fetchIndicators,
+  fetchIndicatorVersion,
+  fetchIndicatorVersions,
   fetchIndicatorTrialResults,
+  publishIndicatorVersion,
   saveIndicatorFormula,
   trialIndicatorVersion
 } from '@/idmp/api/modules/indicators'
+import { fetchFactorVersions } from '@/idmp/api/modules/factors'
 import { fetchAsyncTask, fetchCalcBatch } from '@/idmp/api/modules/calculation'
 import {
   createMortalityFormulaPayload,
@@ -602,6 +642,7 @@ const isNew = computed(() => !route.params.id || route.params.id === 'new')
 const routeIndicatorKey = computed(() => String(route.params.id || ''))
 const activeTab = ref('basic')
 const formRef = ref()
+const backendEditorFactors = ref([])
 const deathFactorVersionId = ref(mortalityChainConfig.deathFactorVersionId)
 const dischargeFactorVersionId = ref(mortalityChainConfig.dischargeFactorVersionId)
 const buildInfo = {
@@ -617,7 +658,9 @@ const indicatorWorkflow = reactive({
   taskId: '',
   batchId: '',
   displayValue: '',
-  resultValue: ''
+  resultValue: '',
+  published: false,
+  publishedVersionId: ''
 })
 const workflowDebug = reactive({
   step: '',
@@ -638,13 +681,43 @@ const workflowLoading = reactive({
   formula: false,
   compile: false,
   trial: false,
-  result: false
+  result: false,
+  publish: false,
+  factors: false
 })
 const editLoadState = reactive({
   loading: false,
   loadedFromList: false,
   detailReady: false,
   message: ''
+})
+
+const selectedFormulaFactors = computed(() => [
+  ...numeratorFactors.value,
+  ...denominatorFactors.value
+])
+const missingPeriodFactors = computed(() =>
+  selectedFormulaFactors.value.filter((factor) => factor?.dsl && !hasPeriodPredicate(factor.dsl))
+)
+const canPublishIndicatorVersion = computed(() =>
+  Boolean(
+    indicatorWorkflow.versionId &&
+    !indicatorWorkflow.published &&
+    !missingPeriodFactors.value.length
+  )
+)
+
+const publishPanelDescription = computed(() => {
+  if (indicatorWorkflow.published) {
+    return `后端已返回发布结果，版本 ${indicatorWorkflow.publishedVersionId || indicatorWorkflow.versionId} 可用于分析查询。`
+  }
+  if (!indicatorWorkflow.versionId) return '请先创建指标版本。'
+  if (missingPeriodFactors.value.length) {
+    return `依赖因子缺少 period BETWEEN 时间过滤：${missingPeriodFactors.value.map((item) => item.versionId || item.code).join('、')}。请重新创建并发布带统计周期过滤的因子，再回到公式中选择新因子版本。`
+  }
+  if (!indicatorWorkflow.compiled) return '发布按钮已开放；若公式尚未编译通过，后端发布接口会返回具体原因。'
+  if (!indicatorWorkflow.displayValue) return '发布按钮已开放；建议先试算并查看结果，最终是否允许发布以后端校验为准。'
+  return '发布接口已就绪，点击按钮会写入后端发布状态。'
 })
 
 const workflowSteps = computed(() => [
@@ -663,7 +736,7 @@ const workflowSteps = computed(() => [
   {
     key: 'rules',
     label: '规则与场景',
-    description: '当前仅提供界面演示，写入接口未接入',
+    description: '当前仅提供界面演示，不影响公式试算和版本发布',
     state: 'blocked'
   },
   {
@@ -679,8 +752,8 @@ const workflowSteps = computed(() => [
   {
     key: 'publish',
     label: '发布门禁',
-    description: '发布接口与完整门禁尚未接入',
-    state: 'blocked'
+    description: indicatorWorkflow.published ? '指标版本已发布' : '调用服务端发布接口',
+    state: indicatorWorkflow.published ? 'complete' : canPublishIndicatorVersion.value ? 'current' : 'pending'
   }
 ])
 
@@ -707,9 +780,9 @@ const publishGates = computed(() => [
   },
   {
     label: '质量、政策、下钻与隐私',
-    description: '当前后端尚未返回完整门禁结果',
-    state: 'blocked',
-    stateLabel: '接口缺失'
+    description: indicatorWorkflow.published ? '发布接口已由后端完成最终校验' : '发布时由后端执行最终门禁校验',
+    state: indicatorWorkflow.published ? 'pass' : canPublishIndicatorVersion.value ? 'warning' : 'pending',
+    stateLabel: indicatorWorkflow.published ? '已发布' : canPublishIndicatorVersion.value ? '后端校验' : '待发布'
   }
 ])
 const sourceOptions = ['HIS', '手术麻醉', 'EMR', 'LIS', 'PACS', '病案', '药事', '财务']
@@ -775,7 +848,8 @@ const denominatorFactors = ref([editorFactors.find(item => item.code === 'F-001'
 const draggedFactor = ref()
 const factorSearch = ref('')
 const factorCategory = ref('')
-const factorCategories = [...new Set(editorFactors.map(item => item.category))]
+const factorLibraryRows = computed(() => backendEditorFactors.value.length ? backendEditorFactors.value : editorFactors)
+const factorCategories = computed(() => [...new Set(factorLibraryRows.value.map(item => item.category).filter(Boolean))])
 const zeroStrategy = ref('返回 NULL')
 
 const selectedFactorCodes = computed(() => new Set([
@@ -783,7 +857,7 @@ const selectedFactorCodes = computed(() => new Set([
   ...denominatorFactors.value.map(item => item.code)
 ]))
 
-const availableFactors = computed(() => editorFactors.filter(item => {
+const availableFactors = computed(() => factorLibraryRows.value.filter(item => {
   const matchesSearch = !factorSearch.value
     || item.name.includes(factorSearch.value)
     || item.code.toLowerCase().includes(factorSearch.value.toLowerCase())
@@ -824,6 +898,87 @@ const removeFactor = (target, code) => {
 }
 
 const editFactor = factor => ElMessage.info(`“${factor.name}”条件编辑为演示操作`)
+
+async function loadPublishedFactorVersions() {
+  workflowLoading.factors = true
+  try {
+    const payload = await fetchFactorVersions({ publicationStatus: 'PUBLISHED', page: 1, size: 100 })
+    backendEditorFactors.value = normalizeList(payload).map(toEditorFactor).filter(item => item.code && item.versionId)
+    refreshSelectedFactorReferences()
+  } catch (error) {
+    backendEditorFactors.value = []
+    ElMessage.warning(error?.message || '已发布因子版本接口暂不可用，公式因子库使用演示数据')
+  } finally {
+    workflowLoading.factors = false
+  }
+}
+
+function toEditorFactor(item) {
+  const aggregation = item.dsl?.aggregation?.function || item.aggregation || item.output?.dimension || '-'
+  const domain = item.dsl?.primaryDomain?.domainCode || item.domainCode || item.domain || '-'
+  return {
+    code: item.factorCode || item.code || `FV-${item.id}`,
+    name: item.factorName || item.name || item.factorCode || item.code || `因子版本 ${item.id}`,
+    aggregation,
+    category: item.category || item.status || '已发布版本',
+    domain,
+    versionId: toOpaqueId(item.id ?? item.versionId),
+    factorId: toOpaqueId(item.factorId),
+    status: item.status,
+    currentArtifactId: item.currentArtifactId,
+    dsl: item.dsl || item.factorDsl || item.definition?.dsl || null
+  }
+}
+
+function refreshSelectedFactorReferences() {
+  if (!backendEditorFactors.value.length) return
+  applySelectedFactorReferences()
+}
+
+function applySelectedFactorReferences() {
+  const numerator = findFactorByVersionId(deathFactorVersionId.value)
+  const denominator = findFactorByVersionId(dischargeFactorVersionId.value)
+  if (numerator) {
+    numeratorFactors.value = [numerator]
+  } else if (deathFactorVersionId.value) {
+    numeratorFactors.value = [createFormulaFactorPlaceholder('分子因子', deathFactorVersionId.value)]
+  }
+  if (denominator) {
+    denominatorFactors.value = [denominator]
+  } else if (dischargeFactorVersionId.value) {
+    denominatorFactors.value = [createFormulaFactorPlaceholder('分母因子', dischargeFactorVersionId.value)]
+  }
+}
+
+function findFactorByVersionId(versionId) {
+  return backendEditorFactors.value.find(item => toOpaqueId(item.versionId) === toOpaqueId(versionId))
+}
+
+function createFormulaFactorPlaceholder(label, versionId) {
+  return {
+    code: `FV-${versionId}`,
+    name: `${label}（版本 ${versionId}）`,
+    aggregation: '-',
+    category: '公式回显',
+    domain: '-',
+    versionId: toOpaqueId(versionId),
+    dsl: null
+  }
+}
+
+function hasPeriodPredicate(node) {
+  if (!node || typeof node !== 'object') return false
+  if (
+    node.nodeType === 'PREDICATE' &&
+    node.operator === 'BETWEEN' &&
+    node.parameter === 'period' &&
+    node.fieldCode
+  ) {
+    return true
+  }
+  if (Array.isArray(node.children) && node.children.some(hasPeriodPredicate)) return true
+  return hasPeriodPredicate(node.filters)
+}
 
 let nextConditionId = 3
 const exclusionLogic = ref('任意')
@@ -878,8 +1033,62 @@ function hydrateIndicatorSummary(item) {
     taskId: '',
     batchId: '',
     displayValue: '',
-    resultValue: ''
+    resultValue: '',
+    published: false,
+    publishedVersionId: ''
   })
+}
+
+function hydrateIndicatorVersion(version) {
+  if (!version) return
+  const status = version.status || version.publicationStatus || ''
+
+  Object.assign(indicatorWorkflow, {
+    versionId: resolveIndicatorVersionId(version),
+    resourceVersion: resolveResourceVersion(version, indicatorWorkflow.resourceVersion),
+    formulaSaved: Boolean(version.formula || version.currentArtifactId),
+    compiled: Boolean(version.currentArtifactId),
+    taskId: '',
+    batchId: '',
+    displayValue: '',
+    resultValue: '',
+    published: status === 'PUBLISHED',
+    publishedVersionId: status === 'PUBLISHED' ? resolveIndicatorVersionId(version) : ''
+  })
+
+  const formula = extractFormula(version)
+  hydrateFormulaFactors(formula)
+}
+
+function extractFormula(payload) {
+  return payload?.formula?.formula || payload?.formula || payload?.formulaAst || payload?.definition?.formula || null
+}
+
+function hydrateFormulaFactors(formula) {
+  const refs = collectFactorRefs(formula?.root || formula)
+  if (refs[0]) deathFactorVersionId.value = toOpaqueId(refs[0])
+  if (refs[1]) dischargeFactorVersionId.value = toOpaqueId(refs[1])
+  applySelectedFactorReferences()
+}
+
+function collectFactorRefs(node, refs = []) {
+  if (!node || typeof node !== 'object') return refs
+  if (Array.isArray(node.factorRefs)) {
+    node.factorRefs.forEach(item => {
+      const id = item.factorVersionId ?? item.versionId ?? item.id
+      if (id) refs.push(id)
+    })
+  }
+  if (node.nodeType === 'FACTOR_REF') {
+    const factorVersionId = node.factorVersionId ?? node.versionId ?? node.refVersionId
+    if (factorVersionId) refs.push(factorVersionId)
+  }
+  collectFactorRefs(node.left, refs)
+  collectFactorRefs(node.right, refs)
+  if (Array.isArray(node.children)) {
+    node.children.forEach(child => collectFactorRefs(child, refs))
+  }
+  return refs
 }
 
 async function loadIndicatorForEdit() {
@@ -888,15 +1097,15 @@ async function loadIndicatorForEdit() {
   editLoadState.loading = true
   editLoadState.message = ''
   try {
-    const rows = await fetchIndicators()
-    const target = Array.isArray(rows)
-      ? rows.find(item => [item.id, item.indicatorId, item.code].map(toOpaqueId).includes(routeIndicatorKey.value))
-      : null
+    const target = await fetchEditableIndicator()
     if (target) {
       hydrateIndicatorSummary(target)
+      await loadEditableIndicatorVersion(indicatorWorkflow.indicatorId)
       editLoadState.loadedFromList = true
-      editLoadState.detailReady = false
-      editLoadState.message = '已从指标目录接口回填当前指标摘要，详情接口接入后可继续加载版本、公式和试算记录。'
+      editLoadState.detailReady = Boolean(indicatorWorkflow.versionId)
+      editLoadState.message = indicatorWorkflow.versionId
+        ? '已从指标详情与版本接口回填当前指标配置。'
+        : '已从指标详情接口回填基础信息，当前指标尚未返回版本定义。'
     } else {
       editLoadState.loadedFromList = false
       editLoadState.detailReady = false
@@ -911,6 +1120,43 @@ async function loadIndicatorForEdit() {
   }
 }
 
+async function fetchEditableIndicator() {
+  const key = routeIndicatorKey.value
+  if (/^\d+$/.test(key)) {
+    return fetchIndicator(key)
+  }
+
+  const rows = await fetchIndicators()
+  const summary = normalizeList(rows)
+    .find(item => [item.id, item.indicatorId, item.code].map(toOpaqueId).includes(key))
+
+  const indicatorId = summary?.id ?? summary?.indicatorId
+  return indicatorId ? fetchIndicator(indicatorId) : summary
+}
+
+async function loadEditableIndicatorVersion(indicatorId) {
+  if (!indicatorId) return
+
+  const versions = normalizeList(await fetchIndicatorVersions(indicatorId))
+  const latest = pickLatestVersion(versions)
+  const latestVersionId = resolveIndicatorVersionId(latest) || toOpaqueId(latest?.id)
+  if (!latestVersionId) return
+
+  const detail = await fetchIndicatorVersion(latestVersionId)
+  let formula = extractFormula(detail)
+  if (!formula) {
+    try {
+      formula = await fetchIndicatorFormula(latestVersionId)
+    } catch {
+      formula = null
+    }
+  }
+  hydrateIndicatorVersion({
+    ...detail,
+    formula: formula || detail.formula || detail.formulaAst
+  })
+}
+
 function resetIndicatorWorkflowAfterBasic(indicatorId, versionId = '', resourceVersion = 0) {
   Object.assign(indicatorWorkflow, {
     indicatorId: toOpaqueId(indicatorId),
@@ -921,7 +1167,9 @@ function resetIndicatorWorkflowAfterBasic(indicatorId, versionId = '', resourceV
     taskId: '',
     batchId: '',
     displayValue: '',
-    resultValue: ''
+    resultValue: '',
+    published: false,
+    publishedVersionId: ''
   })
 }
 
@@ -988,7 +1236,9 @@ async function createIndicatorDraftVersion() {
       taskId: '',
       batchId: '',
       displayValue: '',
-      resultValue: ''
+      resultValue: '',
+      published: false,
+      publishedVersionId: ''
     })
     activeTab.value = 'formula'
     ElMessage.success('指标版本已创建，可以配置公式')
@@ -1030,23 +1280,14 @@ async function saveIndicatorFormulaOnly() {
 
   workflowLoading.formula = true
   try {
-    const formulaPayload = createIndicatorFormulaPayload(indicatorWorkflow.resourceVersion)
-    recordWorkflowRequest({
-      step: '保存公式',
-      endpoint: `/api/v1/indicator-versions/${indicatorWorkflow.versionId}/formula`,
-      versionId: indicatorWorkflow.versionId,
-      resourceVersion: indicatorWorkflow.resourceVersion,
-      requestBody: formulaPayload
-    })
-    const savedFormula = await saveIndicatorFormula(
-      indicatorWorkflow.versionId,
-      formulaPayload
-    )
-    indicatorWorkflow.resourceVersion = resolveResourceVersion(savedFormula, indicatorWorkflow.resourceVersion)
-    indicatorWorkflow.formulaSaved = true
-    indicatorWorkflow.compiled = false
-    indicatorWorkflow.displayValue = ''
-    recordWorkflowSuccess('保存公式成功')
+    await refreshIndicatorVersionState()
+    try {
+      await persistIndicatorFormula()
+    } catch (error) {
+      if (!isOptimisticLockError(error)) throw error
+      await refreshIndicatorVersionState()
+      await persistIndicatorFormula()
+    }
     ElMessage.success('计算公式已保存')
   } catch (error) {
     recordWorkflowError(error)
@@ -1064,6 +1305,7 @@ async function compileIndicatorFormulaOnly() {
 
   workflowLoading.compile = true
   try {
+    await refreshIndicatorVersionState()
     const compilePayload = {
       resourceVersion: indicatorWorkflow.resourceVersion
     }
@@ -1076,7 +1318,9 @@ async function compileIndicatorFormulaOnly() {
     })
     const artifact = await compileIndicatorFormula(indicatorWorkflow.versionId, compilePayload)
     const compileStatus = artifact.status || artifact.compileStatus
+    indicatorWorkflow.resourceVersion = resolveResourceVersion(artifact, indicatorWorkflow.resourceVersion)
     indicatorWorkflow.compiled = ['VALID', 'VALID_WITH_WARNINGS', 'COMPILED', 'COMPILED_WITH_WARNINGS'].includes(compileStatus)
+    await refreshIndicatorVersionState()
     recordWorkflowSuccess(`公式校验状态：${compileStatus || '未知'}`)
     if (indicatorWorkflow.compiled) {
       ElMessage.success('公式校验通过')
@@ -1159,7 +1403,120 @@ async function loadIndicatorTrialResultOnly() {
   }
 }
 
+async function publishIndicatorVersionOnly() {
+  if (!indicatorWorkflow.versionId) {
+    ElMessage.warning('请先创建指标版本')
+    return
+  }
+  if (indicatorWorkflow.published) {
+    ElMessage.success('指标版本已发布')
+    return
+  }
+
+  workflowLoading.publish = true
+  try {
+    const ready = await ensureIndicatorPublishPrerequisites()
+    if (!ready) return
+    await refreshIndicatorVersionState()
+
+    recordWorkflowRequest({
+      step: '发布指标版本',
+      endpoint: `/api/v1/indicator-versions/${indicatorWorkflow.versionId}/publish`,
+      versionId: indicatorWorkflow.versionId
+    })
+    let result
+    try {
+      result = await publishIndicatorVersion(indicatorWorkflow.versionId)
+    } catch (error) {
+      if (!isOptimisticLockError(error)) throw error
+      await refreshIndicatorVersionState()
+      result = await publishIndicatorVersion(indicatorWorkflow.versionId)
+    }
+    indicatorWorkflow.published = true
+    indicatorWorkflow.publishedVersionId = resolveIndicatorVersionId(result) || indicatorWorkflow.versionId
+    recordWorkflowSuccess(`指标版本已发布：${indicatorWorkflow.publishedVersionId}`)
+    ElMessage.success('指标版本已发布')
+  } catch (error) {
+    recordWorkflowError(error)
+    ElMessage.error(error?.message || '指标版本发布失败')
+  } finally {
+    workflowLoading.publish = false
+  }
+}
+
+async function persistIndicatorFormula() {
+  const formulaPayload = createIndicatorFormulaPayload(indicatorWorkflow.resourceVersion)
+  recordWorkflowRequest({
+    step: '保存公式',
+    endpoint: `/api/v1/indicator-versions/${indicatorWorkflow.versionId}/formula`,
+    versionId: indicatorWorkflow.versionId,
+    resourceVersion: indicatorWorkflow.resourceVersion,
+    requestBody: formulaPayload
+  })
+  const savedFormula = await saveIndicatorFormula(
+    indicatorWorkflow.versionId,
+    formulaPayload
+  )
+  indicatorWorkflow.resourceVersion = resolveResourceVersion(savedFormula, indicatorWorkflow.resourceVersion)
+  indicatorWorkflow.formulaSaved = true
+  indicatorWorkflow.compiled = false
+  indicatorWorkflow.displayValue = ''
+  recordWorkflowSuccess('保存公式成功')
+}
+
+async function ensureIndicatorPublishPrerequisites() {
+  if (!indicatorWorkflow.formulaSaved) {
+    usePublishedMortalityFactorVersions()
+    await saveIndicatorFormulaOnly()
+    if (!indicatorWorkflow.formulaSaved) return false
+  }
+
+  if (!indicatorWorkflow.compiled) {
+    await compileIndicatorFormulaOnly()
+    if (!indicatorWorkflow.compiled) return false
+  }
+  if (!indicatorWorkflow.batchId) {
+    await trialIndicatorOnly()
+    if (!indicatorWorkflow.batchId) return false
+  }
+  if (!indicatorWorkflow.displayValue) {
+    await loadIndicatorTrialResultOnly()
+    if (!indicatorWorkflow.displayValue) return false
+  }
+  return true
+}
+
+async function refreshIndicatorVersionState() {
+  if (!indicatorWorkflow.versionId) return null
+  const latest = await fetchIndicatorVersion(indicatorWorkflow.versionId)
+  const status = latest.status || latest.publicationStatus || ''
+  indicatorWorkflow.resourceVersion = resolveResourceVersion(latest, indicatorWorkflow.resourceVersion)
+  indicatorWorkflow.formulaSaved = indicatorWorkflow.formulaSaved || Boolean(extractFormula(latest) || latest.currentArtifactId)
+  indicatorWorkflow.compiled = indicatorWorkflow.compiled || Boolean(latest.currentArtifactId)
+  indicatorWorkflow.published = status === 'PUBLISHED'
+  indicatorWorkflow.publishedVersionId = status === 'PUBLISHED' ? resolveIndicatorVersionId(latest) : indicatorWorkflow.publishedVersionId
+  return latest
+}
+
+function usePublishedMortalityFactorVersions() {
+  deathFactorVersionId.value = mortalityChainConfig.deathFactorVersionId
+  dischargeFactorVersionId.value = mortalityChainConfig.dischargeFactorVersionId
+  applySelectedFactorReferences()
+  indicatorWorkflow.formulaSaved = false
+  indicatorWorkflow.compiled = false
+  indicatorWorkflow.batchId = ''
+  indicatorWorkflow.displayValue = ''
+  indicatorWorkflow.resultValue = ''
+}
+
+function isOptimisticLockError(error) {
+  return error?.status === 409 || /已被修改|乐观锁|resourceVersion/i.test(error?.message || '')
+}
+
 function createIndicatorFormulaPayload(resourceVersion) {
+  deathFactorVersionId.value = numeratorFactors.value[0]?.versionId || deathFactorVersionId.value
+  dischargeFactorVersionId.value = denominatorFactors.value[0]?.versionId || dischargeFactorVersionId.value
+
   return createMortalityFormulaPayload({
     deathFactorVersionId: deathFactorVersionId.value,
     dischargeFactorVersionId: dischargeFactorVersionId.value,
@@ -1306,6 +1663,23 @@ function toOpaqueId(value) {
   return value === null || value === undefined ? '' : String(value)
 }
 
+function normalizeList(payload) {
+  if (Array.isArray(payload)) return payload
+  if (Array.isArray(payload?.records)) return payload.records
+  if (Array.isArray(payload?.list)) return payload.list
+  if (Array.isArray(payload?.items)) return payload.items
+  return []
+}
+
+function pickLatestVersion(versions) {
+  return [...versions].sort((a, b) => {
+    const aNo = Number(a.versionNo ?? a.version ?? 0)
+    const bNo = Number(b.versionNo ?? b.version ?? 0)
+    if (aNo !== bNo) return bNo - aNo
+    return String(b.createdAt || b.updatedAt || '').localeCompare(String(a.createdAt || a.updatedAt || ''))
+  })[0]
+}
+
 async function refreshTrialTaskStatus() {
   if (!indicatorWorkflow.taskId) return
 
@@ -1328,8 +1702,9 @@ async function refreshTrialTaskStatus() {
   }
 }
 
-onMounted(() => {
-  loadIndicatorForEdit()
+onMounted(async () => {
+  await loadPublishedFactorVersions()
+  await loadIndicatorForEdit()
 })
 
 </script>

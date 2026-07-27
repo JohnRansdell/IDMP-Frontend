@@ -71,35 +71,63 @@
           <h2>因子目录</h2>
           <p>维护可被指标公式引用的计算因子，发布后的版本进入正式计算链路。</p>
         </div>
-        <el-tag type="info" effect="plain">列表为演示目录，新增因子流程已接入后端</el-tag>
+        <el-tag type="info" effect="plain">{{ sourceMode === 'live' ? '列表来自后端因子接口' : '后端不可用时显示演示目录' }}</el-tag>
       </div>
 
       <div class="table-scroll">
         <el-table
-          :data="filteredRows"
+          :data="pagedRows"
+          v-loading="tableLoading"
           table-layout="fixed"
           empty-text="暂无符合条件的因子"
           class="factor-table"
         >
-          <el-table-column prop="code" label="因子编码" width="122">
+          <el-table-column type="expand" width="46">
             <template #default="{ row }">
-              <button class="code-link" type="button" @click="openFactorEditor(row.code)">
+              <div class="factor-expand">
+                <dl>
+                  <div>
+                    <dt>因子 ID</dt>
+                    <dd class="mono-data">{{ row.id || '-' }}</dd>
+                  </div>
+                  <div>
+                    <dt>已发布版本 ID</dt>
+                    <dd class="mono-data">{{ row.publishedVersionId || '-' }}</dd>
+                  </div>
+                  <div>
+                    <dt>聚合方式</dt>
+                    <dd>{{ row.aggregation || '-' }}</dd>
+                  </div>
+                  <div>
+                    <dt>引用次数</dt>
+                    <dd>{{ row.references ?? 0 }}</dd>
+                  </div>
+                  <div>
+                    <dt>数据域</dt>
+                    <dd>{{ row.domain || '-' }}</dd>
+                  </div>
+                  <div>
+                    <dt>状态</dt>
+                    <dd>{{ row.status || '-' }}</dd>
+                  </div>
+                </dl>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="code" label="因子编码" width="156">
+            <template #default="{ row }">
+              <button class="code-link" type="button" @click="openFactorEditor(row.id || row.code)">
                 {{ row.code }}
               </button>
             </template>
           </el-table-column>
-          <el-table-column prop="name" label="因子名称" min-width="250" show-overflow-tooltip />
-          <el-table-column label="类型" width="92">
-            <template #default="{ row }">{{ row.type.replace('因子', '') }}</template>
-          </el-table-column>
-          <el-table-column prop="category" label="业务分类" width="110" />
-          <el-table-column prop="aggregation" label="聚合方式" width="145" />
-          <el-table-column prop="domain" label="数据域" min-width="150" show-overflow-tooltip />
-          <el-table-column label="引用次数" width="104" align="center">
+          <el-table-column prop="name" label="因子名称" min-width="190" show-overflow-tooltip>
             <template #default="{ row }">
-              <span class="reference-count">{{ row.references }}</span>
+              <span class="factor-name-text">{{ row.name }}</span>
             </template>
           </el-table-column>
+          <el-table-column prop="category" label="业务分类" width="110" />
+          <el-table-column prop="domain" label="数据域" min-width="170" show-overflow-tooltip />
           <el-table-column label="发布状态" width="112">
             <template #default="{ row }">
               <StatusBadge
@@ -108,16 +136,13 @@
               />
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="184" fixed="right">
+          <el-table-column label="操作" width="132" fixed="right">
             <template #default="{ row }">
-              <button class="action-link" type="button" @click="openFactorEditor(row.code)">
+              <button class="action-link" type="button" @click="openFactorEditor(row.id || row.code)">
                 查看
               </button>
-              <button class="action-link" type="button" @click="openFactorEditor(row.code)">
+              <button class="action-link" type="button" @click="openFactorEditor(row.id || row.code)">
                 编辑
-              </button>
-              <button class="action-link" type="button" @click="showUnavailable(`${row.name}引用分析`)">
-                引用分析
               </button>
             </template>
           </el-table-column>
@@ -126,20 +151,27 @@
 
       <div class="table-footer">
         <span v-if="hasActiveFilters">筛选到 {{ filteredRows.length }} 条因子</span>
-        <span v-else>共 35 条</span>
-        <span class="table-footer__hint">当前展示 {{ filteredRows.length }} 条</span>
+        <span v-else>共 {{ sourceRows.length }} 条</span>
+        <el-pagination
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          layout="prev, pager, next, sizes"
+          :page-sizes="[8, 12, 20]"
+          :total="filteredRows.length"
+        />
       </div>
     </section>
   </div>
 </template>
 
 <script setup>
-import { computed, reactive } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
+import { fetchFactors } from '@/idmp/api/modules/factors'
 import { factorRows } from '@/idmp/data/demo'
 
 const router = useRouter()
@@ -154,8 +186,14 @@ const emptyFilters = () => ({
 
 const form = reactive(emptyFilters())
 const filters = reactive(emptyFilters())
+const backendFactorRows = ref([])
+const sourceMode = ref('demo')
+const tableLoading = ref(false)
+const currentPage = ref(1)
+const pageSize = ref(8)
 
-const categoryOptions = [...new Set(factorRows.map((item) => item.category))]
+const sourceRows = computed(() => sourceMode.value === 'live' ? backendFactorRows.value : factorRows)
+const categoryOptions = computed(() => [...new Set(sourceRows.value.map((item) => item.category).filter(Boolean))])
 
 const hasActiveFilters = computed(() => Object.values(filters).some(Boolean))
 
@@ -163,7 +201,7 @@ const filteredRows = computed(() => {
   const code = filters.code.toLowerCase()
   const name = filters.name.toLowerCase()
 
-  return factorRows.filter((row) => {
+  return sourceRows.value.filter((row) => {
     return (
       (!code || row.code.toLowerCase().includes(code)) &&
       (!name || row.name.toLowerCase().includes(name)) &&
@@ -174,14 +212,27 @@ const filteredRows = computed(() => {
   })
 })
 
+const pagedRows = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return filteredRows.value.slice(start, start + pageSize.value)
+})
+
 const applyFilters = () => {
   Object.assign(filters, form)
+  currentPage.value = 1
 }
 
 const resetFilters = () => {
   Object.assign(form, emptyFilters())
   Object.assign(filters, emptyFilters())
+  currentPage.value = 1
 }
+
+watch(filteredRows, () => {
+  if ((currentPage.value - 1) * pageSize.value >= filteredRows.value.length) {
+    currentPage.value = 1
+  }
+})
 
 const openFactorEditor = (id) => {
   router.push(`/factor/edit/${encodeURIComponent(id)}`)
@@ -190,6 +241,54 @@ const openFactorEditor = (id) => {
 const showUnavailable = (capability) => {
   ElMessage.info(`${capability}尚未接入真实接口，当前演示列表不会伪造操作结果。`)
 }
+
+async function loadBackendFactors() {
+  tableLoading.value = true
+  try {
+    const payload = await fetchFactors({ page: 1, size: 100 })
+    const rows = normalizeList(payload).map(toFactorRow)
+    backendFactorRows.value = rows
+    sourceMode.value = rows.length ? 'live' : 'demo'
+  } catch (error) {
+    backendFactorRows.value = []
+    sourceMode.value = 'demo'
+    ElMessage.warning(error?.message || '因子列表接口暂不可用，已显示演示目录')
+  } finally {
+    tableLoading.value = false
+  }
+}
+
+function toFactorRow(item) {
+  return {
+    id: item.id ?? item.factorId ?? '',
+    code: item.code || item.factorCode || '',
+    name: item.name || item.factorName || '',
+    type: item.type || '原子因子',
+    category: item.category || '后端因子',
+    aggregation: item.aggregation || item.output?.dimension || '-',
+    domain: item.domain || item.domainCode || '-',
+    references: item.references ?? item.referenceCount ?? 0,
+    status: normalizeStatus(item.status),
+    publishedVersionId: item.publishedVersionId
+  }
+}
+
+function normalizeStatus(status) {
+  if (status === 'PUBLISHED') return '已发布'
+  if (status === 'DRAFT') return '草稿'
+  if (status === 'VALIDATED') return '待发布'
+  return status || '未知'
+}
+
+function normalizeList(payload) {
+  if (Array.isArray(payload)) return payload
+  if (Array.isArray(payload?.records)) return payload.records
+  if (Array.isArray(payload?.list)) return payload.list
+  if (Array.isArray(payload?.items)) return payload.items
+  return []
+}
+
+onMounted(loadBackendFactors)
 </script>
 
 <style scoped lang="scss">
@@ -257,7 +356,7 @@ const showUnavailable = (capability) => {
 }
 
 .factor-table {
-  min-width: 1080px;
+  min-width: 960px;
 
   :deep(th.el-table__cell) {
     height: 46px;
@@ -275,6 +374,51 @@ const showUnavailable = (capability) => {
 
   :deep(.cell) {
     line-height: 20px;
+  }
+}
+
+.factor-name-text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--idmp-text-primary);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.factor-expand {
+  padding: 6px 12px 12px 58px;
+  background: var(--idmp-layer-02);
+
+  dl {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px 14px;
+    margin: 0;
+  }
+
+  div {
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid var(--idmp-border-subtle);
+    border-radius: var(--idmp-radius-sm);
+    background: var(--idmp-layer-01);
+  }
+
+  dt {
+    margin-bottom: 5px;
+    color: var(--idmp-text-helper);
+    font-size: 12px;
+  }
+
+  dd {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: var(--idmp-text-primary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
@@ -322,6 +466,7 @@ const showUnavailable = (capability) => {
   padding: 11px 4px 0;
   color: var(--idmp-text-helper);
   font-size: 13px;
+  gap: 16px;
 }
 
 .table-footer__hint {

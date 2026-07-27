@@ -257,8 +257,8 @@ import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
-import { fetchIndicators } from '@/idmp/api/modules/indicators'
-import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
+import { fetchIndicatorAnalysis, fetchIndicators } from '@/idmp/api/modules/indicators'
+import { fetchMortalityReadonlyChain, mortalityChainConfig } from '@/idmp/api/modules/mortality'
 import {
   DEFAULT_ANALYSIS_INDICATOR,
   getAnalysisProfileOptions,
@@ -272,6 +272,7 @@ const router = useRouter()
 const activeTab = ref('trend')
 const period = ref('月度')
 const profileRefreshVersion = ref(0)
+const backendAnalysis = ref(null)
 const mortalityChain = ref(null)
 const mortalityChainLoading = ref(false)
 const selectedIndicatorCode = ref(String(route.query.indicator || DEFAULT_ANALYSIS_INDICATOR))
@@ -291,10 +292,46 @@ const currentProfile = computed(() => {
   profileRefreshVersion.value
   return getAnalysisProfile(indicatorCode.value)
 })
-const currentTrend = computed(() => currentProfile.value.trends[period.value] || currentProfile.value.trends.月度)
-const primaryMetric = computed(() => currentProfile.value.summary?.[0] || { label: '当前值', value: '-' })
+const backendAnalysisGranularity = computed(() => {
+  if (period.value === '月度') return 'MONTHLY'
+  if (period.value === '年度') return 'YEARLY'
+  return null
+})
+const hasBackendAnalysisData = computed(() => Boolean(backendAnalysis.value?.dataAvailable && backendAnalysis.value?.overview))
+const backendTrend = computed(() => createTrendFromBackendAnalysis(backendAnalysis.value, currentProfile.value.unit))
+const currentTrend = computed(() => backendTrend.value || currentProfile.value.trends[period.value] || currentProfile.value.trends.月度)
+const primaryMetric = computed(() => {
+  const overview = backendAnalysis.value?.overview
+  const dashboardValue = resolveDashboardCurrentMetricValue()
+  if (dashboardValue) {
+    return {
+      label: '当前指标值',
+      value: dashboardValue,
+      tone: mortalityIndicatorRecord.value?.qualityStatus === 'TRIAL' ? 'success' : undefined
+    }
+  }
+  if (hasBackendAnalysisData.value) {
+    return {
+      label: '当前指标值',
+      value: resolveCurrentMetricValue(),
+      tone: overview.qualityStatus === 'PASSED' ? 'success' : 'warning'
+    }
+  }
+  return currentProfile.value.summary?.[0] || { label: '当前值', value: '-' }
+})
 const factorMetrics = computed(() => currentProfile.value.summary?.slice(4, 6) || [])
-const secondaryMetrics = computed(() => currentProfile.value.summary?.slice(1, 4) || [])
+const secondaryMetrics = computed(() => {
+  const overview = backendAnalysis.value?.overview
+  const context = backendAnalysis.value?.resultContext
+  if (hasBackendAnalysisData.value) {
+    return [
+      { label: '质量状态', value: overview.qualityStatus || '-', tone: overview.qualityStatus === 'PASSED' ? 'success' : 'warning' },
+      { label: '结果批次', value: context?.batchId || '-', tone: 'neutral' },
+      { label: '维度组合', value: overview.dimensionHash || '全院汇总', tone: 'neutral' }
+    ]
+  }
+  return currentProfile.value.summary?.slice(1, 4) || []
+})
 const trendTableRows = computed(() =>
   currentTrend.value.labels.map((label, index) => ({
     label,
@@ -311,19 +348,28 @@ const hasBackendMortalityData = computed(() => Boolean(
   mortalityChain.value?.calcBatch
 ))
 const analysisSourceLabel = computed(() =>
-  hasBackendMortalityData.value ? '只读接口摘要 + 演示趋势' : '本地演示数据'
+  backendTrend.value ? '分析结果只读接口（全历史趋势）' : hasBackendMortalityData.value ? '计算链路摘要 + 演示趋势' : '本地演示数据'
 )
 const analysisMetadata = computed(() => {
   const chain = mortalityChain.value
   const config = chain?.config || {}
+  const context = backendAnalysis.value?.resultContext || {}
   return {
-    version: hasBackendMortalityData.value ? String(config.indicatorVersionId || '后端未返回') : '演示配置（无版本 ID）',
-    batch: hasBackendMortalityData.value ? String(config.indicatorBatchId || '后端未返回') : '未接入',
+    version: hasBackendAnalysisData.value
+      ? String(backendAnalysis.value.indicatorVersionId || '后端未返回')
+      : hasBackendMortalityData.value ? String(config.indicatorVersionId || '后端未返回') : '演示配置（无版本 ID）',
+    batch: hasBackendAnalysisData.value
+      ? String(context.batchId || '后端未返回')
+      : hasBackendMortalityData.value ? String(config.indicatorBatchId || '后端未返回') : '未接入',
     watermark: resolveChainWatermark(chain),
   }
 })
 const analysisUpdatedAt = computed(() => {
   const chain = mortalityChain.value
+  const context = backendAnalysis.value?.resultContext || {}
+  if (hasBackendAnalysisData.value) {
+    return firstPresent(context.activatedAt, backendAnalysis.value?.overview?.periodEnd, '后端未返回更新时间')
+  }
   return firstPresent(
     chain?.indicatorResult?.updatedAt,
     chain?.indicatorResult?.finishedAt,
@@ -517,6 +563,71 @@ function formatDecimal(value) {
   return Number.isFinite(number) ? number.toFixed(8) : '-'
 }
 
+function resolveCurrentMetricValue() {
+  const overview = backendAnalysis.value?.overview
+  if (isUsableDisplayValue(overview?.displayValue)) return overview.displayValue
+  if (isUsableRawValue(overview?.value)) return formatMetricValue(overview.value, currentProfile.value.unit)
+
+  const latestTrendPoint = [...(backendAnalysis.value?.trend || [])]
+    .reverse()
+    .find((item) => isUsableDisplayValue(item?.displayValue) || isUsableRawValue(item?.value))
+  if (isUsableDisplayValue(latestTrendPoint?.displayValue)) return latestTrendPoint.displayValue
+  if (isUsableRawValue(latestTrendPoint?.value)) return formatMetricValue(latestTrendPoint.value, currentProfile.value.unit)
+
+  return chainDisplayValue.value
+}
+
+function resolveDashboardCurrentMetricValue() {
+  if (indicatorCode.value !== 'MORTALITY_INPATIENT') return ''
+  return mortalityIndicatorRecord.value?.displayValue || ''
+}
+
+function isUsableDisplayValue(value) {
+  return value !== undefined && value !== null && value !== '' && value !== '0'
+}
+
+function isUsableRawValue(value) {
+  const number = Number(value)
+  return Number.isFinite(number) && number !== 0
+}
+
+function formatMetricValue(value, unit) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return '-'
+  if (unit === '%') return `${(number * 100).toFixed(2)}%`
+  return String(number)
+}
+
+function createTrendFromBackendAnalysis(payload, unit) {
+  if (
+    !payload?.dataAvailable ||
+    !Array.isArray(payload.trend) ||
+    !payload.trend.length ||
+    payload.granularity !== backendAnalysisGranularity.value
+  ) return null
+
+  return {
+    range: payload.granularity === 'YEARLY' ? '后端全历史年度结果' : '后端全历史月度结果',
+    labels: payload.trend.map((item) => formatPeriodLabel(item.periodStart, item.periodEnd)),
+    actual: payload.trend.map((item) => normalizeTrendValue(item, unit)),
+    peer: payload.trend.map(() => null)
+  }
+}
+
+function normalizeTrendValue(item, unit) {
+  const value = Number(item?.value)
+  if (!Number.isFinite(value)) return null
+  if (unit === '%') return Number((value * 100).toFixed(2))
+  return value
+}
+
+function formatPeriodLabel(periodStart, periodEnd) {
+  const start = String(periodStart || '').slice(0, 10)
+  const end = String(periodEnd || '').slice(0, 10)
+  if (start && end) return `${start} 至 ${end}`
+  return start || end || '-'
+}
+
 function buildArtifactStatus(chain) {
   return [
     chain?.deathFactorArtifact?.status,
@@ -556,7 +667,7 @@ async function loadBackendAnalysisIndicators() {
   indicatorOptionsLoading.value = true
   try {
     const rows = await fetchIndicators()
-    backendIndicators.value = Array.isArray(rows) ? rows : []
+    backendIndicators.value = normalizeList(rows)
   } catch {
     backendIndicators.value = []
     ElMessage.warning('后端指标列表暂不可用，已使用本地分析配置')
@@ -585,6 +696,14 @@ function createBackendAnalysisOptions(indicators, profileOptions) {
   return [...mappedOptions, ...missingLocalOptions]
 }
 
+function normalizeList(payload) {
+  if (Array.isArray(payload)) return payload
+  if (Array.isArray(payload?.records)) return payload.records
+  if (Array.isArray(payload?.list)) return payload.list
+  if (Array.isArray(payload?.items)) return payload.items
+  return []
+}
+
 function matchAnalysisProfile(indicator, profileOptions) {
   const code = String(indicator?.code || '')
   const name = String(indicator?.name || '')
@@ -607,10 +726,34 @@ function normalizeText(value) {
 async function refreshMortalityAnalysis() {
   if (indicatorCode.value !== 'MORTALITY_INPATIENT') return
   mortalityChainLoading.value = true
+  backendAnalysis.value = null
   try {
-    const chain = await fetchMortalityReadonlyChain()
-    mortalityChain.value = chain
-    updateMortalityProfileFromChain(chain)
+    const granularity = backendAnalysisGranularity.value
+    const [analysisResult, chain] = await Promise.allSettled([
+      granularity
+        ? fetchIndicatorAnalysis(mortalityChainConfig.indicatorId, {
+            indicatorVersionId: mortalityChainConfig.indicatorVersionId,
+            granularity
+          })
+        : Promise.resolve(null),
+      fetchMortalityReadonlyChain()
+    ])
+
+    if (analysisResult.status === 'fulfilled' && analysisResult.value) {
+      backendAnalysis.value = analysisResult.value
+    }
+
+    if (chain.status !== 'fulfilled' && (analysisResult.status !== 'fulfilled' || !analysisResult.value)) {
+      throw chain.reason
+    }
+
+    if (chain.status === 'fulfilled') {
+      const chainValue = chain.value
+      mortalityChain.value = chainValue
+      updateMortalityProfileFromChain(chainValue)
+    } else {
+      mortalityChain.value = null
+    }
     profileRefreshVersion.value += 1
     mortalityChainLoading.value = false
   } catch {
@@ -627,6 +770,10 @@ onMounted(() => {
 
 watch(indicatorCode, () => {
   selectedIndicatorCode.value = indicatorCode.value
+  refreshMortalityAnalysis()
+})
+
+watch(period, () => {
   refreshMortalityAnalysis()
 })
 </script>

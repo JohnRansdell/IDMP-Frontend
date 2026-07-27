@@ -235,7 +235,7 @@ import { Download, Grid, Menu, Plus, RefreshLeft, Search, Upload } from '@elemen
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
-import { fetchIndicators } from '@/idmp/api/modules/indicators'
+import { fetchIndicators, fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
 import { indicatorRows } from '@/idmp/data/demo'
 
 const router = useRouter()
@@ -305,8 +305,14 @@ const loadBackendIndicators = async () => {
   tableLoading.value = true
   loadError.value = ''
   try {
-    const rows = await fetchIndicators()
-    backendIndicatorRows.value = Array.isArray(rows) ? rows.map(toIndicatorRow) : []
+    const [indicators, publishedVersions] = await Promise.all([
+      fetchIndicators({ page: 1, size: 100 }),
+      fetchIndicatorVersionList({ publicationStatus: 'PUBLISHED', page: 1, size: 100 })
+    ])
+    backendIndicatorRows.value = mergePublishedIndicatorVersions(
+      normalizeList(indicators).map(toIndicatorRow),
+      normalizeList(publishedVersions).map(toPublishedIndicatorVersionRow)
+    )
     sourceMode.value = 'live'
   } catch (error) {
     backendIndicatorRows.value = []
@@ -315,6 +321,14 @@ const loadBackendIndicators = async () => {
   } finally {
     tableLoading.value = false
   }
+}
+
+function normalizeList(payload) {
+  if (Array.isArray(payload)) return payload
+  if (Array.isArray(payload?.records)) return payload.records
+  if (Array.isArray(payload?.list)) return payload.list
+  if (Array.isArray(payload?.items)) return payload.items
+  return []
 }
 
 const toIndicatorRow = item => ({
@@ -328,8 +342,43 @@ const toIndicatorRow = item => ({
   status: item.status || '未知',
   scenes: item.scenes || 0,
   description: item.description,
-  id: item.id
+  id: item.id,
+  indicatorId: item.id,
+  versionId: item.currentVersionId || item.latestVersionId || item.publishedVersionId || ''
 })
+
+const toPublishedIndicatorVersionRow = item => ({
+  code: item.indicatorCode || item.code,
+  name: item.indicatorName || item.name || item.indicatorCode || item.code,
+  category: item.category || '后端指标',
+  attribute: item.attribute || '定量',
+  version: item.versionNo ? `V${item.versionNo}` : `版本 ${item.id || item.versionId || '-'}`,
+  direction: item.direction || '监测比较',
+  source: item.source || '已发布版本',
+  status: item.status || item.publicationStatus || 'PUBLISHED',
+  scenes: item.scenes || 0,
+  description: item.description,
+  id: item.indicatorId || item.indicator?.id || item.id,
+  indicatorId: item.indicatorId || item.indicator?.id || '',
+  versionId: item.id || item.versionId || item.indicatorVersionId || ''
+})
+
+function mergePublishedIndicatorVersions(indicatorRows, publishedRows) {
+  const rowsByCode = new Map(indicatorRows.map(row => [row.code, { ...row }]))
+  publishedRows.forEach((versionRow) => {
+    if (!versionRow.code) return
+    const existing = rowsByCode.get(versionRow.code)
+    rowsByCode.set(versionRow.code, {
+      ...(existing || {}),
+      ...versionRow,
+      id: versionRow.indicatorId || existing?.id || versionRow.id,
+      indicatorId: versionRow.indicatorId || existing?.indicatorId || existing?.id || '',
+      status: 'PUBLISHED',
+      source: existing?.source || versionRow.source
+    })
+  })
+  return Array.from(rowsByCode.values())
+}
 
 const openEditor = id => router.push(`/indicator/edit/${id}`)
 const openDetail = row => router.push(`/indicator/view/${row.id || row.code}`)
