@@ -1,12 +1,16 @@
 <template>
   <div class="idmp-page factor-management">
-    <PageHeader title="因子管理">
+    <PageHeader
+      title="因子管理"
+      status-label="混合数据来源"
+      status-tone="info"
+    >
       <template #actions>
         <div class="page-toolbar">
-          <el-button type="primary" :icon="Plus" @click="handleLightAction('新增因子')">
-            新增因子
+          <el-button type="primary" :icon="Plus" @click="focusWorkbench">
+            创建联调草稿
           </el-button>
-          <el-button :icon="Upload" @click="showUnavailable">批量导入</el-button>
+          <el-button :icon="Upload" @click="showUnavailable('批量导入')">批量导入</el-button>
         </div>
       </template>
     </PageHeader>
@@ -18,6 +22,7 @@
             v-model.trim="form.code"
             clearable
             placeholder="因子编码"
+            aria-label="按因子编码筛选"
             @keyup.enter="applyFilters"
           />
         </el-form-item>
@@ -26,17 +31,18 @@
             v-model.trim="form.name"
             clearable
             placeholder="因子名称"
+            aria-label="按因子名称筛选"
             @keyup.enter="applyFilters"
           />
         </el-form-item>
         <el-form-item>
-          <el-select v-model="form.type" clearable placeholder="因子类型">
+          <el-select v-model="form.type" clearable placeholder="因子类型" aria-label="按因子类型筛选">
             <el-option label="原子因子" value="原子因子" />
             <el-option label="组合因子" value="组合因子" />
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-select v-model="form.category" clearable placeholder="业务分类">
+          <el-select v-model="form.category" clearable placeholder="业务分类" aria-label="按业务分类筛选">
             <el-option
               v-for="category in categoryOptions"
               :key="category"
@@ -52,12 +58,20 @@
       </el-form>
     </section>
 
-    <section class="surface-card factor-workbench">
+    <section ref="workbenchRef" class="surface-card factor-workbench">
       <div class="backend-chain-card__head">
         <div>
           <h2>因子配置工作台</h2>
-          <p>按业务步骤完成因子定义、DSL 校验、试算确认和版本发布，发布后的版本可以被指标公式引用。</p>
+          <p>固定验证负载：INPATIENT_DEATH_RECORD / COUNT(*) / PERSON_TIME；创建会写入真实后端，请先确认。</p>
         </div>
+      </div>
+      <div class="workflow-state" role="status" aria-live="polite">
+        <StatusBadge
+          :status="factorWorkflowStatus.code"
+          :label="factorWorkflowStatus.label"
+          :tone="factorWorkflowStatus.tone"
+        />
+        <span>{{ factorWorkflowStatus.detail }}</span>
       </div>
       <div class="workflow-card-grid">
         <article class="workflow-card">
@@ -79,7 +93,7 @@
         <article class="workflow-card">
           <span>步骤 3</span>
           <strong>试算与结果确认</strong>
-          <small>{{ factorWorkflow.resultValue ? `结果 ${factorWorkflow.resultValue}` : factorWorkflow.batchId ? `批次 ${factorWorkflow.batchId}` : '发起试算后查看结果' }}</small>
+          <small>{{ hasTrialResult ? `结果 ${factorWorkflow.resultValue}` : factorWorkflow.batchId ? `批次 ${factorWorkflow.batchId}` : '发起试算后查看结果' }}</small>
           <div class="workflow-card__actions">
             <el-button :disabled="!factorWorkflow.artifactId" :loading="factorWorkflowLoading.trial" @click="trialFactorOnly">
               发起试算
@@ -93,7 +107,7 @@
           <span>步骤 4</span>
           <strong>发布因子版本</strong>
           <small>{{ factorWorkflow.publishStatus ? `状态 ${factorWorkflow.publishStatus}` : '发布后可供指标公式引用' }}</small>
-          <el-button type="primary" :disabled="!factorWorkflow.resultValue" :loading="factorWorkflowLoading.publish" @click="publishFactorOnly">
+          <el-button type="primary" :disabled="!hasTrialResult" :loading="factorWorkflowLoading.publish" @click="publishFactorOnly">
             发布版本
           </el-button>
         </article>
@@ -150,7 +164,7 @@
         >
           <el-table-column prop="code" label="因子编码" width="104">
             <template #default="{ row }">
-              <button class="code-link" type="button" @click="handleLightAction('查看因子')">
+              <button class="code-link" type="button" @click="showUnavailable('因子详情')">
                 {{ row.code }}
               </button>
             </template>
@@ -169,23 +183,21 @@
           </el-table-column>
           <el-table-column label="状态" width="106">
             <template #default="{ row }">
-              <span
-                class="status-pill"
-                :class="{ 'is-muted': row.status !== '已发布' }"
-              >
-                {{ row.status }}
-              </span>
+              <StatusBadge
+                :status="row.status === '已发布' ? 'PUBLISHED' : 'DRAFT'"
+                :label="row.status"
+              />
             </template>
           </el-table-column>
           <el-table-column label="操作" width="188" fixed="right">
-            <template #default>
-              <button class="action-link" type="button" @click="handleLightAction('查看因子')">
+            <template #default="{ row }">
+              <button class="action-link" type="button" @click="showUnavailable(`${row.name}详情`)">
                 查看
               </button>
-              <button class="action-link" type="button" @click="handleLightAction('编辑因子')">
+              <button class="action-link" type="button" @click="showUnavailable(`${row.name}编辑`)">
                 编辑
               </button>
-              <button class="action-link" type="button" @click="handleLightAction('引用分析')">
+              <button class="action-link" type="button" @click="showUnavailable(`${row.name}引用分析`)">
                 引用分析
               </button>
             </template>
@@ -204,9 +216,10 @@
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
+import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import {
   compileFactorVersion,
   createFactor,
@@ -230,6 +243,7 @@ const filters = reactive(emptyFilters())
 const backendChainLoading = ref(false)
 const backendChainResult = ref(null)
 const backendChainSteps = ref(createBackendChainSteps())
+const workbenchRef = ref()
 const factorWorkflow = reactive({
   factorId: '',
   versionId: '',
@@ -238,6 +252,12 @@ const factorWorkflow = reactive({
   batchId: '',
   resultValue: '',
   publishStatus: ''
+})
+const factorWorkflowStatus = reactive({
+  code: 'DRAFT',
+  label: '尚未开始',
+  tone: 'neutral',
+  detail: '尚未向后端创建因子；页面刷新后本次工作台状态不会恢复。'
 })
 const factorWorkflowLoading = reactive({
   save: false,
@@ -250,6 +270,12 @@ const factorWorkflowLoading = reactive({
 const categoryOptions = [...new Set(factorRows.map((item) => item.category))]
 
 const hasActiveFilters = computed(() => Object.values(filters).some(Boolean))
+const hasTrialResult = computed(() =>
+  factorWorkflow.resultValue !== '' &&
+  factorWorkflow.resultValue !== null &&
+  factorWorkflow.resultValue !== undefined &&
+  factorWorkflow.resultValue !== '-'
+)
 
 const filteredRows = computed(() => {
   const code = filters.code.toLowerCase()
@@ -306,8 +332,8 @@ function setBackendStep(key, status, detail = '') {
 
 function resetFactorWorkflowAfterSave(factor, versionId) {
   Object.assign(factorWorkflow, {
-    factorId: factor.id,
-    versionId,
+    factorId: toOpaqueId(factor.id ?? factor.factorId),
+    versionId: toOpaqueId(versionId),
     artifactId: '',
     taskId: '',
     batchId: '',
@@ -317,15 +343,24 @@ function resetFactorWorkflowAfterSave(factor, versionId) {
 }
 
 async function saveFactorDefinitionOnly() {
+  const confirmed = await confirmOperation(
+    '将使用页面标注的固定 COUNT 联调负载，在真实后端创建因子及草稿版本。是否继续？',
+    '确认创建因子草稿'
+  )
+  if (!confirmed) return
+
   factorWorkflowLoading.save = true
+  setWorkflowStatus('RUNNING', '正在创建', '正在提交固定验证负载，请勿重复操作。', 'info')
   try {
     const suffix = createBackendCodeSuffix()
     const factor = await createFactor(createCountFactorPayload(suffix))
-    const versionId = factor.draftVersionId || factor.versionId || factor.currentVersionId
+    const versionId = factor.draftVersionId ?? factor.versionId ?? factor.currentVersionId
     if (!versionId) throw new Error('后端未返回因子版本 ID')
     resetFactorWorkflowAfterSave(factor, versionId)
+    setWorkflowStatus('DRAFT', '草稿已创建', `因子 ${factorWorkflow.factorId || '-'} / 版本 ${factorWorkflow.versionId}`, 'neutral')
     ElMessage.success('因子定义已保存')
   } catch (error) {
+    setWorkflowStatus('FAILED', '创建失败', error?.message || '因子定义保存失败', 'danger')
     ElMessage.error(error?.message || '因子定义保存失败')
   } finally {
     factorWorkflowLoading.save = false
@@ -339,19 +374,26 @@ async function compileFactorOnly() {
   }
 
   factorWorkflowLoading.compile = true
+  setWorkflowStatus('VALIDATING', '正在校验', `正在校验版本 ${factorWorkflow.versionId} 的 DSL。`, 'info')
   try {
     const compile = await compileFactorVersion(factorWorkflow.versionId, {
       compileMode: 'VALIDATE_AND_GENERATE',
       includePlanAssessment: true
     })
-    const artifact = await fetchCompileArtifact(compile.artifactId)
-    factorWorkflow.artifactId = compile.artifactId
+    const artifactId = toOpaqueId(compile.artifactId)
+    if (!artifactId) throw new Error('后端未返回计算产物 ID')
+    const artifact = await fetchCompileArtifact(artifactId)
     if (artifact.status === 'VALID') {
+      factorWorkflow.artifactId = artifactId
+      setWorkflowStatus('VALIDATED', 'DSL 已验证', `计算产物 ${factorWorkflow.artifactId}`, 'success')
       ElMessage.success('DSL 校验通过')
     } else {
+      factorWorkflow.artifactId = ''
+      setWorkflowStatus('VALIDATING', '校验未通过', `后端返回状态 ${artifact.status || '未知'}`, 'warning')
       ElMessage.warning(`DSL 校验状态：${artifact.status || '未知'}`)
     }
   } catch (error) {
+    setWorkflowStatus('FAILED', '校验失败', error?.message || 'DSL 校验失败', 'danger')
     ElMessage.error(error?.message || 'DSL 校验失败')
   } finally {
     factorWorkflowLoading.compile = false
@@ -365,6 +407,7 @@ async function trialFactorOnly() {
   }
 
   factorWorkflowLoading.trial = true
+  setWorkflowStatus('RUNNING', '试算运行中', `版本 ${factorWorkflow.versionId} 正在提交异步试算。`, 'info')
   try {
     const suffix = createBackendCodeSuffix()
     const trial = await trialFactorVersion(
@@ -372,15 +415,21 @@ async function trialFactorOnly() {
       { periodStart: '2000-01-01T00:00:00', periodEnd: '2030-01-01T00:00:00' },
       `factor-workflow-${suffix}`
     )
-    factorWorkflow.taskId = trial.taskId
-    factorWorkflow.batchId = trial.batchId
+    factorWorkflow.taskId = toOpaqueId(trial.taskId)
+    factorWorkflow.batchId = toOpaqueId(trial.batchId)
+    if (!factorWorkflow.taskId || !factorWorkflow.batchId) {
+      throw new Error('后端未返回试算任务或批次 ID')
+    }
     const task = await pollBackendTask(trial.taskId)
     if (task.status === 'SUCCEEDED') {
+      setWorkflowStatus('SUCCEEDED', '试算已完成', `批次 ${factorWorkflow.batchId} 已完成，等待读取结果。`, 'success')
       ElMessage.success('因子试算已完成，可以查看结果')
     } else {
+      setWorkflowStatus(task.status || 'FAILED', '试算未成功', `异步任务状态 ${task.status || '未知'}`, 'warning')
       ElMessage.warning(`因子试算任务状态：${task.status || '未知'}`)
     }
   } catch (error) {
+    setWorkflowStatus('FAILED', '试算失败', error?.message || '因子试算失败', 'danger')
     ElMessage.error(error?.message || '因子试算失败')
   } finally {
     factorWorkflowLoading.trial = false
@@ -395,12 +444,22 @@ async function loadFactorResultOnly() {
 
   factorWorkflowLoading.result = true
   try {
-    await pollBackendBatch(factorWorkflow.batchId)
+    const batch = await pollBackendBatch(factorWorkflow.batchId)
+    if (batch.status !== 'SUCCEEDED') {
+      throw new Error(`因子计算批次未成功：${batch.status || '未知状态'}`)
+    }
     const resultSet = await pollFactorResults(factorWorkflow.versionId, factorWorkflow.batchId)
     const record = resultSet.results?.records?.[0]
     factorWorkflow.resultValue = record?.valueDecimal ?? '-'
-    ElMessage.success('因子试算结果已读取')
+    if (hasTrialResult.value) {
+      setWorkflowStatus('VALIDATED', '结果已确认', `试算结果 ${factorWorkflow.resultValue}，可以进入发布确认。`, 'success')
+      ElMessage.success('因子试算结果已读取')
+    } else {
+      setWorkflowStatus('FAILED', '未返回试算结果', '批次已查询，但没有可用于发布的结果记录。', 'warning')
+      ElMessage.warning('未读取到可发布的因子试算结果')
+    }
   } catch (error) {
+    setWorkflowStatus('FAILED', '结果读取失败', error?.message || '因子试算结果读取失败', 'danger')
     ElMessage.error(error?.message || '因子试算结果读取失败')
   } finally {
     factorWorkflowLoading.result = false
@@ -408,17 +467,26 @@ async function loadFactorResultOnly() {
 }
 
 async function publishFactorOnly() {
-  if (!factorWorkflow.resultValue) {
+  if (!hasTrialResult.value) {
     ElMessage.warning('请先确认因子试算结果')
     return
   }
 
+  const confirmed = await confirmOperation(
+    `将发布因子版本 ${factorWorkflow.versionId}；已发布版本应保持不可变。当前试算结果为 ${factorWorkflow.resultValue}。是否继续？`,
+    '确认发布因子版本'
+  )
+  if (!confirmed) return
+
   factorWorkflowLoading.publish = true
+  setWorkflowStatus('RUNNING', '正在发布', `正在发布版本 ${factorWorkflow.versionId}。`, 'info')
   try {
     const published = await publishFactorVersion(factorWorkflow.versionId)
     factorWorkflow.publishStatus = published.status || 'PUBLISHED'
+    setWorkflowStatus('PUBLISHED', '版本已发布', `后端状态 ${factorWorkflow.publishStatus}`, 'success')
     ElMessage.success('因子版本已发布')
   } catch (error) {
+    setWorkflowStatus('FAILED', '发布失败', error?.message || '因子版本发布失败', 'danger')
     ElMessage.error(error?.message || '因子版本发布失败')
   } finally {
     factorWorkflowLoading.publish = false
@@ -426,6 +494,12 @@ async function publishFactorOnly() {
 }
 
 async function runFactorBackendChain() {
+  const confirmed = await confirmOperation(
+    '该操作会在真实后端依次创建、编译、试算并发布一个固定 COUNT 因子，可能产生持久业务数据。是否继续？',
+    '确认执行完整接口闭环'
+  )
+  if (!confirmed) return
+
   backendChainLoading.value = true
   backendChainResult.value = null
   resetBackendChainSteps()
@@ -436,9 +510,10 @@ async function runFactorBackendChain() {
     activeStep = 'createFactor'
     setBackendStep('createFactor', 'running')
     const factor = await createFactor(createCountFactorPayload(suffix))
-    const versionId = factor.draftVersionId || factor.versionId || factor.currentVersionId
+    const versionId = toOpaqueId(factor.draftVersionId ?? factor.versionId ?? factor.currentVersionId)
     if (!versionId) throw new Error('后端未返回因子版本 ID')
-    setBackendStep('createFactor', 'success', `因子ID ${factor.id}，版本ID ${versionId}`)
+    const factorId = toOpaqueId(factor.id ?? factor.factorId)
+    setBackendStep('createFactor', 'success', `因子ID ${factorId || '-'}，版本ID ${versionId}`)
 
     activeStep = 'compile'
     setBackendStep('compile', 'running')
@@ -446,12 +521,17 @@ async function runFactorBackendChain() {
       compileMode: 'VALIDATE_AND_GENERATE',
       includePlanAssessment: false
     })
-    setBackendStep('compile', 'success', `产物 ${compile.artifactId}，${compile.status}`)
+    const artifactId = toOpaqueId(compile.artifactId)
+    if (!artifactId) throw new Error('后端未返回计算产物 ID')
+    setBackendStep('compile', 'success', `产物 ${artifactId}，${compile.status}`)
 
     activeStep = 'artifact'
     setBackendStep('artifact', 'running')
-    const artifact = await fetchCompileArtifact(compile.artifactId)
+    const artifact = await fetchCompileArtifact(artifactId)
     setBackendStep('artifact', artifact.status === 'VALID' ? 'success' : 'error', `状态 ${artifact.status}`)
+    if (artifact.status !== 'VALID') {
+      throw new Error(`计算产物不可执行：${artifact.status || '未知状态'}`)
+    }
 
     activeStep = 'trial'
     setBackendStep('trial', 'running')
@@ -460,33 +540,46 @@ async function runFactorBackendChain() {
       { periodStart: '2000-01-01T00:00:00', periodEnd: '2030-01-01T00:00:00' },
       `factor-management-${suffix}`
     )
-    const taskId = trial.taskId
-    const batchId = trial.batchId
+    const taskId = toOpaqueId(trial.taskId)
+    const batchId = toOpaqueId(trial.batchId)
+    if (!taskId || !batchId) throw new Error('后端未返回试算任务或批次 ID')
     setBackendStep('trial', 'success', `任务 ${taskId}，批次 ${batchId}`)
 
     activeStep = 'task'
     setBackendStep('task', 'running')
     const task = await pollBackendTask(taskId)
     setBackendStep('task', task.status === 'SUCCEEDED' ? 'success' : 'error', `状态 ${task.status}`)
+    if (task.status !== 'SUCCEEDED') {
+      throw new Error(`因子试算任务未成功：${task.status || '未知状态'}`)
+    }
 
     activeStep = 'batch'
     setBackendStep('batch', 'running')
     const batch = await pollBackendBatch(batchId)
     setBackendStep('batch', batch.status === 'SUCCEEDED' ? 'success' : 'error', `状态 ${batch.status}`)
+    if (batch.status !== 'SUCCEEDED') {
+      throw new Error(`因子计算批次未成功：${batch.status || '未知状态'}`)
+    }
 
     activeStep = 'results'
     setBackendStep('results', 'running')
     const resultSet = await pollFactorResults(versionId, batchId)
     const record = resultSet.results?.records?.[0]
+    if (record?.valueDecimal === undefined || record?.valueDecimal === null) {
+      throw new Error('因子试算未返回可发布的结果')
+    }
     setBackendStep('results', 'success', `结果 ${record?.valueDecimal ?? '-'}`)
 
     activeStep = 'publish'
     setBackendStep('publish', 'running')
     const published = await publishFactorVersion(versionId)
     setBackendStep('publish', published.status === 'PUBLISHED' ? 'success' : 'error', `状态 ${published.status}`)
+    if (published.status !== 'PUBLISHED') {
+      throw new Error(`因子版本未发布：${published.status || '未知状态'}`)
+    }
 
     backendChainResult.value = {
-      factorId: factor.id,
+      factorId,
       versionId,
       batchId,
       resultValue: record?.valueDecimal ?? '-',
@@ -530,8 +623,9 @@ function createCountFactorPayload(suffix) {
 
 async function pollBackendTask(taskId) {
   let task = await fetchAsyncTask(taskId)
-  for (let index = 0; index < 24 && !['SUCCEEDED', 'FAILED', 'CANCELED'].includes(task.status); index += 1) {
-    await delay(1000)
+  for (const waitMs of POLL_DELAYS) {
+    if (TERMINAL_TASK_STATUSES.includes(task.status)) break
+    await delay(waitMs)
     task = await fetchAsyncTask(taskId)
   }
   return task
@@ -539,8 +633,9 @@ async function pollBackendTask(taskId) {
 
 async function pollBackendBatch(batchId) {
   let batch = await fetchCalcBatch(batchId)
-  for (let index = 0; index < 10 && !['SUCCEEDED', 'FAILED', 'CANCELED'].includes(batch.status); index += 1) {
-    await delay(1000)
+  for (const waitMs of POLL_DELAYS) {
+    if (TERMINAL_TASK_STATUSES.includes(batch.status)) break
+    await delay(waitMs)
     batch = await fetchCalcBatch(batchId)
   }
   return batch
@@ -548,12 +643,12 @@ async function pollBackendBatch(batchId) {
 
 async function pollFactorResults(versionId, batchId) {
   let lastError
-  for (let index = 0; index < 12; index += 1) {
+  for (let index = 0; index <= POLL_DELAYS.length; index += 1) {
     try {
       return await fetchFactorTrialResults(versionId, batchId)
     } catch (error) {
       lastError = error
-      await delay(1000)
+      if (index < POLL_DELAYS.length) await delay(POLL_DELAYS[index])
     }
   }
   throw lastError || new Error('因子结果查询超时')
@@ -563,18 +658,52 @@ function delay(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
+const POLL_DELAYS = [1000, 2000, 3000, 5000, 10000, 10000]
+const TERMINAL_TASK_STATUSES = [
+  'SUCCEEDED',
+  'PARTIAL_SUCCEEDED',
+  'FAILED',
+  'CANCELLED',
+  'CANCELED'
+]
+
 function createBackendCodeSuffix() {
   const timestamp = new Date().toISOString().replace(/\D/g, '').slice(0, 17)
   const random = Math.random().toString(36).slice(2, 6).toUpperCase()
   return `${timestamp}_${random}`
 }
 
-const showUnavailable = () => {
-  ElMessage.info('演示版暂不可用')
+function toOpaqueId(value) {
+  return value === null || value === undefined ? '' : String(value)
 }
 
-const handleLightAction = (action) => {
-  ElMessage.success(`${action}操作已触发`)
+function setWorkflowStatus(code, label, detail, tone) {
+  Object.assign(factorWorkflowStatus, { code, label, detail, tone })
+}
+
+async function confirmOperation(message, title) {
+  try {
+    await ElMessageBox.confirm(message, title, {
+      type: 'warning',
+      confirmButtonText: '确认继续',
+      cancelButtonText: '取消'
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+function focusWorkbench() {
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  workbenchRef.value?.scrollIntoView({
+    behavior: reducedMotion ? 'auto' : 'smooth',
+    block: 'start'
+  })
+}
+
+const showUnavailable = (capability) => {
+  ElMessage.info(`${capability}尚未接入真实接口，当前演示列表不会伪造操作结果。`)
 }
 </script>
 
@@ -615,6 +744,19 @@ const handleLightAction = (action) => {
   padding: 16px 18px;
 }
 
+.workflow-state {
+  display: flex;
+  align-items: center;
+  gap: var(--idmp-space-3);
+  margin-top: var(--idmp-space-3);
+  padding: var(--idmp-space-2) var(--idmp-space-3);
+  border-left: 3px solid var(--idmp-support-info);
+  background: var(--idmp-layer-02);
+  color: var(--idmp-text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .workflow-card-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -628,18 +770,18 @@ const handleLightAction = (action) => {
   min-width: 0;
   min-height: 150px;
   padding: 14px;
-  border: 1px solid #e5e8ef;
-  border-radius: 6px;
-  background: #fff;
+  border: 1px solid var(--idmp-border-subtle);
+  border-radius: var(--idmp-radius-md);
+  background: var(--idmp-layer-01);
 
   > span {
-    color: #8c8c8c;
+    color: var(--idmp-text-helper);
     font-size: 12px;
   }
 
   > strong {
     margin: 7px 0 6px;
-    color: #262626;
+    color: var(--idmp-text-primary);
     font-size: 15px;
     line-height: 20px;
   }
@@ -647,7 +789,7 @@ const handleLightAction = (action) => {
   > small {
     min-height: 36px;
     margin-bottom: 14px;
-    color: #8c8c8c;
+    color: var(--idmp-text-helper);
     font-size: 12px;
     line-height: 18px;
   }
@@ -681,14 +823,14 @@ const handleLightAction = (action) => {
 
   h2 {
     margin: 0 0 4px;
-    color: #262626;
+    color: var(--idmp-text-primary);
     font-size: 15px;
     line-height: 22px;
   }
 
   p {
     margin: 0;
-    color: #8c8c8c;
+    color: var(--idmp-text-helper);
     font-size: 12px;
     line-height: 18px;
   }
@@ -701,17 +843,17 @@ const handleLightAction = (action) => {
   gap: 8px 12px;
   margin: 12px 0;
   padding: 9px 12px;
-  border: 1px solid #e6f4ff;
-  border-radius: 6px;
-  background: #f7fbff;
+  border: 1px solid var(--idmp-border-subtle);
+  border-radius: var(--idmp-radius-md);
+  background: var(--idmp-interactive-subtle);
 
   span {
-    color: #8c8c8c;
+    color: var(--idmp-text-helper);
     font-size: 12px;
   }
 
   strong {
-    color: #1890ff;
+    color: var(--idmp-interactive);
     font-size: 13px;
   }
 }
@@ -726,9 +868,9 @@ const handleLightAction = (action) => {
   min-width: 0;
   min-height: 82px;
   padding: 10px 12px;
-  border: 1px solid #e5e8ef;
-  border-radius: 6px;
-  background: #fff;
+  border: 1px solid var(--idmp-border-subtle);
+  border-radius: var(--idmp-radius-md);
+  background: var(--idmp-layer-01);
 
   span,
   small {
@@ -739,47 +881,47 @@ const handleLightAction = (action) => {
   }
 
   span {
-    color: #8c8c8c;
+    color: var(--idmp-text-helper);
     font-size: 12px;
   }
 
   strong {
     display: block;
     margin: 7px 0;
-    color: #595959;
+    color: var(--idmp-text-secondary);
     font-size: 15px;
     line-height: 20px;
   }
 
   small {
-    color: #a0a3a8;
+    color: var(--idmp-text-disabled);
     font-size: 12px;
   }
 
   &.is-running {
-    border-color: #91d5ff;
-    background: #f7fbff;
+    border-color: var(--idmp-support-info);
+    background: var(--idmp-support-info-bg);
 
     strong {
-      color: #1890ff;
+      color: var(--idmp-support-info);
     }
   }
 
   &.is-success {
-    border-color: #b7eb8f;
-    background: #fcfff8;
+    border-color: var(--idmp-support-success);
+    background: var(--idmp-support-success-bg);
 
     strong {
-      color: #389e0d;
+      color: var(--idmp-support-success);
     }
   }
 
   &.is-error {
-    border-color: #ffa39e;
-    background: #fff7f6;
+    border-color: var(--idmp-support-danger);
+    background: var(--idmp-support-danger-bg);
 
     strong {
-      color: #f5222d;
+      color: var(--idmp-support-danger);
     }
   }
 }
@@ -790,16 +932,16 @@ const handleLightAction = (action) => {
   gap: 10px;
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--idmp-border-soft);
 
   span,
   small {
-    color: #8c8c8c;
+    color: var(--idmp-text-helper);
     font-size: 12px;
   }
 
   strong {
-    color: #1890ff;
+    color: var(--idmp-interactive);
     font-size: 20px;
   }
 }
@@ -820,15 +962,15 @@ const handleLightAction = (action) => {
   :deep(th.el-table__cell) {
     height: 46px;
     padding: 0;
-    color: #1f2329;
+    color: var(--idmp-text-primary);
     font-weight: 600;
-    background: #fafafa;
+    background: var(--idmp-layer-02);
   }
 
   :deep(td.el-table__cell) {
     height: 47px;
     padding: 0;
-    color: #31343a;
+    color: var(--idmp-text-secondary);
   }
 
   :deep(.cell) {
@@ -840,7 +982,7 @@ const handleLightAction = (action) => {
 .action-link {
   padding: 0;
   font: inherit;
-  color: #1890ff;
+  color: var(--idmp-interactive);
   cursor: pointer;
   background: transparent;
   border: 0;
@@ -865,11 +1007,11 @@ const handleLightAction = (action) => {
   min-width: 24px;
   height: 22px;
   padding: 0 7px;
-  color: #168ad3;
+  color: var(--idmp-support-info);
   font-size: 12px;
   line-height: 22px;
-  background: #eaf7ff;
-  border-radius: 11px;
+  background: var(--idmp-support-info-bg);
+  border-radius: var(--idmp-radius-sm);
 }
 
 .table-footer {
@@ -878,12 +1020,12 @@ const handleLightAction = (action) => {
   justify-content: space-between;
   min-height: 45px;
   padding: 11px 4px 0;
-  color: #8c8c8c;
+  color: var(--idmp-text-helper);
   font-size: 13px;
 }
 
 .table-footer__hint {
-  color: #b0b3b8;
+  color: var(--idmp-text-disabled);
 }
 
 @media (max-width: 1450px) {

@@ -1,6 +1,15 @@
 <template>
   <div class="idmp-page dashboard-page">
-    <PageHeader title="指标看板">
+    <PageHeader
+      title="医疗质量指标总览"
+    >
+      <template #meta>
+        <span class="data-source-badge" :class="{ 'is-live': dashboardSourceMode === 'mixed' }">
+          {{ dashboardSourceLabel }}
+        </span>
+        <span>数据期间：{{ period }}</span>
+        <span>统计范围：{{ department }}</span>
+      </template>
       <template #actions>
         <el-select v-model="period" class="dashboard-filter" aria-label="年度">
           <el-option label="2024年度" value="2024年度" />
@@ -20,6 +29,11 @@
         <el-button v-else type="primary" :icon="Edit" @click="startDashboardEdit">编辑看板</el-button>
       </template>
     </PageHeader>
+
+    <div v-if="dashboardLoadMessage" class="notice-strip is-warning dashboard-notice">
+      <el-icon><InfoFilled /></el-icon>
+      <span>{{ dashboardLoadMessage }}</span>
+    </div>
 
     <section v-if="isEditing" class="surface-card dashboard-editor-panel">
       <div class="dashboard-editor-panel__left">
@@ -51,106 +65,96 @@
         <el-button :icon="Plus" :disabled="!selectedDataSource" @click="addDashboardWidget">添加组件</el-button>
       </div>
       <div class="dashboard-editor-panel__right">
-        <span class="dashboard-editor-panel__hint">{{ activeWidgetName }}</span>
+        <span class="dashboard-editor-panel__hint" role="status" aria-live="polite">
+          {{ activeWidgetName }}
+        </span>
         <el-button :icon="Delete" :disabled="!activeWidget" @click="deleteActiveWidget">删除选中</el-button>
       </div>
     </section>
 
-    <template v-if="!hasCustomLayout && !isEditing">
-      <section class="kpi-grid" aria-label="核心指标">
-        <article
-          v-for="(item, index) in visibleKpis"
-          :key="item.title"
-          class="surface-card kpi-card is-clickable"
-          role="button"
-          tabindex="0"
-          @click="goIndicatorAnalysis(getKpiIndicatorCode(index, item))"
-          @keydown.enter.prevent="goIndicatorAnalysis(getKpiIndicatorCode(index, item))"
-          @keydown.space.prevent="goIndicatorAnalysis(getKpiIndicatorCode(index, item))"
-        >
-          <div class="kpi-card__top">
-            <span>{{ item.title }}</span>
-            <span class="kpi-dot" :class="`is-${item.status}`" />
-          </div>
-          <strong>{{ item.value }}</strong>
-          <div class="kpi-change" :class="`is-${item.status}`">{{ item.change }}</div>
-          <div class="kpi-target">{{ item.target }}</div>
-        </article>
-      </section>
-
-      <section class="chart-grid">
-        <article class="surface-card chart-card">
-          <div class="section-title">
-            <h2><el-icon><TrendCharts /></el-icon>指标趋势（近12月）</h2>
-          </div>
-          <IdmpChart :option="trendOption" height="278px" />
-        </article>
-        <article class="surface-card chart-card">
-          <div class="section-title">
-            <h2><el-icon><PieChart /></el-icon>分类达标率</h2>
-          </div>
-          <IdmpChart :option="rateOption" height="278px" />
-        </article>
-      </section>
-
-      <section class="dashboard-bottom">
-        <article class="surface-card list-card">
-          <div class="section-title">
-            <h2><el-icon><Bell /></el-icon>预警指标</h2>
-            <button type="button" class="action-link" @click="goAlerts">查看全部</button>
-          </div>
-          <ul class="warning-list">
-            <li v-for="warning in dashboardWarnings" :key="warning.text">
-              <span class="warning-icon" :class="`is-${warning.level}`">
-                <el-icon><WarningFilled v-if="warning.level !== 'info'" /><InfoFilled v-else /></el-icon>
-              </span>
-              <span class="warning-text">{{ warning.text }}</span>
-              <time>{{ warning.time }}</time>
-            </li>
-          </ul>
-        </article>
-
-        <article class="surface-card list-card">
-          <div class="section-title">
-            <h2><el-icon><TrophyBase /></el-icon>科室指标排名（手术并发症率）</h2>
-          </div>
-          <ol class="ranking-list">
-            <li v-for="row in departmentRanking" :key="row.department">
-              <span class="rank" :class="{ 'is-top': row.rank <= 3 }">{{ row.rank }}</span>
-              <span class="department">{{ row.department }}</span>
-              <span class="rank-bar">
-                <i :style="{ width: `${Math.max(14, parseFloat(row.value) * 16)}%` }" />
-              </span>
-              <strong>{{ row.value }}</strong>
-            </li>
-          </ol>
-        </article>
-      </section>
-    </template>
-
-    <section
-      v-else
-      ref="boardRef"
-      class="editable-dashboard"
-      :class="{ 'is-editing': isEditing }"
-      :style="{ height: `${boardHeight}px` }"
-      aria-label="可编辑指标看板"
-      @pointerdown.self="activeWidgetId = ''"
-    >
+    <div class="dashboard-board-scroll">
+      <section
+        ref="boardRef"
+        class="editable-dashboard"
+        :class="{ 'is-editing': isEditing }"
+        :style="{ height: `${boardHeight}px`, minWidth: `${DASHBOARD_MIN_WIDTH}px` }"
+        aria-label="可编辑指标看板"
+        @pointerdown.self="activeWidgetId = ''"
+      >
       <div
-        v-for="widget in dashboardLayout"
+        v-for="widget in effectiveDashboardLayout"
         :key="widget.id"
         class="editable-dashboard__item"
         :class="{ 'is-active': isEditing && activeWidgetId === widget.id }"
         :style="widgetStyle(widget)"
+        :tabindex="isEditing ? 0 : -1"
+        :role="isEditing ? 'group' : undefined"
+        :aria-label="isEditing ? getWidgetEditLabel(widget) : undefined"
+        :aria-keyshortcuts="isEditing ? 'ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight Delete Escape' : undefined"
         @pointerdown.stop="onWidgetPointerDown($event, widget)"
+        @focus="isEditing && (activeWidgetId = widget.id)"
+        @keydown="onWidgetKeydown($event, widget)"
       >
         <article
-          v-if="isKpiWidget(widget)"
+          v-if="widget.type === 'primary'"
+          class="surface-card primary-metric"
+          :class="{ 'is-clickable': !isEditing }"
+          :role="isEditing ? undefined : 'button'"
+          :tabindex="isEditing ? -1 : 0"
+          :aria-disabled="isEditing || undefined"
+          @click.stop="goPrimaryMetricAnalysis"
+          @keydown.enter.prevent.stop="goPrimaryMetricAnalysis"
+          @keydown.space.prevent.stop="goPrimaryMetricAnalysis"
+        >
+          <div class="primary-metric__head">
+            <div>
+              <span class="primary-metric__eyebrow">重点关注</span>
+              <h2>{{ visibleKpis[0].title }}</h2>
+            </div>
+            <span class="status-pill" :class="`is-${visibleKpis[0].status}`">
+              {{ visibleKpis[0].status === 'danger' ? '超出目标' : '在目标内' }}
+            </span>
+          </div>
+          <div class="primary-metric__value clinical-metric">{{ visibleKpis[0].value }}</div>
+          <div class="primary-metric__change" :class="`is-${visibleKpis[0].status}`">
+            较上期 {{ visibleKpis[0].change }}
+          </div>
+          <dl class="primary-metric__meta">
+            <div><dt>管理目标</dt><dd>{{ visibleKpis[0].target }}</dd></div>
+            <div><dt>当前范围</dt><dd>{{ department }}</dd></div>
+            <div><dt>结果口径</dt><dd>活动结果优先</dd></div>
+          </dl>
+        </article>
+
+        <article v-else-if="widget.type === 'supporting'" class="surface-card supporting-metrics">
+          <div class="section-title supporting-metrics__title">
+            <div>
+              <h2>其他核心指标</h2>
+              <p class="section-title__description">按当前场景和统计范围展示</p>
+            </div>
+          </div>
+          <button
+            v-for="(item, index) in visibleKpis.slice(1)"
+            :key="item.title"
+            type="button"
+            class="supporting-metric"
+            :tabindex="isEditing ? -1 : 0"
+            @click.stop="goIndicatorAnalysis(getKpiIndicatorCode(index + 1, item))"
+          >
+            <span class="supporting-metric__name">{{ item.title }}</span>
+            <strong class="clinical-metric">{{ item.value }}</strong>
+            <span class="supporting-metric__change" :class="`is-${item.status}`">{{ item.change }}</span>
+            <span class="supporting-metric__target">{{ item.target }}</span>
+          </button>
+        </article>
+
+        <article
+          v-else-if="isKpiWidget(widget)"
           class="surface-card kpi-card"
           :class="{ 'is-clickable': !isEditing }"
-          role="button"
-          tabindex="0"
+          :role="isEditing ? undefined : 'button'"
+          :tabindex="isEditing ? -1 : 0"
+          :aria-disabled="isEditing || undefined"
           @click.stop="goWidgetAnalysis(widget)"
           @keydown.enter.prevent.stop="goWidgetAnalysis(widget)"
           @keydown.space.prevent.stop="goWidgetAnalysis(widget)"
@@ -164,20 +168,65 @@
           <div class="kpi-target">{{ getWidgetKpi(widget).target }}</div>
         </article>
 
-        <article v-else-if="isChartWidget(widget)" class="surface-card chart-card">
+        <article
+          v-else-if="isChartWidget(widget)"
+          class="surface-card chart-card"
+          :inert="isEditing"
+        >
           <div class="section-title">
-            <h2>
-              <el-icon><component :is="getWidgetIcon(widget)" /></el-icon>
-              {{ getWidgetTitle(widget) }}
-            </h2>
+            <div>
+              <h2>
+                <el-icon><component :is="getWidgetIcon(widget)" /></el-icon>
+                {{ getWidgetTitle(widget) }}
+              </h2>
+              <p v-if="getWidgetDescription(widget)" class="section-title__description">
+                {{ getWidgetDescription(widget) }}
+              </p>
+            </div>
           </div>
-          <IdmpChart :option="getWidgetChartOption(widget)" height="calc(100% - 38px)" />
+          <IdmpChart
+            :option="getWidgetChartOption(widget)"
+            height="100%"
+            fit-container
+            :aria-label="`${getWidgetTitle(widget)}图表`"
+            updated-at="演示周期：2024 年 12 月"
+          >
+            <template #table>
+              <table
+                class="dashboard-chart-table"
+                :class="{ 'is-wide': getWidgetTableColumns(widget).length > 2 }"
+              >
+                <thead>
+                  <tr>
+                    <th
+                      v-for="column in getWidgetTableColumns(widget)"
+                      :key="column.key"
+                      scope="col"
+                    >
+                      {{ column.label }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, rowIndex) in getWidgetTableRows(widget)" :key="`${widget.id}-${rowIndex}`">
+                    <template
+                      v-for="(column, columnIndex) in getWidgetTableColumns(widget)"
+                      :key="column.key"
+                    >
+                      <th v-if="columnIndex === 0" scope="row">{{ row[column.key] }}</th>
+                      <td v-else>{{ row[column.key] }}</td>
+                    </template>
+                  </tr>
+                </tbody>
+              </table>
+            </template>
+          </IdmpChart>
         </article>
 
         <article v-else-if="widget.type === 'warnings'" class="surface-card list-card">
           <div class="section-title">
             <h2><el-icon><Bell /></el-icon>预警指标</h2>
-            <button type="button" class="action-link" @click="goAlerts">查看全部</button>
+            <button type="button" class="action-link" :tabindex="isEditing ? -1 : 0" @click.stop="goAlerts">查看全部</button>
           </div>
           <ul class="warning-list">
             <li v-for="warning in dashboardWarnings" :key="warning.text">
@@ -212,16 +261,18 @@
             :key="handle"
             class="editable-dashboard__handle"
             :class="`editable-dashboard__handle--${handle}`"
+            aria-hidden="true"
             @pointerdown.stop.prevent="onResizePointerDown($event, widget, handle)"
           />
         </template>
       </div>
-    </section>
+      </section>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Bell,
@@ -240,6 +291,7 @@ import {
 } from '@element-plus/icons-vue'
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
+import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
 import { fetchDashboardBootstrap } from '@/idmp/api/modules/analysisDashboard'
 import { fetchIndicators } from '@/idmp/api/modules/indicators'
 import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
@@ -254,18 +306,25 @@ import {
   DASHBOARD_CODE,
   DASHBOARD_DESIGN_WIDTH,
   DASHBOARD_LAYOUT_STORAGE_KEY,
+  DASHBOARD_MIN_WIDTH,
   DEFAULT_DASHBOARD_HEIGHT,
-  LEGACY_DASHBOARD_LAYOUT_STORAGE_KEY,
+  OBSOLETE_DASHBOARD_LAYOUT_STORAGE_KEYS,
   resizeHandles,
   widgetTypeOptions
 } from '@/idmp/features/dashboard/constants'
-import { createDefaultLayout, cloneLayout, normalizeLayout, widgetStyle } from '@/idmp/features/dashboard/layout'
+import {
+  cloneLayout,
+  constrainWidget,
+  createDefaultLayout,
+  getWidgetConstraints,
+  normalizeLayout,
+  widgetStyle
+} from '@/idmp/features/dashboard/layout'
 import { mockIndicatorDataSources } from '@/idmp/features/dashboard/mockData'
 import { applyMortalityReadonlyChain } from '@/idmp/features/dashboard/mortalityAdapter'
 import {
   createDashboardChartOption,
   createKpiData,
-  getIndicatorSource,
   getVisualizationTitle
 } from '@/idmp/features/dashboard/visualization'
 
@@ -273,17 +332,20 @@ const router = useRouter()
 const period = ref('2024年度')
 const department = ref('全院')
 const boardRef = ref()
+const boardWidth = ref(0)
 const isEditing = ref(false)
-const hasCustomLayout = ref(false)
 const activeWidgetId = ref('')
 const selectedDataCode = ref(mockIndicatorDataSources[0].code)
 const addWidgetType = ref('kpi')
 const indicatorDataSources = ref(cloneIndicatorSources(mockIndicatorDataSources))
 const indicatorSourceLoading = ref(false)
+const dashboardSourceMode = ref('demo')
+const dashboardLoadMessage = ref('')
 const dashboardLayout = ref(createDefaultLayout())
 const editSnapshot = ref([])
 const backendDashboard = ref(null)
 const mortalityChain = ref(null)
+let boardResizeObserver
 const dashboardKpiIndicatorCodes = [
   'MORTALITY_INPATIENT',
   'OUTPATIENT_DISCHARGE_RATIO',
@@ -297,13 +359,22 @@ const selectedDataSource = computed(() =>
   indicatorDataSources.value.find((source) => source.code === selectedDataCode.value)
 )
 
+const dashboardSourceLabel = computed(() => (
+  dashboardSourceMode.value === 'mixed' ? '接口元数据 + 演示指标值' : '演示数据'
+))
+
+const effectiveDashboardLayout = computed(() =>
+  normalizeLayout(dashboardLayout.value, getDashboardIndicatorSource, getBoardScale())
+)
+
 const activeWidget = computed(() =>
-  dashboardLayout.value.find((widget) => widget.id === activeWidgetId.value)
+  effectiveDashboardLayout.value.find((widget) => widget.id === activeWidgetId.value)
 )
 
 const activeWidgetName = computed(() => {
   if (!activeWidget.value) return '未选中组件'
-  return `已选中：${getWidgetTitle(activeWidget.value)}`
+  const widget = activeWidget.value
+  return `已选中：${getWidgetTitle(widget)}。位置 ${widget.x}, ${widget.y}；尺寸 ${widget.w} × ${widget.h}。方向键移动，Shift 加方向键调整尺寸，Delete 删除。`
 })
 
 const departmentMultiplier = computed(() => {
@@ -326,42 +397,47 @@ const visibleKpis = computed(() => dashboardKpis.map((item, index) => {
   }
 }))
 
+const trendTableRows = computed(() =>
+  dashboardTrend.months.map((month, index) => ({
+    period: month,
+    mortality: (dashboardTrend.mortality[index] * departmentMultiplier.value).toFixed(2),
+    complication: (dashboardTrend.complication[index] * departmentMultiplier.value).toFixed(2),
+    antibiotic: dashboardTrend.antibiotic[index]
+  }))
+)
+
 const boardHeight = computed(() => {
-  const maxBottom = dashboardLayout.value.reduce((max, widget) => Math.max(max, widget.y + widget.h), 0)
+  const maxBottom = effectiveDashboardLayout.value.reduce(
+    (max, widget) => Math.max(max, widget.y + widget.h),
+    0
+  )
   return Math.max(DEFAULT_DASHBOARD_HEIGHT, maxBottom)
 })
 
 const trendOption = computed(() => ({
-  animationDuration: 500,
-  color: ['#f5222d', '#faad14', '#1890ff'],
+  color: ['#b4232c', '#b75d00', IDMP_CHART_COLORS[0]],
   tooltip: { trigger: 'axis' },
   legend: {
     bottom: 0,
     itemWidth: 14,
-    itemHeight: 8,
-    textStyle: { color: '#595959', fontSize: 12 }
+    itemHeight: 8
   },
   grid: { top: 12, left: 44, right: 44, bottom: 46, containLabel: false },
   xAxis: {
     type: 'category',
     boundaryGap: false,
-    data: dashboardTrend.months,
-    axisLine: { lineStyle: { color: '#d9d9d9' } },
-    axisLabel: { color: '#8c8c8c' }
+    data: dashboardTrend.months
   },
   yAxis: [
     {
       type: 'value',
       min: 0,
-      max: 4,
-      axisLabel: { color: '#8c8c8c' },
-      splitLine: { lineStyle: { color: '#eeeeee' } }
+      max: 4
     },
     {
       type: 'value',
       min: 0,
       max: 50,
-      axisLabel: { color: '#8c8c8c' },
       splitLine: { show: false }
     }
   ],
@@ -392,14 +468,13 @@ const trendOption = computed(() => ({
 }))
 
 const rateOption = computed(() => ({
-  color: ['#52c41a', '#faad14', '#f5222d'],
+  color: ['#247a4d', '#b75d00', '#b4232c'],
   tooltip: { trigger: 'item', formatter: '{b}: {d}%' },
   legend: {
     bottom: 2,
     left: 'center',
     itemWidth: 18,
-    itemHeight: 10,
-    textStyle: { color: '#595959', fontSize: 12 }
+    itemHeight: 10
   },
   series: [
     {
@@ -409,7 +484,6 @@ const rateOption = computed(() => ({
       avoidLabelOverlap: true,
       label: {
         show: true,
-        color: '#595959',
         fontSize: 12,
         formatter: '{b}\n{d}%'
       },
@@ -424,7 +498,7 @@ function isKpiWidget(widget) {
 }
 
 function isChartWidget(widget) {
-  return widget.type === 'chart' || widget.type === 'trend' || widget.type === 'rate'
+  return widget.type === 'chart'
 }
 
 function getWidgetKpi(widget) {
@@ -454,19 +528,32 @@ function goWidgetAnalysis(widget) {
   goIndicatorAnalysis(getWidgetIndicatorCode(widget))
 }
 
+function goPrimaryMetricAnalysis() {
+  if (isEditing.value) return
+  goIndicatorAnalysis(getKpiIndicatorCode(0, visibleKpis.value[0]))
+}
+
 function getWidgetTitle(widget) {
+  if (widget.type === 'primary') return visibleKpis.value[0]?.title || '重点指标'
+  if (widget.type === 'supporting') return '其他核心指标'
   if (isKpiWidget(widget)) return getWidgetKpi(widget).title
   if (widget.type === 'warnings') return '预警指标'
   if (widget.type === 'ranking') return '科室指标排名'
-  if (widget.preset === 'trend' || widget.type === 'trend') return '指标趋势（近12月）'
-  if (widget.preset === 'rate' || widget.type === 'rate') return '分类达标率'
+  if (widget.preset === 'trend') return '近 12 月质量趋势'
+  if (widget.preset === 'rate') return '指标目标分布'
   if (widget.sourceName) return getVisualizationTitle(widget.sourceName, widget.chartKind)
   return widget.title || widgetTypeOptions.find((item) => item.value === widget.chartKind)?.label || '图表'
 }
 
+function getWidgetDescription(widget) {
+  if (widget.preset === 'trend') return '比较死亡率、手术并发症率与抗菌药物使用强度'
+  if (widget.preset === 'rate') return '达标、接近阈值与超标指标占比'
+  return ''
+}
+
 function getWidgetIcon(widget) {
   if (widget.chartKind === 'bar') return Histogram
-  if (widget.chartKind === 'pie' || widget.type === 'rate') return PieChart
+  if (widget.chartKind === 'pie' || widget.preset === 'rate') return PieChart
   return TrendCharts
 }
 
@@ -477,9 +564,57 @@ function getWidgetChartOption(widget) {
   })
 }
 
+function getWidgetTableColumns(widget) {
+  if (widget.preset === 'trend') {
+    return [
+      { key: 'period', label: '月份' },
+      { key: 'mortality', label: '住院死亡率' },
+      { key: 'complication', label: '手术并发症率' },
+      { key: 'antibiotic', label: '抗菌药物使用强度' }
+    ]
+  }
+  if (widget.preset === 'rate') {
+    return [
+      { key: 'label', label: '状态' },
+      { key: 'value', label: '指标数' }
+    ]
+  }
+  return [
+    { key: 'label', label: widget.chartKind === 'line' ? '月份' : '数据项' },
+    { key: 'value', label: getWidgetTitle(widget) }
+  ]
+}
+
+function getWidgetTableRows(widget) {
+  if (widget.preset === 'trend') return trendTableRows.value
+  if (widget.preset === 'rate') {
+    return categoryRates.map((item) => ({ label: item.name, value: item.value }))
+  }
+
+  const source = widget.sourceSnapshot ||
+    getDashboardIndicatorSource(widget.sourceCode) ||
+    indicatorDataSources.value[0] ||
+    {}
+
+  if (widget.chartKind === 'bar') {
+    return (source.departmentData || []).map((item) => ({ label: item.name, value: item.value }))
+  }
+  if (widget.chartKind === 'pie') {
+    return (source.pieData || []).map((item) => ({ label: item.name, value: item.value }))
+  }
+  return dashboardTrend.months.map((month, index) => ({
+    label: month,
+    value: source.trendData?.[index] ?? '-'
+  }))
+}
+
+function getWidgetEditLabel(widget) {
+  return `${getWidgetTitle(widget)}编辑组件，位置 ${widget.x}, ${widget.y}，尺寸 ${widget.w} × ${widget.h}。使用方向键移动，Shift 加方向键调整尺寸，Delete 删除，Escape 取消选择。`
+}
+
 function getBoardScale() {
-  if (!boardRef.value) return 1
-  return boardRef.value.clientWidth / DASHBOARD_DESIGN_WIDTH || 1
+  const currentWidth = boardWidth.value || boardRef.value?.clientWidth
+  return currentWidth ? currentWidth / DASHBOARD_DESIGN_WIDTH : 1
 }
 
 function getNextWidgetPosition() {
@@ -504,22 +639,22 @@ function addDashboardWidget() {
   }
 
   if (type === 'kpi') {
-    dashboardLayout.value.push({
+    dashboardLayout.value.push(constrainWidget({
       ...baseWidget,
       type: 'kpi',
       data: createKpiData(source),
       w: 240,
       h: 158
-    })
+    }))
   } else {
-    dashboardLayout.value.push({
+    dashboardLayout.value.push(constrainWidget({
       ...baseWidget,
       type: 'chart',
       chartKind: type,
       title: getVisualizationTitle(source.name, type),
       w: 520,
       h: 336
-    })
+    }))
   }
 
   activeWidgetId.value = id
@@ -533,12 +668,15 @@ function deleteActiveWidget() {
 
 function updateWidget(id, partial) {
   dashboardLayout.value = dashboardLayout.value.map((widget) =>
-    widget.id === id ? { ...widget, ...partial } : widget
+    widget.id === id
+      ? constrainWidget({ ...widget, ...partial })
+      : widget
   )
 }
 
 function onWidgetPointerDown(event, widget) {
   if (!isEditing.value) return
+  event.currentTarget?.focus()
   activeWidgetId.value = widget.id
   const scale = getBoardScale()
   const startX = event.clientX
@@ -560,13 +698,52 @@ function onWidgetPointerDown(event, widget) {
   window.addEventListener('pointerup', onUp)
 }
 
+function onWidgetKeydown(event, widget) {
+  if (!isEditing.value || event.target !== event.currentTarget) return
+  const supportedKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Delete', 'Escape']
+  if (!supportedKeys.includes(event.key)) return
+
+  event.preventDefault()
+  event.stopPropagation()
+  activeWidgetId.value = widget.id
+
+  if (event.key === 'Delete') {
+    deleteActiveWidget()
+    return
+  }
+  if (event.key === 'Escape') {
+    activeWidgetId.value = ''
+    event.currentTarget.blur()
+    return
+  }
+
+  const step = event.altKey ? 1 : 8
+  if (event.shiftKey) {
+    const { minW, minH } = getWidgetConstraints(widget, getBoardScale())
+    const widthDelta = event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0
+    const heightDelta = event.key === 'ArrowDown' ? step : event.key === 'ArrowUp' ? -step : 0
+    updateWidget(widget.id, {
+      w: Math.min(
+        DASHBOARD_DESIGN_WIDTH - widget.x,
+        Math.max(minW, widget.w + widthDelta)
+      ),
+      h: Math.max(minH, widget.h + heightDelta)
+    })
+    return
+  }
+
+  updateWidget(widget.id, {
+    x: Math.max(0, widget.x + (event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0)),
+    y: Math.max(0, widget.y + (event.key === 'ArrowDown' ? step : event.key === 'ArrowUp' ? -step : 0))
+  })
+}
+
 function onResizePointerDown(event, widget, handle) {
   const scale = getBoardScale()
   const startX = event.clientX
   const startY = event.clientY
   const start = { x: widget.x, y: widget.y, w: widget.w, h: widget.h }
-  const minW = widget.type === 'kpi' ? 150 : 300
-  const minH = widget.type === 'kpi' ? 128 : 220
+  const { minW, minH } = getWidgetConstraints(widget, scale)
 
   const onMove = (moveEvent) => {
     const dx = (moveEvent.clientX - startX) / scale
@@ -576,15 +753,22 @@ function onResizePointerDown(event, widget, handle) {
     let nextW = start.w
     let nextH = start.h
 
-    if (handle.includes('e')) nextW = Math.max(minW, start.w + dx)
+    if (handle.includes('e')) {
+      nextW = Math.min(
+        DASHBOARD_DESIGN_WIDTH - start.x,
+        Math.max(minW, start.w + dx)
+      )
+    }
     if (handle.includes('s')) nextH = Math.max(minH, start.h + dy)
     if (handle.includes('w')) {
-      nextW = Math.max(minW, start.w - dx)
-      nextX = start.x + (start.w - nextW)
+      const right = start.x + start.w
+      nextW = Math.min(right, Math.max(minW, start.w - dx))
+      nextX = right - nextW
     }
     if (handle.includes('n')) {
-      nextH = Math.max(minH, start.h - dy)
-      nextY = start.y + (start.h - nextH)
+      const bottom = start.y + start.h
+      nextH = Math.min(bottom, Math.max(minH, start.h - dy))
+      nextY = bottom - nextH
     }
 
     updateWidget(widget.id, {
@@ -609,37 +793,47 @@ function startDashboardEdit() {
 }
 
 function cancelDashboardEdit() {
-  dashboardLayout.value = cloneLayout(editSnapshot.value.length ? editSnapshot.value : createDefaultLayout())
+  dashboardLayout.value = normalizeLayout(
+    cloneLayout(editSnapshot.value.length ? editSnapshot.value : createDefaultLayout()),
+    getDashboardIndicatorSource
+  )
+  editSnapshot.value = []
   activeWidgetId.value = ''
   isEditing.value = false
 }
 
 function saveDashboardLayout() {
+  dashboardLayout.value = normalizeLayout(
+    dashboardLayout.value,
+    getDashboardIndicatorSource
+  )
   localStorage.setItem(DASHBOARD_LAYOUT_STORAGE_KEY, JSON.stringify(dashboardLayout.value))
-  hasCustomLayout.value = true
+  editSnapshot.value = []
   activeWidgetId.value = ''
   isEditing.value = false
 }
 
 function resetDashboardLayout() {
   dashboardLayout.value = createDefaultLayout()
-  localStorage.removeItem(DASHBOARD_LAYOUT_STORAGE_KEY)
-  localStorage.removeItem(LEGACY_DASHBOARD_LAYOUT_STORAGE_KEY)
-  hasCustomLayout.value = false
   activeWidgetId.value = ''
 }
 
 function loadDashboardLayout() {
+  OBSOLETE_DASHBOARD_LAYOUT_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key))
   try {
     const saved = JSON.parse(localStorage.getItem(DASHBOARD_LAYOUT_STORAGE_KEY) || 'null')
     if (Array.isArray(saved) && saved.length) {
-      dashboardLayout.value = normalizeLayout(saved, getDashboardIndicatorSource)
-      hasCustomLayout.value = true
+      const normalized = normalizeLayout(saved, getDashboardIndicatorSource)
+      if (normalized.length) {
+        dashboardLayout.value = normalized
+        return
+      }
+      localStorage.removeItem(DASHBOARD_LAYOUT_STORAGE_KEY)
     }
   } catch {
-    dashboardLayout.value = createDefaultLayout()
-    hasCustomLayout.value = false
+    localStorage.removeItem(DASHBOARD_LAYOUT_STORAGE_KEY)
   }
+  dashboardLayout.value = createDefaultLayout()
 }
 
 async function loadBackendIndicatorSources() {
@@ -647,25 +841,37 @@ async function loadBackendIndicatorSources() {
   try {
     const rows = await fetchIndicators()
     const backendSources = Array.isArray(rows) ? rows.map(toDashboardIndicatorSource).filter(Boolean) : []
-    if (!backendSources.length) return
+    if (!backendSources.length) {
+      dashboardSourceMode.value = 'demo'
+      dashboardLoadMessage.value = '指标接口未返回可用记录，当前明确展示演示指标。演示值不代表正式计算结果。'
+      return
+    }
 
     indicatorDataSources.value = mergeIndicatorSources(backendSources, indicatorDataSources.value)
+    dashboardSourceMode.value = 'mixed'
+    dashboardLoadMessage.value = '当前页面混合使用接口返回的指标元数据与演示指标值；正式结果接口接入前，请勿将数值用于业务决策。'
     if (!selectedDataSource.value) {
       selectedDataCode.value = indicatorDataSources.value[0]?.code || ''
     }
   } catch {
     indicatorDataSources.value = cloneIndicatorSources(mockIndicatorDataSources)
+    dashboardSourceMode.value = 'demo'
+    dashboardLoadMessage.value = '指标接口暂不可用，当前明确展示演示数据。可继续查看界面结构，但数值不代表正式计算结果。'
   } finally {
     indicatorSourceLoading.value = false
   }
 }
 
 async function loadBackendDashboardContract() {
-  backendDashboard.value = await fetchDashboardBootstrap(DASHBOARD_CODE, {
-    year: 2025,
-    month: 12,
-    deptCode: null
-  })
+  try {
+    backendDashboard.value = await fetchDashboardBootstrap(DASHBOARD_CODE, {
+      year: 2025,
+      month: 12,
+      deptCode: null
+    })
+  } catch {
+    backendDashboard.value = null
+  }
 }
 
 async function loadMortalityReadonlyChain() {
@@ -758,9 +964,24 @@ const goIndicatorAnalysis = (indicatorCode) => {
 
 onMounted(async () => {
   loadDashboardLayout()
+  if (typeof ResizeObserver !== 'undefined' && boardRef.value) {
+    boardWidth.value = boardRef.value.clientWidth
+    boardResizeObserver = new ResizeObserver(([entry]) => {
+      const nextWidth = Math.round(entry.contentRect.width)
+      if (!nextWidth || nextWidth === Math.round(boardWidth.value)) return
+      boardWidth.value = nextWidth
+    })
+    boardResizeObserver.observe(boardRef.value)
+  }
   await loadBackendIndicatorSources()
-  loadBackendDashboardContract()
-  loadMortalityReadonlyChain()
+  await Promise.allSettled([
+    loadBackendDashboardContract(),
+    loadMortalityReadonlyChain()
+  ])
+})
+
+onBeforeUnmount(() => {
+  boardResizeObserver?.disconnect()
 })
 </script>
 
@@ -787,7 +1008,7 @@ onMounted(async () => {
 }
 
 .dashboard-editor-panel__label {
-  color: #595959;
+  color: var(--idmp-text-secondary);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -803,42 +1024,182 @@ onMounted(async () => {
 .dashboard-editor-panel__option-meta {
   float: right;
   margin-left: 16px;
-  color: #b1b3b7;
+  color: var(--idmp-text-disabled);
   font-size: 12px;
 }
 
 .dashboard-editor-panel__hint {
   max-width: 280px;
   overflow: hidden;
-  color: #8c8c8c;
+  color: var(--idmp-text-helper);
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+.dashboard-notice {
   margin-bottom: 16px;
+}
+
+.primary-metric {
+  min-height: 246px;
+  padding: 18px 22px;
+}
+
+.primary-metric.is-clickable {
+  cursor: pointer;
+  transition: border-color 110ms ease;
+
+  &:hover {
+    border-color: var(--idmp-interactive);
+  }
+}
+
+.primary-metric__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 16px;
+}
+
+.primary-metric__eyebrow {
+  color: var(--idmp-text-helper);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.primary-metric h2 {
+  margin: 4px 0 0;
+  color: var(--idmp-text-primary);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.primary-metric__value {
+  margin-top: 22px;
+  color: var(--idmp-text-primary);
+  font-size: 42px;
+  font-weight: 650;
+  line-height: 48px;
+}
+
+.primary-metric__change {
+  margin-top: 2px;
+  color: var(--idmp-support-danger);
+  font-size: 12px;
+
+  &.is-success {
+    color: var(--idmp-support-success);
+  }
+
+  &.is-warning {
+    color: var(--idmp-support-warning);
+  }
+}
+
+.primary-metric__meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 18px 0 0;
+  padding-top: 14px;
+  gap: 12px;
+  border-top: 1px solid var(--idmp-border-subtle);
+
+  div {
+    min-width: 0;
+  }
+
+  dt {
+    color: var(--idmp-text-helper);
+    font-size: 11px;
+  }
+
+  dd {
+    margin: 3px 0 0;
+    overflow: hidden;
+    color: var(--idmp-text-secondary);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.supporting-metrics {
+  padding: 16px 18px 12px;
+}
+
+.supporting-metrics__title {
+  margin-bottom: 4px;
+}
+
+.supporting-metric {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(180px, 1.4fr) 90px 72px minmax(96px, 0.8fr);
+  align-items: center;
+  min-height: 37px;
+  padding: 0 4px;
+  gap: 12px;
+  border: 0;
+  border-top: 1px solid var(--idmp-border-soft);
+  background: transparent;
+  color: var(--idmp-text-secondary);
+  cursor: pointer;
+  text-align: left;
+
+  &:hover {
+    background: var(--idmp-layer-hover);
+  }
+
+  strong {
+    color: var(--idmp-text-primary);
+    font-size: 17px;
+    font-weight: 650;
+    text-align: right;
+  }
+}
+
+.supporting-metric__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.supporting-metric__change {
+  color: var(--idmp-support-danger);
+  font-size: 12px;
+  text-align: right;
+
+  &.is-success {
+    color: var(--idmp-support-success);
+  }
+
+  &.is-warning {
+    color: var(--idmp-support-warning);
+  }
+}
+
+.supporting-metric__target {
+  overflow: hidden;
+  color: var(--idmp-text-helper);
+  font-size: 11px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .kpi-card {
   min-height: 158px;
-  padding: 18px 16px;
+  padding: 16px;
 }
 
 .kpi-card.is-clickable {
   cursor: pointer;
-  transition:
-    border-color 0.18s ease,
-    box-shadow 0.18s ease,
-    transform 0.18s ease;
+  transition: border-color 110ms ease;
 
   &:hover {
-    border-color: #91d5ff;
-    box-shadow: 0 8px 22px rgb(24 144 255 / 10%);
-    transform: translateY(-1px);
+    border-color: var(--idmp-interactive);
   }
 }
 
@@ -848,7 +1209,7 @@ onMounted(async () => {
   justify-content: space-between;
   min-height: 40px;
   gap: 8px;
-  color: #6b6f76;
+  color: var(--idmp-text-helper);
   font-size: 13px;
   line-height: 20px;
 }
@@ -859,46 +1220,77 @@ onMounted(async () => {
   height: 8px;
   margin-top: 3px;
   border-radius: 50%;
-  background: #52c41a;
+  background: var(--idmp-support-success);
 
-  &.is-danger { background: #f5222d; }
-  &.is-warning { background: #faad14; }
+  &.is-danger { background: var(--idmp-support-danger); }
+  &.is-warning { background: var(--idmp-support-warning); }
 }
 
 .kpi-card strong {
   display: block;
   margin: 7px 0 4px;
-  color: #171717;
+  color: var(--idmp-text-primary);
   font-size: 27px;
   font-weight: 650;
   line-height: 34px;
 }
 
 .kpi-change {
-  color: #f5222d;
+  color: var(--idmp-support-danger);
   font-size: 12px;
 
-  &.is-success { color: #52c41a; }
-  &.is-warning { color: #fa8c16; }
+  &.is-success { color: var(--idmp-support-success); }
+  &.is-warning { color: var(--idmp-support-warning); }
 }
 
 .kpi-target {
-  margin-top: 5px;
-  color: #a2a4a8;
+  margin-top: 4px;
+  color: var(--idmp-text-disabled);
   font-size: 12px;
 }
 
-.chart-grid,
-.dashboard-bottom {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(360px, 1fr);
-  margin-bottom: 16px;
-  gap: 16px;
-}
-
 .chart-card {
+  display: flex;
+  flex-direction: column;
   min-height: 336px;
   padding: 16px 18px 12px;
+}
+
+.chart-card > .idmp-chart-frame {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.dashboard-chart-table {
+  width: 100%;
+  min-width: 0;
+  border-collapse: collapse;
+  color: var(--idmp-text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+
+  th,
+  td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--idmp-border-soft);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  th:first-child,
+  td:first-child {
+    text-align: left;
+  }
+
+  thead th {
+    background: var(--idmp-layer-02);
+    color: var(--idmp-text-primary);
+    font-weight: 600;
+  }
+
+  &.is-wide {
+    min-width: 520px;
+  }
 }
 
 .list-card {
@@ -918,7 +1310,7 @@ onMounted(async () => {
   grid-template-columns: 30px minmax(0, 1fr) auto;
   align-items: center;
   min-height: 54px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--idmp-border-soft);
   gap: 10px;
 
   &:last-child {
@@ -926,7 +1318,7 @@ onMounted(async () => {
   }
 
   time {
-    color: #b1b3b7;
+    color: var(--idmp-text-disabled);
     font-size: 12px;
   }
 }
@@ -936,25 +1328,25 @@ onMounted(async () => {
   width: 26px;
   height: 26px;
   place-items: center;
-  border-radius: 50%;
-  background: #fff2f0;
-  color: #f5222d;
+  border-radius: var(--idmp-radius-sm);
+  background: var(--idmp-support-danger-bg);
+  color: var(--idmp-support-danger);
 
   &.is-warning {
-    background: #fffbe6;
-    color: #faad14;
+    background: var(--idmp-support-warning-bg);
+    color: var(--idmp-support-warning);
   }
 
   &.is-info {
-    background: #e6f7ff;
-    color: #1890ff;
+    background: var(--idmp-support-info-bg);
+    color: var(--idmp-support-info);
   }
 }
 
 .warning-text {
   min-width: 0;
   overflow: hidden;
-  color: #434343;
+  color: var(--idmp-text-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -973,60 +1365,68 @@ onMounted(async () => {
   height: 22px;
   place-items: center;
   border-radius: 4px;
-  background: #f0f2f5;
-  color: #8c8c8c;
+  background: var(--idmp-layer-02);
+  color: var(--idmp-text-helper);
   font-size: 12px;
 
   &.is-top {
-    background: #e6f7ff;
-    color: #1890ff;
+    background: var(--idmp-interactive-subtle);
+    color: var(--idmp-interactive);
     font-weight: 600;
   }
 }
 
 .department {
-  color: #434343;
+  color: var(--idmp-text-secondary);
 }
 
 .rank-bar {
   height: 6px;
   overflow: hidden;
   border-radius: 6px;
-  background: #f0f2f5;
+  background: var(--idmp-layer-02);
 
   i {
     display: block;
     height: 100%;
     border-radius: inherit;
-    background: linear-gradient(90deg, #69c0ff, #1890ff);
+    background: var(--idmp-interactive);
   }
 }
 
 .ranking-list strong {
-  color: #434343;
+  color: var(--idmp-text-secondary);
   text-align: right;
+}
+
+.dashboard-board-scroll {
+  box-sizing: border-box;
+  width: calc(100% + 12px);
+  margin: -6px -6px 10px;
+  padding: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .editable-dashboard {
   position: relative;
   width: 100%;
-  min-height: 812px;
-  margin-bottom: 16px;
+  min-height: 0;
 }
 
 .editable-dashboard.is-editing {
-  border: 1px dashed #91caff;
-  border-radius: 8px;
-  background:
-    linear-gradient(90deg, rgb(24 144 255 / 5%) 1px, transparent 1px),
-    linear-gradient(rgb(24 144 255 / 5%) 1px, transparent 1px),
-    transparent;
-  background-size: 24px 24px;
+  border: 1px dashed var(--idmp-interactive);
+  border-radius: var(--idmp-radius-sm);
+  background: var(--idmp-layer-02);
 }
 
 .editable-dashboard__item {
   position: absolute;
   min-width: 0;
+}
+
+.editable-dashboard__item:focus-visible {
+  z-index: 4;
 }
 
 .editable-dashboard.is-editing .editable-dashboard__item {
@@ -1037,6 +1437,7 @@ onMounted(async () => {
 .editable-dashboard__item > .surface-card {
   width: 100%;
   height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -1063,11 +1464,10 @@ onMounted(async () => {
   z-index: 3;
   width: 10px;
   height: 10px;
+  margin: -5px 0 0 -5px;
   border: 1.5px solid var(--idmp-primary);
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 16%);
-  transform: translate(-50%, -50%);
+  border-radius: var(--idmp-radius-sm);
+  background: var(--idmp-layer-01);
 }
 
 .editable-dashboard__handle--n,
@@ -1117,10 +1517,6 @@ onMounted(async () => {
 }
 
 @media (max-width: 1420px) {
-  .kpi-grid {
-    gap: 12px;
-  }
-
   .kpi-card {
     padding-right: 13px;
     padding-left: 13px;

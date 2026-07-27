@@ -1,53 +1,120 @@
 <template>
   <div class="idmp-page indicator-page">
-    <PageHeader title="指标管理">
+    <PageHeader
+      title="指标目录"
+    >
+      <template #meta>
+        <span class="data-source-badge" :class="{ 'is-live': sourceMode === 'live' }">
+          {{ sourceMode === 'live' ? '接口数据' : sourceMode === 'demo' ? '演示数据' : '正在加载' }}
+        </span>
+        <span>共 {{ filteredRows.length }} 条</span>
+      </template>
       <template #actions>
         <el-button type="primary" :icon="Plus" @click="openEditor('new')">新增指标</el-button>
-        <el-button :icon="Upload" @click="unavailable">批量导入</el-button>
-        <el-button :icon="Download" @click="unavailable">批量导出</el-button>
+        <el-tooltip content="当前后端尚未提供指标导入接口">
+          <span
+            class="disabled-tooltip-trigger"
+            tabindex="0"
+            aria-label="批量导入不可用：当前后端尚未提供指标导入接口"
+          >
+            <el-button :icon="Upload" disabled>批量导入</el-button>
+          </span>
+        </el-tooltip>
+        <el-tooltip content="大导出任务接口尚未接入">
+          <span
+            class="disabled-tooltip-trigger"
+            tabindex="0"
+            aria-label="批量导出不可用：大导出任务接口尚未接入"
+          >
+            <el-button :icon="Download" disabled>批量导出</el-button>
+          </span>
+        </el-tooltip>
         <el-button-group class="view-switch">
           <el-button
             :type="viewMode === 'table' ? 'primary' : 'default'"
             :icon="Menu"
             aria-label="表格视图"
+            :aria-pressed="viewMode === 'table' ? 'true' : 'false'"
             @click="viewMode = 'table'"
           />
           <el-button
             :type="viewMode === 'card' ? 'primary' : 'default'"
             :icon="Grid"
             aria-label="卡片视图"
+            :aria-pressed="viewMode === 'card' ? 'true' : 'false'"
             @click="viewMode = 'card'"
           />
         </el-button-group>
       </template>
     </PageHeader>
 
+    <div v-if="loadError" class="notice-strip is-warning indicator-source-notice">
+      <span>{{ loadError }} 当前已明确切换为演示数据，不代表后端真实指标目录。</span>
+      <el-button link type="primary" :loading="tableLoading" @click="loadBackendIndicators">重试接口</el-button>
+    </div>
+
     <section class="surface-card filter-card">
-      <el-form :model="filters" aria-label="指标筛选">
-        <el-form-item>
-          <el-input v-model="filters.code" placeholder="指标编码" clearable class="filter-code" />
-        </el-form-item>
-        <el-form-item>
-          <el-input v-model="filters.name" placeholder="指标名称（模糊搜索）" clearable class="filter-name" />
-        </el-form-item>
-        <el-form-item>
-          <el-select v-model="filters.category" placeholder="指标分类" clearable class="filter-select">
-            <el-option v-for="item in categories" :key="item" :label="item" :value="item" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-select v-model="filters.attribute" placeholder="指标属性" clearable class="filter-select small">
-            <el-option label="定量" value="定量" />
-            <el-option label="定性" value="定性" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-select v-model="filters.status" placeholder="状态" clearable class="filter-select small">
-            <el-option v-for="item in statuses" :key="item" :label="item" :value="item" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-select v-model="filters.direction" placeholder="指标导向" clearable class="filter-select">
+        <el-form :model="filters" aria-label="指标筛选">
+          <el-form-item>
+            <el-input
+              v-model="filters.code"
+              placeholder="指标编码"
+              clearable
+              class="filter-code"
+              aria-label="按指标编码筛选"
+            />
+          </el-form-item>
+          <el-form-item>
+            <el-input
+              v-model="filters.name"
+              placeholder="指标名称（模糊搜索）"
+              clearable
+              class="filter-name"
+              aria-label="按指标名称筛选"
+            />
+          </el-form-item>
+          <el-form-item>
+            <el-select
+              v-model="filters.category"
+              placeholder="指标分类"
+              clearable
+              class="filter-select"
+              aria-label="按指标分类筛选"
+            >
+              <el-option v-for="item in categories" :key="item" :label="item" :value="item" />
+            </el-select>
+          </el-form-item>
+          <el-form-item>
+            <el-select
+              v-model="filters.attribute"
+              placeholder="指标属性"
+              clearable
+              class="filter-select small"
+              aria-label="按指标属性筛选"
+            >
+              <el-option label="定量" value="定量" />
+              <el-option label="定性" value="定性" />
+            </el-select>
+          </el-form-item>
+          <el-form-item>
+            <el-select
+              v-model="filters.status"
+              placeholder="状态"
+              clearable
+              class="filter-select small"
+              aria-label="按指标状态筛选"
+            >
+              <el-option v-for="item in statuses" :key="item" :label="item" :value="item" />
+            </el-select>
+          </el-form-item>
+          <el-form-item>
+            <el-select
+              v-model="filters.direction"
+              placeholder="指标导向"
+              clearable
+              class="filter-select"
+              aria-label="按指标导向筛选"
+            >
             <el-option label="逐步提高↑" value="↑逐步提高" />
             <el-option label="逐步降低↓" value="↓逐步降低" />
             <el-option label="监测比较" value="监测比较" />
@@ -61,7 +128,18 @@
     </section>
 
     <section v-if="viewMode === 'table'" class="surface-card table-card">
-      <div class="table-scroll">
+      <StatePanel
+        v-if="!tableLoading && !filteredRows.length"
+        type="empty"
+        title="没有符合条件的指标"
+        description="调整筛选条件或新建指标后再查看。"
+      >
+        <template #actions>
+          <el-button @click="resetFilters">清除筛选</el-button>
+          <el-button type="primary" @click="openEditor('new')">新增指标</el-button>
+        </template>
+      </StatePanel>
+      <div v-else class="table-scroll">
         <el-table
           :data="pagedRows"
           v-loading="tableLoading"
@@ -85,7 +163,7 @@
           <el-table-column prop="source" label="数据来源" width="110" />
           <el-table-column prop="status" label="状态" width="92">
             <template #default="{ row }">
-              <span class="status-pill" :class="statusClass(row.status)">{{ row.status }}</span>
+              <StatusBadge :status="row.status" :label="row.status" :tone="statusTone(row.status)" />
             </template>
           </el-table-column>
           <el-table-column prop="scenes" label="场景数" width="78" align="center" />
@@ -93,12 +171,11 @@
             <template #default="{ row }">
               <button type="button" class="action-link" @click="showDetails(row)">查看</button>
               <button type="button" class="action-link" @click="openEditor(row.code)">编辑</button>
-              <button type="button" class="action-link" @click="showMore(row)">更多</button>
             </template>
           </el-table-column>
         </el-table>
       </div>
-      <div class="pagination-row">
+      <div ref="paginationRowRef" class="pagination-row">
         <span>共 {{ filteredRows.length }} 条<span v-if="selectedRows.length">，已选 {{ selectedRows.length }} 条</span></span>
         <el-pagination
           v-model:current-page="currentPage"
@@ -115,7 +192,7 @@
         <article v-for="row in pagedRows" :key="row.code" class="surface-card indicator-card">
           <div class="indicator-card__head">
             <button type="button" class="indicator-code" @click="showDetails(row)">{{ row.code }}</button>
-            <span class="status-pill" :class="statusClass(row.status)">{{ row.status }}</span>
+            <StatusBadge :status="row.status" :label="row.status" :tone="statusTone(row.status)" />
           </div>
           <h2>{{ row.name }}</h2>
           <dl>
@@ -131,8 +208,13 @@
           </div>
         </article>
       </div>
-      <div v-else class="surface-card empty-panel">没有符合条件的指标</div>
-      <div class="pagination-row card-pagination">
+      <StatePanel
+        v-else
+        type="empty"
+        title="没有符合条件的指标"
+        description="调整筛选条件或新建指标后再查看。"
+      />
+      <div ref="paginationRowRef" class="pagination-row card-pagination">
         <span>共 {{ filteredRows.length }} 条</span>
         <el-pagination
           v-model:current-page="currentPage"
@@ -147,11 +229,13 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Download, Grid, Menu, Plus, RefreshLeft, Search, Upload } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
+import StatePanel from '@/idmp/components/StatePanel.vue'
+import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import { fetchIndicators } from '@/idmp/api/modules/indicators'
 import { indicatorRows } from '@/idmp/data/demo'
 
@@ -162,6 +246,9 @@ const pageSize = ref(8)
 const selectedRows = ref([])
 const tableLoading = ref(false)
 const backendIndicatorRows = ref([])
+const sourceMode = ref('loading')
+const loadError = ref('')
+const paginationRowRef = ref()
 
 const emptyFilters = () => ({
   code: '',
@@ -174,7 +261,13 @@ const emptyFilters = () => ({
 
 const filters = reactive(emptyFilters())
 const appliedFilters = ref(emptyFilters())
-const sourceRows = computed(() => backendIndicatorRows.value.length ? backendIndicatorRows.value : indicatorRows)
+const sourceRows = computed(() => (
+  sourceMode.value === 'live'
+    ? backendIndicatorRows.value
+    : sourceMode.value === 'demo'
+      ? indicatorRows
+      : []
+))
 const categories = computed(() => [...new Set(sourceRows.value.map(item => item.category).filter(Boolean))])
 const statuses = computed(() => [...new Set(sourceRows.value.map(item => item.status).filter(Boolean))])
 
@@ -195,6 +288,7 @@ const pagedRows = computed(() => {
 
 watch([pageSize, viewMode], () => {
   currentPage.value = 1
+  labelPageSizeControl()
 })
 
 const applyFilters = () => {
@@ -210,11 +304,15 @@ const resetFilters = () => {
 
 const loadBackendIndicators = async () => {
   tableLoading.value = true
+  loadError.value = ''
   try {
     const rows = await fetchIndicators()
     backendIndicatorRows.value = Array.isArray(rows) ? rows.map(toIndicatorRow) : []
-  } catch {
+    sourceMode.value = 'live'
+  } catch (error) {
     backendIndicatorRows.value = []
+    sourceMode.value = 'demo'
+    loadError.value = error?.message || '指标目录接口暂不可用。'
   } finally {
     tableLoading.value = false
   }
@@ -235,24 +333,16 @@ const toIndicatorRow = item => ({
 })
 
 const openEditor = id => router.push(`/indicator/edit/${id}`)
-const unavailable = () => ElMessage.info('演示版暂不可用')
-const showDetails = row => ElMessage.success(`正在查看：${row.name}`)
-const showMore = row => {
-  ElMessageBox.confirm(`对“${row.name}”执行更多操作？`, '操作确认', {
-    confirmButtonText: '确认',
-    cancelButtonText: '取消',
-    type: 'info'
-  }).then(() => ElMessage.success('演示操作已确认')).catch(() => {})
-}
+const showDetails = row => ElMessage.info(`“${row.name}”详情读取接口尚未接入，可进入编辑页查看当前演示配置。`)
 
-const statusClass = status => ({
-  '草稿': 'is-warning',
-  '待审核': 'is-info',
-  '已停用': 'is-muted',
-  DRAFT: 'is-warning',
-  PUBLISHED: '',
-  DISABLED: 'is-muted'
-}[status] || '')
+const statusTone = status => ({
+  '草稿': 'warning',
+  '待审核': 'info',
+  '已停用': 'neutral',
+  DRAFT: 'warning',
+  PUBLISHED: 'success',
+  DISABLED: 'neutral'
+}[status] || 'neutral')
 
 const directionClass = direction => {
   if (direction.includes('提高')) return 'direction-up'
@@ -260,8 +350,16 @@ const directionClass = direction => {
   return 'direction-neutral'
 }
 
+const labelPageSizeControl = async () => {
+  await nextTick()
+  paginationRowRef.value
+    ?.querySelector('[role="combobox"]')
+    ?.setAttribute('aria-label', '每页显示指标条数')
+}
+
 onMounted(() => {
   loadBackendIndicators()
+  labelPageSizeControl()
 })
 </script>
 
@@ -275,9 +373,19 @@ onMounted(() => {
   margin-left: 2px;
 }
 
-.direction-up { color: #52c41a; }
-.direction-down { color: #f5222d; }
-.direction-neutral { color: #1890ff; }
+.disabled-tooltip-trigger {
+  display: inline-flex;
+}
+
+.indicator-source-notice {
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.direction-up { color: var(--idmp-support-success); }
+.direction-down { color: var(--idmp-support-danger); }
+.direction-neutral { color: var(--idmp-support-info); }
 
 .indicator-card-grid {
   display: grid;
@@ -287,7 +395,7 @@ onMounted(() => {
 
 .indicator-card {
   min-height: 252px;
-  padding: 18px;
+  padding: 16px;
 }
 
 .indicator-card__head {
@@ -300,7 +408,7 @@ onMounted(() => {
   padding: 0;
   border: 0;
   background: transparent;
-  color: #1890ff;
+  color: var(--idmp-interactive);
   cursor: pointer;
   font-weight: 600;
 }
@@ -308,7 +416,7 @@ onMounted(() => {
 .indicator-card h2 {
   min-height: 48px;
   margin: 14px 0 12px;
-  color: #262626;
+  color: var(--idmp-text-primary);
   font-size: 16px;
   line-height: 24px;
 }
@@ -328,14 +436,14 @@ onMounted(() => {
 
 .indicator-card dt {
   flex: 0 0 auto;
-  color: #8c8c8c;
+  color: var(--idmp-text-helper);
 }
 
 .indicator-card dd {
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  color: #595959;
+  color: var(--idmp-text-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -345,7 +453,7 @@ onMounted(() => {
   justify-content: flex-end;
   margin-top: 18px;
   padding-top: 14px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--idmp-border-subtle);
   gap: 8px;
 }
 

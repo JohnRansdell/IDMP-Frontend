@@ -1,4 +1,5 @@
 import { dashboardTrend } from '@/idmp/data/demo'
+import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
 import { mockIndicatorDataSources } from './mockData'
 
 export function getIndicatorSource(code) {
@@ -31,8 +32,8 @@ export function getVisualizationTitle(sourceName, visualType) {
 }
 
 export function createDashboardChartOption(widget, presetOptions = {}) {
-  if (widget.preset === 'trend' || widget.type === 'trend') return presetOptions.trendOption
-  if (widget.preset === 'rate' || widget.type === 'rate') return presetOptions.rateOption
+  if (widget.preset === 'trend') return presetOptions.trendOption
+  if (widget.preset === 'rate') return presetOptions.rateOption
   if (widget.chartKind === 'bar') return createVirtualBarOption(widget)
   if (widget.chartKind === 'pie') return createVirtualPieOption(widget)
   return createVirtualLineOption(widget)
@@ -42,11 +43,11 @@ function createVirtualBarOption(widget) {
   const source = getWidgetSource(widget)
   const rows = source.departmentData || []
   return {
-    color: ['#1890ff'],
+    color: [IDMP_CHART_COLORS[0]],
     tooltip: { trigger: 'axis' },
     grid: { top: 24, left: 42, right: 20, bottom: 34 },
-    xAxis: { type: 'category', data: rows.map((item) => item.name), axisLabel: { color: '#8c8c8c' } },
-    yAxis: { type: 'value', axisLabel: { color: '#8c8c8c' }, splitLine: { lineStyle: { color: '#eeeeee' } } },
+    xAxis: { type: 'category', data: rows.map((item) => item.name) },
+    yAxis: { type: 'value' },
     series: [{ name: source.name, type: 'bar', barWidth: 22, data: rows.map((item) => item.value) }]
   }
 }
@@ -54,11 +55,11 @@ function createVirtualBarOption(widget) {
 function createVirtualLineOption(widget) {
   const source = getWidgetSource(widget)
   return {
-    color: ['#13c2c2'],
+    color: [IDMP_CHART_COLORS[1]],
     tooltip: { trigger: 'axis' },
     grid: { top: 24, left: 42, right: 20, bottom: 34 },
-    xAxis: { type: 'category', boundaryGap: false, data: dashboardTrend.months, axisLabel: { color: '#8c8c8c' } },
-    yAxis: { type: 'value', axisLabel: { color: '#8c8c8c' }, splitLine: { lineStyle: { color: '#eeeeee' } } },
+    xAxis: { type: 'category', boundaryGap: false, data: dashboardTrend.months },
+    yAxis: { type: 'value' },
     series: [{ name: source.name, type: 'line', smooth: true, symbolSize: 5, data: source.trendData }]
   }
 }
@@ -66,15 +67,15 @@ function createVirtualLineOption(widget) {
 function createVirtualPieOption(widget) {
   const source = getWidgetSource(widget)
   return {
-    color: ['#1890ff', '#52c41a', '#faad14', '#f5222d'],
+    color: IDMP_CHART_COLORS,
     tooltip: { trigger: 'item', formatter: '{b}: {d}%' },
-    legend: { bottom: 2, left: 'center', itemWidth: 18, itemHeight: 10, textStyle: { color: '#595959', fontSize: 12 } },
+    legend: { bottom: 2, left: 'center', itemWidth: 18, itemHeight: 10 },
     series: [
       {
         type: 'pie',
         radius: ['45%', '68%'],
         center: ['50%', '43%'],
-        label: { color: '#595959', fontSize: 12, formatter: '{b}\n{d}%' },
+        label: { fontSize: 12, formatter: '{b}\n{d}%' },
         data: source.pieData
       }
     ]
