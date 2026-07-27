@@ -447,7 +447,7 @@ const router = useRouter()
 const basicFormRef = ref()
 
 const isCreateMode = computed(() => !route.params.id || route.params.id === 'new')
-const pageTitle = computed(() => (isCreateMode.value ? '因子编辑 / 新增因子' : `因子编辑 / ${route.params.id}`))
+const pageTitle = computed(() => (isCreateMode.value ? '因子编辑 / 新增因子' : `因子编辑 / ${basicForm.name || route.params.id}`))
 
 const caliberTemplates = [
   { value: 'COUNT', label: '计数类因子', description: '统计记录数、人次数、病例数' },
@@ -1133,18 +1133,24 @@ function toOpaqueId(value) {
 
 async function pollTask(taskId) {
   let task = await fetchAsyncTask(taskId)
-  for (let index = 0; index < 18 && !['SUCCEEDED', 'FAILED', 'CANCELED'].includes(task.status); index += 1) {
+  for (let index = 0; index < 60 && !['SUCCEEDED', 'FAILED', 'CANCELED'].includes(task.status); index += 1) {
     await delay(1000)
     task = await fetchAsyncTask(taskId)
+  }
+  if (task.status === 'RUNNING') {
+    ElMessage.info('任务仍在运行中，请稍后手动刷新查看状态')
   }
   return task
 }
 
 async function pollBatch(batchId) {
   let batch = await fetchCalcBatch(batchId)
-  for (let index = 0; index < 10 && !['SUCCEEDED', 'FAILED', 'CANCELED'].includes(batch.status); index += 1) {
+  for (let index = 0; index < 60 && !['SUCCEEDED', 'FAILED', 'CANCELED'].includes(batch.status); index += 1) {
     await delay(1000)
     batch = await fetchCalcBatch(batchId)
+  }
+  if (batch.status === 'RUNNING') {
+    ElMessage.info('批次仍在运行中，请稍后手动刷新查看状态')
   }
   return batch
 }

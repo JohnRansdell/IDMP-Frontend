@@ -176,13 +176,14 @@
           <div class="table-heading">
             <div>
               <h2>科室指标排名</h2>
-              <p>本地 profile 演示排名，按 {{ currentProfile.name }} 由高到低排列；尚未接入服务端分页。</p>
+              <p v-if="hasBackendRankData">后端维度对比数据，按 {{ currentProfile.name }} 由高到低排列。</p>
+              <p v-else>本地 profile 演示排名，按 {{ currentProfile.name }} 由高到低排列；尚未接入服务端分页。</p>
             </div>
-            <StatusBadge status="DRAFT" label="演示数据 · 2024 年度" tone="neutral" />
+            <StatusBadge :status="hasBackendRankData ? 'ACTIVE' : 'DRAFT'" :label="hasBackendRankData ? '后端维度数据' : '演示数据 · 2024 年度'" tone="neutral" />
           </div>
           <div class="table-scroll">
             <el-table
-              :data="currentProfile.rankRows"
+              :data="rankTableData"
               table-layout="fixed"
               class="analysis-table rank-table"
             >
@@ -259,6 +260,7 @@ import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
 import { fetchIndicatorAnalysis, fetchIndicators } from '@/idmp/api/modules/indicators'
 import { fetchMortalityReadonlyChain, mortalityChainConfig } from '@/idmp/api/modules/mortality'
+import { costChainConfig, COST_INDICATOR_IDS, fetchCostAnalysis } from '@/idmp/api/modules/costChain'
 import {
   DEFAULT_ANALYSIS_INDICATOR,
   getAnalysisProfileOptions,
@@ -298,6 +300,9 @@ const backendAnalysisGranularity = computed(() => {
   return null
 })
 const hasBackendAnalysisData = computed(() => Boolean(backendAnalysis.value?.dataAvailable && backendAnalysis.value?.overview))
+const hasBackendRankData = computed(() =>
+  Array.isArray(backendAnalysis.value?.dimensionComparison) && backendAnalysis.value.dimensionComparison.length > 0
+)
 const backendTrend = computed(() => createTrendFromBackendAnalysis(backendAnalysis.value, currentProfile.value.unit))
 const currentTrend = computed(() => backendTrend.value || currentProfile.value.trends[period.value] || currentProfile.value.trends.月度)
 const primaryMetric = computed(() => {
@@ -339,6 +344,21 @@ const trendTableRows = computed(() =>
     peer: currentTrend.value.peer[index] ?? '-'
   }))
 )
+const rankTableData = computed(() => {
+  const comparisons = backendAnalysis.value?.dimensionComparison
+  if (Array.isArray(comparisons) && comparisons.length > 0) {
+    return comparisons.map((item, index) => ({
+      rank: index + 1,
+      department: item.dimensions?.out_dept_name || item.dimensions?.out_dept_code || `科室${index + 1}`,
+      rate: item.displayValue || (item.value != null ? String(item.value) : '-'),
+      numerator: '-',
+      denominator: '-',
+      change: '-',
+      status: item.qualityStatus === 'PASSED' ? '达标' : '预警'
+    }))
+  }
+  return currentProfile.value.rankRows
+})
 
 const showMortalityChainPanel = computed(() => indicatorCode.value === 'MORTALITY_INPATIENT')
 const hasBackendMortalityData = computed(() => Boolean(
@@ -724,33 +744,51 @@ function normalizeText(value) {
 }
 
 async function refreshMortalityAnalysis() {
-  if (indicatorCode.value !== 'MORTALITY_INPATIENT') return
   mortalityChainLoading.value = true
   backendAnalysis.value = null
   try {
     const granularity = backendAnalysisGranularity.value
-    const [analysisResult, chain] = await Promise.allSettled([
-      granularity
-        ? fetchIndicatorAnalysis(mortalityChainConfig.indicatorId, {
-            indicatorVersionId: mortalityChainConfig.indicatorVersionId,
-            granularity
-          })
-        : Promise.resolve(null),
-      fetchMortalityReadonlyChain()
-    ])
+    const isCostIndicator = COST_INDICATOR_IDS.some(id => String(id) === String(indicatorCode.value)) ||
+      [costChainConfig.avgCostIndicatorCode, costChainConfig.antiCostIndicatorCode].includes(indicatorCode.value)
 
-    if (analysisResult.status === 'fulfilled' && analysisResult.value) {
-      backendAnalysis.value = analysisResult.value
+    let analysisResult, chain
+
+    if (indicatorCode.value === 'MORTALITY_INPATIENT') {
+      ;[analysisResult, chain] = await Promise.allSettled([
+        granularity
+          ? fetchIndicatorAnalysis(mortalityChainConfig.indicatorId, {
+              indicatorVersionId: mortalityChainConfig.indicatorVersionId,
+              granularity
+            })
+          : Promise.resolve(null),
+        fetchMortalityReadonlyChain()
+      ])
+    } else if (isCostIndicator) {
+      analysisResult = await Promise.allSettled([
+        granularity ? fetchCostAnalysis(indicatorCode.value, granularity) : Promise.resolve(null)
+      ])
+      chain = { status: 'rejected', reason: null }
+    } else {
+      mortalityChainLoading.value = false
+      return
     }
 
-    if (chain.status !== 'fulfilled' && (analysisResult.status !== 'fulfilled' || !analysisResult.value)) {
-      throw chain.reason
+    const analysisData = Array.isArray(analysisResult) ? analysisResult[0] : analysisResult
+    if (analysisData?.status === 'fulfilled' && analysisData?.value) {
+      backendAnalysis.value = analysisData.value
     }
 
-    if (chain.status === 'fulfilled') {
-      const chainValue = chain.value
-      mortalityChain.value = chainValue
-      updateMortalityProfileFromChain(chainValue)
+    if (indicatorCode.value === 'MORTALITY_INPATIENT') {
+      if (chain.status !== 'fulfilled' && (analysisData?.status !== 'fulfilled' || !analysisData?.value)) {
+        throw chain.reason
+      }
+      if (chain.status === 'fulfilled') {
+        const chainValue = chain.value
+        mortalityChain.value = chainValue
+        updateMortalityProfileFromChain(chainValue)
+      } else {
+        mortalityChain.value = null
+      }
     } else {
       mortalityChain.value = null
     }
@@ -759,7 +797,12 @@ async function refreshMortalityAnalysis() {
   } catch {
     mortalityChain.value = null
     mortalityChainLoading.value = false
-    ElMessage.warning('住院死亡率后端结果暂不可用，已使用演示数据')
+    if (COST_INDICATOR_IDS.some(id => String(id) === String(indicatorCode.value)) ||
+      [costChainConfig.avgCostIndicatorCode, costChainConfig.antiCostIndicatorCode].includes(indicatorCode.value)) {
+      ElMessage.warning('费用指标后端结果暂不可用，已使用演示数据')
+    } else {
+      ElMessage.warning('住院死亡率后端结果暂不可用，已使用演示数据')
+    }
   }
 }
 

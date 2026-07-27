@@ -166,7 +166,44 @@ export const analysisProfiles = {
       ['外科', '29.6%', 296, 1000, '→', '预警'],
       ['检查科', '24.1%', 241, 1000, '↓0.5%', '预警']
     ]
-  })
+  }),
+
+  // 第19章 费用类指标
+  IND_AVG_INPATIENT_COST_20260727_1640: {
+    code: 'IND_AVG_INPATIENT_COST_20260727_1640',
+    name: '住院患者次均费用',
+    unit: '¥',
+    targetLabel: '',
+    markLineValue: null,
+    yAxisMax: null,
+    summary: [
+      { label: '当前值', value: '-' },
+      { label: '目标值', value: '-' },
+      { label: '上期值', value: '-' },
+      { label: '变化', value: '-' },
+      { label: '维度', value: '出院科室' },
+      { label: '记录数', value: '53条' }
+    ],
+    rankRows: []
+  },
+
+  IND_ANTIBACTERIAL_COST_RATIO_20260727_1640: {
+    code: 'IND_ANTIBACTERIAL_COST_RATIO_20260727_1640',
+    name: '抗菌药物费用占比',
+    unit: '%',
+    targetLabel: '',
+    markLineValue: null,
+    yAxisMax: null,
+    summary: [
+      { label: '当前值', value: '-' },
+      { label: '目标值', value: '-' },
+      { label: '上期值', value: '-' },
+      { label: '变化', value: '-' },
+      { label: '维度', value: '出院科室' },
+      { label: '记录数', value: '53条' }
+    ],
+    rankRows: []
+  }
 }
 
 export function getAnalysisProfile(code) {
