@@ -201,13 +201,13 @@
               </el-form-item>
             </el-col>
             <el-col :xs="24" :lg="12">
-              <el-form-item label="时间字段">
+              <el-form-item label="统计周期依据字段">
                 <el-select
                   v-model="dslForm.periodFieldCode"
                   filterable
                   clearable
                   :disabled="!dslForm.usePeriodFilter"
-                  placeholder="选择时间字段"
+                  placeholder="选择用于周期过滤的业务时间字段"
                   :loading="loading.fields"
                 >
                   <el-option
@@ -217,7 +217,7 @@
                     :value="field.fieldCode"
                   />
                 </el-select>
-                <div class="field-help">启用统计周期后，用这个字段判断记录是否落在统计周期内。</div>
+                <div class="field-help">启用统计周期后，用这个业务时间字段判断记录是否落在试算或指标统计窗口内。</div>
               </el-form-item>
             </el-col>
           </el-row>
@@ -535,7 +535,7 @@ const currentFieldName = computed(() => getFieldName(dslForm.fieldCode))
 const aggregationLabel = computed(() => aggregationLabels[dslForm.aggregationFunction] || dslForm.aggregationFunction)
 const filterPreview = computed(() => {
   if (!dslForm.usePeriodFilter) return '不限定统计周期'
-  return `${getFieldName(dslForm.periodFieldCode) || '未选择时间字段'} 在试算或指标统计周期内`
+  return `${getFieldName(dslForm.periodFieldCode) || '未选择统计周期依据字段'} 在试算或指标统计周期内`
 })
 const groupByPreview = computed(() => {
   if (!dslForm.groupBy.length) return '不分组，输出一个汇总值'
@@ -887,7 +887,7 @@ async function saveFactor() {
     return false
   }
   if (dslForm.usePeriodFilter && !dslForm.periodFieldCode) {
-    ElMessage.warning('启用统计周期限定时需要选择时间字段')
+    ElMessage.warning('启用统计周期限定时需要选择统计周期依据字段')
     return false
   }
 
