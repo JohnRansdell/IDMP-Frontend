@@ -36,6 +36,16 @@ const routes = [
         meta: { title: '因子管理', breadcrumb: ['首页', '因子管理'] }
       },
       {
+        path: 'factor/edit/:id?',
+        name: 'FactorEditor',
+        component: () => import('@/idmp/views/FactorEditor.vue'),
+        meta: {
+          title: '因子编辑',
+          activeMenu: '/factor',
+          breadcrumb: ['首页', '因子管理', '因子编辑']
+        }
+      },
+      {
         path: 'scene',
         name: 'SceneManagement',
         component: () => import('@/idmp/views/SceneManagement.vue'),
