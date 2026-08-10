@@ -67,3 +67,14 @@ function withQuery(path, params = {}) {
   const queryText = query.toString()
   return queryText ? `${path}?${queryText}` : path
 }
+
+export function fetchFactorTemplateParameterSchema(templateId) {
+  return requestJson(`/factor-templates/${templateId}/parameter-schema`)
+}
+
+export function instantiateFactorTemplateVersion(versionId, payload) {
+  return requestJson(`/factor-template-versions/${versionId}/instantiate`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}

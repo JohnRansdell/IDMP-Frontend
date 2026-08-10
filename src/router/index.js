@@ -98,6 +98,36 @@ const routes = [
         meta: { title: '数据管理', breadcrumb: ['首页', '数据管理'] }
       },
       {
+        path: 'data/sources',
+        name: 'SourceMetadataManagement',
+        component: () => import('@/idmp/views/SourceMetadataManagement.vue'),
+        meta: {
+          title: '来源元数据',
+          activeMenu: '/data/sources',
+          breadcrumb: ['首页', '数据治理', '来源元数据']
+        }
+      },
+      {
+        path: 'data/domains',
+        name: 'DataDomainManagement',
+        component: () => import('@/idmp/views/DataDomainManagement.vue'),
+        meta: {
+          title: '数据域',
+          activeMenu: '/data/domains',
+          breadcrumb: ['首页', '数据治理', '数据域']
+        }
+      },
+      {
+        path: 'data/domains/:id',
+        name: 'DataDomainWorkspace',
+        component: () => import('@/idmp/views/DataDomainWorkspace.vue'),
+        meta: {
+          title: '数据域工作台',
+          activeMenu: '/data/domains',
+          breadcrumb: ['首页', '数据治理', '数据域', '工作台']
+        }
+      },
+      {
         path: 'system',
         name: 'SystemManagement',
         component: () => import('@/idmp/views/SystemManagement.vue'),
@@ -107,6 +137,17 @@ const routes = [
   },
   { path: '/:pathMatch(.*)*', redirect: '/dashboard' }
 ]
+
+const idmpPermissionMetadata = {
+  DataAssetManagement: { view: 'idmp:data-assets:read' },
+  SourceMetadataManagement: { view: 'idmp:source-metadata:read', actions: { sync: 'idmp:source-metadata:sync' } },
+  DataDomainManagement: { view: 'idmp:data-domains:read', actions: { create: 'idmp:data-domains:create' } },
+  DataDomainWorkspace: { view: 'idmp:data-domains:read', actions: { createSemanticTable: 'idmp:semantic-tables:create', editSemanticField: 'idmp:semantic-fields:edit' }, compatibility: 'backend-permission-set-optional' }
+}
+routes[0].children.forEach((route) => {
+  if (idmpPermissionMetadata[route.name]) route.meta = { ...route.meta, permissions: idmpPermissionMetadata[route.name] }
+})
+routes.splice(1, 0, { path: '/login', name: 'Login', component: () => import('@/idmp/views/Login.vue'), meta: { title: '登录' } })
 
 const router = createRouter({
   history: createWebHistory(),

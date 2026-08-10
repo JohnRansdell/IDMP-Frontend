@@ -34,11 +34,11 @@ export async function requestJson(path, options = {}) {
   const responseText = await response.text().catch(() => '')
   const payload = parseJsonPreservingLargeIntegers(responseText)
   if (!response.ok) {
-    const message = payload?.message || `HTTP ${response.status}`
-    const error = new Error(payload?.traceId ? `${message} (traceId: ${payload.traceId})` : message)
-    error.status = response.status
-    error.path = path
-    error.payload = payload
+    const error = createApiError(response.status, payload, path)
+    if (response.status === 401) {
+      clearAccessToken()
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('idmp:unauthorized', { detail: { path } }))
+    }
     throw error
   }
 
@@ -47,10 +47,22 @@ export async function requestJson(path, options = {}) {
   }
 
   if (payload && payload.code !== undefined && payload.code !== '0' && payload.code !== 'OK') {
-    throw new Error(payload.message || payload.code)
+    throw createApiError(Number(payload.status || 422), payload, path)
   }
 
   return payload?.data ?? payload
+}
+
+export function createApiError(status, payload = {}, path = '') {
+  const message = payload?.message || payload?.error || `HTTP ${status}`
+  const traceId = payload?.traceId || payload?.traceID || payload?.requestId || ''
+  const error = new Error(traceId ? `${message} (traceId: ${traceId})` : message)
+  error.status = Number(status) || 0
+  error.code = payload?.code
+  error.traceId = traceId
+  error.path = path
+  error.payload = payload
+  return error
 }
 
 function parseJsonPreservingLargeIntegers(text) {

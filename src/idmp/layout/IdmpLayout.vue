@@ -120,7 +120,9 @@ const navGroups = [
     id: 'nav-data',
     label: '数据治理',
     items: [
-      { label: '数据资产', path: '/data', icon: markRaw(Folder) }
+      { label: '数据资产', path: '/data', icon: markRaw(Folder) },
+      { label: '来源元数据', path: '/data/sources', icon: markRaw(Folder) },
+      { label: '数据域', path: '/data/domains', icon: markRaw(Folder) }
     ]
   },
   {

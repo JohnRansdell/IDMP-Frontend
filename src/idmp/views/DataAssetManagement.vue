@@ -55,10 +55,10 @@
         </div>
       </article>
 
-      <article class="surface-card form-panel">
+      <article v-if="isDev" class="surface-card form-panel compatibility-tool">
         <div class="section-title">
           <div>
-            <h2>源表绑定数据域</h2>
+            <h2>源表绑定数据域（开发兼容工具）</h2>
             <p class="section-title__description">POST /meta/source-tables/{tableName}/bind-domain</p>
           </div>
         </div>
@@ -139,9 +139,9 @@
               <span class="mono-data">{{ row.id }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="domainCode" label="数据域编码" min-width="210" show-overflow-tooltip />
-          <el-table-column prop="domainName" label="数据域名称" min-width="180" show-overflow-tooltip />
-          <el-table-column prop="sourceTable" label="源表" min-width="190" show-overflow-tooltip />
+           <el-table-column prop="code" label="数据域编码" min-width="210" show-overflow-tooltip />
+           <el-table-column prop="name" label="数据域名称" min-width="180" show-overflow-tooltip />
+           <el-table-column prop="status" label="状态" width="120" />
           <el-table-column label="操作" width="120" fixed="right">
             <template #default="{ row }">
               <button type="button" class="action-link" @click.stop="selectDomain(row)">查看语义字段</button>
@@ -188,11 +188,13 @@
       </StatePanel>
       <div v-else class="table-scroll">
         <el-table :data="semanticFields" table-layout="fixed">
-          <el-table-column prop="fieldCode" label="字段编码" min-width="190" show-overflow-tooltip />
-          <el-table-column prop="fieldName" label="字段名称" min-width="170" show-overflow-tooltip />
+           <el-table-column prop="code" label="字段编码" min-width="190" show-overflow-tooltip />
+           <el-table-column prop="name" label="字段名称" min-width="170" show-overflow-tooltip />
           <el-table-column prop="dataType" label="数据类型" width="132" />
-          <el-table-column prop="sourceColumn" label="源字段" min-width="180" show-overflow-tooltip />
-          <el-table-column prop="semanticKind" label="语义类型" width="132" />
+           <el-table-column prop="sourceFieldName" label="源字段" min-width="180" show-overflow-tooltip />
+           <el-table-column prop="sensitive" label="敏感字段" width="120">
+             <template #default="{ row }">{{ row.sensitive ? '是' : '否' }}</template>
+           </el-table-column>
         </el-table>
       </div>
     </section>
@@ -276,6 +278,12 @@ import {
   fetchSemanticTables,
   syncSourceMappings
 } from '@/idmp/api/modules/meta'
+import {
+  adaptDataDomainList,
+  adaptSemanticFieldList,
+  adaptSemanticTableList,
+  toOpaqueId
+} from '@/idmp/api/adapters/meta'
 
 const dataDomains = ref([])
 const semanticFields = ref([])
@@ -296,6 +304,7 @@ const createDomainFeedback = ref(null)
 const bindFeedback = ref(null)
 const syncFeedback = ref(null)
 const hasAccessToken = ref(Boolean(getAccessToken()))
+const isDev = import.meta.env.DEV
 
 const domainForm = reactive({
   domainCode: '',
@@ -320,10 +329,10 @@ async function loadDataDomains() {
   domainError.value = ''
   try {
     const rows = await fetchDataDomains()
-    dataDomains.value = normalizeList(rows).map(normalizeDomain)
+    dataDomains.value = adaptDataDomainList(rows)
     const current = dataDomains.value.find((item) => item.id === selectedDomainId.value)
     if (current) {
-      selectedDomainName.value = current.domainName || current.domainCode
+      selectedDomainName.value = current.name || current.code
     } else if (firstDomain.value) {
       selectDomain(firstDomain.value)
     } else {
@@ -500,7 +509,7 @@ async function handleBindSourceTable() {
 
 function selectDomain(row) {
   selectedDomainId.value = toOpaqueId(row?.id)
-  selectedDomainName.value = row?.domainName || row?.domainCode || ''
+  selectedDomainName.value = row?.name || row?.code || ''
   semanticFields.value = []
   fieldError.value = ''
   loadSemanticFields(row)
@@ -512,16 +521,16 @@ async function loadSemanticFields(row) {
   fieldLoading.value = true
   fieldError.value = ''
   try {
-    const domainCode = row?.domainCode || dataDomains.value.find((item) => item.id === domainId)?.domainCode || ''
+    const domainCode = row?.code || dataDomains.value.find((item) => item.id === domainId)?.code || ''
     const tableCode = await resolveSemanticTableCode(domainId, domainCode)
     const rows = tableCode
       ? await fetchSemanticTableFields(domainId, tableCode)
       : await fetchSemanticFields(domainId)
-    semanticFields.value = normalizeList(rows).map(normalizeField)
+    semanticFields.value = adaptSemanticFieldList(rows)
   } catch (error) {
     try {
       const rows = await fetchSemanticFields(domainId)
-      semanticFields.value = normalizeList(rows).map(normalizeField)
+      semanticFields.value = adaptSemanticFieldList(rows)
     } catch {
       semanticFields.value = []
       fieldError.value = error?.message || '语义字段加载失败'
@@ -534,9 +543,9 @@ async function loadSemanticFields(row) {
 
 async function resolveSemanticTableCode(domainId, domainCode) {
   try {
-    const tables = normalizeList(await fetchSemanticTables(domainId))
-    const preferred = tables.find((item) => (item.code || item.semanticTableCode) === domainCode) || tables[0]
-    return preferred?.code || preferred?.semanticTableCode || ''
+    const tables = adaptSemanticTableList(await fetchSemanticTables(domainId))
+    const preferred = tables.find((item) => item.code === domainCode) || tables[0]
+    return preferred?.code || ''
   } catch {
     return ''
   }
@@ -599,7 +608,7 @@ async function runDataAssetBackendChain() {
 
   try {
     setBackendStep(activeStep, 'RUNNING')
-    const beforeDomains = normalizeList(await fetchDataDomains()).map(normalizeDomain)
+    const beforeDomains = adaptDataDomainList(await fetchDataDomains())
     dataDomains.value = beforeDomains
     domainError.value = ''
     setBackendStep(activeStep, 'SUCCEEDED', `${beforeDomains.length} 个数据域`)
@@ -630,20 +639,20 @@ async function runDataAssetBackendChain() {
     })
     setBackendStep(activeStep, 'SUCCEEDED', `${bindForm.tableName} → ${bindForm.domainCode}`)
 
-    const afterDomains = normalizeList(await fetchDataDomains()).map(normalizeDomain)
+    const afterDomains = adaptDataDomainList(await fetchDataDomains())
     dataDomains.value = afterDomains
-    const targetDomain = afterDomains.find((item) => item.domainCode === bindForm.domainCode) || afterDomains[0]
+    const targetDomain = afterDomains.find((item) => item.code === bindForm.domainCode) || afterDomains[0]
     if (!targetDomain?.id) {
       throw new Error('接口未返回可用于语义字段查询的数据域')
     }
 
     activeStep = 'fields'
     setBackendStep(activeStep, 'RUNNING')
-    const fields = normalizeList(await fetchSemanticFields(targetDomain.id)).map(normalizeField)
+    const fields = adaptSemanticFieldList(await fetchSemanticFields(targetDomain.id))
     semanticFields.value = fields
     fieldError.value = ''
     selectedDomainId.value = targetDomain.id
-    selectedDomainName.value = targetDomain.domainName || targetDomain.domainCode
+    selectedDomainName.value = targetDomain.name || targetDomain.code
     setBackendStep(activeStep, 'SUCCEEDED', `${fields.length} 个字段`)
 
     backendChainResult.value = {
@@ -661,42 +670,9 @@ async function runDataAssetBackendChain() {
   }
 }
 
-function normalizeList(payload) {
-  if (Array.isArray(payload)) return payload
-  if (Array.isArray(payload?.records)) return payload.records
-  if (Array.isArray(payload?.items)) return payload.items
-  if (Array.isArray(payload?.list)) return payload.list
-  return []
-}
-
-function normalizeDomain(item) {
-  return {
-    id: toOpaqueId(item.id ?? item.domainId),
-    domainCode: item.domainCode || item.code || '-',
-    domainName: item.domainName || item.name || '-',
-    sourceTable: item.sourceTable || item.tableName || item.physicalTable || '-',
-    raw: item
-  }
-}
-
-function normalizeField(item) {
-  return {
-    fieldCode: item.fieldCode || item.code || item.semanticCode || item.columnName || '-',
-    fieldName: item.fieldName || item.name || item.semanticName || item.columnComment || '-',
-    dataType: item.dataType || item.type || item.columnType || '-',
-    sourceColumn: item.sourceColumn || item.columnName || item.physicalColumn || '-',
-    semanticKind: item.semanticKind || item.kind || '-'
-  }
-}
-
 function hasMortalityDomains() {
-  const codes = new Set(dataDomains.value.map((item) => item.domainCode))
+  const codes = new Set(dataDomains.value.map((item) => item.code))
   return codes.has('INPATIENT_DEATH_RECORD') && codes.has('INPATIENT_DISCHARGE_RECORD')
-}
-
-function toOpaqueId(value) {
-  if (value === undefined || value === null || value === '') return ''
-  return String(value)
 }
 
 function createBackendCodeSuffix() {
