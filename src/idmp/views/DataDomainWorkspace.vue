@@ -1,9 +1,9 @@
 <template>
   <div class="idmp-page data-domain-workspace">
-    <PageHeader title="数据域工作台">
+    <PageHeader title="标准数据模型工作台">
       <template #meta>
         <span class="data-source-badge is-live">真实接口</span>
-        <span class="header-meta">数据域和语义表来自 /api/v1/meta</span>
+        <span class="header-meta">在数据域中维护语义表、语义字段及其物理来源映射</span>
       </template>
       <template #actions>
         <el-button @click="router.push({ name: 'DataDomainManagement' })">返回数据域目录</el-button>
@@ -79,7 +79,7 @@
           </el-table-column>
           <el-table-column label="状态" width="120"><template #default="{ row }"><StatusBadge :status="row.status" /></template></el-table-column>
           <el-table-column label="操作" width="110" fixed="right">
-            <template #default="{ row }"><el-button link type="primary" @click.stop="selectSemanticTable(row)">选择</el-button></template>
+            <template #default="{ row }"><el-button link type="primary" @click.stop="selectSemanticTable(row)">查看</el-button></template>
           </el-table-column>
         </el-table>
       </section>

@@ -1,9 +1,9 @@
 <template>
   <div class="idmp-page data-domain-page">
-    <PageHeader title="数据域">
+    <PageHeader title="数据模型管理">
       <template #meta>
         <span class="data-source-badge is-live">真实接口</span>
-        <span class="header-meta">数据域目录来自 /api/v1/meta/data-domains</span>
+        <span class="header-meta">以数据域、语义表和语义字段统一业务口径</span>
       </template>
       <template #actions>
         <el-button :icon="Refresh" :loading="listLoading" @click="loadDomains">刷新列表</el-button>
@@ -64,11 +64,12 @@
       </StatePanel>
       <el-table
         v-else
-        :data="filteredDomains"
+        :data="pagedDomains"
         :current-row-key="newlyCreatedId"
         row-key="id"
         highlight-current-row
         table-layout="fixed"
+        max-height="560"
         @row-click="openWorkspace"
       >
         <el-table-column label="ID" width="205">
@@ -91,6 +92,16 @@
           </template>
         </el-table-column>
       </el-table>
+      <div v-if="filteredDomains.length" class="pagination-bar">
+        <span class="pagination-summary">当前显示 {{ pageStart }}-{{ pageEnd }} / {{ filteredDomains.length }}</span>
+        <el-pagination
+          v-model:current-page="page"
+          :page-size="pageSize"
+          :total="filteredDomains.length"
+          background
+          layout="prev, pager, next"
+        />
+      </div>
     </section>
 
     <el-dialog v-model="createDialogVisible" title="新建数据域" width="520px" destroy-on-close>
@@ -119,7 +130,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
@@ -138,6 +149,8 @@ const createError = ref(null)
 const createDialogVisible = ref(false)
 const newlyCreatedId = ref('')
 const createFormRef = ref(null)
+const page = ref(1)
+const pageSize = 20
 const filters = reactive({ code: '', name: '', status: '' })
 const createForm = reactive({ code: '', name: '', description: '' })
 
@@ -160,8 +173,20 @@ const filteredDomains = computed(() => {
   })
 })
 
+const pagedDomains = computed(() => {
+  const start = (page.value - 1) * pageSize
+  return filteredDomains.value.slice(start, start + pageSize)
+})
+
+const pageStart = computed(() => filteredDomains.value.length ? (page.value - 1) * pageSize + 1 : 0)
+const pageEnd = computed(() => Math.min(page.value * pageSize, filteredDomains.value.length))
+
 const listErrorMessage = computed(() => formatErrorMessage(listError.value, '数据域列表加载失败'))
 const createErrorMessage = computed(() => formatErrorMessage(createError.value, '数据域创建失败'))
+
+watch(filters, () => {
+  page.value = 1
+}, { deep: true })
 
 onMounted(loadDomains)
 
@@ -173,6 +198,9 @@ async function loadDomains() {
     if (newlyCreatedId.value && !domains.value.some((item) => item.id === newlyCreatedId.value)) {
       newlyCreatedId.value = ''
     }
+    const createdIndex = domains.value.findIndex((item) => item.id === newlyCreatedId.value)
+    if (createdIndex >= 0) page.value = Math.floor(createdIndex / pageSize) + 1
+    if (page.value > Math.max(1, Math.ceil(filteredDomains.value.length / pageSize))) page.value = 1
   } catch (error) {
     domains.value = []
     listError.value = error
@@ -265,8 +293,10 @@ function formatErrorMessage(error, fallback) {
 .table-card { padding: 18px; }
 .section-title--toolbar { align-items: center; }
 .filter-bar { display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr)) auto; gap: 10px; margin-bottom: 14px; }
+.pagination-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; }
+.pagination-summary { color: var(--idmp-text-helper); font-size: 12px; }
 .dialog-api-note { margin-bottom: 18px; color: var(--idmp-text-helper); font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; }
 .field-help { margin-top: 5px; color: var(--idmp-text-helper); font-size: 12px; line-height: 18px; }
 .create-error { margin-top: 8px; }
-@media (max-width: 900px) { .filter-bar { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 900px) { .filter-bar { grid-template-columns: 1fr 1fr; } .pagination-bar { align-items: flex-start; flex-direction: column; } }
 </style>

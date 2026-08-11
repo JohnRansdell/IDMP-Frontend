@@ -1,13 +1,13 @@
 <template>
   <div class="idmp-page source-metadata-page">
-    <PageHeader title="来源元数据">
+    <PageHeader title="数据源管理">
       <template #meta>
         <span class="data-source-badge is-live">真实接口</span>
-        <span class="header-meta">源表与物理字段来自 /api/v1/meta</span>
+        <span class="header-meta">当前提供数据表、视图与字段结构同步，为数据模型接入提供基础</span>
       </template>
       <template #actions>
         <el-button :icon="Refresh" :loading="syncLoading" @click="handleSync">
-          同步来源元数据
+          同步数据结构
         </el-button>
         <el-button type="primary" :icon="Refresh" :loading="tableLoading" @click="loadSourceTables">
           刷新目录
@@ -16,13 +16,17 @@
     </PageHeader>
 
     <div v-if="!hasAccessToken" class="notice-strip is-warning">
-      当前未保存访问令牌；如果后端启用鉴权，来源元数据接口可能返回未登录或权限错误。
+      当前未保存访问令牌；如果后端启用鉴权，数据源管理接口可能返回未登录或权限错误。
+    </div>
+
+    <div class="notice-strip">
+      当前页面用于管理已接入数据源的数据结构；数据源连接的创建、测试与停用需由后端提供相应接口后接入本页。
     </div>
 
     <section class="surface-card sync-card">
       <div class="section-title">
         <div>
-          <h2>来源同步</h2>
+          <h2>数据结构同步</h2>
           <p class="section-title__description">POST /api/v1/meta/source-mappings/sync</p>
         </div>
         <StatusBadge
@@ -34,7 +38,7 @@
       </div>
 
       <div class="sync-summary" :class="{ 'is-muted': !syncSummary }">
-        <div><span>同步表数量</span><strong>{{ syncSummary?.tableCount ?? '-' }}</strong></div>
+        <div><span>同步对象数量</span><strong>{{ syncSummary?.tableCount ?? '-' }}</strong></div>
         <div><span>同步字段数量</span><strong>{{ syncSummary?.fieldCount ?? '-' }}</strong></div>
         <div class="sync-summary__message">{{ syncFeedback?.message || '执行同步后将在此显示本次同步结果。' }}</div>
       </div>
@@ -42,7 +46,7 @@
       <div v-if="syncError" class="sync-error">
         <StatePanel
           :type="stateTypeForError(syncError)"
-          title="来源同步失败"
+          title="数据结构同步失败"
           :description="syncErrorMessage"
         >
           <template #actions>
@@ -52,7 +56,7 @@
       </div>
 
       <div v-if="syncSummary?.tables?.length" class="sync-tables">
-        <div class="sync-tables__heading">本次同步表清单</div>
+        <div class="sync-tables__heading">本次同步对象清单</div>
         <div class="sync-table-tags">
           <span v-for="item in syncSummary.tables" :key="item.tableName" class="sync-table-tag">
             <strong>{{ item.tableName }}</strong>
@@ -65,24 +69,24 @@
     <section class="surface-card table-card">
       <div class="section-title section-title--toolbar">
         <div>
-          <h2>已发现源表</h2>
+          <h2>数据表与视图</h2>
           <p class="section-title__description">GET /api/v1/meta/source-tables</p>
         </div>
-        <span class="table-count">共 {{ filteredTables.length }} / {{ sourceTables.length }} 张</span>
+        <span class="table-count">共 {{ filteredTables.length }} / {{ sourceTables.length }} 个对象</span>
       </div>
 
       <div class="filter-bar">
-        <el-input v-model="filters.tableName" clearable placeholder="按表名筛选" />
-        <el-input v-model="filters.tableType" clearable placeholder="按表类型筛选" />
+        <el-input v-model="filters.tableName" clearable placeholder="按表/视图名称筛选" />
+        <el-input v-model="filters.tableType" clearable placeholder="按对象类型筛选" />
         <el-input v-model="filters.comment" clearable placeholder="按注释筛选" />
         <el-button @click="resetFilters">清空筛选</el-button>
       </div>
 
-      <StatePanel v-if="tableLoading" type="loading" title="正在加载源表目录" />
+      <StatePanel v-if="tableLoading" type="loading" title="正在加载数据表与视图" />
       <StatePanel
         v-else-if="tableError"
         :type="stateTypeForError(tableError)"
-        title="源表目录加载失败"
+        title="数据表与视图加载失败"
         :description="tableErrorMessage"
       >
         <template #actions>
@@ -92,14 +96,14 @@
       <StatePanel
         v-else-if="!sourceTables.length"
         type="empty"
-        title="暂无已发现源表"
-        description="请先执行来源元数据同步，或确认后端远程源库配置。"
+        title="暂无数据表或视图"
+        description="请先同步数据结构，或确认后端远程数据源配置。"
       />
       <StatePanel
         v-else-if="!filteredTables.length"
         type="empty"
-        title="没有匹配的源表"
-        description="请调整表名、表类型或注释筛选条件。"
+        title="没有匹配的数据对象"
+        description="请调整表/视图名称、对象类型或注释筛选条件。"
       >
         <template #actions>
           <el-button @click="resetFilters">清空筛选</el-button>
@@ -111,10 +115,11 @@
         row-key="tableName"
         highlight-current-row
         table-layout="fixed"
+        max-height="560"
         @row-click="selectSourceTable"
       >
-        <el-table-column prop="tableName" label="源表名" min-width="240" show-overflow-tooltip />
-        <el-table-column prop="tableType" label="表类型" width="150" />
+        <el-table-column prop="tableName" label="表/视图名称" min-width="240" show-overflow-tooltip />
+        <el-table-column prop="tableType" label="对象类型" width="150" />
         <el-table-column prop="comment" label="注释" min-width="220" show-overflow-tooltip>
           <template #default="{ row }">{{ row.comment || '—' }}</template>
         </el-table-column>
@@ -127,49 +132,40 @@
       </el-table>
     </section>
 
-    <section class="surface-card table-card fields-card">
-      <div class="section-title section-title--toolbar">
-        <div>
-          <h2>物理字段</h2>
-          <p class="section-title__description">GET /api/v1/meta/source-tables/{tableName}/fields</p>
-        </div>
-        <span class="selected-context">{{ selectedTable?.tableName || '未选择源表' }}</span>
-      </div>
-
-      <StatePanel v-if="fieldLoading" type="loading" title="正在加载物理字段" />
+    <el-drawer
+      v-model="fieldsDrawerVisible"
+      :title="`字段结构：${selectedTable?.tableName || ''}`"
+      size="min(720px, 90vw)"
+      direction="rtl"
+      @closed="clearSelectedTable"
+    >
+      <p class="drawer-api-note">GET /api/v1/meta/source-tables/{tableName}/fields</p>
+      <StatePanel v-if="fieldLoading" type="loading" title="正在加载字段结构" />
       <StatePanel
         v-else-if="fieldError"
         :type="stateTypeForError(fieldError)"
-        title="物理字段加载失败"
+        title="字段结构加载失败"
         :description="fieldErrorMessage"
       >
-        <template #actions>
-          <el-button :disabled="!selectedTable" @click="loadFields">重试加载</el-button>
-        </template>
+        <template #actions><el-button :disabled="!selectedTable" @click="loadFields">重试加载</el-button></template>
       </StatePanel>
-      <StatePanel
-        v-else-if="!selectedTable"
-        type="empty"
-        title="尚未选择源表"
-        description="从上方源表目录选择一行后查看物理字段。"
-      />
       <StatePanel
         v-else-if="!sourceFields.length"
         type="empty"
-        title="当前源表没有字段"
-        description="接口返回了空字段列表，请确认源表元数据是否已同步。"
+        title="当前对象没有字段"
+        description="接口返回了空字段列表，请确认数据结构已经同步。"
       />
-      <el-table v-else :data="sourceFields" table-layout="fixed">
-        <el-table-column prop="columnName" label="字段名" min-width="240" show-overflow-tooltip />
-        <el-table-column prop="columnType" label="字段类型" width="180" />
-        <el-table-column prop="nullable" label="可为空" width="120">
+      <el-table v-else :data="sourceFields" table-layout="fixed" max-height="calc(100vh - 180px)">
+        <el-table-column prop="columnName" label="字段名" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="columnType" label="字段类型" width="140" />
+        <el-table-column prop="nullable" label="可为空" width="90">
           <template #default="{ row }">{{ nullableLabel(row.nullable) }}</template>
         </el-table-column>
-        <el-table-column prop="comment" label="字段注释" min-width="260" show-overflow-tooltip>
+        <el-table-column prop="comment" label="字段注释" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">{{ row.comment || '—' }}</template>
         </el-table-column>
       </el-table>
-    </section>
+    </el-drawer>
   </div>
 </template>
 
@@ -187,6 +183,7 @@ import { adaptSourceFieldList, adaptSourceTableList } from '@/idmp/api/adapters/
 const sourceTables = ref([])
 const sourceFields = ref([])
 const selectedTable = ref(null)
+const fieldsDrawerVisible = ref(false)
 const tableLoading = ref(false)
 const fieldLoading = ref(false)
 const syncLoading = ref(false)
@@ -210,9 +207,9 @@ const filteredTables = computed(() => {
   })
 })
 
-const tableErrorMessage = computed(() => formatErrorMessage(tableError.value, '源表目录加载失败'))
+const tableErrorMessage = computed(() => formatErrorMessage(tableError.value, '数据表与视图加载失败'))
 const fieldErrorMessage = computed(() => formatErrorMessage(fieldError.value, '物理字段加载失败'))
-const syncErrorMessage = computed(() => formatErrorMessage(syncError.value, '来源元数据同步失败'))
+const syncErrorMessage = computed(() => formatErrorMessage(syncError.value, '数据结构同步失败'))
 
 onMounted(loadSourceTables)
 
@@ -243,8 +240,8 @@ async function handleSync() {
   if (syncLoading.value) return
   try {
     await ElMessageBox.confirm(
-      '同步会读取远程源库的表和字段元数据。确认继续？',
-      '确认同步来源元数据',
+      '同步会读取远程数据源中的表、视图和字段结构。确认继续？',
+      '确认同步数据结构',
       { confirmButtonText: '确认同步', cancelButtonText: '返回', type: 'warning' }
     )
   } catch {
@@ -254,7 +251,7 @@ async function handleSync() {
   syncLoading.value = true
   syncError.value = null
   syncSummary.value = null
-  syncFeedback.value = { status: 'RUNNING', label: '同步中', message: '正在读取远程源库元数据。' }
+  syncFeedback.value = { status: 'RUNNING', label: '同步中', message: '正在读取远程数据源结构。' }
   try {
     const result = await syncSourceMappings()
     syncSummary.value = {
@@ -269,13 +266,13 @@ async function handleSync() {
     }
     const refreshed = await loadSourceTables()
     if (!refreshed) throw tableError.value || new Error('同步成功，但源表目录刷新失败')
-    ElMessage.success('来源元数据同步成功')
+    ElMessage.success('数据结构同步成功')
   } catch (error) {
     syncError.value = error
     syncFeedback.value = {
       status: 'FAILED',
       label: '同步失败',
-      message: `${formatErrorMessage(error, '来源元数据同步失败')}。源表目录未标记为同步成功。`
+      message: `${formatErrorMessage(error, '数据结构同步失败')}。数据表目录未标记为同步成功。`
     }
     ElMessage.error(syncFeedback.value.message)
   } finally {
@@ -285,6 +282,7 @@ async function handleSync() {
 
 function selectSourceTable(row) {
   selectedTable.value = row
+  fieldsDrawerVisible.value = true
   sourceFields.value = []
   fieldError.value = null
   loadFields()
@@ -363,8 +361,7 @@ function formatErrorMessage(error, fallback) {
 .sync-table-tag strong { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
 .sync-table-tag small { color: var(--idmp-text-helper); }
 .filter-bar { display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr)) auto; gap: 10px; margin-bottom: 14px; }
-.fields-card { min-height: 220px; }
-.selected-context { color: var(--idmp-text-secondary); font-size: 13px; }
+.drawer-api-note { margin: -8px 0 16px; color: var(--idmp-text-helper); font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; }
 @media (max-width: 900px) {
   .sync-summary { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
   .sync-summary__message { grid-column: 1 / -1; }

@@ -65,7 +65,7 @@
         <el-table-column label="操作" width="118" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" :disabled="row.nextLevel === 'PATIENT'" @click="openNextLevel(row)">
-              {{ row.nextLevel === 'PATIENT' ? '病例权限' : '继续下钻' }}
+              {{ row.nextLevel === 'PATIENT' ? '病例权限' : '查看明细' }}
             </el-button>
           </template>
         </el-table-column>
@@ -191,7 +191,9 @@ onMounted(loadDrill)
 
 .drill-context-bar {
   min-height: 44px;
-  padding: 0 12px;
+  height: auto;
+  box-sizing: border-box;
+  padding: 6px 12px;
   border-bottom: 1px solid var(--idmp-border-subtle);
   background: var(--idmp-layer-02);
 }
@@ -201,6 +203,15 @@ onMounted(loadDrill)
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
+  min-height: 32px;
+}
+
+.drill-dimension-select {
+  flex: 0 0 150px;
+}
+
+.drill-dimension-select :deep(.el-select__wrapper) {
+  min-height: 32px;
 }
 
 .drill-context-bar__period,

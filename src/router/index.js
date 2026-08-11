@@ -110,18 +110,16 @@ const routes = [
       },
       {
         path: 'data',
-        name: 'DataAssetManagement',
-        component: () => import('@/idmp/views/DataAssetManagement.vue'),
-        meta: { title: '数据管理', breadcrumb: ['首页', '数据管理'] }
+        redirect: '/data/sources'
       },
       {
         path: 'data/sources',
-        name: 'SourceMetadataManagement',
+        name: 'DataSourceManagement',
         component: () => import('@/idmp/views/SourceMetadataManagement.vue'),
         meta: {
-          title: '来源元数据',
+          title: '数据源管理',
           activeMenu: '/data/sources',
-          breadcrumb: ['首页', '数据治理', '来源元数据']
+          breadcrumb: ['首页', '数据治理', '数据源管理']
         }
       },
       {
@@ -129,9 +127,9 @@ const routes = [
         name: 'DataDomainManagement',
         component: () => import('@/idmp/views/DataDomainManagement.vue'),
         meta: {
-          title: '数据域',
+          title: '数据模型管理',
           activeMenu: '/data/domains',
-          breadcrumb: ['首页', '数据治理', '数据域']
+          breadcrumb: ['首页', '数据治理', '数据模型管理']
         }
       },
       {
@@ -139,9 +137,9 @@ const routes = [
         name: 'DataDomainWorkspace',
         component: () => import('@/idmp/views/DataDomainWorkspace.vue'),
         meta: {
-          title: '数据域工作台',
+          title: '数据模型工作台',
           activeMenu: '/data/domains',
-          breadcrumb: ['首页', '数据治理', '数据域', '工作台']
+          breadcrumb: ['首页', '数据治理', '数据模型管理', '数据域工作台']
         }
       },
       {
@@ -158,8 +156,8 @@ const routes = [
 const idmpPermissionMetadata = {
   ScenarioList: { view: 'scenario:view', actions: { create: 'scenario:create', edit: 'scenario:edit', publish: 'scenario:publish' } },
   ScenarioEditor: { view: 'scenario:view', actions: { edit: 'scenario:edit', publish: 'scenario:publish' } },
-  DataAssetManagement: { view: 'idmp:data-assets:read' },
-  SourceMetadataManagement: { view: 'idmp:source-metadata:read', actions: { sync: 'idmp:source-metadata:sync' } },
+  // 后端权限码保持既有契约；页面术语改为面向用户的“数据源管理”。
+  DataSourceManagement: { view: 'idmp:source-metadata:read', actions: { sync: 'idmp:source-metadata:sync' } },
   DataDomainManagement: { view: 'idmp:data-domains:read', actions: { create: 'idmp:data-domains:create' } },
   DataDomainWorkspace: { view: 'idmp:data-domains:read', actions: { createSemanticTable: 'idmp:semantic-tables:create', editSemanticField: 'idmp:semantic-fields:edit' }, compatibility: 'backend-permission-set-optional' }
 }

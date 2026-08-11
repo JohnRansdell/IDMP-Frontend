@@ -1199,6 +1199,7 @@ watch(period, () => {
   justify-content: space-between;
   gap: 18px;
   margin-bottom: 8px;
+  flex-wrap: wrap;
 
   h2 {
     margin: 0 0 3px;
@@ -1219,6 +1220,33 @@ watch(period, () => {
   display: flex;
   align-items: center;
   gap: 14px;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+}
+
+.period-control :deep(.el-radio-group) {
+  display: flex;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  overflow: visible;
+  white-space: nowrap;
+}
+
+.period-control :deep(.el-radio-button__inner) {
+  box-sizing: border-box;
+  padding-right: 10px;
+  padding-left: 10px;
+  white-space: nowrap;
+}
+
+.period-control :deep(.el-radio-button:first-child .el-radio-button__inner) {
+  border-left: 1px solid var(--idmp-border-strong, var(--el-border-color));
+}
+
+.period-control :deep(.el-radio-button:last-child .el-radio-button__inner) {
+  border-right: 1px solid var(--idmp-border-strong, var(--el-border-color));
 }
 
 .period-range,

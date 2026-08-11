@@ -27,6 +27,13 @@ export function createFactor(payload) {
   })
 }
 
+export function updateFactor(factorId, payload) {
+  return requestJson(`/factors/${factorId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  })
+}
+
 export function compileFactorVersion(versionId, payload = {}) {
   return requestJson(`/factor-versions/${versionId}/compile`, {
     method: 'POST',

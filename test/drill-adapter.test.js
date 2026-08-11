@@ -28,19 +28,20 @@ test('mock drill follows organization levels and stops before patient access', (
   const hospital = createMockDrillResult('R001', { currentLevel: 'HOSPITAL' })
   assert.equal(hospital.dataSource, 'mock')
   assert.equal(hospital.records[0].dimensionLabel, '心外科')
-  assert.deepEqual(hospital.nextLevels, ['MEDICAL_GROUP'])
+  assert.deepEqual(hospital.nextLevels, ['DEPARTMENT'])
 
   const department = createMockDrillResult('R001', {
     currentLevel: 'DEPARTMENT',
     parentKeys: { departmentKey: 'DEPT_CARDIO' }
   })
   assert.equal(department.records[0].dimensionLabel, '心外一组')
-  assert.deepEqual(department.nextLevels, ['DOCTOR'])
+  assert.deepEqual(department.nextLevels, ['MEDICAL_GROUP'])
 
   const group = createMockDrillResult('R001', {
     currentLevel: 'MEDICAL_GROUP',
     parentKeys: { medicalGroupKey: 'GROUP_CARDIO_1' }
   })
   assert.equal(group.records[0].dimensionLabel, '张医生')
-  assert.deepEqual(group.nextLevels, [])
+  assert.equal(group.records[0].nextLevel, 'DOCTOR')
+  assert.deepEqual(group.nextLevels, ['DOCTOR'])
 })

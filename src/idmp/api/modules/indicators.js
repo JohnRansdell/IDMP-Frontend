@@ -31,6 +31,13 @@ export function createIndicator(payload) {
   })
 }
 
+export function updateIndicator(indicatorId, payload) {
+  return requestJson(`/indicators/${indicatorId}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  })
+}
+
 export function createIndicatorVersion(indicatorId, payload = {}) {
   return requestJson(`/indicators/${indicatorId}/versions`, {
     method: 'POST',
