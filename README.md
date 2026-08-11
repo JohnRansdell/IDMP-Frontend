@@ -25,7 +25,7 @@ integrate/clinical-factor
 ## 本地运行
 
 ```powershell
-cd "F:\document\paperwork\项目\bilin\ruoyivue_goview\IDMP-Frontend\IDMP-Frontend"
+cd "F:\document\project\bilin\ruoyivue_goview\IDMP-Frontend\IDMP-Frontend"
 pnpm install
 pnpm dev
 ```
