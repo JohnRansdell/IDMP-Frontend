@@ -27,7 +27,7 @@
         <div class="section-title">
           <div>
             <h2>基础信息</h2>
-            <p class="section-title__description">当前只读页面优先使用指标目录接口返回的数据；详情接口接入后可扩展版本、公式与试算记录。</p>
+            <p class="section-title__description">当前只读页面优先使用后端指标详情、版本列表与版本定义接口。</p>
           </div>
           <StatusBadge :status="indicatorStatus" :label="indicatorStatus" :tone="statusTone(indicatorStatus)" />
         </div>
@@ -74,11 +74,53 @@
       </article>
 
       <aside class="detail-side">
-        <StatePanel
-          type="unavailable"
-          title="版本与公式详情待接入"
-          description="后端提供指标详情、版本列表、公式详情和试算记录接口后，此处将展示完整只读配置快照。"
-        />
+        <article class="surface-card version-card">
+          <div class="section-title compact">
+            <div>
+              <h2>版本与公式</h2>
+              <p class="section-title__description">按后端版本列表倒序展示，当前读取最新版本定义。</p>
+            </div>
+          </div>
+          <StatePanel
+            v-if="!versionRows.length"
+            type="empty"
+            title="暂无版本"
+            description="当前指标尚未返回可查看的版本定义。"
+          />
+          <div v-else class="version-list">
+            <button
+              v-for="version in versionRows"
+              :key="resolveIndicatorVersionId(version)"
+              type="button"
+              class="version-item"
+              :class="{ 'is-active': resolveIndicatorVersionId(version) === toOpaqueId(selectedVersion?.id) }"
+              @click="selectVersion(version)"
+            >
+              <strong>V{{ version.versionNo || '-' }}</strong>
+              <span>{{ version.status || '-' }}</span>
+              <small class="mono-data">{{ resolveIndicatorVersionId(version) }}</small>
+            </button>
+          </div>
+          <dl v-if="selectedVersion" class="version-grid">
+            <div>
+              <dt>版本 ID</dt>
+              <dd class="mono-data">{{ selectedVersion.id }}</dd>
+            </div>
+            <div>
+              <dt>编译产物</dt>
+              <dd class="mono-data">{{ selectedVersion.currentArtifactId || '-' }}</dd>
+            </div>
+            <div>
+              <dt>资源版本</dt>
+              <dd>{{ selectedVersion.resourceVersion ?? selectedVersion.version ?? '-' }}</dd>
+            </div>
+            <div>
+              <dt>创建时间</dt>
+              <dd>{{ selectedVersion.createdAt || '-' }}</dd>
+            </div>
+          </dl>
+          <pre v-if="selectedVersion?.formula" class="json-preview">{{ formatJson(selectedVersion.formula) }}</pre>
+        </article>
         <StatePanel
           type="unavailable"
           title="规则、场景与发布门禁待接入"
@@ -96,13 +138,21 @@ import { InfoFilled } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
-import { fetchIndicators } from '@/idmp/api/modules/indicators'
+import {
+  fetchIndicator,
+  fetchIndicatorFormula,
+  fetchIndicators,
+  fetchIndicatorVersion,
+  fetchIndicatorVersions
+} from '@/idmp/api/modules/indicators'
 import { indicatorRows } from '@/idmp/data/demo'
 
 const route = useRoute()
 const router = useRouter()
 const routeIndicatorKey = computed(() => String(route.params.id || ''))
 const loadError = ref('')
+const versionRows = ref([])
+const selectedVersion = ref(null)
 const detail = reactive({
   id: '',
   code: '',
@@ -139,15 +189,11 @@ function hydrateDetail(item) {
 async function loadIndicatorDetail() {
   loadError.value = ''
   try {
-    const rows = await fetchIndicators()
-    const target = Array.isArray(rows) ? findIndicator(rows) : null
-    if (target) {
-      hydrateDetail(target)
-      return
-    }
-    loadError.value = `未在指标目录接口中找到 ${routeIndicatorKey.value}，已显示本地兜底摘要。`
+    const target = await loadBackendDetail()
+    if (target) return
+    loadError.value = `未在指标接口中找到 ${routeIndicatorKey.value}，已显示本地兜底摘要。`
   } catch (error) {
-    loadError.value = error?.message || '指标目录接口暂不可用，已显示本地兜底摘要。'
+    loadError.value = error?.message || '指标详情接口暂不可用，已显示本地兜底摘要。'
   }
 
   const demoTarget = findIndicator(indicatorRows)
@@ -156,6 +202,63 @@ async function loadIndicatorDetail() {
   } else {
     detail.code = routeIndicatorKey.value
     detail.name = routeIndicatorKey.value
+  }
+}
+
+async function loadBackendDetail() {
+  const key = routeIndicatorKey.value
+  let target = null
+
+  if (/^\d+$/.test(key)) {
+    target = await fetchIndicator(key)
+  } else {
+    const rows = await fetchIndicators()
+    target = findIndicator(normalizeList(rows))
+    if (target?.id || target?.indicatorId) {
+      target = await fetchIndicator(target.id ?? target.indicatorId)
+    }
+  }
+
+  if (!target) return false
+
+  hydrateDetail(target)
+  await loadVersions(detail.id)
+  return true
+}
+
+async function loadVersions(indicatorId) {
+  if (!indicatorId) return
+  const versions = normalizeList(await fetchIndicatorVersions(indicatorId))
+  versionRows.value = versions
+  const latest = pickLatestVersion(versions)
+  if (resolveIndicatorVersionId(latest) || latest?.id) {
+    await selectVersion(latest)
+  }
+}
+
+async function selectVersion(version) {
+  selectedVersion.value = version
+  const versionId = resolveIndicatorVersionId(version) || toOpaqueId(version?.id)
+  if (!versionId) return
+  try {
+    const versionDetail = await fetchIndicatorVersion(versionId)
+    let formula = extractFormula(versionDetail)
+    if (!formula) {
+      try {
+        formula = await fetchIndicatorFormula(versionId)
+      } catch {
+        formula = null
+      }
+    }
+    selectedVersion.value = {
+      ...versionDetail,
+      id: versionId,
+      formula: formula || versionDetail.formula || versionDetail.formulaAst
+    }
+    detail.version = selectedVersion.value?.versionNo ? `V${selectedVersion.value.versionNo}` : detail.version
+    detail.status = selectedVersion.value?.status || detail.status
+  } catch {
+    selectedVersion.value = version
   }
 }
 
@@ -177,6 +280,42 @@ function statusTone(status) {
 
 function toOpaqueId(value) {
   return value === null || value === undefined ? '' : String(value)
+}
+
+function normalizeList(payload) {
+  if (Array.isArray(payload)) return payload
+  if (Array.isArray(payload?.records)) return payload.records
+  if (Array.isArray(payload?.list)) return payload.list
+  if (Array.isArray(payload?.items)) return payload.items
+  return []
+}
+
+function resolveIndicatorVersionId(version) {
+  return toOpaqueId(
+    version?.indicatorVersionId ??
+    version?.versionId ??
+    version?.draftVersionId ??
+    version?.currentVersionId ??
+    version?.latestVersionId ??
+    version?.id
+  )
+}
+
+function extractFormula(payload) {
+  return payload?.formula?.formula || payload?.formula || payload?.formulaAst || payload?.definition?.formula || null
+}
+
+function pickLatestVersion(versions) {
+  return [...versions].sort((a, b) => {
+    const aNo = Number(a.versionNo ?? a.version ?? 0)
+    const bNo = Number(b.versionNo ?? b.version ?? 0)
+    if (aNo !== bNo) return bNo - aNo
+    return String(b.createdAt || b.updatedAt || '').localeCompare(String(a.createdAt || a.updatedAt || ''))
+  })[0]
+}
+
+function formatJson(value) {
+  return JSON.stringify(value, null, 2)
 }
 
 onMounted(loadIndicatorDetail)
@@ -250,6 +389,100 @@ onMounted(loadIndicatorDetail)
   display: grid;
   align-content: start;
   gap: 16px;
+}
+
+.version-card {
+  padding: 16px;
+}
+
+.section-title.compact {
+  margin-bottom: 12px;
+
+  h2 {
+    margin: 0 0 4px;
+    font-size: 15px;
+  }
+}
+
+.version-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.version-item {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 4px 8px;
+  align-items: center;
+  padding: 10px;
+  text-align: left;
+  cursor: pointer;
+  background: var(--idmp-layer-02);
+  border: 1px solid var(--idmp-border-subtle);
+  border-radius: var(--idmp-radius-sm);
+
+  &.is-active {
+    border-color: var(--idmp-interactive);
+    background: var(--idmp-interactive-subtle);
+  }
+
+  strong {
+    color: var(--idmp-text-primary);
+  }
+
+  span,
+  small {
+    color: var(--idmp-text-helper);
+    font-size: 12px;
+  }
+
+  small {
+    grid-column: 1 / -1;
+  }
+}
+
+.version-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0 0 12px;
+
+  div {
+    min-width: 0;
+    padding: 10px;
+    background: var(--idmp-layer-02);
+    border: 1px solid var(--idmp-border-subtle);
+    border-radius: var(--idmp-radius-sm);
+  }
+
+  dt {
+    margin-bottom: 5px;
+    color: var(--idmp-text-helper);
+    font-size: 12px;
+  }
+
+  dd {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: var(--idmp-text-primary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.json-preview {
+  max-height: 260px;
+  padding: 12px;
+  margin: 0;
+  overflow: auto;
+  color: var(--idmp-text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  background: var(--idmp-layer-02);
+  border: 1px solid var(--idmp-border-subtle);
+  border-radius: var(--idmp-radius-sm);
 }
 
 @media (max-width: 1180px) {

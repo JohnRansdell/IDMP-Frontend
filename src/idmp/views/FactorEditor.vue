@@ -17,7 +17,7 @@
       type="info"
       show-icon
       :closable="false"
-      title="当前后端接口暂未提供因子详情查询，编辑入口保留业务位置；如需真实创建和联调，请使用新增因子流程。"
+      :title="loading.detail ? '正在从后端读取因子详情与版本定义。' : '已接入因子详情、版本与 DSL 回显；已有因子当前不改写基础定义，但可以基于已回填版本发起试算并查看结果。'"
     />
 
     <section class="surface-card editor-section">
@@ -127,9 +127,39 @@
                     :key="domain.domainCode"
                     :label="domain.domainName"
                     :value="domain.domainCode"
-                  />
+                  >
+                    <div class="domain-option">
+                      <strong>{{ domain.domainName }}</strong>
+                      <small>{{ domain.domainCode }}</small>
+                    </div>
+                  </el-option>
                 </el-select>
                 <div class="field-help">选择这次统计要读取的后端业务数据，例如住院死亡记录、出院记录。</div>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :lg="12">
+              <el-form-item label="语义表">
+                <el-select
+                  v-model="dslForm.semanticTableCode"
+                  filterable
+                  clearable
+                  placeholder="选择语义表"
+                  :loading="loading.semanticTables"
+                  @change="handleSemanticTableChange"
+                >
+                  <el-option
+                    v-for="table in semanticTableOptions"
+                    :key="table.code"
+                    :label="table.optionLabel"
+                    :value="table.code"
+                  >
+                    <div class="domain-option">
+                      <strong>{{ table.name }}</strong>
+                      <small>{{ table.sourceTableName || table.code }}</small>
+                    </div>
+                  </el-option>
+                </el-select>
+                <div class="field-help">语义表随上方数据来源变化；若只看到一张表，请先切换数据来源或到数据管理绑定更多源表。</div>
               </el-form-item>
             </el-col>
             <el-col :xs="24" :lg="12">
@@ -171,13 +201,13 @@
               </el-form-item>
             </el-col>
             <el-col :xs="24" :lg="12">
-              <el-form-item label="时间字段">
+              <el-form-item label="统计周期依据字段">
                 <el-select
                   v-model="dslForm.periodFieldCode"
                   filterable
                   clearable
                   :disabled="!dslForm.usePeriodFilter"
-                  placeholder="选择时间字段"
+                  placeholder="选择用于周期过滤的业务时间字段"
                   :loading="loading.fields"
                 >
                   <el-option
@@ -187,7 +217,7 @@
                     :value="field.fieldCode"
                   />
                 </el-select>
-                <div class="field-help">启用统计周期后，用这个字段判断记录是否落在统计周期内。</div>
+                <div class="field-help">启用统计周期后，用这个业务时间字段判断记录是否落在试算或指标统计窗口内。</div>
               </el-form-item>
             </el-col>
           </el-row>
@@ -318,7 +348,7 @@
       <div class="section-actions">
         <el-button
           type="primary"
-          :disabled="!factorState.artifactId"
+          :disabled="!factorState.versionId"
           :loading="loading.trial"
           @click="startTrial"
         >
@@ -392,12 +422,21 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
-import { fetchDataDomains, fetchSemanticFields } from '@/idmp/api/modules/meta'
+import {
+  fetchDataDomains,
+  fetchSemanticFields,
+  fetchSemanticTableFields,
+  fetchSemanticTables
+} from '@/idmp/api/modules/meta'
 import {
   compileFactorVersion,
   createFactor,
   fetchCompileArtifact,
+  fetchFactor,
+  fetchFactors,
   fetchFactorTrialResults,
+  fetchFactorVersion,
+  fetchFactorVersionsByFactor,
   publishFactorVersion,
   trialFactorVersion
 } from '@/idmp/api/modules/factors'
@@ -408,7 +447,7 @@ const router = useRouter()
 const basicFormRef = ref()
 
 const isCreateMode = computed(() => !route.params.id || route.params.id === 'new')
-const pageTitle = computed(() => (isCreateMode.value ? '因子编辑 / 新增因子' : `因子编辑 / ${route.params.id}`))
+const pageTitle = computed(() => (isCreateMode.value ? '因子编辑 / 新增因子' : `因子编辑 / ${basicForm.name || route.params.id}`))
 
 const caliberTemplates = [
   { value: 'COUNT', label: '计数类因子', description: '统计记录数、人次数、病例数' },
@@ -436,9 +475,10 @@ const basicForm = reactive({
 const dslForm = reactive({
   template: 'COUNT',
   domainCode: '',
+  semanticTableCode: '',
   aggregationFunction: 'COUNT',
   fieldCode: '',
-  usePeriodFilter: false,
+  usePeriodFilter: true,
   periodFieldCode: '',
   groupBy: [],
   unit: 'PERSON_TIME'
@@ -465,7 +505,9 @@ const factorState = reactive({
 })
 
 const loading = reactive({
+  detail: false,
   domains: false,
+  semanticTables: false,
   fields: false,
   save: false,
   compile: false,
@@ -475,6 +517,7 @@ const loading = reactive({
 })
 
 const domainOptions = ref([])
+const semanticTableOptions = ref([])
 const semanticFieldOptions = ref([])
 const trialRecords = ref([])
 
@@ -492,7 +535,7 @@ const currentFieldName = computed(() => getFieldName(dslForm.fieldCode))
 const aggregationLabel = computed(() => aggregationLabels[dslForm.aggregationFunction] || dslForm.aggregationFunction)
 const filterPreview = computed(() => {
   if (!dslForm.usePeriodFilter) return '不限定统计周期'
-  return `${getFieldName(dslForm.periodFieldCode) || '未选择时间字段'} 在试算或指标统计周期内`
+  return `${getFieldName(dslForm.periodFieldCode) || '未选择统计周期依据字段'} 在试算或指标统计周期内`
 })
 const groupByPreview = computed(() => {
   if (!dslForm.groupBy.length) return '不分组，输出一个汇总值'
@@ -506,21 +549,161 @@ const generatedDslText = computed(() => JSON.stringify(buildDsl(), null, 2))
 
 onMounted(async () => {
   await loadDomains()
+  await loadFactorForEdit()
 })
+
+async function loadFactorForEdit() {
+  if (isCreateMode.value) return
+
+  loading.detail = true
+  try {
+    const factor = await fetchEditableFactor()
+    hydrateFactor(factor)
+
+    const version = await fetchEditableFactorVersion(factor)
+    if (version) {
+      hydrateFactorVersion(version)
+      await loadSemanticTables()
+    }
+    if (!factorState.versionId) {
+      ElMessage.warning('已加载因子基础信息，但未找到可试算的因子版本')
+    } else if (!factorState.artifactId) {
+      ElMessage.warning('已加载因子版本，但未找到编译产物 ID，请先点击校验口径')
+    } else {
+      ElMessage.success('已从后端加载因子详情，可直接发起试算')
+    }
+  } catch (error) {
+    ElMessage.warning(error?.message || '因子详情接口读取失败，当前保留本地默认表单')
+  } finally {
+    loading.detail = false
+  }
+}
+
+async function fetchEditableFactor() {
+  const key = String(route.params.id || '')
+  if (/^\d+$/.test(key)) {
+    try {
+      return await fetchFactor(key)
+    } catch {
+      const version = await fetchFactorVersion(key)
+      return {
+        id: version.factorId,
+        factorId: version.factorId,
+        code: version.factorCode,
+        name: version.factorName,
+        status: version.status,
+        draftVersionId: version.id,
+        currentArtifactId: version.currentArtifactId,
+        latestVersion: version
+      }
+    }
+  }
+
+  const rows = normalizeList(await fetchFactors({ code: key, page: 1, size: 100 }))
+  const summary = rows.find((item) => [item.id, item.factorId, item.code, item.factorCode].map(toOpaqueId).includes(key))
+  const factorId = summary?.id ?? summary?.factorId
+  return factorId ? fetchFactor(factorId) : summary
+}
+
+async function fetchEditableFactorVersion(factor) {
+  const inlineVersion = factor?.latestVersion || factor?.version || factor?.factorVersion
+  if (inlineVersion?.id || inlineVersion?.versionId || inlineVersion?.factorVersionId) {
+    return inlineVersion
+  }
+
+  const candidateIds = [
+    route.params.id,
+    factor?.publishedVersionId,
+    factor?.draftVersionId,
+    factor?.currentVersionId,
+    factor?.latestVersionId,
+    factor?.factorVersionId,
+    factor?.versionId
+  ].map(toOpaqueId).filter(Boolean)
+
+  for (const versionId of candidateIds) {
+    try {
+      const version = await fetchFactorVersion(versionId)
+      if (version?.id || version?.versionId || version?.factorVersionId) {
+        return version
+      }
+    } catch {
+      // Try the next candidate; route params can be factor IDs rather than version IDs.
+    }
+  }
+
+  if (factorState.factorId) {
+    const versions = normalizeList(await fetchFactorVersionsByFactor(factorState.factorId))
+    const latest = pickLatestVersion(versions)
+    const latestVersionId = resolveFactorVersionId(latest) || toOpaqueId(latest?.id)
+    return latestVersionId ? fetchFactorVersion(latestVersionId) : latest
+  }
+
+  return null
+}
+
+function hydrateFactor(factor) {
+  if (!factor) throw new Error(`未找到因子 ${route.params.id}`)
+  basicForm.code = factor.code || factor.factorCode || basicForm.code
+  basicForm.name = factor.name || factor.factorName || basicForm.name
+  basicForm.description = factor.description || factor.factorDescription || basicForm.description
+  factorState.factorId = toOpaqueId(factor.id ?? factor.factorId ?? factorState.factorId)
+  factorState.saveStatus = factor.status || factorState.saveStatus
+}
+
+function hydrateFactorVersion(version) {
+  factorState.versionId = resolveFactorVersionId(version) || factorState.versionId
+  factorState.artifactId = version.currentArtifactId || version.artifactId || factorState.artifactId
+  factorState.compileStatus = version.status || factorState.compileStatus
+  factorState.publishStatus = version.status === 'PUBLISHED' ? 'PUBLISHED' : factorState.publishStatus
+
+  const dsl = version.dsl || version.factorDsl || version.definition?.dsl || {}
+  dslForm.domainCode = dsl.primaryDomain?.domainCode || dsl.domainCode || dslForm.domainCode
+  dslForm.semanticTableCode = dsl.primaryDomain?.semanticTableCode || dsl.semanticTableCode || dslForm.semanticTableCode
+  dslForm.aggregationFunction = dsl.aggregation?.function || dslForm.aggregationFunction
+  dslForm.template = dslForm.aggregationFunction
+  dslForm.fieldCode = dsl.aggregation?.fieldCode || ''
+  dslForm.groupBy = Array.isArray(dsl.groupBy) ? dsl.groupBy.map((item) => item.fieldCode || item) : []
+  dslForm.unit = dsl.output?.unit || dslForm.unit
+
+  const periodFieldCode = extractPeriodFieldCode(dsl.filters)
+  if (periodFieldCode) {
+    dslForm.usePeriodFilter = true
+    dslForm.periodFieldCode = periodFieldCode
+  } else {
+    dslForm.usePeriodFilter = false
+    dslForm.periodFieldCode = ''
+  }
+}
+
+function extractPeriodFieldCode(node) {
+  if (!node || typeof node !== 'object') return ''
+  if (
+    node.nodeType === 'PREDICATE' &&
+    node.operator === 'BETWEEN' &&
+    node.parameter === 'period' &&
+    node.fieldCode
+  ) {
+    return node.fieldCode
+  }
+  if (Array.isArray(node.children)) {
+    return node.children.map(extractPeriodFieldCode).find(Boolean) || ''
+  }
+  return ''
+}
 
 async function loadDomains() {
   loading.domains = true
   try {
     const domains = normalizeList(await fetchDataDomains())
-    domainOptions.value = domains.map((item) => ({
-      id: item.id ?? item.domainId,
-      domainCode: item.domainCode ?? item.code,
-      domainName: item.domainName ?? item.name ?? item.domainCode ?? item.code
-    })).filter((item) => item.domainCode)
+    domainOptions.value = domains
+      .map(normalizeDomainOption)
+      .filter((item) => item.domainCode)
+      .sort(sortDomainOptions)
 
     const preferred = domainOptions.value.find((item) => item.domainCode === 'INPATIENT_DEATH_RECORD')
     dslForm.domainCode = preferred?.domainCode || domainOptions.value[0]?.domainCode || 'INPATIENT_DEATH_RECORD'
-    await loadSemanticFields()
+    await loadSemanticTables()
   } catch (error) {
     dslForm.domainCode = 'INPATIENT_DEATH_RECORD'
     ElMessage.warning(error?.message || '数据域读取失败，已使用默认数据域')
@@ -529,10 +712,76 @@ async function loadDomains() {
   }
 }
 
+function normalizeDomainOption(item) {
+  const domainCode = item.domainCode ?? item.code
+  const rawName = item.domainName ?? item.name
+  return {
+    id: item.id ?? item.domainId,
+    domainCode,
+    domainName: rawName || domainCode
+  }
+}
+
+function sortDomainOptions(a, b) {
+  const order = [
+    'INPATIENT_DEATH_RECORD',
+    'INPATIENT_DISCHARGE_RECORD',
+    'INPATIENT_QUALITY_WORKLOAD',
+    'INPATIENT_VISIT',
+    'ANTIMICORVIAL_USE',
+    'ANTIMICROBIAL_USE',
+    'PREPERATIVE_DISCUSSION',
+    'PREOPERATIVE_DISCUSSION',
+    'SURGERY_INFORMED_CONSENT',
+    'SOURCE_RAW'
+  ]
+  const aIndex = order.indexOf(a.domainCode)
+  const bIndex = order.indexOf(b.domainCode)
+  if (aIndex !== -1 || bIndex !== -1) {
+    return (aIndex === -1 ? Number.MAX_SAFE_INTEGER : aIndex) - (bIndex === -1 ? Number.MAX_SAFE_INTEGER : bIndex)
+  }
+  return a.domainCode.localeCompare(b.domainCode)
+}
+
 async function handleDomainChange() {
+  dslForm.semanticTableCode = ''
   dslForm.fieldCode = ''
   dslForm.periodFieldCode = ''
   dslForm.groupBy = []
+  await loadSemanticTables()
+}
+
+async function handleSemanticTableChange() {
+  dslForm.fieldCode = ''
+  dslForm.periodFieldCode = ''
+  dslForm.groupBy = []
+  await loadSemanticFields()
+}
+
+async function loadSemanticTables() {
+  const domain = domainOptions.value.find((item) => item.domainCode === dslForm.domainCode)
+  semanticTableOptions.value = []
+  if (!domain?.id) {
+    semanticFieldOptions.value = []
+    return
+  }
+
+  loading.semanticTables = true
+  try {
+    const tables = normalizeList(await fetchSemanticTables(domain.id))
+    semanticTableOptions.value = tables.map(normalizeSemanticTableOption).filter((item) => item.code)
+    if (!semanticTableOptions.value.length) {
+      semanticTableOptions.value = [createCompatSemanticTableOption(domain)]
+    }
+    const preferred = semanticTableOptions.value.find((item) => item.code === dslForm.domainCode)
+    dslForm.semanticTableCode = dslForm.semanticTableCode || preferred?.code || semanticTableOptions.value[0]?.code || ''
+  } catch {
+    semanticTableOptions.value = [createCompatSemanticTableOption(domain)]
+    dslForm.semanticTableCode = dslForm.semanticTableCode || domain.domainCode
+  } finally {
+    loading.semanticTables = false
+  }
+
   await loadSemanticFields()
 }
 
@@ -545,16 +794,64 @@ async function loadSemanticFields() {
 
   loading.fields = true
   try {
-    const fields = normalizeList(await fetchSemanticFields(domain.id))
-    semanticFieldOptions.value = fields.map((item) => ({
-      fieldCode: item.fieldCode ?? item.code,
-      fieldName: item.fieldName ?? item.name ?? item.fieldCode ?? item.code
-    })).filter((item) => item.fieldCode)
+    const fields = dslForm.semanticTableCode
+      ? normalizeList(await fetchSemanticTableFields(domain.id, dslForm.semanticTableCode))
+      : normalizeList(await fetchSemanticFields(domain.id))
+    semanticFieldOptions.value = fields.map(normalizeSemanticFieldOption).filter((item) => item.fieldCode)
+    if (dslForm.usePeriodFilter && !dslForm.periodFieldCode) {
+      dslForm.periodFieldCode = getDefaultPeriodFieldCode(dslForm.domainCode)
+    }
   } catch (error) {
-    semanticFieldOptions.value = []
+    if (dslForm.semanticTableCode) {
+      try {
+        const fallbackFields = normalizeList(await fetchSemanticFields(domain.id))
+        semanticFieldOptions.value = fallbackFields.map(normalizeSemanticFieldOption).filter((item) => item.fieldCode)
+        if (dslForm.usePeriodFilter && !dslForm.periodFieldCode) {
+          dslForm.periodFieldCode = getDefaultPeriodFieldCode(dslForm.domainCode)
+        }
+        return
+      } catch {
+        semanticFieldOptions.value = []
+      }
+    } else {
+      semanticFieldOptions.value = []
+    }
     ElMessage.warning(error?.message || '语义字段读取失败')
   } finally {
     loading.fields = false
+  }
+}
+
+function normalizeSemanticTableOption(item) {
+  const code = item.code ?? item.semanticTableCode
+  const name = item.name ?? item.semanticTableName ?? code
+  const sourceTableName = item.sourceTableName || item.tableName || ''
+  return {
+    id: item.id,
+    code,
+    name,
+    defaultTimeSemanticFieldCode: item.defaultTimeSemanticFieldCode || '',
+    sourceTableName,
+    optionLabel: sourceTableName ? `${name}（${sourceTableName}）` : name
+  }
+}
+
+function createCompatSemanticTableOption(domain) {
+  return {
+    id: domain.id,
+    code: domain.domainCode,
+    name: domain.domainName || domain.domainCode,
+    defaultTimeSemanticFieldCode: '',
+    sourceTableName: '兼容字段视图',
+    optionLabel: `${domain.domainName || domain.domainCode}（兼容字段视图）`
+  }
+}
+
+function normalizeSemanticFieldOption(item) {
+  return {
+    fieldCode: item.fieldCode ?? item.code,
+    fieldName: item.fieldName ?? item.name ?? item.fieldCode ?? item.code,
+    dataType: item.dataType ?? item.fieldType ?? ''
   }
 }
 
@@ -578,6 +875,11 @@ async function saveAndCompile() {
 }
 
 async function saveFactor() {
+  if (!isCreateMode.value) {
+    ElMessage.warning('已有因子的基础信息更新接口暂未接入，当前仅支持真实回显与新增流程。')
+    return false
+  }
+
   await basicFormRef.value?.validate()
 
   if (dslForm.aggregationFunction !== 'COUNT' && !dslForm.fieldCode) {
@@ -585,7 +887,7 @@ async function saveFactor() {
     return false
   }
   if (dslForm.usePeriodFilter && !dslForm.periodFieldCode) {
-    ElMessage.warning('启用统计周期限定时需要选择时间字段')
+    ElMessage.warning('启用统计周期限定时需要选择统计周期依据字段')
     return false
   }
 
@@ -659,8 +961,8 @@ async function compileDsl() {
 }
 
 async function startTrial() {
-  if (!factorState.artifactId) {
-    ElMessage.warning('请先完成口径校验')
+  if (!factorState.versionId) {
+    ElMessage.warning('请先加载或创建因子版本')
     return
   }
 
@@ -720,6 +1022,10 @@ async function publishFactor() {
     ElMessage.warning('请先确认试算结果')
     return
   }
+  if (!dslForm.usePeriodFilter || !dslForm.periodFieldCode) {
+    ElMessage.warning('发布前请为因子 DSL 声明 period BETWEEN 时间过滤，否则指标发布无法自动回补')
+    return
+  }
 
   loading.publish = true
   try {
@@ -739,7 +1045,10 @@ function buildDsl() {
   return {
     schemaVersion: '1.0',
     dslType: 'FACTOR',
-    primaryDomain: { domainCode: dslForm.domainCode },
+    primaryDomain: {
+      domainCode: dslForm.domainCode,
+      ...(dslForm.semanticTableCode ? { semanticTableCode: dslForm.semanticTableCode } : {})
+    },
     filters: dslForm.usePeriodFilter
       ? {
           nodeType: 'PREDICATE',
@@ -773,7 +1082,31 @@ function getFieldName(fieldCode) {
 }
 
 function resolveFactorVersionId(factor) {
-  return factor?.draftVersionId || factor?.versionId || factor?.currentVersionId || factor?.latestVersionId
+  return toOpaqueId(
+    factor?.draftVersionId ??
+    factor?.versionId ??
+    factor?.factorVersionId ??
+    factor?.currentVersionId ??
+    factor?.latestVersionId ??
+    factor?.publishedVersionId ??
+    factor?.id
+  )
+}
+
+function getDefaultPeriodFieldCode(domainCode) {
+  const preferredFields = {
+    INPATIENT_DEATH_RECORD: 'DEATH_DATETIME',
+    INPATIENT_DISCHARGE_RECORD: 'OUT_DATE',
+    DISCHARGE_CASE: 'OUT_DATE'
+  }
+  const preferred = preferredFields[domainCode]
+  if (preferred && semanticFieldOptions.value.some((item) => item.fieldCode === preferred)) {
+    return preferred
+  }
+  const dateField = semanticFieldOptions.value.find((item) =>
+    /DATE|TIME/i.test(item.dataType) || /DATE|TIME|DATETIME|OUT|DISCHARGE|DEATH/i.test(item.fieldCode)
+  )
+  return dateField?.fieldCode || ''
 }
 
 function normalizeList(payload) {
@@ -785,20 +1118,39 @@ function normalizeList(payload) {
   return []
 }
 
+function pickLatestVersion(versions) {
+  return [...versions].sort((a, b) => {
+    const aNo = Number(a.versionNo ?? a.version ?? 0)
+    const bNo = Number(b.versionNo ?? b.version ?? 0)
+    if (aNo !== bNo) return bNo - aNo
+    return String(b.createdAt || b.updatedAt || '').localeCompare(String(a.createdAt || a.updatedAt || ''))
+  })[0]
+}
+
+function toOpaqueId(value) {
+  return value === null || value === undefined ? '' : String(value)
+}
+
 async function pollTask(taskId) {
   let task = await fetchAsyncTask(taskId)
-  for (let index = 0; index < 18 && !['SUCCEEDED', 'FAILED', 'CANCELED'].includes(task.status); index += 1) {
+  for (let index = 0; index < 60 && !['SUCCEEDED', 'FAILED', 'CANCELED'].includes(task.status); index += 1) {
     await delay(1000)
     task = await fetchAsyncTask(taskId)
+  }
+  if (task.status === 'RUNNING') {
+    ElMessage.info('任务仍在运行中，请稍后手动刷新查看状态')
   }
   return task
 }
 
 async function pollBatch(batchId) {
   let batch = await fetchCalcBatch(batchId)
-  for (let index = 0; index < 10 && !['SUCCEEDED', 'FAILED', 'CANCELED'].includes(batch.status); index += 1) {
+  for (let index = 0; index < 60 && !['SUCCEEDED', 'FAILED', 'CANCELED'].includes(batch.status); index += 1) {
     await delay(1000)
     batch = await fetchCalcBatch(batchId)
+  }
+  if (batch.status === 'RUNNING') {
+    ElMessage.info('批次仍在运行中，请稍后手动刷新查看状态')
   }
   return batch
 }
@@ -824,6 +1176,33 @@ function goBack() {
 
 .editor-alert {
   margin-bottom: 16px;
+}
+
+.domain-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  line-height: 20px;
+
+  strong {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--idmp-text-primary, #262626);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  small {
+    flex: 0 0 auto;
+    color: var(--idmp-text-disabled, #b8b8b8);
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    font-size: 11px;
+  }
 }
 
 .editor-section {

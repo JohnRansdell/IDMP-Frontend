@@ -74,6 +74,17 @@
           <el-form-item label="域名称">
             <el-input v-model.trim="bindForm.domainName" />
           </el-form-item>
+          <div class="form-fields">
+            <el-form-item label="语义表编码">
+              <el-input v-model.trim="bindForm.semanticTableCode" class="mono-input" />
+            </el-form-item>
+            <el-form-item label="默认时间字段">
+              <el-input v-model.trim="bindForm.defaultTimeSemanticFieldCode" class="mono-input" placeholder="如 DEATH_DATETIME" />
+            </el-form-item>
+          </div>
+          <el-form-item label="语义表名称">
+            <el-input v-model.trim="bindForm.semanticTableName" />
+          </el-form-item>
           <el-button :loading="bindLoading" @click="handleBindSourceTable">确认并绑定源表</el-button>
         </el-form>
         <div v-if="bindFeedback" class="operation-feedback">
@@ -144,7 +155,7 @@
       <div class="section-title">
         <div>
           <h2>语义字段</h2>
-          <p class="section-title__description">GET /api/v1/meta/data-domains/{domainId}/semantic-fields</p>
+          <p class="section-title__description">GET /api/v1/meta/data-domains/{domainId}/semantic-tables/{tableCode}/semantic-fields</p>
         </div>
         <span class="selected-context">{{ selectedDomainName || '未选择数据域' }}</span>
       </div>
@@ -261,6 +272,8 @@ import {
   createDataDomain,
   fetchDataDomains,
   fetchSemanticFields,
+  fetchSemanticTableFields,
+  fetchSemanticTables,
   syncSourceMappings
 } from '@/idmp/api/modules/meta'
 
@@ -294,7 +307,10 @@ const bindForm = reactive({
   tableName: 'vmq_deathpatientdetail',
   domainCode: 'INPATIENT_DEATH_RECORD',
   domainName: '住院死亡患者记录',
-  domainDescription: '前端数据资产配置绑定'
+  domainDescription: '前端数据资产配置绑定',
+  semanticTableCode: 'INPATIENT_DEATH_RECORD',
+  semanticTableName: '住院死亡患者记录',
+  defaultTimeSemanticFieldCode: 'DEATH_DATETIME'
 })
 
 const firstDomain = computed(() => dataDomains.value[0])
@@ -357,12 +373,21 @@ async function handleSyncMappings() {
     ElMessage.success('来源映射同步请求成功')
     await loadDataDomains()
   } catch (error) {
+    await loadDataDomains().catch(() => {})
+    const canContinue = hasMortalityDomains()
     syncFeedback.value = {
-      status: 'FAILED',
-      label: '同步失败',
-      message: error?.message || '来源映射同步失败'
+      status: canContinue ? 'WARNING' : 'FAILED',
+      label: canContinue ? '同步失败，可继续测试' : '同步失败',
+      tone: canContinue ? 'warning' : undefined,
+      message: canContinue
+        ? `${error?.message || '来源映射同步失败'}。当前已能看到住院死亡/出院数据域，可继续执行源表绑定或后续因子创建；如需排查同步本身，请按 traceId 查看后端日志。`
+        : `${error?.message || '来源映射同步失败'}。请先确认后端远程源库连接与来源映射配置，或查看 traceId 对应后端日志。`
     }
-    ElMessage.error(syncFeedback.value.message)
+    if (canContinue) {
+      ElMessage.warning('来源映射同步失败，但已有核心数据域，可继续后续页面测试')
+    } else {
+      ElMessage.error(syncFeedback.value.message)
+    }
   } finally {
     syncLoading.value = false
   }
@@ -395,7 +420,11 @@ async function handleCreateDomain() {
     message: `正在提交数据域 ${domainForm.domainCode}。`
   }
   try {
-    await createDataDomain({ ...domainForm })
+    await createDataDomain({
+      code: domainForm.domainCode,
+      name: domainForm.domainName,
+      description: domainForm.domainDescription
+    })
     createDomainFeedback.value = {
       status: 'SUCCEEDED',
       label: '接口创建成功',
@@ -445,7 +474,10 @@ async function handleBindSourceTable() {
     await bindSourceTableDomain(bindForm.tableName, {
       domainCode: bindForm.domainCode,
       domainName: bindForm.domainName,
-      domainDescription: bindForm.domainDescription
+      domainDescription: bindForm.domainDescription,
+      semanticTableCode: bindForm.semanticTableCode,
+      semanticTableName: bindForm.semanticTableName,
+      defaultTimeSemanticFieldCode: bindForm.defaultTimeSemanticFieldCode || null
     })
     bindFeedback.value = {
       status: 'SUCCEEDED',
@@ -480,14 +512,33 @@ async function loadSemanticFields(row) {
   fieldLoading.value = true
   fieldError.value = ''
   try {
-    const rows = await fetchSemanticFields(domainId)
+    const domainCode = row?.domainCode || dataDomains.value.find((item) => item.id === domainId)?.domainCode || ''
+    const tableCode = await resolveSemanticTableCode(domainId, domainCode)
+    const rows = tableCode
+      ? await fetchSemanticTableFields(domainId, tableCode)
+      : await fetchSemanticFields(domainId)
     semanticFields.value = normalizeList(rows).map(normalizeField)
   } catch (error) {
-    semanticFields.value = []
-    fieldError.value = error?.message || '语义字段加载失败'
-    ElMessage.error(fieldError.value)
+    try {
+      const rows = await fetchSemanticFields(domainId)
+      semanticFields.value = normalizeList(rows).map(normalizeField)
+    } catch {
+      semanticFields.value = []
+      fieldError.value = error?.message || '语义字段加载失败'
+      ElMessage.error(fieldError.value)
+    }
   } finally {
     fieldLoading.value = false
+  }
+}
+
+async function resolveSemanticTableCode(domainId, domainCode) {
+  try {
+    const tables = normalizeList(await fetchSemanticTables(domainId))
+    const preferred = tables.find((item) => (item.code || item.semanticTableCode) === domainCode) || tables[0]
+    return preferred?.code || preferred?.semanticTableCode || ''
+  } catch {
+    return ''
   }
 }
 
@@ -556,9 +607,9 @@ async function runDataAssetBackendChain() {
     activeStep = 'create'
     setBackendStep(activeStep, 'RUNNING')
     await createDataDomain({
-      domainCode: createdDomainCode,
-      domainName: `前端配置数据域 ${suffix}`,
-      domainDescription: '前端数据资产接口验证创建'
+      code: createdDomainCode,
+      name: `前端配置数据域 ${suffix}`,
+      description: '前端数据资产接口验证创建'
     })
     setBackendStep(activeStep, 'SUCCEEDED', createdDomainCode)
 
@@ -572,7 +623,10 @@ async function runDataAssetBackendChain() {
     await bindSourceTableDomain(bindForm.tableName, {
       domainCode: bindForm.domainCode,
       domainName: bindForm.domainName,
-      domainDescription: bindForm.domainDescription
+      domainDescription: bindForm.domainDescription,
+      semanticTableCode: bindForm.semanticTableCode,
+      semanticTableName: bindForm.semanticTableName,
+      defaultTimeSemanticFieldCode: bindForm.defaultTimeSemanticFieldCode || null
     })
     setBackendStep(activeStep, 'SUCCEEDED', `${bindForm.tableName} → ${bindForm.domainCode}`)
 
@@ -633,6 +687,11 @@ function normalizeField(item) {
     sourceColumn: item.sourceColumn || item.columnName || item.physicalColumn || '-',
     semanticKind: item.semanticKind || item.kind || '-'
   }
+}
+
+function hasMortalityDomains() {
+  const codes = new Set(dataDomains.value.map((item) => item.domainCode))
+  return codes.has('INPATIENT_DEATH_RECORD') && codes.has('INPATIENT_DISCHARGE_RECORD')
 }
 
 function toOpaqueId(value) {

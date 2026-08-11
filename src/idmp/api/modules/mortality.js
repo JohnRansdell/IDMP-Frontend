@@ -5,18 +5,20 @@ export const mortalityChainConfig = {
   dischargeSourceTable: 'vmq_basicinformationba',
   deathDomainCode: 'INPATIENT_DEATH_RECORD',
   dischargeDomainCode: 'INPATIENT_DISCHARGE_RECORD',
-  deathFactorVersionId: '101996817981379181',
-  deathFactorBatchId: '101996817981379186',
-  deathFactorArtifactId: '101996817981379182',
-  dischargeFactorVersionId: '101996817981379184',
-  dischargeFactorBatchId: '101996817981379196',
-  dischargeFactorArtifactId: '101996817981379185',
-  indicatorId: '101996817981379208',
-  indicatorVersionId: '101996817981379209',
-  indicatorBatchId: '101996817981379215',
-  indicatorFormulaArtifactId: '101996817981379212',
-  periodStart: '2000-01-01T00:00:00',
-  periodEnd: '2030-01-01T00:00:00'
+  deathSemanticTableCode: 'INPATIENT_DEATH_RECORD',
+  dischargeSemanticTableCode: 'INPATIENT_DISCHARGE_RECORD',
+  deathFactorVersionId: '101996817981379998',
+  deathFactorBatchId: '101996817981380233',
+  deathFactorArtifactId: '101996817981380001',
+  dischargeFactorVersionId: '101996817981380000',
+  dischargeFactorBatchId: '101996817981380241',
+  dischargeFactorArtifactId: '101996817981380002',
+  indicatorId: '101996817981380253',
+  indicatorVersionId: '101996817981380254',
+  indicatorBatchId: '101996817981380260',
+  indicatorFormulaArtifactId: '101996817981380257',
+  periodStart: '2026-03-01T00:00:00',
+  periodEnd: '2026-04-01T00:00:00'
 }
 
 export function bindSourceTableDomain(tableName, payload) {
@@ -109,13 +111,17 @@ export function createMortalityFactorPayloads(suffix = createBusinessSuffix()) {
       code: `INPATIENT_DEATH_RECORD_COUNT_${suffix}`,
       name: '住院死亡患者记录数',
       description: '统计 vmq_deathpatientdetail 中的死亡患者记录数',
-      domainCode: mortalityChainConfig.deathDomainCode
+      domainCode: mortalityChainConfig.deathDomainCode,
+      semanticTableCode: mortalityChainConfig.deathSemanticTableCode,
+      periodFieldCode: 'DEATH_DATETIME'
     }),
     discharge: createCountFactorPayload({
       code: `INPATIENT_DISCHARGE_RECORD_COUNT_${suffix}`,
       name: '住院出院病案记录数',
       description: '统计 vmq_basicinformationba 中的出院病案记录数',
-      domainCode: mortalityChainConfig.dischargeDomainCode
+      domainCode: mortalityChainConfig.dischargeDomainCode,
+      semanticTableCode: mortalityChainConfig.dischargeSemanticTableCode,
+      periodFieldCode: 'OUT_DATE'
     })
   }
 }
@@ -224,7 +230,7 @@ export async function fetchMortalityReadonlyChain() {
   }
 }
 
-function createCountFactorPayload({ code, name, description, domainCode }) {
+function createCountFactorPayload({ code, name, description, domainCode, semanticTableCode, periodFieldCode }) {
   return {
     code,
     name,
@@ -232,11 +238,14 @@ function createCountFactorPayload({ code, name, description, domainCode }) {
     dsl: {
       schemaVersion: '1.0',
       dslType: 'FACTOR',
-      primaryDomain: { domainCode },
-      filters: { nodeType: 'TRUE' },
+      primaryDomain: {
+        domainCode,
+        semanticTableCode
+      },
+      filters: createPeriodFilter(periodFieldCode),
       aggregation: { function: 'COUNT' },
       groupBy: [],
-      parameters: [],
+      parameters: createPeriodParameters(periodFieldCode),
       output: {
         valueType: 'DECIMAL',
         semanticKind: 'MEASURE',
@@ -249,6 +258,20 @@ function createCountFactorPayload({ code, name, description, domainCode }) {
       }
     }
   }
+}
+
+function createPeriodFilter(periodFieldCode) {
+  if (!periodFieldCode) return { nodeType: 'TRUE' }
+  return {
+    nodeType: 'PREDICATE',
+    fieldCode: periodFieldCode,
+    operator: 'BETWEEN',
+    parameter: 'period'
+  }
+}
+
+function createPeriodParameters(periodFieldCode) {
+  return periodFieldCode ? [{ code: 'period', type: 'DATETIME_RANGE' }] : []
 }
 
 function postJson(path, payload, headers) {

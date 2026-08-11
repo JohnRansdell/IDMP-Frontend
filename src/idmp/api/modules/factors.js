@@ -1,5 +1,25 @@
 import { requestJson } from '@/idmp/api/request'
 
+export function fetchFactors(params = {}) {
+  return requestJson(withQuery('/factors', params))
+}
+
+export function fetchFactor(factorId) {
+  return requestJson(`/factors/${factorId}`)
+}
+
+export function fetchFactorVersionsByFactor(factorId) {
+  return requestJson(`/factors/${factorId}/versions`)
+}
+
+export function fetchFactorVersions(params = {}) {
+  return requestJson(withQuery('/factor-versions', params))
+}
+
+export function fetchFactorVersion(versionId) {
+  return requestJson(`/factor-versions/${versionId}`)
+}
+
 export function createFactor(payload) {
   return requestJson('/factors', {
     method: 'POST',
@@ -35,4 +55,15 @@ export function publishFactorVersion(versionId) {
     method: 'POST',
     body: JSON.stringify({})
   })
+}
+
+function withQuery(path, params = {}) {
+  const query = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      query.set(key, value)
+    }
+  })
+  const queryText = query.toString()
+  return queryText ? `${path}?${queryText}` : path
 }
