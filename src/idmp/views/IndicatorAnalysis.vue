@@ -229,18 +229,14 @@
           </div>
         </el-tab-pane>
 
-        <el-tab-pane label="下钻明细" name="drill">
-          <div class="table-heading">
-            <div>
-              <h2>{{ currentProfile.name }}下钻明细</h2>
-              <p>当前 profile 内含脱敏演示样例，但患者级权限、数据范围、访问目的、审计和服务端分页均未接入。</p>
-            </div>
-            <StatusBadge status="DISABLED" label="患者级访问未授权" tone="neutral" />
-          </div>
-          <StatePanel
-            type="permission"
-            title="患者级下钻尚未开放"
-            :description="drillPermissionDescription"
+        <el-tab-pane label="下钻分析" name="drill">
+          <DrillExplorer
+            :result-id="drillResultId"
+            :indicator-name="currentProfile.name"
+            :period="drillPeriod"
+            :start-level="drillStartLevel"
+            :start-parent-keys="drillParentKeys"
+            embedded
           />
         </el-tab-pane>
       </el-tabs>
@@ -255,8 +251,8 @@ import { ElMessage } from 'element-plus'
 import { Connection, Download } from '@element-plus/icons-vue'
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
-import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
+import DrillExplorer from '@/idmp/features/analysis/DrillExplorer.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
 import { fetchIndicatorAnalysis, fetchIndicators } from '@/idmp/api/modules/indicators'
 import { fetchMortalityReadonlyChain, mortalityChainConfig } from '@/idmp/api/modules/mortality'
@@ -282,6 +278,8 @@ const backendIndicators = ref([])
 const indicatorOptionsLoading = ref(false)
 const sceneComparisonRef = ref()
 const selectedDrillDepartment = ref('')
+const drillStartLevel = ref('HOSPITAL')
+const drillParentKeys = ref({})
 
 const indicatorCode = computed(() => String(route.query.indicator || DEFAULT_ANALYSIS_INDICATOR))
 const localAnalysisOptions = computed(() => getAnalysisProfileOptions())
@@ -349,6 +347,7 @@ const rankTableData = computed(() => {
   if (Array.isArray(comparisons) && comparisons.length > 0) {
     return comparisons.map((item, index) => ({
       rank: index + 1,
+      departmentKey: item.dimensions?.out_dept_code || item.dimensions?.out_dept_id || `DEPT_${index + 1}`,
       department: item.dimensions?.out_dept_name || item.dimensions?.out_dept_code || `科室${index + 1}`,
       rate: item.displayValue || (item.value != null ? String(item.value) : '-'),
       numerator: '-',
@@ -357,7 +356,10 @@ const rankTableData = computed(() => {
       status: item.qualityStatus === 'PASSED' ? '达标' : '预警'
     }))
   }
-  return currentProfile.value.rankRows
+  return currentProfile.value.rankRows.map((row, index) => ({
+    ...row,
+    departmentKey: row.departmentKey || `DEPT_${index + 1}`
+  }))
 })
 
 const showMortalityChainPanel = computed(() => indicatorCode.value === 'MORTALITY_INPATIENT')
@@ -403,10 +405,8 @@ const mortalityChainBatchStatus = computed(() =>
   mortalityChain.value?.calcBatch?.batchStatus ||
   (hasBackendMortalityData.value ? 'READY' : 'DRAFT')
 )
-const drillPermissionDescription = computed(() => {
-  const scope = selectedDrillDepartment.value ? `已选择“${selectedDrillDepartment.value}”，但` : ''
-  return `${scope}后端尚未完成患者级权限、数据范围、访问目的、脱敏审计与服务端分页契约；因此不展示本地样例为真实明细。`
-})
+const drillResultId = computed(() => String(backendAnalysis.value?.overview?.resultId || 'MOCK-RESULT-001'))
+const drillPeriod = computed(() => period.value === '年度' ? '2026' : period.value === '季度' ? '2026-Q2' : '2026-06')
 
 const trendOption = computed(() => ({
   animationDuration: 450,
@@ -570,18 +570,22 @@ const showSceneValue = (scene) => {
 
 const openDepartmentDrill = (row) => {
   selectedDrillDepartment.value = row.department
-  router.push({
-    name: 'ResultDrill',
-    query: {
-      indicator: indicatorCode.value,
-      indicatorName: currentProfile.value.name,
-      resultId: backendAnalysis.value?.overview?.resultId || 'MOCK-RESULT-001',
-      snapshotId: backendAnalysis.value?.resultContext?.snapshotId || 'MOCK-SNAPSHOT-20260811',
-      currentLevel: 'HOSPITAL',
-      period: period.value === '年度' ? '2026' : period.value === '季度' ? '2026-Q2' : '2026-06',
-      ...(row.department ? { departmentLabel: row.department } : {})
-    }
-  })
+  activeTab.value = 'drill'
+  const departmentKey = resolveDrillDepartmentKey(row)
+  drillStartLevel.value = departmentKey ? 'DEPARTMENT' : 'HOSPITAL'
+  drillParentKeys.value = departmentKey
+    ? { departmentKey, departmentLabel: row.department }
+    : {}
+}
+
+function resolveDrillDepartmentKey(row) {
+  if (row?.departmentKey && !String(row.departmentKey).startsWith('DEPT_')) return String(row.departmentKey)
+  return {
+    心外科: 'DEPT_CARDIO',
+    神经外科: 'DEPT_NEURO',
+    骨科: 'DEPT_ORTHO',
+    普外科: 'DEPT_GENERAL'
+  }[row?.department] || ''
 }
 
 function formatCount(value) {
