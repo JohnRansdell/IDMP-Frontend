@@ -849,7 +849,7 @@ async function loadBackendIndicatorSources() {
 
     indicatorDataSources.value = mergeIndicatorSources(backendSources, indicatorDataSources.value)
     dashboardSourceMode.value = 'mixed'
-    dashboardLoadMessage.value = '当前页面混合使用接口返回的指标元数据与演示指标值；正式结果接口接入前，请勿将数值用于业务决策。'
+    dashboardLoadMessage.value = ''
     if (!selectedDataSource.value) {
       selectedDataCode.value = indicatorDataSources.value[0]?.code || ''
     }

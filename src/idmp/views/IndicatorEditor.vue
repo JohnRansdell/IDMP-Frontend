@@ -1,13 +1,13 @@
 <template>
   <div class="idmp-page editor-page">
     <PageHeader
-      :title="isNew ? '新建指标' : '编辑指标'"
-      status="DRAFT"
+      :title="editorTitle"
+      :status="editorStatus"
     >
       <template #meta>
-        <span class="mono-data">指标 ID：{{ indicatorWorkflow.indicatorId || '尚未创建' }}</span>
+        <span>{{ isNew ? '新建模式' : '编辑模式' }}</span>
+        <span class="mono-data">指标编码：{{ form.code || routeIndicatorKey || '未填写' }}</span>
         <span class="mono-data">版本 ID：{{ indicatorWorkflow.versionId || '尚未创建' }}</span>
-        <span>当前路由标识：{{ route.params.id || '未提供' }}</span>
       </template>
       <template #actions>
         <el-button @click="router.push('/indicator')">返回指标目录</el-button>
@@ -127,14 +127,24 @@
           <div class="business-action-bar">
             <div>
               <span>基本信息操作</span>
-              <small>{{ indicatorWorkflow.indicatorId ? `已保存指标 ${indicatorWorkflow.indicatorId}` : '先保存基本信息，再创建可配置版本' }}</small>
+              <small>
+                {{
+                  isNew
+                    ? (indicatorWorkflow.indicatorId ? `已保存指标 ${indicatorWorkflow.indicatorId}` : '先保存基本信息，再创建可配置版本')
+                    : (indicatorWorkflow.indicatorId ? `正在编辑指标 ${indicatorWorkflow.indicatorId}，可创建新的草稿版本` : '等待指标目录摘要或详情接口回填')
+                }}
+              </small>
             </div>
-            <el-button :loading="workflowLoading.basic" @click="saveIndicatorBasicInfo">保存基本信息</el-button>
+            <el-button :disabled="!isNew" :loading="workflowLoading.basic" @click="saveIndicatorBasicInfo">保存基本信息</el-button>
             <el-button :disabled="!indicatorWorkflow.indicatorId" :loading="workflowLoading.version" @click="createIndicatorDraftVersion">
               创建指标版本
             </el-button>
-            <el-button type="primary" :loading="workflowLoading.basic || workflowLoading.version" @click="saveBasicAndCreateVersion">
-              保存并进入公式配置
+            <el-button
+              type="primary"
+              :loading="workflowLoading.basic || workflowLoading.version"
+              @click="saveBasicAndCreateVersion"
+            >
+              {{ isNew ? '保存并进入公式配置' : '为当前指标创建草稿版本' }}
             </el-button>
           </div>
         </section>
@@ -286,9 +296,6 @@
               </el-button>
               <el-button :disabled="!indicatorWorkflow.batchId" :loading="workflowLoading.result" @click="loadIndicatorTrialResultOnly">
                 查看结果
-              </el-button>
-              <el-button type="success" plain :loading="workflowLoading.selfTest" @click="runChapter16SelfTest">
-                第16章链路自检
               </el-button>
             </div>
             <div v-if="indicatorWorkflow.displayValue" class="workflow-result">
@@ -549,7 +556,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -572,6 +579,7 @@ import {
   compileIndicatorFormula,
   createIndicator,
   createIndicatorVersion,
+  fetchIndicators,
   fetchIndicatorTrialResults,
   saveIndicatorFormula,
   trialIndicatorVersion
@@ -591,6 +599,7 @@ import {
 const route = useRoute()
 const router = useRouter()
 const isNew = computed(() => !route.params.id || route.params.id === 'new')
+const routeIndicatorKey = computed(() => String(route.params.id || ''))
 const activeTab = ref('basic')
 const formRef = ref()
 const deathFactorVersionId = ref(mortalityChainConfig.deathFactorVersionId)
@@ -629,8 +638,13 @@ const workflowLoading = reactive({
   formula: false,
   compile: false,
   trial: false,
-  result: false,
-  selfTest: false
+  result: false
+})
+const editLoadState = reactive({
+  loading: false,
+  loadedFromList: false,
+  detailReady: false,
+  message: ''
 })
 
 const workflowSteps = computed(() => [
@@ -702,19 +716,34 @@ const sourceOptions = ['HIS', '手术麻醉', 'EMR', 'LIS', 'PACS', '病案', '�
 const policyOptions = ['绩效考核2024版', '2011年版指标', '医院评审2025版', 'NCIS 8.0']
 
 const form = reactive({
-  code: isNew.value ? '' : 'KH-02',
-  name: isNew.value ? '' : '手术患者并发症发生率',
-  shortName: isNew.value ? '' : '手术并发症率',
+  code: isNew.value ? 'INPATIENT_MORTALITY_RATE' : routeIndicatorKey.value,
+  name: isNew.value ? '住院死亡率' : '',
+  shortName: isNew.value ? '住院死亡率' : '',
   categoryMain: '医疗质量',
   categorySub: '质量安全',
   attribute: '定量',
   unit: '百分比（%）',
   direction: '逐步降低 ↓',
-  definition: isNew.value ? '' : '指统计周期内手术患者中发生并发症的比例，反映手术质量和患者安全管理水平。',
-  significance: isNew.value ? '' : '用于识别手术质量风险，推动围手术期安全持续改进。',
-  sources: ['HIS', '手术麻醉'],
+  definition: isNew.value ? '统计周期内死亡患者记录数除以出院病案记录数，用于反映住院诊疗安全结果。' : '',
+  significance: isNew.value ? '用于监测医疗质量安全结果，辅助医院质量改进和趋势分析。' : '',
+  sources: isNew.value ? ['HIS', '病案'] : [],
   period: '年度',
-  policies: ['绩效考核2024版', '2011年版指标']
+  policies: isNew.value ? ['绩效考核2024版', '2011年版指标'] : []
+})
+
+const editorTitle = computed(() => {
+  if (isNew.value) return `新建指标：${form.name || '未命名指标'}`
+  return `编辑指标：${form.name || routeIndicatorKey.value || '待加载'}`
+})
+
+const editorStatus = computed(() => {
+  if (indicatorWorkflow.displayValue) return 'TRIAL_READY'
+  if (indicatorWorkflow.batchId) return 'TRIAL_SUBMITTED'
+  if (indicatorWorkflow.compiled) return 'COMPILED'
+  if (indicatorWorkflow.formulaSaved) return 'FORMULA_SAVED'
+  if (indicatorWorkflow.versionId) return 'VERSION_DRAFT'
+  if (indicatorWorkflow.indicatorId) return 'INDICATOR_READY'
+  return isNew.value ? 'NEW' : 'DETAIL_PENDING'
 })
 
 const required = message => ({ required: true, message, trigger: ['blur', 'change'] })
@@ -826,6 +855,62 @@ const removeCondition = id => {
   if (conditions.length > 1) conditions.splice(conditions.findIndex(item => item.id === id), 1)
 }
 
+function hydrateIndicatorSummary(item) {
+  form.code = item.code || routeIndicatorKey.value
+  form.name = item.name || ''
+  form.shortName = item.shortName || item.name || ''
+  form.categoryMain = item.category || form.categoryMain || '医疗质量'
+  form.categorySub = item.categorySub || form.categorySub || '质量安全'
+  form.attribute = item.attribute || form.attribute || '定量'
+  form.unit = item.unit || form.unit || '百分比（%）'
+  form.direction = item.direction || form.direction || '监测比较'
+  form.definition = item.description || item.definition || ''
+  form.significance = item.significance || ''
+  form.sources = item.sources || (item.source ? [item.source] : [])
+  form.period = item.period || form.period || '年度'
+  form.policies = item.policies || []
+  Object.assign(indicatorWorkflow, {
+    indicatorId: toOpaqueId(item.id ?? item.indicatorId ?? routeIndicatorKey.value),
+    versionId: toOpaqueId(item.currentVersionId ?? item.latestVersionId ?? item.versionId ?? ''),
+    resourceVersion: resolveResourceVersion(item),
+    formulaSaved: Boolean(item.formula || item.currentArtifactId),
+    compiled: Boolean(item.currentArtifactId),
+    taskId: '',
+    batchId: '',
+    displayValue: '',
+    resultValue: ''
+  })
+}
+
+async function loadIndicatorForEdit() {
+  if (isNew.value) return
+
+  editLoadState.loading = true
+  editLoadState.message = ''
+  try {
+    const rows = await fetchIndicators()
+    const target = Array.isArray(rows)
+      ? rows.find(item => [item.id, item.indicatorId, item.code].map(toOpaqueId).includes(routeIndicatorKey.value))
+      : null
+    if (target) {
+      hydrateIndicatorSummary(target)
+      editLoadState.loadedFromList = true
+      editLoadState.detailReady = false
+      editLoadState.message = '已从指标目录接口回填当前指标摘要，详情接口接入后可继续加载版本、公式和试算记录。'
+    } else {
+      editLoadState.loadedFromList = false
+      editLoadState.detailReady = false
+      editLoadState.message = `未在指标目录接口中找到 ${routeIndicatorKey.value}，页面不会填充演示数据。`
+    }
+  } catch (error) {
+    editLoadState.loadedFromList = false
+    editLoadState.detailReady = false
+    editLoadState.message = error?.message || '指标详情接口尚未接入，且目录接口读取失败。'
+  } finally {
+    editLoadState.loading = false
+  }
+}
+
 function resetIndicatorWorkflowAfterBasic(indicatorId, versionId = '', resourceVersion = 0) {
   Object.assign(indicatorWorkflow, {
     indicatorId: toOpaqueId(indicatorId),
@@ -841,6 +926,11 @@ function resetIndicatorWorkflowAfterBasic(indicatorId, versionId = '', resourceV
 }
 
 async function saveIndicatorBasicInfo() {
+  if (!isNew.value) {
+    ElMessage.warning('编辑模式的基础信息更新接口尚未接入，当前不会用新建接口覆盖已有指标')
+    return false
+  }
+
   try {
     await formRef.value?.validate()
   } catch {
@@ -912,6 +1002,14 @@ async function createIndicatorDraftVersion() {
 }
 
 async function saveBasicAndCreateVersion() {
+  if (!isNew.value) {
+    if (indicatorWorkflow.indicatorId) {
+      return createIndicatorDraftVersion()
+    }
+    ElMessage.warning('请等待指标目录摘要加载完成，或等待后端详情接口接入后再创建版本')
+    return false
+  }
+
   const basicSaved = await saveIndicatorBasicInfo()
   if (!basicSaved) return
 
@@ -1058,128 +1156,6 @@ async function loadIndicatorTrialResultOnly() {
     ElMessage.error(error?.message || '试算结果读取失败')
   } finally {
     workflowLoading.result = false
-  }
-}
-
-async function runChapter16SelfTest() {
-  workflowLoading.selfTest = true
-  const suffix = createBackendCodeSuffix()
-  const code = `FRONTEND_MORTALITY_SELFTEST_${suffix}`
-
-  try {
-    recordWorkflowRequest({
-      step: '第16章自检：创建指标',
-      endpoint: '/api/v1/indicators',
-      requestBody: {
-        code,
-        name: `前端第16章链路自检 ${suffix}`,
-        description: '前端页面内置自检：死亡患者记录数 / 出院病案记录数'
-      }
-    })
-    const indicator = await createIndicator({
-      code,
-      name: `前端第16章链路自检 ${suffix}`,
-      description: '前端页面内置自检：死亡患者记录数 / 出院病案记录数'
-    })
-    const indicatorId = resolveIndicatorId(indicator)
-    if (!indicatorId) throw new Error('自检失败：后端未返回指标 ID')
-
-    recordWorkflowRequest({
-      step: '第16章自检：创建版本',
-      endpoint: `/api/v1/indicators/${indicatorId}/versions`,
-      indicatorId,
-      requestBody: {}
-    })
-    const version = await createIndicatorVersion(indicatorId, {})
-    const versionId = resolveIndicatorVersionId(version)
-    let resourceVersion = resolveResourceVersion(version)
-    if (!versionId) throw new Error('自检失败：后端未返回指标版本 ID')
-
-    const formulaPayload = createMortalityFormulaPayload({
-      deathFactorVersionId: deathFactorVersionId.value,
-      dischargeFactorVersionId: dischargeFactorVersionId.value,
-      resourceVersion
-    })
-    recordWorkflowRequest({
-      step: '第16章自检：保存公式',
-      endpoint: `/api/v1/indicator-versions/${versionId}/formula`,
-      indicatorId,
-      versionId,
-      resourceVersion,
-      requestBody: formulaPayload
-    })
-    const savedFormula = await saveIndicatorFormula(versionId, formulaPayload)
-    resourceVersion = resolveResourceVersion(savedFormula, resourceVersion)
-
-    const compilePayload = { resourceVersion }
-    recordWorkflowRequest({
-      step: '第16章自检：公式校验',
-      endpoint: `/api/v1/indicator-versions/${versionId}/formula/compile`,
-      indicatorId,
-      versionId,
-      resourceVersion,
-      requestBody: compilePayload
-    })
-    const artifact = await compileIndicatorFormula(versionId, compilePayload)
-    const compileStatus = artifact.status || artifact.compileStatus
-    if (!['VALID', 'VALID_WITH_WARNINGS', 'COMPILED', 'COMPILED_WITH_WARNINGS'].includes(compileStatus)) {
-      throw new Error(`自检失败：公式校验状态 ${compileStatus || '未知'}`)
-    }
-
-    const trialPayload = createMortalityTrialPayload()
-    const idempotencyKey = createIdempotencyKey('chapter16-selftest')
-    recordWorkflowRequest({
-      step: '第16章自检：发起试算',
-      endpoint: `/api/v1/indicator-versions/${versionId}/trial`,
-      indicatorId,
-      versionId,
-      resourceVersion,
-      idempotencyKey,
-      requestBody: trialPayload
-    })
-    const trial = await trialIndicatorVersion(versionId, trialPayload, idempotencyKey)
-    const taskId = resolveTaskId(trial)
-    const batchId = resolveBatchId(trial)
-    if (!taskId || !batchId) throw new Error('自检失败：后端未返回 taskId 或 batchId')
-
-    Object.assign(indicatorWorkflow, {
-      indicatorId,
-      versionId,
-      resourceVersion,
-      formulaSaved: true,
-      compiled: true,
-      taskId,
-      batchId,
-      displayValue: '',
-      resultValue: ''
-    })
-
-    recordWorkflowRequest({
-      step: '第16章自检：轮询任务',
-      endpoint: `/api/v1/async-tasks/${taskId}`,
-      indicatorId,
-      versionId
-    })
-    await pollBackendTask(taskId)
-
-    recordWorkflowRequest({
-      step: '第16章自检：读取结果',
-      endpoint: `/api/v1/indicator-versions/${versionId}/trials/${batchId}/results?page=1&size=100`,
-      indicatorId,
-      versionId
-    })
-    await pollBackendBatch(batchId)
-    const resultSet = await fetchIndicatorTrialResults(versionId, batchId)
-    const record = resultSet.results?.records?.[0]
-    indicatorWorkflow.displayValue = record?.displayValue || '-'
-    indicatorWorkflow.resultValue = record?.resultValue ?? ''
-    recordWorkflowSuccess(`第16章自检通过，结果：${indicatorWorkflow.displayValue}`)
-    ElMessage.success(`第16章链路自检通过：${indicatorWorkflow.displayValue}`)
-  } catch (error) {
-    recordWorkflowError(error)
-    ElMessage.error(error?.message || '第16章链路自检失败')
-  } finally {
-    workflowLoading.selfTest = false
   }
 }
 
@@ -1351,6 +1327,10 @@ async function refreshTrialTaskStatus() {
     ElMessage.warning('试算已提交，但任务状态轮询失败，请稍后点击查看结果或检查任务中心')
   }
 }
+
+onMounted(() => {
+  loadIndicatorForEdit()
+})
 
 </script>
 

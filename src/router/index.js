@@ -30,6 +30,16 @@ const routes = [
         }
       },
       {
+        path: 'indicator/view/:id',
+        name: 'IndicatorDetail',
+        component: () => import('@/idmp/views/IndicatorDetail.vue'),
+        meta: {
+          title: '指标详情',
+          activeMenu: '/indicator',
+          breadcrumb: ['首页', '指标管理', '查看指标']
+        }
+      },
+      {
         path: 'factor',
         name: 'FactorManagement',
         component: () => import('@/idmp/views/FactorManagement.vue'),

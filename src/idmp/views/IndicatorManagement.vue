@@ -149,7 +149,7 @@
           <el-table-column type="selection" width="46" />
           <el-table-column prop="code" label="指标编码" width="140">
             <template #default="{ row }">
-              <button type="button" class="action-link" @click="showDetails(row)">{{ row.code }}</button>
+              <button type="button" class="action-link" @click="openDetail(row)">{{ row.code }}</button>
             </template>
           </el-table-column>
           <el-table-column prop="name" label="指标名称" min-width="230" show-overflow-tooltip />
@@ -169,7 +169,7 @@
           <el-table-column prop="scenes" label="场景数" width="78" align="center" />
           <el-table-column label="操作" width="178" fixed="right">
             <template #default="{ row }">
-              <button type="button" class="action-link" @click="showDetails(row)">查看</button>
+              <button type="button" class="action-link" @click="openDetail(row)">查看</button>
               <button type="button" class="action-link" @click="openEditor(row.code)">编辑</button>
             </template>
           </el-table-column>
@@ -191,7 +191,7 @@
       <div v-if="pagedRows.length" class="indicator-card-grid">
         <article v-for="row in pagedRows" :key="row.code" class="surface-card indicator-card">
           <div class="indicator-card__head">
-            <button type="button" class="indicator-code" @click="showDetails(row)">{{ row.code }}</button>
+            <button type="button" class="indicator-code" @click="openDetail(row)">{{ row.code }}</button>
             <StatusBadge :status="row.status" :label="row.status" :tone="statusTone(row.status)" />
           </div>
           <h2>{{ row.name }}</h2>
@@ -203,7 +203,7 @@
             <div><dt>关联场景</dt><dd>{{ row.scenes }} 个</dd></div>
           </dl>
           <div class="indicator-card__actions">
-            <el-button @click="showDetails(row)">查看详情</el-button>
+            <el-button @click="openDetail(row)">查看详情</el-button>
             <el-button type="primary" plain @click="openEditor(row.code)">编辑</el-button>
           </div>
         </article>
@@ -231,7 +231,6 @@
 <script setup>
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import { Download, Grid, Menu, Plus, RefreshLeft, Search, Upload } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
@@ -333,7 +332,7 @@ const toIndicatorRow = item => ({
 })
 
 const openEditor = id => router.push(`/indicator/edit/${id}`)
-const showDetails = row => ElMessage.info(`“${row.name}”详情读取接口尚未接入，可进入编辑页查看当前演示配置。`)
+const openDetail = row => router.push(`/indicator/view/${row.id || row.code}`)
 
 const statusTone = status => ({
   '草稿': 'warning',
