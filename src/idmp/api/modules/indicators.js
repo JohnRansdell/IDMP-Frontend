@@ -60,9 +60,11 @@ export function trialIndicatorVersion(versionId, payload, idempotencyKey) {
   })
 }
 
-export function publishIndicatorVersion(versionId) {
+export function publishIndicatorVersion(versionId, idempotencyKey) {
   return requestJson(`/indicator-versions/${versionId}/publish`, {
     method: 'POST',
+    timeoutMs: 60000,
+    headers: idempotencyKey ? { 'X-Idempotency-Key': idempotencyKey } : undefined,
     body: JSON.stringify({})
   })
 }

@@ -19,17 +19,39 @@ export function clearAccessToken() {
 
 export async function requestJson(path, options = {}) {
   const token = getAccessToken()
-  const { headers: optionHeaders, ...fetchOptions } = options
+  const { headers: optionHeaders, timeoutMs = 30000, signal: externalSignal, ...fetchOptions } = options
   const headers = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...optionHeaders
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...fetchOptions,
-    headers
-  })
+  const controller = typeof AbortController === 'undefined' ? null : new AbortController()
+  const timeoutId = controller && timeoutMs > 0 ? globalThis.setTimeout(() => controller.abort(), timeoutMs) : null
+  if (controller && externalSignal) {
+    if (externalSignal.aborted) controller.abort()
+    else externalSignal.addEventListener('abort', () => controller.abort(), { once: true })
+  }
+
+  let response
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...fetchOptions,
+      headers,
+      ...(controller ? { signal: controller.signal } : {})
+    })
+  } catch (error) {
+    if (error?.name === 'AbortError' && timeoutId) {
+      const timeoutError = new Error(`请求超时（${timeoutMs}ms）`)
+      timeoutError.status = 408
+      timeoutError.code = 'REQUEST_TIMEOUT'
+      timeoutError.path = path
+      throw timeoutError
+    }
+    throw error
+  } finally {
+    if (timeoutId) globalThis.clearTimeout(timeoutId)
+  }
 
   const responseText = await response.text().catch(() => '')
   const payload = parseJsonPreservingLargeIntegers(responseText)

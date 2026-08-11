@@ -112,7 +112,7 @@ const navGroups = [
     items: [
       { label: '指标目录', path: '/indicator', icon: markRaw(List) },
       { label: '因子管理', path: '/factor', icon: markRaw(Connection) },
-      { label: '场景管理', path: '/scene', icon: markRaw(Aim) },
+      { label: '场景管理', path: '/scenarios', icon: markRaw(Aim) },
       { label: '指标映射', path: '/mapping', icon: markRaw(Link) }
     ]
   },

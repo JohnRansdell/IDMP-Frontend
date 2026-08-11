@@ -56,13 +56,20 @@ const routes = [
         }
       },
       {
+        path: 'scenarios',
+        name: 'ScenarioList',
+        component: () => import('@/idmp/views/ScenarioList.vue'),
+        meta: { title: '场景管理', breadcrumb: ['首页', '场景管理'] }
+      },
+      {
+        path: 'scenarios/:scenarioId/edit',
+        name: 'ScenarioEditor',
+        component: () => import('@/idmp/views/ScenarioEditor.vue'),
+        meta: { title: '场景编辑', activeMenu: '/scenarios', breadcrumb: ['首页', '场景管理', '场景编辑'] }
+      },
+      {
         path: 'scene',
-        name: 'SceneManagement',
-        component: () => import('@/idmp/views/SceneManagement.vue'),
-        meta: {
-          title: '场景管理',
-          breadcrumb: ['首页', '场景管理', '绩效考核']
-        }
+        redirect: '/scenarios'
       },
       {
         path: 'mapping',
@@ -77,6 +84,16 @@ const routes = [
         meta: {
           title: '指标分析',
           breadcrumb: ['首页', '指标分析', '手术患者并发症发生率']
+        }
+      },
+      {
+        path: 'analysis/drill',
+        name: 'ResultDrill',
+        component: () => import('@/idmp/views/ResultDrill.vue'),
+        meta: {
+          title: '结果下钻',
+          activeMenu: '/analysis',
+          breadcrumb: ['首页', '指标分析', '结果下钻']
         }
       },
       {
@@ -139,6 +156,8 @@ const routes = [
 ]
 
 const idmpPermissionMetadata = {
+  ScenarioList: { view: 'scenario:view', actions: { create: 'scenario:create', edit: 'scenario:edit', publish: 'scenario:publish' } },
+  ScenarioEditor: { view: 'scenario:view', actions: { edit: 'scenario:edit', publish: 'scenario:publish' } },
   DataAssetManagement: { view: 'idmp:data-assets:read' },
   SourceMetadataManagement: { view: 'idmp:source-metadata:read', actions: { sync: 'idmp:source-metadata:sync' } },
   DataDomainManagement: { view: 'idmp:data-domains:read', actions: { create: 'idmp:data-domains:create' } },

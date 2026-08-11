@@ -660,7 +660,8 @@ const indicatorWorkflow = reactive({
   displayValue: '',
   resultValue: '',
   published: false,
-  publishedVersionId: ''
+  publishedVersionId: '',
+  publishIdempotencyKey: ''
 })
 const workflowDebug = reactive({
   step: '',
@@ -1035,7 +1036,8 @@ function hydrateIndicatorSummary(item) {
     displayValue: '',
     resultValue: '',
     published: false,
-    publishedVersionId: ''
+     publishedVersionId: '',
+     publishIdempotencyKey: ''
   })
 }
 
@@ -1169,7 +1171,8 @@ function resetIndicatorWorkflowAfterBasic(indicatorId, versionId = '', resourceV
     displayValue: '',
     resultValue: '',
     published: false,
-    publishedVersionId: ''
+    publishedVersionId: '',
+    publishIdempotencyKey: ''
   })
 }
 
@@ -1238,7 +1241,8 @@ async function createIndicatorDraftVersion() {
       displayValue: '',
       resultValue: '',
       published: false,
-      publishedVersionId: ''
+      publishedVersionId: '',
+      publishIdempotencyKey: ''
     })
     activeTab.value = 'formula'
     ElMessage.success('指标版本已创建，可以配置公式')
@@ -1388,7 +1392,13 @@ async function loadIndicatorTrialResultOnly() {
       endpoint: `/api/v1/indicator-versions/${indicatorWorkflow.versionId}/trials/${indicatorWorkflow.batchId}/results?page=1&size=100`,
       versionId: indicatorWorkflow.versionId
     })
-    await pollBackendBatch(indicatorWorkflow.batchId)
+    const batch = await pollBackendBatch(indicatorWorkflow.batchId)
+    const batchStatus = batch.status || batch.batchStatus
+    if (!['SUCCEEDED', 'PARTIAL_SUCCEEDED'].includes(batchStatus)) {
+      recordWorkflowSuccess(`试算批次仍在处理中：${batchStatus || '未知'}`)
+      ElMessage.info('试算仍在处理中，请稍后再查看结果')
+      return
+    }
     const resultSet = await fetchIndicatorTrialResults(indicatorWorkflow.versionId, indicatorWorkflow.batchId)
     const record = resultSet.results?.records?.[0]
     indicatorWorkflow.displayValue = record?.displayValue || '-'
@@ -1418,6 +1428,11 @@ async function publishIndicatorVersionOnly() {
     const ready = await ensureIndicatorPublishPrerequisites()
     if (!ready) return
     await refreshIndicatorVersionState()
+    if (indicatorWorkflow.published) {
+      recordWorkflowSuccess(`指标版本已发布：${indicatorWorkflow.publishedVersionId || indicatorWorkflow.versionId}`)
+      ElMessage.success('指标版本已发布')
+      return
+    }
 
     recordWorkflowRequest({
       step: '发布指标版本',
@@ -1426,11 +1441,17 @@ async function publishIndicatorVersionOnly() {
     })
     let result
     try {
-      result = await publishIndicatorVersion(indicatorWorkflow.versionId)
+      const publishKey = indicatorWorkflow.publishIdempotencyKey || (indicatorWorkflow.publishIdempotencyKey = createIdempotencyKey(`indicator-publish-${indicatorWorkflow.versionId}`))
+      workflowDebug.idempotencyKey = publishKey
+      result = await publishIndicatorVersion(indicatorWorkflow.versionId, publishKey)
     } catch (error) {
       if (!isOptimisticLockError(error)) throw error
       await refreshIndicatorVersionState()
-      result = await publishIndicatorVersion(indicatorWorkflow.versionId)
+      if (indicatorWorkflow.published) {
+        result = { indicatorVersionId: indicatorWorkflow.versionId, status: 'PUBLISHED' }
+      } else {
+        result = await publishIndicatorVersion(indicatorWorkflow.versionId, indicatorWorkflow.publishIdempotencyKey)
+      }
     }
     indicatorWorkflow.published = true
     indicatorWorkflow.publishedVersionId = resolveIndicatorVersionId(result) || indicatorWorkflow.versionId
@@ -1570,7 +1591,7 @@ function recordWorkflowError(error) {
 
 async function pollBackendTask(taskId) {
   let task = await fetchAsyncTask(taskId)
-  const intervals = [1000, 2000, 3000, 5000, 10000]
+  const intervals = [1000, 2000, 3000, 5000, 10000, 15000, 20000]
   const terminalStatuses = ['SUCCEEDED', 'PARTIAL_SUCCEEDED', 'FAILED', 'CANCELED', 'CANCELLED']
   for (let index = 0; index < intervals.length && !terminalStatuses.includes(task.status); index += 1) {
     await delay(intervals[index])
@@ -1581,7 +1602,7 @@ async function pollBackendTask(taskId) {
 
 async function pollBackendBatch(batchId) {
   let batch = await fetchCalcBatch(batchId)
-  const intervals = [1000, 2000, 3000, 5000, 10000]
+  const intervals = [1000, 2000, 3000, 5000, 10000, 15000, 20000]
   const status = () => batch.status || batch.batchStatus
   const terminalStatuses = ['SUCCEEDED', 'PARTIAL_SUCCEEDED', 'FAILED', 'CANCELED', 'CANCELLED']
   for (let index = 0; index < intervals.length && !terminalStatuses.includes(status()); index += 1) {

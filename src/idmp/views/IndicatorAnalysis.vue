@@ -570,7 +570,18 @@ const showSceneValue = (scene) => {
 
 const openDepartmentDrill = (row) => {
   selectedDrillDepartment.value = row.department
-  activeTab.value = 'drill'
+  router.push({
+    name: 'ResultDrill',
+    query: {
+      indicator: indicatorCode.value,
+      indicatorName: currentProfile.value.name,
+      resultId: backendAnalysis.value?.overview?.resultId || 'MOCK-RESULT-001',
+      snapshotId: backendAnalysis.value?.resultContext?.snapshotId || 'MOCK-SNAPSHOT-20260811',
+      currentLevel: 'HOSPITAL',
+      period: period.value === '年度' ? '2026' : period.value === '季度' ? '2026-Q2' : '2026-06',
+      ...(row.department ? { departmentLabel: row.department } : {})
+    }
+  })
 }
 
 function formatCount(value) {
