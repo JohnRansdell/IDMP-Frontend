@@ -11,6 +11,7 @@
       </template>
       <template #actions>
         <el-button type="primary" :icon="Plus" @click="openEditor('new')">新增指标</el-button>
+        <el-button @click="router.push('/indicator/recycle-bin')">回收站</el-button>
         <el-tooltip content="当前后端尚未提供指标导入接口">
           <span
             class="disabled-tooltip-trigger"
@@ -167,10 +168,11 @@
             </template>
           </el-table-column>
           <el-table-column prop="scenes" label="场景数" width="78" align="center" />
-          <el-table-column label="操作" width="178" fixed="right">
+           <el-table-column label="操作" width="230" fixed="right">
             <template #default="{ row }">
               <button type="button" class="action-link" @click="openDetail(row)">查看</button>
-              <button type="button" class="action-link" @click="openEditor(row.code)">编辑</button>
+               <button type="button" class="action-link" @click="openEditor(row.code)">编辑</button>
+              <button v-if="sourceMode === 'live' && row.indicatorId" type="button" class="action-link danger-link" @click="openDelete(row)">删除</button>
             </template>
           </el-table-column>
         </el-table>
@@ -225,6 +227,14 @@
         />
       </div>
     </section>
+    <ResourceDeleteDialog
+      :model-value="Boolean(deleteTarget)"
+      resource-label="指标"
+      :load-impact="() => fetchIndicatorDeletionImpact(deleteTarget.indicatorId)"
+      :perform-delete="payload => deleteIndicator(deleteTarget.indicatorId, payload)"
+      @update:model-value="value => { if (!value) closeDelete() }"
+      @success="reloadAfterDelete"
+    />
   </div>
 </template>
 
@@ -235,7 +245,8 @@ import { Download, Grid, Menu, Plus, RefreshLeft, Search, Upload } from '@elemen
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
-import { fetchIndicators, fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
+ import ResourceDeleteDialog from '@/idmp/components/ResourceDeleteDialog.vue'
+ import { deleteIndicator, fetchIndicatorDeletionImpact, fetchIndicators, fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
 import { indicatorRows } from '@/idmp/data/demo'
 
 const router = useRouter()
@@ -248,6 +259,7 @@ const backendIndicatorRows = ref([])
 const sourceMode = ref('loading')
 const loadError = ref('')
 const paginationRowRef = ref()
+const deleteTarget = ref(null)
 
 const emptyFilters = () => ({
   code: '',
@@ -382,6 +394,9 @@ function mergePublishedIndicatorVersions(indicatorRows, publishedRows) {
 
 const openEditor = id => router.push(`/indicator/edit/${id}`)
 const openDetail = row => router.push(`/indicator/view/${row.id || row.code}`)
+const openDelete = row => { deleteTarget.value = row }
+const closeDelete = () => { deleteTarget.value = null }
+const reloadAfterDelete = async () => { closeDelete(); await loadBackendIndicators() }
 
 const statusTone = status => ({
   '草稿': 'warning',

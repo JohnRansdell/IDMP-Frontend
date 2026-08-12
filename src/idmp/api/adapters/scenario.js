@@ -15,6 +15,43 @@ export const PERIOD_TYPES = [
   { value: 'CUSTOM', label: '自定义' }
 ]
 
+const PERIOD_TYPE_ALIASES = Object.freeze({
+  DAY: 'DAILY',
+  DAILY: 'DAILY',
+  WEEK: 'WEEKLY',
+  WEEKLY: 'WEEKLY',
+  MONTH: 'MONTHLY',
+  MONTHLY: 'MONTHLY',
+  QUARTER: 'QUARTERLY',
+  QUARTERLY: 'QUARTERLY',
+  YEAR: 'YEARLY',
+  YEARLY: 'YEARLY',
+  CUSTOM: 'CUSTOM',
+  日: 'DAILY',
+  每日: 'DAILY',
+  日度: 'DAILY',
+  周: 'WEEKLY',
+  每周: 'WEEKLY',
+  周度: 'WEEKLY',
+  月: 'MONTHLY',
+  每月: 'MONTHLY',
+  月度: 'MONTHLY',
+  季: 'QUARTERLY',
+  季度: 'QUARTERLY',
+  年: 'YEARLY',
+  每年: 'YEARLY',
+  年度: 'YEARLY',
+  自定义: 'CUSTOM'
+})
+
+export function normalizePeriodType(value, fallback = '') {
+  const source = value && typeof value === 'object'
+    ? value.value ?? value.code ?? value.name
+    : value
+  if (source === undefined || source === null || source === '') return fallback
+  return PERIOD_TYPE_ALIASES[String(source).trim().toUpperCase()] || fallback
+}
+
 export const OVERRIDE_TYPES = [
   { value: 'EXCLUSION', label: '排除条件' },
   { value: 'PARAMETER', label: '参数' },
@@ -56,7 +93,7 @@ export function scenarioDetailToForm(detail) {
     type: scenario.type || 'CUSTOM',
     description: scenario.description || '',
     governingOrgName: scenario.governingOrgName || '',
-    defaultPeriodType: version.defaultPeriodType || 'MONTHLY',
+    defaultPeriodType: normalizePeriodType(version.defaultPeriodType, version.defaultPeriodType ? '' : 'MONTHLY'),
     defaultParameters: version.defaultParameters || {},
     defaultExclusionDsl: version.defaultExclusionDsl || { nodeType: 'TRUE' },
     defaultExclusionDisplayText: version.defaultExclusionDisplayText || '',
@@ -76,12 +113,16 @@ export function scenarioDetailToForm(detail) {
 }
 
 export function scenarioFormToPatch(form) {
+  const defaultPeriodType = normalizePeriodType(form.defaultPeriodType)
+  if (!defaultPeriodType) {
+    throw new Error('默认统计周期无效，请重新选择日、周、月、季度、年或自定义')
+  }
   return {
     resourceVersion: form.resourceVersion,
     name: form.name,
     description: form.description,
     governingOrgName: form.governingOrgName,
-    defaultPeriodType: form.defaultPeriodType,
+    defaultPeriodType,
     defaultParameters: form.defaultParameters,
     defaultExclusionDsl: form.defaultExclusionDsl,
     defaultExclusionDisplayText: form.defaultExclusionDisplayText,

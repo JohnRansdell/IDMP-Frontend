@@ -34,6 +34,32 @@ export function updateFactor(factorId, payload) {
   })
 }
 
+export function fetchFactorDeletionImpact(factorId) {
+  return requestJson(`/factors/${encodeURIComponent(factorId)}/deletion-impact`)
+}
+
+export function deleteFactor(factorId, payload) {
+  return requestJson(`/factors/${encodeURIComponent(factorId)}`, {
+    method: 'DELETE',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function fetchFactorRecycleBin(params = {}) {
+  return requestJson(withQuery('/factors/recycle-bin', params))
+}
+
+export function fetchFactorRecycleDetail(factorId) {
+  return requestJson(`/factors/recycle-bin/${encodeURIComponent(factorId)}`)
+}
+
+export function restoreFactor(factorId, resourceVersion) {
+  return requestJson(`/factors/recycle-bin/${encodeURIComponent(factorId)}/restore`, {
+    method: 'POST',
+    body: JSON.stringify({ resourceVersion })
+  })
+}
+
 export function compileFactorVersion(versionId, payload = {}) {
   return requestJson(`/factor-versions/${versionId}/compile`, {
     method: 'POST',

@@ -10,7 +10,7 @@
     "dev": "vite",
     "build:prod": "vite build",
     "preview": "vite preview",
-    "test": "node --test test/meta-adapter.test.js test/cascade.test.js test/drill-adapter.test.js test/indicator-adapter.test.js"
+    "test": "node --test test/meta-adapter.test.js test/cascade.test.js test/drill-adapter.test.js test/indicator-adapter.test.js test/scenario-adapter.test.js"
   },
   "dependencies": {
     "@element-plus/icons-vue": "2.3.2",

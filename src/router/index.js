@@ -40,6 +40,12 @@ const routes = [
         }
       },
       {
+        path: 'indicator/recycle-bin',
+        name: 'IndicatorRecycleBin',
+        component: () => import('@/idmp/views/ResourceRecycleBin.vue'),
+        meta: { title: '指标回收站', activeMenu: '/indicator', resourceType: 'INDICATOR', breadcrumb: ['首页', '指标管理', '回收站'] }
+      },
+      {
         path: 'factor',
         name: 'FactorManagement',
         component: () => import('@/idmp/views/FactorManagement.vue'),
@@ -54,6 +60,12 @@ const routes = [
           activeMenu: '/factor',
           breadcrumb: ['首页', '因子管理', '因子编辑']
         }
+      },
+      {
+        path: 'factor/recycle-bin',
+        name: 'FactorRecycleBin',
+        component: () => import('@/idmp/views/ResourceRecycleBin.vue'),
+        meta: { title: '因子回收站', activeMenu: '/factor', resourceType: 'FACTOR', breadcrumb: ['首页', '因子管理', '回收站'] }
       },
       {
         path: 'scenarios',

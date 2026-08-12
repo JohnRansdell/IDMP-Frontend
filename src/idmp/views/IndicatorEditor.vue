@@ -1274,7 +1274,13 @@ async function createIndicatorDraftVersion() {
   workflowLoading.version = true
   try {
     const copyFromVersionId = isNew.value ? '' : indicatorWorkflow.versionId
-    const versionPayload = buildIndicatorVersionPayload({ copyFromVersionId, drillConfig })
+    // The current backend contract requires a formula when creating the first
+    // version. Existing indicators can still create a draft by copying the
+    // current version, so do not send both modes together.
+    const formula = isNew.value
+      ? createIndicatorFormulaPayload(0).formula
+      : undefined
+    const versionPayload = buildIndicatorVersionPayload({ copyFromVersionId, drillConfig, formula })
     recordWorkflowRequest({
       step: '创建指标版本',
       endpoint: `/api/v1/indicators/${indicatorWorkflow.indicatorId}/versions`,

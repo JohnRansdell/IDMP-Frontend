@@ -38,6 +38,32 @@ export function updateIndicator(indicatorId, payload) {
   })
 }
 
+export function fetchIndicatorDeletionImpact(indicatorId) {
+  return requestJson(`/indicators/${encodeURIComponent(indicatorId)}/deletion-impact`)
+}
+
+export function deleteIndicator(indicatorId, payload) {
+  return requestJson(`/indicators/${encodeURIComponent(indicatorId)}`, {
+    method: 'DELETE',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function fetchIndicatorRecycleBin(params = {}) {
+  return requestJson(withQuery('/indicators/recycle-bin', params))
+}
+
+export function fetchIndicatorRecycleDetail(indicatorId) {
+  return requestJson(`/indicators/recycle-bin/${encodeURIComponent(indicatorId)}`)
+}
+
+export function restoreIndicator(indicatorId, resourceVersion) {
+  return requestJson(`/indicators/recycle-bin/${encodeURIComponent(indicatorId)}/restore`, {
+    method: 'POST',
+    body: JSON.stringify({ resourceVersion })
+  })
+}
+
 export function createIndicatorVersion(indicatorId, payload = {}) {
   return requestJson(`/indicators/${indicatorId}/versions`, {
     method: 'POST',
