@@ -1,0 +1,16 @@
+{
+  "resourceVersion": 10,
+  "name": "HQMS 医疗质量月报演示场景",
+  "description": "用于演示场景版本、指标绑定、覆盖、校验和发布核心闭环",
+  "governingOrgName": "国家卫生健康委",
+  "defaultPeriodType": "MONTHLY",
+  "defaultParameters": {},
+  "defaultExclusionDsl": {
+    "nodeType": "TRUE"
+  },
+  "defaultExclusionDisplayText": "本演示不增加全局排除条件",
+  "defaultDataSourcePriority": {},
+  "displayText": null,
+  "effectiveStartDate": null,
+  "effectiveEndDate": null
+}

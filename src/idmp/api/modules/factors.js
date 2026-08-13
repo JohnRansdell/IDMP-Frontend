@@ -27,6 +27,39 @@ export function createFactor(payload) {
   })
 }
 
+export function updateFactor(factorId, payload) {
+  return requestJson(`/factors/${factorId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function fetchFactorDeletionImpact(factorId) {
+  return requestJson(`/factors/${encodeURIComponent(factorId)}/deletion-impact`)
+}
+
+export function deleteFactor(factorId, payload) {
+  return requestJson(`/factors/${encodeURIComponent(factorId)}`, {
+    method: 'DELETE',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function fetchFactorRecycleBin(params = {}) {
+  return requestJson(withQuery('/factors/recycle-bin', params))
+}
+
+export function fetchFactorRecycleDetail(factorId) {
+  return requestJson(`/factors/recycle-bin/${encodeURIComponent(factorId)}`)
+}
+
+export function restoreFactor(factorId, resourceVersion) {
+  return requestJson(`/factors/recycle-bin/${encodeURIComponent(factorId)}/restore`, {
+    method: 'POST',
+    body: JSON.stringify({ resourceVersion })
+  })
+}
+
 export function compileFactorVersion(versionId, payload = {}) {
   return requestJson(`/factor-versions/${versionId}/compile`, {
     method: 'POST',
@@ -66,4 +99,15 @@ function withQuery(path, params = {}) {
   })
   const queryText = query.toString()
   return queryText ? `${path}?${queryText}` : path
+}
+
+export function fetchFactorTemplateParameterSchema(templateId) {
+  return requestJson(`/factor-templates/${templateId}/parameter-schema`)
+}
+
+export function instantiateFactorTemplateVersion(versionId, payload) {
+  return requestJson(`/factor-template-versions/${versionId}/instantiate`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
 }

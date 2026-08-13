@@ -81,6 +81,7 @@ import {
   Bell,
   Connection,
   DataAnalysis,
+  Collection,
   Folder,
   Histogram,
   Link,
@@ -112,7 +113,7 @@ const navGroups = [
     items: [
       { label: '指标目录', path: '/indicator', icon: markRaw(List) },
       { label: '因子管理', path: '/factor', icon: markRaw(Connection) },
-      { label: '场景管理', path: '/scene', icon: markRaw(Aim) },
+      { label: '场景管理', path: '/scenarios', icon: markRaw(Aim) },
       { label: '指标映射', path: '/mapping', icon: markRaw(Link) }
     ]
   },
@@ -120,7 +121,9 @@ const navGroups = [
     id: 'nav-data',
     label: '数据治理',
     items: [
-      { label: '数据资产', path: '/data', icon: markRaw(Folder) }
+      { label: '数据源管理', path: '/data/sources', icon: markRaw(Connection) },
+      { label: '数据域管理', path: '/data/domains', icon: markRaw(Folder) },
+      { label: '值集管理', path: '/data/value-sets', icon: markRaw(Collection) }
     ]
   },
   {

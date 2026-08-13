@@ -1,0 +1,16 @@
+{
+  "resourceVersion": 3,
+  "name": "场景发布闭环验证",
+  "description": "验证场景从草稿校验到发布",
+  "governingOrgName": "IDMP 联调",
+  "defaultPeriodType": "MONTHLY",
+  "defaultParameters": {},
+  "defaultExclusionDsl": {
+    "nodeType": "TRUE"
+  },
+  "defaultExclusionDisplayText": "无额外排除条件",
+  "defaultDataSourcePriority": {},
+  "displayText": "场景发布闭环验证",
+  "effectiveStartDate": "2026-01-01",
+  "effectiveEndDate": "2026-12-31"
+}

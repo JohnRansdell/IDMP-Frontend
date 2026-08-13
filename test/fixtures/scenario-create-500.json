@@ -1,0 +1,17 @@
+{
+  "code": "CODEX_SCENARIO_500_REPRO_20260812_1620",
+  "name": "场景创建 500 复现",
+  "type": "ASSESSMENT",
+  "description": "用于复现 revision 1036 第 5.3 节创建场景接口异常",
+  "governingOrgName": "IDMP 联调",
+  "defaultPeriodType": "MONTHLY",
+  "defaultParameters": {},
+  "defaultExclusionDsl": {
+    "nodeType": "TRUE"
+  },
+  "defaultExclusionDisplayText": "无额外排除条件",
+  "defaultDataSourcePriority": [],
+  "displayText": "场景创建接口联调",
+  "effectiveStartDate": "2026-01-01",
+  "effectiveEndDate": "2026-12-31"
+}

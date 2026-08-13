@@ -127,6 +127,32 @@
                   <el-checkbox v-for="item in policyOptions" :key="item" :value="item">{{ item }}</el-checkbox>
                 </el-checkbox-group>
               </el-form-item>
+              <div class="drill-config-card form-span-2">
+                <div class="drill-config-card__heading">
+                  <strong>指标结果下钻路径</strong>
+                  <el-tag size="small" type="warning">当前为默认路径配置</el-tag>
+                </div>
+                <p>创建指标版本时后端要求指定下钻路径。当前接口文档尚未提供路径列表接口，页面先使用环境配置的默认组织路径。</p>
+                <div class="drill-config-card__fields">
+                  <el-form-item label="路径编码" label-width="88px" prop="drillPathCode">
+                    <el-select v-model="drillConfig.pathCode" aria-label="指标下钻路径">
+                      <el-option label="组织下钻（ORGANIZATION）" value="ORGANIZATION" />
+                      <el-option
+                        v-if="drillConfig.pathCode && drillConfig.pathCode !== 'ORGANIZATION'"
+                        :label="`${drillConfig.pathCode}（环境默认）`"
+                        :value="drillConfig.pathCode"
+                      />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item label="最大层级" label-width="88px" prop="drillMaxLevel">
+                    <el-select v-model="drillConfig.maxLevel" aria-label="下钻最大层级">
+                      <el-option label="医院（HOSPITAL）" value="HOSPITAL" />
+                      <el-option label="出院科室（OUT_DEPT）" value="OUT_DEPT" />
+                    </el-select>
+                  </el-form-item>
+                </div>
+                <small class="drill-config-card__hint">路径选择接口接入后将替换为服务端已发布路径，当前配置会随版本创建请求发送。</small>
+              </div>
             </div>
           </el-form>
           <div class="business-action-bar">
@@ -140,7 +166,7 @@
                 }}
               </small>
             </div>
-            <el-button :disabled="!isNew" :loading="workflowLoading.basic" @click="saveIndicatorBasicInfo">保存基本信息</el-button>
+            <el-button :loading="workflowLoading.basic" @click="saveIndicatorBasicInfo">保存基本信息</el-button>
             <el-button :disabled="!indicatorWorkflow.indicatorId" :loading="workflowLoading.version" @click="createIndicatorDraftVersion">
               创建指标版本
             </el-button>
@@ -289,7 +315,7 @@
                 <span>公式与试算操作</span>
                 <small>{{ indicatorWorkflow.versionId ? `当前版本 ${indicatorWorkflow.versionId}` : '请先在基本信息页签创建指标版本' }}</small>
               </div>
-              <el-button :disabled="!indicatorWorkflow.versionId" :loading="workflowLoading.formula" @click="saveIndicatorFormulaOnly">
+              <el-button :disabled="!indicatorWorkflow.versionId || indicatorWorkflow.published" :loading="workflowLoading.formula" @click="saveIndicatorFormulaOnly">
                 保存公式
               </el-button>
               <el-button :disabled="!indicatorWorkflow.formulaSaved" :loading="workflowLoading.compile" @click="compileIndicatorFormulaOnly">
@@ -621,8 +647,10 @@ import {
   fetchIndicatorTrialResults,
   publishIndicatorVersion,
   saveIndicatorFormula,
-  trialIndicatorVersion
+  trialIndicatorVersion,
+  updateIndicator
 } from '@/idmp/api/modules/indicators'
+import { buildIndicatorVersionPayload, defaultDrillConfig, normalizeDrillConfig } from '@/idmp/api/adapters/indicator'
 import { fetchFactorVersions } from '@/idmp/api/modules/factors'
 import { fetchAsyncTask, fetchCalcBatch } from '@/idmp/api/modules/calculation'
 import {
@@ -653,6 +681,8 @@ const indicatorWorkflow = reactive({
   indicatorId: '',
   versionId: '',
   resourceVersion: 0,
+  metadataVersionId: '',
+  metadataResourceVersion: 0,
   formulaSaved: false,
   compiled: false,
   taskId: '',
@@ -660,8 +690,10 @@ const indicatorWorkflow = reactive({
   displayValue: '',
   resultValue: '',
   published: false,
-  publishedVersionId: ''
+  publishedVersionId: '',
+  publishIdempotencyKey: ''
 })
+const drillConfig = reactive({ ...defaultDrillConfig })
 const workflowDebug = reactive({
   step: '',
   endpoint: '',
@@ -1020,14 +1052,16 @@ function hydrateIndicatorSummary(item) {
   form.unit = item.unit || form.unit || '百分比（%）'
   form.direction = item.direction || form.direction || '监测比较'
   form.definition = item.description || item.definition || ''
-  form.significance = item.significance || ''
-  form.sources = item.sources || (item.source ? [item.source] : [])
-  form.period = item.period || form.period || '年度'
+  form.significance = item.significance || item.meaning || ''
+  form.sources = item.sources || item.dataSources || (item.source ? [item.source] : [])
+  form.period = fromApiStatisticalPeriod(item.period || item.statisticalPeriod) || form.period || '年度'
   form.policies = item.policies || []
   Object.assign(indicatorWorkflow, {
     indicatorId: toOpaqueId(item.id ?? item.indicatorId ?? routeIndicatorKey.value),
-    versionId: toOpaqueId(item.currentVersionId ?? item.latestVersionId ?? item.versionId ?? ''),
+    versionId: toOpaqueId(item.currentVersionId ?? item.latestVersionId ?? item.versionId ?? indicatorWorkflow.versionId),
     resourceVersion: resolveResourceVersion(item),
+    metadataVersionId: toOpaqueId(item.metadataVersionId ?? item.currentVersionId ?? item.latestVersionId ?? item.versionId ?? ''),
+    metadataResourceVersion: resolveMetadataResourceVersion(item),
     formulaSaved: Boolean(item.formula || item.currentArtifactId),
     compiled: Boolean(item.currentArtifactId),
     taskId: '',
@@ -1035,7 +1069,8 @@ function hydrateIndicatorSummary(item) {
     displayValue: '',
     resultValue: '',
     published: false,
-    publishedVersionId: ''
+     publishedVersionId: '',
+     publishIdempotencyKey: ''
   })
 }
 
@@ -1055,6 +1090,8 @@ function hydrateIndicatorVersion(version) {
     published: status === 'PUBLISHED',
     publishedVersionId: status === 'PUBLISHED' ? resolveIndicatorVersionId(version) : ''
   })
+
+  Object.assign(drillConfig, normalizeDrillConfig(version, drillConfig))
 
   const formula = extractFormula(version)
   hydrateFormulaFactors(formula)
@@ -1162,6 +1199,8 @@ function resetIndicatorWorkflowAfterBasic(indicatorId, versionId = '', resourceV
     indicatorId: toOpaqueId(indicatorId),
     versionId: toOpaqueId(versionId),
     resourceVersion,
+    metadataVersionId: toOpaqueId(versionId),
+    metadataResourceVersion: 0,
     formulaSaved: false,
     compiled: false,
     taskId: '',
@@ -1169,16 +1208,12 @@ function resetIndicatorWorkflowAfterBasic(indicatorId, versionId = '', resourceV
     displayValue: '',
     resultValue: '',
     published: false,
-    publishedVersionId: ''
+    publishedVersionId: '',
+    publishIdempotencyKey: ''
   })
 }
 
 async function saveIndicatorBasicInfo() {
-  if (!isNew.value) {
-    ElMessage.warning('编辑模式的基础信息更新接口尚未接入，当前不会用新建接口覆盖已有指标')
-    return false
-  }
-
   try {
     await formRef.value?.validate()
   } catch {
@@ -1189,6 +1224,21 @@ async function saveIndicatorBasicInfo() {
 
   workflowLoading.basic = true
   try {
+    if (!isNew.value) {
+      if (!indicatorWorkflow.indicatorId) throw new Error('未读取到指标 ID，无法保存基本信息')
+      const updated = await updateIndicator(indicatorWorkflow.indicatorId, createIndicatorMetadataPayload())
+      form.name = updated?.name ?? form.name
+      form.categoryMain = updated?.category ?? form.categoryMain
+      form.definition = updated?.definition ?? updated?.description ?? form.definition
+      form.significance = updated?.meaning ?? form.significance
+      form.sources = updated?.dataSources ?? form.sources
+      form.period = fromApiStatisticalPeriod(updated?.statisticalPeriod) || form.period
+      indicatorWorkflow.metadataVersionId = toOpaqueId(updated?.metadataVersionId ?? indicatorWorkflow.metadataVersionId)
+      indicatorWorkflow.metadataResourceVersion = resolveMetadataResourceVersion(updated, indicatorWorkflow.metadataResourceVersion)
+      ElMessage.success('指标基本信息已更新')
+      return true
+    }
+
     const suffix = createBackendCodeSuffix()
     const indicatorCode = normalizeBusinessCode(form.code) || `FRONTEND_INDICATOR_${suffix}`
     const indicator = await createIndicator({
@@ -1223,7 +1273,24 @@ async function createIndicatorDraftVersion() {
 
   workflowLoading.version = true
   try {
-    const version = await createIndicatorVersion(indicatorWorkflow.indicatorId, {})
+    const copyFromVersionId = isNew.value ? '' : indicatorWorkflow.versionId
+    // The current backend contract requires a formula when creating the first
+    // version. Existing indicators can still create a draft by copying the
+    // current version, so do not send both modes together.
+    const formula = isNew.value
+      ? createIndicatorFormulaPayload(0).formula
+      : undefined
+    const versionPayload = buildIndicatorVersionPayload({ copyFromVersionId, drillConfig, formula })
+    recordWorkflowRequest({
+      step: '创建指标版本',
+      endpoint: `/api/v1/indicators/${indicatorWorkflow.indicatorId}/versions`,
+      indicatorId: indicatorWorkflow.indicatorId,
+      requestBody: versionPayload
+    })
+    const version = await createIndicatorVersion(
+      indicatorWorkflow.indicatorId,
+      versionPayload
+    )
     const versionId = resolveIndicatorVersionId(version)
     if (!versionId) {
       throw new Error('后端未返回指标版本 ID，无法保存公式')
@@ -1231,15 +1298,17 @@ async function createIndicatorDraftVersion() {
     Object.assign(indicatorWorkflow, {
       versionId,
       resourceVersion: resolveResourceVersion(version),
-      formulaSaved: false,
-      compiled: false,
+      formulaSaved: Boolean(extractFormula(version)),
+      compiled: Boolean(version.currentArtifactId),
       taskId: '',
       batchId: '',
       displayValue: '',
       resultValue: '',
       published: false,
-      publishedVersionId: ''
+      publishedVersionId: '',
+      publishIdempotencyKey: ''
     })
+    hydrateFormulaFactors(extractFormula(version))
     activeTab.value = 'formula'
     ElMessage.success('指标版本已创建，可以配置公式')
     return true
@@ -1275,6 +1344,10 @@ async function saveBasicAndCreateVersion() {
 async function saveIndicatorFormulaOnly() {
   if (!indicatorWorkflow.versionId) {
     ElMessage.warning('请先创建指标版本')
+    return
+  }
+  if (indicatorWorkflow.published) {
+    ElMessage.warning('已发布版本不可直接修改，请先创建草稿版本')
     return
   }
 
@@ -1388,7 +1461,13 @@ async function loadIndicatorTrialResultOnly() {
       endpoint: `/api/v1/indicator-versions/${indicatorWorkflow.versionId}/trials/${indicatorWorkflow.batchId}/results?page=1&size=100`,
       versionId: indicatorWorkflow.versionId
     })
-    await pollBackendBatch(indicatorWorkflow.batchId)
+    const batch = await pollBackendBatch(indicatorWorkflow.batchId)
+    const batchStatus = batch.status || batch.batchStatus
+    if (!['SUCCEEDED', 'PARTIAL_SUCCEEDED'].includes(batchStatus)) {
+      recordWorkflowSuccess(`试算批次仍在处理中：${batchStatus || '未知'}`)
+      ElMessage.info('试算仍在处理中，请稍后再查看结果')
+      return
+    }
     const resultSet = await fetchIndicatorTrialResults(indicatorWorkflow.versionId, indicatorWorkflow.batchId)
     const record = resultSet.results?.records?.[0]
     indicatorWorkflow.displayValue = record?.displayValue || '-'
@@ -1418,6 +1497,11 @@ async function publishIndicatorVersionOnly() {
     const ready = await ensureIndicatorPublishPrerequisites()
     if (!ready) return
     await refreshIndicatorVersionState()
+    if (indicatorWorkflow.published) {
+      recordWorkflowSuccess(`指标版本已发布：${indicatorWorkflow.publishedVersionId || indicatorWorkflow.versionId}`)
+      ElMessage.success('指标版本已发布')
+      return
+    }
 
     recordWorkflowRequest({
       step: '发布指标版本',
@@ -1426,11 +1510,17 @@ async function publishIndicatorVersionOnly() {
     })
     let result
     try {
-      result = await publishIndicatorVersion(indicatorWorkflow.versionId)
+      const publishKey = indicatorWorkflow.publishIdempotencyKey || (indicatorWorkflow.publishIdempotencyKey = createIdempotencyKey(`indicator-publish-${indicatorWorkflow.versionId}`))
+      workflowDebug.idempotencyKey = publishKey
+      result = await publishIndicatorVersion(indicatorWorkflow.versionId, publishKey)
     } catch (error) {
       if (!isOptimisticLockError(error)) throw error
       await refreshIndicatorVersionState()
-      result = await publishIndicatorVersion(indicatorWorkflow.versionId)
+      if (indicatorWorkflow.published) {
+        result = { indicatorVersionId: indicatorWorkflow.versionId, status: 'PUBLISHED' }
+      } else {
+        result = await publishIndicatorVersion(indicatorWorkflow.versionId, indicatorWorkflow.publishIdempotencyKey)
+      }
     }
     indicatorWorkflow.published = true
     indicatorWorkflow.publishedVersionId = resolveIndicatorVersionId(result) || indicatorWorkflow.versionId
@@ -1524,6 +1614,29 @@ function createIndicatorFormulaPayload(resourceVersion) {
   })
 }
 
+function createIndicatorMetadataPayload() {
+  return {
+    name: form.name,
+    category: form.categoryMain,
+    description: form.definition || null,
+    metadataVersionId: indicatorWorkflow.metadataVersionId || indicatorWorkflow.versionId || null,
+    metadataResourceVersion: indicatorWorkflow.metadataResourceVersion,
+    definition: form.definition || null,
+    meaning: form.significance || null,
+    calculationDescription: `${numeratorFactors.value[0]?.name || '分子因子'} / ${denominatorFactors.value[0]?.name || '分母因子'} × 100%`,
+    statisticalPeriod: toApiStatisticalPeriod(form.period),
+    dataSources: form.sources
+  }
+}
+
+function toApiStatisticalPeriod(period) {
+  return ({ 年度: 'YEARLY', 季度: 'QUARTERLY', 月度: 'MONTHLY', 自定义: 'CUSTOM' })[period] || period || 'YEARLY'
+}
+
+function fromApiStatisticalPeriod(period) {
+  return ({ YEARLY: '年度', QUARTERLY: '季度', MONTHLY: '月度', CUSTOM: '自定义' })[period] || period || ''
+}
+
 function recordWorkflowRequest({
   step,
   endpoint,
@@ -1570,7 +1683,7 @@ function recordWorkflowError(error) {
 
 async function pollBackendTask(taskId) {
   let task = await fetchAsyncTask(taskId)
-  const intervals = [1000, 2000, 3000, 5000, 10000]
+  const intervals = [1000, 2000, 3000, 5000, 10000, 15000, 20000]
   const terminalStatuses = ['SUCCEEDED', 'PARTIAL_SUCCEEDED', 'FAILED', 'CANCELED', 'CANCELLED']
   for (let index = 0; index < intervals.length && !terminalStatuses.includes(task.status); index += 1) {
     await delay(intervals[index])
@@ -1581,7 +1694,7 @@ async function pollBackendTask(taskId) {
 
 async function pollBackendBatch(batchId) {
   let batch = await fetchCalcBatch(batchId)
-  const intervals = [1000, 2000, 3000, 5000, 10000]
+  const intervals = [1000, 2000, 3000, 5000, 10000, 15000, 20000]
   const status = () => batch.status || batch.batchStatus
   const terminalStatuses = ['SUCCEEDED', 'PARTIAL_SUCCEEDED', 'FAILED', 'CANCELED', 'CANCELLED']
   for (let index = 0; index < intervals.length && !terminalStatuses.includes(status()); index += 1) {
@@ -1638,6 +1751,11 @@ function resolveResourceVersion(payload, fallback = 0) {
     payload?.version?.resourceVersion ??
     fallback
 
+  return Number(value) || 0
+}
+
+function resolveMetadataResourceVersion(payload, fallback = 0) {
+  const value = payload?.metadataResourceVersion ?? payload?.metadataVersion ?? fallback
   return Number(value) || 0
 }
 
@@ -2024,6 +2142,47 @@ onMounted(async () => {
   grid-column: 1 / -1;
 }
 
+.drill-config-card {
+  margin-top: 8px;
+  padding: 14px 16px 12px;
+  border: 1px solid var(--idmp-border-subtle);
+  border-radius: 8px;
+  background: var(--idmp-layer-02);
+}
+
+.drill-config-card__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--idmp-text-primary);
+  font-size: 14px;
+}
+
+.drill-config-card p {
+  margin: 6px 0 10px;
+  color: var(--idmp-text-helper);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.drill-config-card__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.drill-config-card__fields :deep(.el-form-item) {
+  margin-bottom: 4px;
+}
+
+.drill-config-card__hint {
+  display: block;
+  margin-top: 6px;
+  color: var(--idmp-text-helper);
+  font-size: 11px;
+}
+
 .category-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr);
@@ -2407,6 +2566,12 @@ onMounted(async () => {
 
   .condition-row {
     grid-template-columns: 62px 150px 120px minmax(170px, 1fr) 26px 90px;
+  }
+}
+
+@media (max-width: 720px) {
+  .drill-config-card__fields {
+    grid-template-columns: 1fr;
   }
 }
 </style>

@@ -2,16 +2,13 @@
 
 本项目是 IDMP 医疗质量指标数据管理平台的前端 Demo 与后端联调版本，基于 Vue 3、Vite、Element Plus、ECharts 实现。
 
-当前集成分支同时包含两部分进度：
-
-- `Clinical-frontend` 分支的 UI 视觉优化进度。
-- 因子管理、指标管理、指标看板、指标分析、计算任务、系统管理等后端接口联调进度。
-
-当前推荐演示分支：
+当前工作分支：
 
 ```text
-integrate/clinical-factor
+L
 ```
+
+截至 2026-08-13，本分支已完成数据资产工作台、来源元数据目录、语义表/字段映射、场景管理闭环，以及因子、指标、看板和分析页面的持续联调；`dist` 为本次前端构建产物。
 
 ## 技术栈
 
@@ -25,7 +22,7 @@ integrate/clinical-factor
 ## 本地运行
 
 ```powershell
-cd "F:\document\paperwork\项目\bilin\ruoyivue_goview\IDMP-Frontend\IDMP-Frontend"
+cd "F:\document\project\bilin\ruoyivue_goview\IDMP-Frontend\IDMP-Frontend"
 pnpm install
 pnpm dev
 ```
@@ -329,11 +326,11 @@ GET  /api/v1/meta/data-domains/{domainId}/semantic-fields
 
 已实现：
 
-- 数据域列表。
-- 创建数据域。
-- 查询数据域语义字段。
-- 来源映射同步。
-- 远程源表绑定数据域。
+- 数据域目录与数据域创建。
+- 数据域工作台：创建语义表、查看来源物理表、维护物理字段到语义字段的映射。
+- 默认时间语义字段配置。
+- 来源元数据管理：同步/刷新远程源表目录、按表名/类型/注释筛选、查看字段结构。
+- 当前联调环境可发现 131 个物理源对象（均为 `BASE TABLE`），共 2815 个字段；这些对象通过 `SOURCE_RAW` 或业务数据域下的语义表进入指标计算配置。
 
 后端接入：
 
@@ -341,6 +338,13 @@ GET  /api/v1/meta/data-domains/{domainId}/semantic-fields
 GET  /api/v1/meta/data-domains
 POST /api/v1/meta/data-domains
 GET  /api/v1/meta/data-domains/{domainId}/semantic-fields
+GET  /api/v1/meta/data-domains/{domainId}/semantic-tables
+POST /api/v1/meta/data-domains/{domainId}/semantic-tables
+GET  /api/v1/meta/data-domains/{domainId}/semantic-tables/{tableCode}/semantic-fields
+POST /api/v1/meta/data-domains/{domainId}/semantic-tables/{tableCode}/semantic-fields
+PATCH /api/v1/meta/data-domains/{domainId}/semantic-tables/{tableCode}/default-time-field
+GET  /api/v1/meta/source-tables
+GET  /api/v1/meta/source-tables/{tableName}/fields
 POST /api/v1/meta/source-mappings/sync
 POST /api/v1/meta/source-tables/{tableName}/bind-domain
 ```
@@ -567,6 +571,14 @@ POST /api/v1/analysis/dashboards/{code}/query
 9. 点击看板中的指标卡，跳转到 `指标分析`。
 10. 进入 `计算任务中心`，用试算产生的 taskId 或 batchId 查看任务状态。
 
+## 当前已知限制
+
+- 生产 API 依赖后端服务和远程只读数据源；未配置后端时页面会显示可诊断的加载/权限/不可用状态。
+- 数据源管理展示的是已同步的物理源对象目录，不等同于业务数据域；指标/因子配置应通过“数据域 → 语义表 → 语义字段”选择数据。
+- `SOURCE_RAW` 中的自动语义表主要用于原始结构接入；正式指标仍需补充业务语义、字段映射和默认时间字段。
+- 看板布局仍保存于浏览器本地；部分分析图表和非核心指标保留前端兜底数据。
+- 场景管理已接入核心接口，但指标映射、质量、采集转换、报表导出等模块仍未作为完整生产能力交付。
+
 ## 服务器部署
 
 构建并上传到远程服务器：
@@ -593,32 +605,18 @@ http://192.168.123.14/
 
 - 服务器 Nginx 当前静态目录为 `/home/ljh/IDMP_UI`。
 - 每次上传前建议清空旧文件，避免旧 hash 文件残留。
-- 当前 `dist` 已由 `integrate/clinical-factor` 分支构建生成。
-
-## 当前限制
-
-- 因子列表、因子详情和因子版本查询已接入；新建因子版本、删除接口暂未作为正式能力演示。
-- 指标详情、版本查询和发布已接入；指标修改、删除接口暂未作为正式能力演示。
-- 看板布局保存后端接口暂未提供，目前保存到浏览器本地。
-- 场景管理、指标映射、预警、下钻、报表导出等仍以 Demo 展示为主。
-- 部分图表数值仍使用前端兜底数据。
+- 当前 `dist` 已由 `L` 分支构建生成。
 
 ## 分支说明
 
-当前集成分支：
+当前分支：
 
 ```text
-integrate/clinical-factor
+L
 ```
 
-来源：
-
-- 基于 `origin/Clinical-frontend`。
-- 合入因子管理与新增因子后端流程。
-- 本地比远程 `origin/Clinical-frontend` 至少 ahead 1 个集成提交。
-
-如需推送到 GitHub：
+推送：
 
 ```powershell
-git push origin HEAD:refs/heads/integrate/clinical-factor
+git push origin l
 ```

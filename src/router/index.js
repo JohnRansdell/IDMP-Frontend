@@ -40,6 +40,12 @@ const routes = [
         }
       },
       {
+        path: 'indicator/recycle-bin',
+        name: 'IndicatorRecycleBin',
+        component: () => import('@/idmp/views/ResourceRecycleBin.vue'),
+        meta: { title: '指标回收站', activeMenu: '/indicator', resourceType: 'INDICATOR', breadcrumb: ['首页', '指标管理', '回收站'] }
+      },
+      {
         path: 'factor',
         name: 'FactorManagement',
         component: () => import('@/idmp/views/FactorManagement.vue'),
@@ -56,13 +62,26 @@ const routes = [
         }
       },
       {
+        path: 'factor/recycle-bin',
+        name: 'FactorRecycleBin',
+        component: () => import('@/idmp/views/ResourceRecycleBin.vue'),
+        meta: { title: '因子回收站', activeMenu: '/factor', resourceType: 'FACTOR', breadcrumb: ['首页', '因子管理', '回收站'] }
+      },
+      {
+        path: 'scenarios',
+        name: 'ScenarioList',
+        component: () => import('@/idmp/views/ScenarioList.vue'),
+        meta: { title: '场景管理', breadcrumb: ['首页', '场景管理'] }
+      },
+      {
+        path: 'scenarios/:scenarioId/edit',
+        name: 'ScenarioEditor',
+        component: () => import('@/idmp/views/ScenarioEditor.vue'),
+        meta: { title: '场景编辑', activeMenu: '/scenarios', breadcrumb: ['首页', '场景管理', '场景编辑'] }
+      },
+      {
         path: 'scene',
-        name: 'SceneManagement',
-        component: () => import('@/idmp/views/SceneManagement.vue'),
-        meta: {
-          title: '场景管理',
-          breadcrumb: ['首页', '场景管理', '绩效考核']
-        }
+        redirect: '/scenarios'
       },
       {
         path: 'mapping',
@@ -80,6 +99,16 @@ const routes = [
         }
       },
       {
+        path: 'analysis/drill',
+        name: 'ResultDrill',
+        component: () => import('@/idmp/views/ResultDrill.vue'),
+        meta: {
+          title: '结果下钻',
+          activeMenu: '/analysis',
+          breadcrumb: ['首页', '指标分析', '结果下钻']
+        }
+      },
+      {
         path: 'alerts',
         name: 'AlertCenter',
         component: () => import('@/idmp/views/AlertCenter.vue'),
@@ -93,9 +122,61 @@ const routes = [
       },
       {
         path: 'data',
-        name: 'DataAssetManagement',
-        component: () => import('@/idmp/views/DataAssetManagement.vue'),
-        meta: { title: '数据管理', breadcrumb: ['首页', '数据管理'] }
+        redirect: '/data/sources'
+      },
+      {
+        path: 'data/sources',
+        name: 'DataSourceManagement',
+        component: () => import('@/idmp/views/SourceMetadataManagement.vue'),
+        meta: {
+          title: '数据源管理',
+          activeMenu: '/data/sources',
+          breadcrumb: ['首页', '数据治理', '数据源管理']
+        }
+      },
+      {
+        path: 'data/domains',
+        name: 'DataDomainManagement',
+        component: () => import('@/idmp/views/DataDomainManagement.vue'),
+        meta: {
+           title: '数据域管理',
+          activeMenu: '/data/domains',
+           breadcrumb: ['首页', '数据治理', '数据域管理']
+        }
+      },
+      {
+        path: 'data/domains/:id',
+        name: 'DataDomainWorkspace',
+        component: () => import('@/idmp/views/DataDomainWorkspace.vue'),
+        meta: {
+           title: '数据域工作台',
+          activeMenu: '/data/domains',
+           breadcrumb: ['首页', '数据治理', '数据域管理', '数据域工作台']
+        }
+      },
+      {
+        path: 'data/value-sets',
+        name: 'ValueSetManagement',
+        component: () => import('@/idmp/views/ValueSetManagement.vue'),
+        meta: { title: '值集管理', activeMenu: '/data/value-sets', breadcrumb: ['首页', '数据治理', '值集管理'] }
+      },
+      {
+        path: 'data/value-sets/:valueSetId',
+        name: 'ValueSetDetail',
+        component: () => import('@/idmp/views/ValueSetDetail.vue'),
+        meta: { title: '值集详情', activeMenu: '/data/value-sets', breadcrumb: ['首页', '数据治理', '值集管理', '值集详情'] }
+      },
+      {
+        path: 'data/value-set-versions/:versionId/edit',
+        name: 'ValueSetVersionEditor',
+        component: () => import('@/idmp/views/ValueSetVersionEditor.vue'),
+        meta: { title: '值集版本编辑', activeMenu: '/data/value-sets', breadcrumb: ['首页', '数据治理', '值集管理', '版本编辑'] }
+      },
+      {
+        path: 'data/standardization/:mappingId',
+        name: 'SourceStandardization',
+        component: () => import('@/idmp/views/SourceStandardization.vue'),
+        meta: { title: '源值标准化', activeMenu: '/data/domains', breadcrumb: ['首页', '数据治理', '源值标准化'] }
       },
       {
         path: 'system',
@@ -107,6 +188,19 @@ const routes = [
   },
   { path: '/:pathMatch(.*)*', redirect: '/dashboard' }
 ]
+
+const idmpPermissionMetadata = {
+  ScenarioList: { view: 'scenario:view', actions: { create: 'scenario:create', edit: 'scenario:edit', publish: 'scenario:publish' } },
+  ScenarioEditor: { view: 'scenario:view', actions: { edit: 'scenario:edit', publish: 'scenario:publish' } },
+  // 后端权限码保持既有契约；页面术语改为面向用户的“数据源管理”。
+  DataSourceManagement: { view: 'idmp:source-metadata:read', actions: { sync: 'idmp:source-metadata:sync' } },
+  DataDomainManagement: { view: 'idmp:data-domains:read', actions: { create: 'idmp:data-domains:create' } },
+  DataDomainWorkspace: { view: 'idmp:data-domains:read', actions: { createSemanticTable: 'idmp:semantic-tables:create', editSemanticField: 'idmp:semantic-fields:edit' }, compatibility: 'backend-permission-set-optional' }
+}
+routes[0].children.forEach((route) => {
+  if (idmpPermissionMetadata[route.name]) route.meta = { ...route.meta, permissions: idmpPermissionMetadata[route.name] }
+})
+routes.splice(1, 0, { path: '/login', name: 'Login', component: () => import('@/idmp/views/Login.vue'), meta: { title: '登录' } })
 
 const router = createRouter({
   history: createWebHistory(),

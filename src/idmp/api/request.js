@@ -19,26 +19,48 @@ export function clearAccessToken() {
 
 export async function requestJson(path, options = {}) {
   const token = getAccessToken()
-  const { headers: optionHeaders, ...fetchOptions } = options
+  const { headers: optionHeaders, timeoutMs = 30000, signal: externalSignal, ...fetchOptions } = options
   const headers = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...optionHeaders
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...fetchOptions,
-    headers
-  })
+  const controller = typeof AbortController === 'undefined' ? null : new AbortController()
+  const timeoutId = controller && timeoutMs > 0 ? globalThis.setTimeout(() => controller.abort(), timeoutMs) : null
+  if (controller && externalSignal) {
+    if (externalSignal.aborted) controller.abort()
+    else externalSignal.addEventListener('abort', () => controller.abort(), { once: true })
+  }
+
+  let response
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...fetchOptions,
+      headers,
+      ...(controller ? { signal: controller.signal } : {})
+    })
+  } catch (error) {
+    if (error?.name === 'AbortError' && timeoutId) {
+      const timeoutError = new Error(`请求超时（${timeoutMs}ms）`)
+      timeoutError.status = 408
+      timeoutError.code = 'REQUEST_TIMEOUT'
+      timeoutError.path = path
+      throw timeoutError
+    }
+    throw error
+  } finally {
+    if (timeoutId) globalThis.clearTimeout(timeoutId)
+  }
 
   const responseText = await response.text().catch(() => '')
   const payload = parseJsonPreservingLargeIntegers(responseText)
   if (!response.ok) {
-    const message = payload?.message || `HTTP ${response.status}`
-    const error = new Error(payload?.traceId ? `${message} (traceId: ${payload.traceId})` : message)
-    error.status = response.status
-    error.path = path
-    error.payload = payload
+    const error = createApiError(response.status, payload, path)
+    if (response.status === 401) {
+      clearAccessToken()
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('idmp:unauthorized', { detail: { path } }))
+    }
     throw error
   }
 
@@ -47,10 +69,22 @@ export async function requestJson(path, options = {}) {
   }
 
   if (payload && payload.code !== undefined && payload.code !== '0' && payload.code !== 'OK') {
-    throw new Error(payload.message || payload.code)
+    throw createApiError(Number(payload.status || 422), payload, path)
   }
 
   return payload?.data ?? payload
+}
+
+export function createApiError(status, payload = {}, path = '') {
+  const message = payload?.message || payload?.error || `HTTP ${status}`
+  const traceId = payload?.traceId || payload?.traceID || payload?.requestId || ''
+  const error = new Error(traceId ? `${message} (traceId: ${traceId})` : message)
+  error.status = Number(status) || 0
+  error.code = payload?.code
+  error.traceId = traceId
+  error.path = path
+  error.payload = payload
+  return error
 }
 
 function parseJsonPreservingLargeIntegers(text) {

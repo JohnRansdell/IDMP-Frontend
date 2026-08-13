@@ -30,7 +30,7 @@
             >
               <div class="indicator-option">
                 <span>{{ item.name }}</span>
-                <small>{{ item.backendCode || item.code }} · {{ item.disabled ? '暂未配置分析页' : item.source }}</small>
+                <small>{{ item.backendCode || item.code }} · {{ item.source }}</small>
               </div>
             </el-option>
           </el-select>
@@ -229,19 +229,20 @@
           </div>
         </el-tab-pane>
 
-        <el-tab-pane label="下钻明细" name="drill">
-          <div class="table-heading">
-            <div>
-              <h2>{{ currentProfile.name }}下钻明细</h2>
-              <p>当前 profile 内含脱敏演示样例，但患者级权限、数据范围、访问目的、审计和服务端分页均未接入。</p>
-            </div>
-            <StatusBadge status="DISABLED" label="患者级访问未授权" tone="neutral" />
-          </div>
-          <StatePanel
-            type="permission"
-            title="患者级下钻尚未开放"
-            :description="drillPermissionDescription"
+        <el-tab-pane label="下钻分析" name="drill">
+          <DrillExplorer
+            v-if="drillResultId"
+            :result-id="drillResultId"
+            :path-result-ids="drillPathResultIds"
+            :indicator-name="currentProfile.name"
+            :period="drillPeriod"
+            :start-level="drillStartLevel"
+            :start-parent-keys="drillParentKeys"
+            embedded
           />
+          <div v-else class="analysis-empty-state">
+            当前指标尚无可下钻的已激活结果；待结果批次生成后将自动显示组织、疾病和因子下钻路径。
+          </div>
         </el-tab-pane>
       </el-tabs>
     </section>
@@ -255,10 +256,11 @@ import { ElMessage } from 'element-plus'
 import { Connection, Download } from '@element-plus/icons-vue'
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
-import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
+import DrillExplorer from '@/idmp/features/analysis/DrillExplorer.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
 import { fetchIndicatorAnalysis, fetchIndicators } from '@/idmp/api/modules/indicators'
+import { deriveDrillPathResultIds } from '@/idmp/api/adapters/drill'
 import { fetchMortalityReadonlyChain, mortalityChainConfig } from '@/idmp/api/modules/mortality'
 import { costChainConfig, COST_INDICATOR_IDS, fetchCostAnalysis } from '@/idmp/api/modules/costChain'
 import {
@@ -282,6 +284,8 @@ const backendIndicators = ref([])
 const indicatorOptionsLoading = ref(false)
 const sceneComparisonRef = ref()
 const selectedDrillDepartment = ref('')
+const drillStartLevel = ref('HOSPITAL')
+const drillParentKeys = ref({})
 
 const indicatorCode = computed(() => String(route.query.indicator || DEFAULT_ANALYSIS_INDICATOR))
 const localAnalysisOptions = computed(() => getAnalysisProfileOptions())
@@ -290,21 +294,38 @@ const analysisIndicatorOptions = computed(() =>
     ? createBackendAnalysisOptions(backendIndicators.value, localAnalysisOptions.value)
     : localAnalysisOptions.value.map((item) => ({ ...item, source: '本地配置' }))
 )
+const selectedBackendIndicator = computed(() => backendIndicators.value.find((item) => {
+  const key = getBackendIndicatorKey(item)
+  return [key, item.id, item.indicatorId, item.code].some((value) => String(value || '') === indicatorCode.value)
+}))
 const currentProfile = computed(() => {
   profileRefreshVersion.value
-  return getAnalysisProfile(indicatorCode.value)
+  const backendIndicator = selectedBackendIndicator.value
+  if (!backendIndicator) return getAnalysisProfile(indicatorCode.value)
+
+  const profile = matchAnalysisProfile(backendIndicator, localAnalysisOptions.value)
+  if (profile) {
+    return {
+      ...getAnalysisProfile(profile.code),
+      code: indicatorCode.value,
+      name: backendIndicator.name || profile.name,
+      unit: backendIndicator.unit || backendIndicator.displayUnit || profile.unit
+    }
+  }
+  return createGenericAnalysisProfile(backendIndicator)
 })
 const backendAnalysisGranularity = computed(() => {
   if (period.value === '月度') return 'MONTHLY'
   if (period.value === '年度') return 'YEARLY'
-  return null
+  if (period.value === '季度') return 'QUARTERLY'
+  return 'MONTHLY'
 })
 const hasBackendAnalysisData = computed(() => Boolean(backendAnalysis.value?.dataAvailable && backendAnalysis.value?.overview))
 const hasBackendRankData = computed(() =>
   Array.isArray(backendAnalysis.value?.dimensionComparison) && backendAnalysis.value.dimensionComparison.length > 0
 )
 const backendTrend = computed(() => createTrendFromBackendAnalysis(backendAnalysis.value, currentProfile.value.unit))
-const currentTrend = computed(() => backendTrend.value || currentProfile.value.trends[period.value] || currentProfile.value.trends.月度)
+const currentTrend = computed(() => backendTrend.value || currentProfile.value.trends?.[period.value] || emptyTrend())
 const primaryMetric = computed(() => {
   const overview = backendAnalysis.value?.overview
   const dashboardValue = resolveDashboardCurrentMetricValue()
@@ -322,7 +343,7 @@ const primaryMetric = computed(() => {
       tone: overview.qualityStatus === 'PASSED' ? 'success' : 'warning'
     }
   }
-  return currentProfile.value.summary?.[0] || { label: '当前值', value: '-' }
+  return currentProfile.value.summary?.[0] || { label: '当前指标值', value: '-', tone: 'neutral' }
 })
 const factorMetrics = computed(() => currentProfile.value.summary?.slice(4, 6) || [])
 const secondaryMetrics = computed(() => {
@@ -349,6 +370,7 @@ const rankTableData = computed(() => {
   if (Array.isArray(comparisons) && comparisons.length > 0) {
     return comparisons.map((item, index) => ({
       rank: index + 1,
+      departmentKey: item.dimensions?.out_dept_code || item.dimensions?.out_dept_id || `DEPT_${index + 1}`,
       department: item.dimensions?.out_dept_name || item.dimensions?.out_dept_code || `科室${index + 1}`,
       rate: item.displayValue || (item.value != null ? String(item.value) : '-'),
       numerator: '-',
@@ -357,7 +379,10 @@ const rankTableData = computed(() => {
       status: item.qualityStatus === 'PASSED' ? '达标' : '预警'
     }))
   }
-  return currentProfile.value.rankRows
+  return (currentProfile.value.rankRows || []).map((row, index) => ({
+    ...row,
+    departmentKey: row.departmentKey || `DEPT_${index + 1}`
+  }))
 })
 
 const showMortalityChainPanel = computed(() => indicatorCode.value === 'MORTALITY_INPATIENT')
@@ -376,7 +401,9 @@ const analysisMetadata = computed(() => {
   const context = backendAnalysis.value?.resultContext || {}
   return {
     version: hasBackendAnalysisData.value
-      ? String(backendAnalysis.value.indicatorVersionId || '后端未返回')
+      ? String(backendAnalysis.value.indicatorVersionId || currentIndicatorVersionId.value || '后端未返回')
+      : selectedBackendIndicator.value
+        ? String(currentIndicatorVersionId.value || '未激活结果')
       : hasBackendMortalityData.value ? String(config.indicatorVersionId || '后端未返回') : '演示配置（无版本 ID）',
     batch: hasBackendAnalysisData.value
       ? String(context.batchId || '后端未返回')
@@ -403,10 +430,20 @@ const mortalityChainBatchStatus = computed(() =>
   mortalityChain.value?.calcBatch?.batchStatus ||
   (hasBackendMortalityData.value ? 'READY' : 'DRAFT')
 )
-const drillPermissionDescription = computed(() => {
-  const scope = selectedDrillDepartment.value ? `已选择“${selectedDrillDepartment.value}”，但` : ''
-  return `${scope}后端尚未完成患者级权限、数据范围、访问目的、脱敏审计与服务端分页契约；因此不展示本地样例为真实明细。`
-})
+const drillPathResultIds = computed(() => deriveDrillPathResultIds(backendAnalysis.value || {}))
+const drillResultId = computed(() => String(
+  drillPathResultIds.value.ORGANIZATION || drillPathResultIds.value.DISEASE ||
+  backendAnalysis.value?.overview?.resultId || backendAnalysis.value?.resultContext?.resultId || ''
+))
+const drillPeriod = computed(() => String(
+  route.query.period || backendAnalysis.value?.resultContext?.period ||
+  (period.value === '年度' ? '2026' : period.value === '季度' ? '2026-Q2' : '2026-06')
+))
+const currentIndicatorVersionId = computed(() => String(
+  route.query.indicatorVersionId || selectedBackendIndicator.value?.indicatorVersionId ||
+  selectedBackendIndicator.value?.currentPublishedVersionId || selectedBackendIndicator.value?.publishedVersionId ||
+  selectedBackendIndicator.value?.currentVersionId || ''
+))
 
 const trendOption = computed(() => ({
   animationDuration: 450,
@@ -571,6 +608,9 @@ const showSceneValue = (scene) => {
 const openDepartmentDrill = (row) => {
   selectedDrillDepartment.value = row.department
   activeTab.value = 'drill'
+  // 分析接口只保证返回维度结果，不一定携带上级组织键；从医院层开始由后端返回的路径快照驱动下钻。
+  drillStartLevel.value = 'HOSPITAL'
+  drillParentKeys.value = {}
 }
 
 function formatCount(value) {
@@ -688,6 +728,7 @@ async function loadBackendAnalysisIndicators() {
   try {
     const rows = await fetchIndicators()
     backendIndicators.value = normalizeList(rows)
+    if (selectedBackendIndicator.value) await refreshMortalityAnalysis()
   } catch {
     backendIndicators.value = []
     ElMessage.warning('后端指标列表暂不可用，已使用本地分析配置')
@@ -700,20 +741,47 @@ function createBackendAnalysisOptions(indicators, profileOptions) {
   const fallbackOptions = profileOptions.map((item) => ({ ...item, source: '本地配置' }))
   const mappedOptions = indicators.map((item) => {
     const profile = matchAnalysisProfile(item, profileOptions)
+    const key = getBackendIndicatorKey(item)
     return {
-      optionKey: `${item.id || item.indicatorId || item.code || item.name}`,
-      code: profile?.code || `UNSUPPORTED:${item.code || item.id || item.name}`,
+      optionKey: key,
+      code: key,
       name: item.name || profile?.name || item.code || '未命名指标',
       backendCode: item.code,
       source: '后端指标',
-      disabled: !profile
+      backendId: item.id || item.indicatorId || key,
+      disabled: false
     }
   })
-  const enabledCodes = new Set(mappedOptions.filter((item) => !item.disabled).map((item) => item.code))
+  const enabledCodes = new Set(mappedOptions.flatMap((item) => [item.code, item.backendCode].filter(Boolean)))
   const missingLocalOptions = fallbackOptions
     .filter((item) => !enabledCodes.has(item.code))
     .map((item) => ({ ...item, source: '本地配置' }))
   return [...mappedOptions, ...missingLocalOptions]
+}
+
+function getBackendIndicatorKey(indicator) {
+  return String(indicator?.id || indicator?.indicatorId || indicator?.code || indicator?.name || '')
+}
+
+function emptyTrend() {
+  return { labels: [], actual: [], peer: [] }
+}
+
+function createGenericAnalysisProfile(indicator) {
+  const name = indicator?.name || indicator?.code || '未命名指标'
+  const unit = indicator?.unit || indicator?.displayUnit || ''
+  return {
+    code: getBackendIndicatorKey(indicator),
+    name,
+    unit,
+    targetLabel: '目标值未配置',
+    markLineValue: null,
+    yAxisMax: null,
+    summary: [{ label: '当前指标值', value: '-', tone: 'neutral' }],
+    sceneComparisons: [],
+    trends: { 月度: emptyTrend(), 季度: emptyTrend(), 年度: emptyTrend() },
+    rankRows: []
+  }
 }
 
 function normalizeList(payload) {
@@ -746,8 +814,11 @@ function normalizeText(value) {
 async function refreshMortalityAnalysis() {
   mortalityChainLoading.value = true
   backendAnalysis.value = null
+  mortalityChain.value = null
   try {
     const granularity = backendAnalysisGranularity.value
+    const backendIndicator = selectedBackendIndicator.value
+    const backendIndicatorId = String(backendIndicator?.id || backendIndicator?.indicatorId || indicatorCode.value)
     const isCostIndicator = COST_INDICATOR_IDS.some(id => String(id) === String(indicatorCode.value)) ||
       [costChainConfig.avgCostIndicatorCode, costChainConfig.antiCostIndicatorCode].includes(indicatorCode.value)
 
@@ -766,6 +837,13 @@ async function refreshMortalityAnalysis() {
     } else if (isCostIndicator) {
       analysisResult = await Promise.allSettled([
         granularity ? fetchCostAnalysis(indicatorCode.value, granularity) : Promise.resolve(null)
+      ])
+      chain = { status: 'rejected', reason: null }
+    } else if (backendIndicator) {
+      const params = { granularity }
+      if (currentIndicatorVersionId.value) params.indicatorVersionId = currentIndicatorVersionId.value
+      analysisResult = await Promise.allSettled([
+        fetchIndicatorAnalysis(backendIndicatorId, params)
       ])
       chain = { status: 'rejected', reason: null }
     } else {
@@ -800,6 +878,8 @@ async function refreshMortalityAnalysis() {
     if (COST_INDICATOR_IDS.some(id => String(id) === String(indicatorCode.value)) ||
       [costChainConfig.avgCostIndicatorCode, costChainConfig.antiCostIndicatorCode].includes(indicatorCode.value)) {
       ElMessage.warning('费用指标后端结果暂不可用，已使用演示数据')
+    } else if (selectedBackendIndicator.value) {
+      ElMessage.warning('该指标暂无可用分析结果，已保留真实指标页面与接口上下文')
     } else {
       ElMessage.warning('住院死亡率后端结果暂不可用，已使用演示数据')
     }
@@ -824,6 +904,18 @@ watch(period, () => {
 <style scoped lang="scss">
 .indicator-analysis {
   min-width: 0;
+}
+
+.analysis-empty-state {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  color: var(--idmp-text-secondary, #667085);
+  background: var(--idmp-surface-subtle, #f8fafc);
+  border: 1px dashed var(--idmp-border, #d0d5dd);
+  border-radius: 12px;
+  text-align: center;
 }
 
 .page-toolbar {
@@ -1184,6 +1276,7 @@ watch(period, () => {
   justify-content: space-between;
   gap: 18px;
   margin-bottom: 8px;
+  flex-wrap: wrap;
 
   h2 {
     margin: 0 0 3px;
@@ -1204,6 +1297,33 @@ watch(period, () => {
   display: flex;
   align-items: center;
   gap: 14px;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+}
+
+.period-control :deep(.el-radio-group) {
+  display: flex;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  overflow: visible;
+  white-space: nowrap;
+}
+
+.period-control :deep(.el-radio-button__inner) {
+  box-sizing: border-box;
+  padding-right: 10px;
+  padding-left: 10px;
+  white-space: nowrap;
+}
+
+.period-control :deep(.el-radio-button:first-child .el-radio-button__inner) {
+  border-left: 1px solid var(--idmp-border-strong, var(--el-border-color));
+}
+
+.period-control :deep(.el-radio-button:last-child .el-radio-button__inner) {
+  border-right: 1px solid var(--idmp-border-strong, var(--el-border-color));
 }
 
 .period-range,

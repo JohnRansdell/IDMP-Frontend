@@ -10,6 +10,7 @@
           <el-button type="primary" :icon="Plus" @click="openFactorEditor('new')">
             新增因子
           </el-button>
+          <el-button @click="router.push('/factor/recycle-bin')">回收站</el-button>
           <el-button :icon="Upload" @click="showUnavailable('批量导入')">批量导入</el-button>
         </div>
       </template>
@@ -136,14 +137,15 @@
               />
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="132" fixed="right">
+           <el-table-column label="操作" width="180" fixed="right">
             <template #default="{ row }">
               <button class="action-link" type="button" @click="openFactorEditor(row.id || row.code)">
                 查看
               </button>
-              <button class="action-link" type="button" @click="openFactorEditor(row.id || row.code)">
-                编辑
-              </button>
+               <button class="action-link" type="button" @click="openFactorEditor(row.id || row.code)">
+                 编辑
+               </button>
+               <button v-if="sourceMode === 'live' && row.id" class="action-link danger-link" type="button" @click="openDelete(row)">删除</button>
             </template>
           </el-table-column>
         </el-table>
@@ -161,6 +163,14 @@
         />
       </div>
     </section>
+    <ResourceDeleteDialog
+      :model-value="Boolean(deleteTarget)"
+      resource-label="因子"
+      :load-impact="() => fetchFactorDeletionImpact(deleteTarget.id)"
+      :perform-delete="payload => deleteFactor(deleteTarget.id, payload)"
+      @update:model-value="value => { if (!value) closeDelete() }"
+      @success="reloadAfterDelete"
+    />
   </div>
 </template>
 
@@ -170,8 +180,9 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
-import StatusBadge from '@/idmp/components/StatusBadge.vue'
-import { fetchFactors } from '@/idmp/api/modules/factors'
+  import StatusBadge from '@/idmp/components/StatusBadge.vue'
+ import ResourceDeleteDialog from '@/idmp/components/ResourceDeleteDialog.vue'
+ import { deleteFactor, fetchFactorDeletionImpact, fetchFactors } from '@/idmp/api/modules/factors'
 import { factorRows } from '@/idmp/data/demo'
 
 const router = useRouter()
@@ -191,6 +202,7 @@ const sourceMode = ref('demo')
 const tableLoading = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(8)
+const deleteTarget = ref(null)
 
 const sourceRows = computed(() => sourceMode.value === 'live' ? backendFactorRows.value : factorRows)
 const categoryOptions = computed(() => [...new Set(sourceRows.value.map((item) => item.category).filter(Boolean))])
@@ -242,13 +254,17 @@ const showUnavailable = (capability) => {
   ElMessage.info(`${capability}尚未接入真实接口，当前演示列表不会伪造操作结果。`)
 }
 
+const openDelete = row => { deleteTarget.value = row }
+const closeDelete = () => { deleteTarget.value = null }
+const reloadAfterDelete = async () => { closeDelete(); await loadBackendFactors() }
+
 async function loadBackendFactors() {
   tableLoading.value = true
   try {
     const payload = await fetchFactors({ page: 1, size: 100 })
     const rows = normalizeList(payload).map(toFactorRow)
     backendFactorRows.value = rows
-    sourceMode.value = rows.length ? 'live' : 'demo'
+    sourceMode.value = 'live'
   } catch (error) {
     backendFactorRows.value = []
     sourceMode.value = 'demo'

@@ -27,6 +27,7 @@ export function syncSourceMappings() {
 }
 
 export function bindSourceTableDomain(tableName, payload) {
+  // 兼容快捷接口：正式 M0 流程应使用 createSemanticTable 逐步配置。
   return requestJson(`/meta/source-tables/${encodeURIComponent(tableName)}/bind-domain`, {
     method: 'POST',
     body: JSON.stringify(payload)
@@ -63,6 +64,7 @@ export function fetchSemanticTableFields(domainId, tableCode) {
 }
 
 export function fetchSemanticFields(domainId) {
+  // 兼容扁平视图：多表数据域的正式字段选择必须使用表级接口。
   return requestJson(`/meta/data-domains/${domainId}/semantic-fields`)
 }
 

@@ -31,6 +31,39 @@ export function createIndicator(payload) {
   })
 }
 
+export function updateIndicator(indicatorId, payload) {
+  return requestJson(`/indicators/${indicatorId}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function fetchIndicatorDeletionImpact(indicatorId) {
+  return requestJson(`/indicators/${encodeURIComponent(indicatorId)}/deletion-impact`)
+}
+
+export function deleteIndicator(indicatorId, payload) {
+  return requestJson(`/indicators/${encodeURIComponent(indicatorId)}`, {
+    method: 'DELETE',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function fetchIndicatorRecycleBin(params = {}) {
+  return requestJson(withQuery('/indicators/recycle-bin', params))
+}
+
+export function fetchIndicatorRecycleDetail(indicatorId) {
+  return requestJson(`/indicators/recycle-bin/${encodeURIComponent(indicatorId)}`)
+}
+
+export function restoreIndicator(indicatorId, resourceVersion) {
+  return requestJson(`/indicators/recycle-bin/${encodeURIComponent(indicatorId)}/restore`, {
+    method: 'POST',
+    body: JSON.stringify({ resourceVersion })
+  })
+}
+
 export function createIndicatorVersion(indicatorId, payload = {}) {
   return requestJson(`/indicators/${indicatorId}/versions`, {
     method: 'POST',
@@ -60,9 +93,11 @@ export function trialIndicatorVersion(versionId, payload, idempotencyKey) {
   })
 }
 
-export function publishIndicatorVersion(versionId) {
+export function publishIndicatorVersion(versionId, idempotencyKey) {
   return requestJson(`/indicator-versions/${versionId}/publish`, {
     method: 'POST',
+    timeoutMs: 60000,
+    headers: idempotencyKey ? { 'X-Idempotency-Key': idempotencyKey } : undefined,
     body: JSON.stringify({})
   })
 }
