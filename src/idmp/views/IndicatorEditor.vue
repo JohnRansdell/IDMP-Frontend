@@ -56,19 +56,19 @@
               <el-form-item label="指标简称">
                 <el-input v-model="form.shortName" placeholder="用于图表标签的简短名称" />
               </el-form-item>
-              <el-form-item label="指标分类" prop="categoryMain">
-                <div class="category-row">
-                  <el-select v-model="form.categoryMain" aria-label="指标一级分类">
-                    <el-option label="医疗质量" value="医疗质量" />
-                    <el-option label="运营效率" value="运营效率" />
-                  </el-select>
-                  <el-icon><Right /></el-icon>
-                  <el-select v-model="form.categorySub" aria-label="指标二级分类">
-                    <el-option label="质量安全" value="质量安全" />
-                    <el-option label="功能定位" value="功能定位" />
-                    <el-option label="合理用药" value="合理用药" />
-                  </el-select>
-                </div>
+              <el-form-item label="指标分类" prop="categoryPath">
+                <el-cascader
+                  v-model="form.categoryPath"
+                  class="category-cascader"
+                  :options="indicatorCategoryOptions"
+                  :props="indicatorCategoryProps"
+                  clearable
+                  filterable
+                  placeholder="请选择指标分类"
+                  aria-label="指标分类"
+                  @change="syncCategorySelection"
+                  @clear="syncCategorySelection([])"
+                />
               </el-form-item>
               <el-form-item label="指标属性" prop="attribute">
                 <el-radio-group v-model="form.attribute">
@@ -627,7 +627,6 @@ import {
   Delete,
   InfoFilled,
   Plus,
-  Right,
   Search,
   Tickets,
   Upload
@@ -819,13 +818,70 @@ const publishGates = computed(() => [
 ])
 const sourceOptions = ['HIS', '手术麻醉', 'EMR', 'LIS', 'PACS', '病案', '药事', '财务']
 const policyOptions = ['绩效考核2024版', '2011年版指标', '医院评审2025版', 'NCIS 8.0']
+const defaultCategoryPath = ['医疗质量', '质量安全']
+const indicatorCategoryOptions = [
+  {
+    value: '医疗质量',
+    label: '医疗质量',
+    children: [
+      {
+        value: '质量安全',
+        label: '质量安全',
+        children: [
+          { value: '手术安全', label: '手术安全' },
+          { value: '围术期安全', label: '围术期安全' },
+          { value: '患者安全', label: '患者安全' }
+        ]
+      },
+      {
+        value: '功能定位',
+        label: '功能定位',
+        children: [
+          { value: '门诊服务', label: '门诊服务' },
+          { value: '住院服务', label: '住院服务' },
+          { value: '日间医疗', label: '日间医疗' }
+        ]
+      },
+      {
+        value: '合理用药',
+        label: '合理用药',
+        children: [
+          { value: '抗菌药物', label: '抗菌药物' },
+          { value: '药品结构', label: '药品结构' }
+        ]
+      }
+    ]
+  },
+  {
+    value: '运营效率',
+    label: '运营效率',
+    children: [
+      { value: '服务流程', label: '服务流程' },
+      { value: '收支结构', label: '收支结构' },
+      { value: '经济管理', label: '经济管理' }
+    ]
+  },
+  {
+    value: '专项指标',
+    label: '专项指标',
+    children: [
+      { value: '住院死亡类', label: '住院死亡类' },
+      { value: '评审指标', label: '评审指标' }
+    ]
+  }
+]
+const indicatorCategoryProps = {
+  checkStrictly: true,
+  emitPath: true
+}
 
 const form = reactive({
   code: isNew.value ? 'INPATIENT_MORTALITY_RATE' : routeIndicatorKey.value,
   name: isNew.value ? '住院死亡率' : '',
   shortName: isNew.value ? '住院死亡率' : '',
-  categoryMain: '医疗质量',
-  categorySub: '质量安全',
+  categoryPath: [...defaultCategoryPath],
+  categoryMain: defaultCategoryPath[0],
+  categorySub: defaultCategoryPath[1],
   attribute: '定量',
   unit: '百分比（%）',
   direction: '逐步降低 ↓',
@@ -855,7 +911,7 @@ const required = message => ({ required: true, message, trigger: ['blur', 'chang
 const rules = {
   code: [required('请输入指标编码')],
   name: [required('请输入指标名称')],
-  categoryMain: [required('请选择指标分类')],
+  categoryPath: [required('请选择指标分类')],
   attribute: [required('请选择指标属性')],
   unit: [required('请选择计量单位')],
   direction: [required('请选择指标导向')],
@@ -863,6 +919,74 @@ const rules = {
   sources: [required('请选择至少一个数据来源')],
   period: [required('请选择统计周期')],
   policies: [required('请选择至少一个政策文件来源')]
+}
+
+function findCategoryPath(target, options, trail = []) {
+  const needle = String(target || '').trim()
+  if (!needle) return []
+
+  for (const option of options) {
+    const nextTrail = [...trail, option.value]
+    if (option.value === needle || option.label === needle) return nextTrail
+    if (Array.isArray(option.children) && option.children.length) {
+      const matched = findCategoryPath(needle, option.children, nextTrail)
+      if (matched.length) return matched
+    }
+  }
+
+  return []
+}
+
+function normalizeCategoryPath(source) {
+  if (Array.isArray(source)) {
+    return source.map(segment => String(segment || '').trim()).filter(Boolean)
+  }
+
+  if (!source || typeof source !== 'object') return []
+
+  const explicitPath = Array.isArray(source.categoryPath) ? source.categoryPath : []
+  if (explicitPath.length) {
+    return explicitPath.map(segment => String(segment || '').trim()).filter(Boolean)
+  }
+
+  const categoryText = String(source.category || '').trim()
+  if (categoryText.includes('/')) {
+    const parsedPath = categoryText.split('/').map(segment => segment.trim()).filter(Boolean)
+    if (parsedPath.length) return parsedPath
+  }
+
+  const categoryMain = String(source.categoryMain || categoryText).trim()
+  const categorySub = String(source.categorySub || '').trim()
+  if (!categoryMain && !categorySub) return []
+
+  if (categorySub) {
+    const subPath = findCategoryPath(categorySub, indicatorCategoryOptions)
+    if (subPath.length && (!categoryMain || subPath[0] === categoryMain || subPath.includes(categoryMain))) {
+      return subPath
+    }
+  }
+
+  if (!categoryMain) return [categorySub]
+
+  const matchedPath = findCategoryPath(categoryMain, indicatorCategoryOptions)
+  const path = matchedPath.length ? matchedPath : [categoryMain]
+  if (categorySub && path[path.length - 1] !== categorySub) {
+    path.push(categorySub)
+  }
+  return path
+}
+
+function resolveCategoryPath(source, fallback = defaultCategoryPath) {
+  const path = normalizeCategoryPath(source)
+  return path.length ? path : [...fallback]
+}
+
+function syncCategorySelection(path = form.categoryPath) {
+  const normalized = normalizeCategoryPath(path)
+  form.categoryPath = normalized
+  form.categoryMain = normalized[0] || ''
+  form.categorySub = normalized[1] || ''
+  return normalized
 }
 
 const formulaModes = [
@@ -1046,8 +1170,7 @@ function hydrateIndicatorSummary(item) {
   form.code = item.code || routeIndicatorKey.value
   form.name = item.name || ''
   form.shortName = item.shortName || item.name || ''
-  form.categoryMain = item.category || form.categoryMain || '医疗质量'
-  form.categorySub = item.categorySub || form.categorySub || '质量安全'
+  syncCategorySelection(resolveCategoryPath(item))
   form.attribute = item.attribute || form.attribute || '定量'
   form.unit = item.unit || form.unit || '百分比（%）'
   form.direction = item.direction || form.direction || '监测比较'
@@ -1228,7 +1351,7 @@ async function saveIndicatorBasicInfo() {
       if (!indicatorWorkflow.indicatorId) throw new Error('未读取到指标 ID，无法保存基本信息')
       const updated = await updateIndicator(indicatorWorkflow.indicatorId, createIndicatorMetadataPayload())
       form.name = updated?.name ?? form.name
-      form.categoryMain = updated?.category ?? form.categoryMain
+      syncCategorySelection(resolveCategoryPath(updated, form.categoryPath))
       form.definition = updated?.definition ?? updated?.description ?? form.definition
       form.significance = updated?.meaning ?? form.significance
       form.sources = updated?.dataSources ?? form.sources
@@ -1241,10 +1364,14 @@ async function saveIndicatorBasicInfo() {
 
     const suffix = createBackendCodeSuffix()
     const indicatorCode = normalizeBusinessCode(form.code) || `FRONTEND_INDICATOR_${suffix}`
+    const categoryPath = syncCategorySelection(form.categoryPath)
     const indicator = await createIndicator({
       code: `${indicatorCode}_${suffix}`,
       name: form.name || `前端指标 ${suffix}`,
-      description: form.definition || '前端指标配置流程创建'
+      description: form.definition || '前端指标配置流程创建',
+      category: categoryPath[categoryPath.length - 1] || '',
+      categoryMain: categoryPath[0] || '',
+      categorySub: categoryPath[1] || ''
     })
     const indicatorId = resolveIndicatorId(indicator)
     if (!indicatorId) {
@@ -1615,9 +1742,12 @@ function createIndicatorFormulaPayload(resourceVersion) {
 }
 
 function createIndicatorMetadataPayload() {
+  const categoryPath = syncCategorySelection(form.categoryPath)
   return {
     name: form.name,
-    category: form.categoryMain,
+    category: categoryPath[categoryPath.length - 1] || '',
+    categoryMain: categoryPath[0] || '',
+    categorySub: categoryPath[1] || '',
     description: form.definition || null,
     metadataVersionId: indicatorWorkflow.metadataVersionId || indicatorWorkflow.versionId || null,
     metadataResourceVersion: indicatorWorkflow.metadataResourceVersion,
@@ -2183,16 +2313,8 @@ onMounted(async () => {
   font-size: 11px;
 }
 
-.category-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr);
-  align-items: center;
+.category-cascader {
   width: 100%;
-  gap: 6px;
-
-  .el-icon {
-    color: var(--idmp-text-disabled);
-  }
 }
 
 .form-card :deep(.el-select) {

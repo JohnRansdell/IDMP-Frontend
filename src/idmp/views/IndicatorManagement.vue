@@ -183,7 +183,7 @@
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
           layout="prev, pager, next, sizes"
-          :page-sizes="[6, 8, 12]"
+          :page-sizes="[6, 9, 12]"
           :total="filteredRows.length"
         />
       </div>
@@ -222,7 +222,7 @@
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
           layout="prev, pager, next, sizes"
-          :page-sizes="[6, 8, 12]"
+          :page-sizes="[6, 9, 12]"
           :total="filteredRows.length"
         />
       </div>
@@ -252,7 +252,7 @@ import { indicatorRows } from '@/idmp/data/demo'
 const router = useRouter()
 const viewMode = ref('table')
 const currentPage = ref(1)
-const pageSize = ref(8)
+const pageSize = ref(9)
 const selectedRows = ref([])
 const tableLoading = ref(false)
 const backendIndicatorRows = ref([])
