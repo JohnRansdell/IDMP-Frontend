@@ -18,6 +18,7 @@
     <section class="surface-card drill-surface">
       <DrillExplorer
         :result-id="resultId"
+        :snapshot-id="snapshotId"
         :indicator-name="indicatorName"
         :period="period"
         :start-level="currentLevel"
@@ -37,20 +38,17 @@ import DrillExplorer from '@/idmp/features/analysis/DrillExplorer.vue'
 const route = useRoute()
 const router = useRouter()
 const currentLevel = ref(String(route.query.currentLevel || 'HOSPITAL'))
-const parentKeys = ref({
-  departmentKey: String(route.query.departmentKey || ''),
-  departmentLabel: String(route.query.departmentLabel || ''),
-  medicalGroupKey: String(route.query.medicalGroupKey || ''),
-  medicalGroupLabel: String(route.query.medicalGroupLabel || ''),
-  doctorKey: String(route.query.doctorKey || ''),
-  doctorLabel: String(route.query.doctorLabel || '')
-})
+const parentKeys = ref(Object.fromEntries(
+  Object.entries(route.query)
+    .filter(([key, value]) => key.endsWith('_CODE') && value)
+    .map(([key, value]) => [key, String(Array.isArray(value) ? value[0] : value)])
+))
 
-const resultId = computed(() => String(route.query.resultId || 'MOCK-RESULT-001'))
-const snapshotId = computed(() => String(route.query.snapshotId || 'MOCK-SNAPSHOT-20260811'))
+const resultId = computed(() => String(route.query.resultId || ''))
+const snapshotId = computed(() => String(route.query.snapshotId || ''))
 const indicatorName = computed(() => String(route.query.indicatorName || '手术患者并发症发生率'))
 const period = computed(() => String(route.query.period || '2026-06'))
-const dataSourceLabel = '演示数据 · 组织维度'
+const dataSourceLabel = '真实接口 · 动态下钻'
 
 function handleLevelChange(context) {
   currentLevel.value = context.currentLevel

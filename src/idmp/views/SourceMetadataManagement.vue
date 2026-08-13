@@ -23,7 +23,7 @@
 
     <section class="surface-card workflow-card">
       <div class="section-title">
-        <div><h2>接入流程</h2><p class="section-title__description">先确认来源结构，再进入数据模型工作台完成语义映射</p></div>
+        <div><h2>接入流程</h2><p class="section-title__description">先确认来源结构，再进入数据域工作台完成语义映射</p></div>
       </div>
       <div class="workflow-steps">
         <div class="workflow-step is-current"><b>1</b><div><strong>同步来源结构</strong><span>读取表、视图和字段</span></div></div>

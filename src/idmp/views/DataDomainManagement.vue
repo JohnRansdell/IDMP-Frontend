@@ -1,6 +1,6 @@
 <template>
   <div class="idmp-page data-domain-page">
-    <PageHeader title="数据模型管理">
+    <PageHeader title="数据域管理">
       <template #meta>
         <span class="data-source-badge is-live">真实接口</span>
         <span class="header-meta">把医院物理表转换为指标可复用的业务语义</span>
@@ -12,7 +12,7 @@
     </PageHeader>
 
     <section class="model-summary-grid">
-      <article class="surface-card model-summary-card"><span>全部模型</span><strong>{{ domains.length }}</strong><small>按业务主题组织</small></article>
+      <article class="surface-card model-summary-card"><span>全部数据域</span><strong>{{ domains.length }}</strong><small>按业务主题组织</small></article>
       <article class="surface-card model-summary-card"><span>已发布</span><strong>{{ publishedCount }}</strong><small>可被下游配置引用</small></article>
       <article class="surface-card model-summary-card"><span>待完善</span><strong>{{ draftCount }}</strong><small>草稿或尚未发布</small></article>
     </section>

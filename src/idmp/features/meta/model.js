@@ -69,7 +69,10 @@ export function normalizeSemanticField(item = {}) {
     filterable: item.filterable,
     options: item.options || item.values || item.enumValues || [],
     sensitive: normalizeBoolean(item.sensitive),
-    sourceFieldName: item.sourceFieldName || item.sourceColumn || item.columnName || ''
+    sourceFieldName: item.sourceFieldName || item.sourceColumn || item.columnName || '',
+    sourceFieldMappingId: toOpaqueId(item.sourceFieldMappingId ?? item.mappingId),
+    valueSetId: toOpaqueId(item.valueSetId),
+    resourceVersion: item.resourceVersion ?? null
   }
 }
 

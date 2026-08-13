@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { adaptDrillResult } from '../src/idmp/api/adapters/drill.js'
+import { adaptDrillResult, deriveDrillPathResultIds } from '../src/idmp/api/adapters/drill.js'
 import { createMockDrillResult } from '../src/idmp/features/analysis/drillData.js'
 
 test('drill adapter normalizes opaque ids and paged response fields', () => {
@@ -22,6 +22,25 @@ test('drill adapter normalizes opaque ids and paged response fields', () => {
   assert.equal(result.columns[0].field, 'dimensionLabel')
   assert.equal(result.pageInfo.pageNum, 2)
   assert.deepEqual(result.nextLevels, ['MEDICAL_GROUP'])
+})
+
+test('drill adapter uses backend column titles and derives separate multi-path anchors', () => {
+  const result = adaptDrillResult({ data: { columns: [{ field: 'dimensionName', title: '医院' }] } })
+  assert.equal(result.columns[0].label, '医院')
+
+  const pathResultIds = deriveDrillPathResultIds({
+    overview: { resultId: 'case-result', dimensions: { visit_id: 'V001', single_disease_code: null } },
+    dimensionComparison: [
+      { resultId: 'hospital-result', dimensions: { hospital_code: 'H001' } },
+      { resultId: 'organization-result', dimensions: { hospital_code: 'H001', out_dept_code: 'D001', attending_doctor_code: null } },
+      { resultId: 'disease-result', dimensions: { hospital_code: 'H001', single_disease_code: 'SD001' } }
+    ]
+  })
+
+  assert.deepEqual(pathResultIds, {
+    ORGANIZATION: 'organization-result',
+    DISEASE: 'case-result'
+  })
 })
 
 test('mock drill follows organization levels and stops before patient access', () => {

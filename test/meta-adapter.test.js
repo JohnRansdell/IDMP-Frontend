@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { adaptDataDomainList, adaptSemanticFieldList, adaptSemanticTableList } from '../src/idmp/api/adapters/meta.js'
+import { adaptDataDomainList, adaptSemanticFieldList, adaptSemanticTableList, adaptSourceFieldList } from '../src/idmp/api/adapters/meta.js'
 import { validateSemanticFieldCode, SEMANTIC_DATA_TYPES } from '../src/idmp/utils/validation.js'
 
 test('API adapters preserve BIGINT ids as opaque strings', () => {
@@ -17,4 +17,11 @@ test('semantic field adapter exposes stable fields and validates code/type', () 
   assert.equal(validateSemanticFieldCode('death-time'), false)
   assert.equal(validateSemanticFieldCode('DEATH_DATETIME'), true)
   assert.ok(SEMANTIC_DATA_TYPES.includes('DATE'))
+})
+
+test('source field adapter preserves Chinese comments for mapping guidance', () => {
+  const field = adaptSourceFieldList([{ columnName: 'death_datetime', columnType: 'datetime', nullable: true, comment: '死亡时间' }])[0]
+  assert.equal(field.columnName, 'death_datetime')
+  assert.equal(field.comment, '死亡时间')
+  assert.equal(field.nullable, true)
 })

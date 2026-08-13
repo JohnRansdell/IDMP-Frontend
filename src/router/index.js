@@ -139,9 +139,9 @@ const routes = [
         name: 'DataDomainManagement',
         component: () => import('@/idmp/views/DataDomainManagement.vue'),
         meta: {
-          title: '数据模型管理',
+           title: '数据域管理',
           activeMenu: '/data/domains',
-          breadcrumb: ['首页', '数据治理', '数据模型管理']
+           breadcrumb: ['首页', '数据治理', '数据域管理']
         }
       },
       {
@@ -149,10 +149,34 @@ const routes = [
         name: 'DataDomainWorkspace',
         component: () => import('@/idmp/views/DataDomainWorkspace.vue'),
         meta: {
-          title: '数据模型工作台',
+           title: '数据域工作台',
           activeMenu: '/data/domains',
-          breadcrumb: ['首页', '数据治理', '数据模型管理', '数据域工作台']
+           breadcrumb: ['首页', '数据治理', '数据域管理', '数据域工作台']
         }
+      },
+      {
+        path: 'data/value-sets',
+        name: 'ValueSetManagement',
+        component: () => import('@/idmp/views/ValueSetManagement.vue'),
+        meta: { title: '值集管理', activeMenu: '/data/value-sets', breadcrumb: ['首页', '数据治理', '值集管理'] }
+      },
+      {
+        path: 'data/value-sets/:valueSetId',
+        name: 'ValueSetDetail',
+        component: () => import('@/idmp/views/ValueSetDetail.vue'),
+        meta: { title: '值集详情', activeMenu: '/data/value-sets', breadcrumb: ['首页', '数据治理', '值集管理', '值集详情'] }
+      },
+      {
+        path: 'data/value-set-versions/:versionId/edit',
+        name: 'ValueSetVersionEditor',
+        component: () => import('@/idmp/views/ValueSetVersionEditor.vue'),
+        meta: { title: '值集版本编辑', activeMenu: '/data/value-sets', breadcrumb: ['首页', '数据治理', '值集管理', '版本编辑'] }
+      },
+      {
+        path: 'data/standardization/:mappingId',
+        name: 'SourceStandardization',
+        component: () => import('@/idmp/views/SourceStandardization.vue'),
+        meta: { title: '源值标准化', activeMenu: '/data/domains', breadcrumb: ['首页', '数据治理', '源值标准化'] }
       },
       {
         path: 'system',

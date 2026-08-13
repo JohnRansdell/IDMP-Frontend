@@ -13,7 +13,9 @@
 }
 
 export function buildFactorDsl({ domainCode, semanticTableCode, aggregation, fieldCode, groupBy = [], filters }) {
-  const aggregationNode = aggregation === 'COUNT' ? { function: 'COUNT' } : { function: aggregation, fieldCode }
+  const aggregationNode = aggregation === 'COUNT'
+    ? { function: 'COUNT', ...(fieldCode ? { fieldCode } : {}) }
+    : { function: aggregation, fieldCode }
   return {
     schemaVersion: '1.0',
     dslType: 'FACTOR',
@@ -39,13 +41,17 @@ export function collectParameters(node, result = []) {
 export function validateFilterNode(node, errors = []) {
   if (!node) return ['请至少添加一条统计范围条件']
   if (node.nodeType === 'PREDICATE') {
-    if (!node.fieldCode) errors.push('存在未选择字段的条件')
-    if (!node.operator) errors.push('存在未选择操作符的条件')
-    if (!node.parameter && (node.value === '' || node.value === undefined || node.value === null)) errors.push('存在未填写值的条件')
+    if (!node.fieldCode) errors.push('请选择筛选字段')
+    else if (!node.operator) errors.push('请选择该字段的判断方式')
+    else if (!node.parameter && isEmptyFilterValue(node.value)) errors.push('请填写或选择条件值')
     return errors
   }
   if (node.nodeType === 'NOT') return validateFilterNode(node.child, errors)
   if (!(node.children || []).length) errors.push('条件组不能为空')
   ;(node.children || []).forEach((child) => validateFilterNode(child, errors))
   return errors
+}
+
+function isEmptyFilterValue(value) {
+  return value === '' || value === undefined || value === null || (Array.isArray(value) && value.length === 0)
 }

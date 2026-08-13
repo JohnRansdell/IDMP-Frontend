@@ -1,6 +1,6 @@
 <template>
   <div class="idmp-page data-domain-workspace">
-    <PageHeader title="标准数据模型工作台">
+      <PageHeader title="数据域工作台">
       <template #meta>
         <span class="data-source-badge is-live">真实接口</span>
         <span class="header-meta">按步骤完成实体接入、字段映射和时间口径配置</span>
@@ -132,13 +132,19 @@
             <StatePanel v-if="fieldLoading" type="loading" title="正在加载字段" />
             <StatePanel v-else-if="fieldError" :type="stateTypeForError(fieldError)" title="物理字段加载失败" :description="fieldErrorMessage" />
             <StatePanel v-else-if="!sourceFields.length" type="empty" title="暂无物理字段" description="请确认源表元数据已经同步。" />
-            <el-table v-else :data="sourceFields" row-key="columnName" highlight-current-row table-layout="fixed" @row-click="selectSourceField">
-              <el-table-column prop="columnName" label="源字段" min-width="180" show-overflow-tooltip />
-              <el-table-column prop="columnType" label="物理类型" width="125" />
+            <div v-else class="mapping-table-scroll">
+            <el-table :data="sourceFields" row-key="columnName" highlight-current-row table-layout="fixed" @row-click="selectSourceField">
+              <el-table-column label="源字段" min-width="230" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <div class="source-field-cell"><strong>{{ row.columnName }}</strong><small>{{ row.comment || '暂无字段中文注释' }}</small></div>
+                </template>
+              </el-table-column>
+              <el-table-column label="物理类型" width="125"><template #default="{ row }">{{ dataTypeLabel(row.columnType) }}</template></el-table-column>
               <el-table-column label="映射状态" width="120">
                 <template #default="{ row }"><StatusBadge :status="isMapped(row) ? 'MAPPED' : 'UNMAPPED'" :label="isMapped(row) ? '已映射' : '未映射'" :tone="isMapped(row) ? 'success' : 'neutral'" /></template>
               </el-table-column>
             </el-table>
+            </div>
           </div>
 
           <div class="field-pane">
@@ -146,7 +152,8 @@
             <StatePanel v-if="fieldLoading" type="loading" title="正在加载语义字段" />
             <StatePanel v-else-if="fieldError" :type="stateTypeForError(fieldError)" title="语义字段加载失败" :description="fieldErrorMessage" />
             <StatePanel v-else-if="!semanticFields.length" type="empty" title="暂无语义字段" description="从左侧选择源字段开始建立映射。" />
-            <el-table v-else :data="semanticFields" row-key="id" table-layout="fixed">
+            <div v-else class="mapping-table-scroll">
+            <el-table :data="semanticFields" row-key="id" table-layout="fixed">
               <el-table-column prop="sourceFieldName" label="源字段" min-width="150" show-overflow-tooltip>
                 <template #default="{ row }">{{ row.sourceFieldName || '未返回映射来源' }}</template>
               </el-table-column>
@@ -156,18 +163,31 @@
               <el-table-column prop="sensitive" label="敏感" width="80">
                 <template #default="{ row }">{{ row.sensitive ? '是' : '否' }}</template>
               </el-table-column>
+              <el-table-column label="标准化" width="110" fixed="right">
+                <template #default="{ row }">
+                  <el-button v-if="row.sourceFieldMappingId" link type="primary" @click="openStandardization(row)">查看画像</el-button>
+                  <span v-else class="field-help">未返回映射ID</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="值集" width="110" fixed="right">
+                <template #default="{ row }">
+                  <el-button v-if="row.semanticRole === 'DIMENSION' || row.dataType === 'CODE' || row.dataType === 'STRING'" link type="primary" @click.stop="openValueSetBinding(row)">绑定值集</el-button>
+                  <span v-else class="field-help">非维度字段</span>
+                </template>
+              </el-table-column>
             </el-table>
+            </div>
           </div>
         </div>
 
         <div class="mapping-editor">
-          <div class="field-pane__heading"><strong>新增或更新映射</strong><span>{{ selectedSourceField?.columnName || '请先选择左侧源字段' }}</span></div>
+          <div class="field-pane__heading"><strong>新增或更新映射</strong><span>{{ selectedSourceField ? `${selectedSourceField.columnName} · ${selectedSourceField.comment || '暂无中文注释'}` : '请先选择左侧源字段' }}</span></div>
           <el-form ref="fieldFormRef" :model="fieldForm" :rules="fieldRules" label-position="top" :disabled="!selectedSourceField">
             <div class="field-form-grid">
               <el-form-item label="来源字段" prop="sourceFieldName"><el-input v-model="fieldForm.sourceFieldName" readonly /></el-form-item>
               <el-form-item label="标准字段编码" prop="code"><el-input v-model.trim="fieldForm.code" maxlength="64" show-word-limit placeholder="如 DEATH_DATETIME" /></el-form-item>
               <el-form-item label="业务名称" prop="name"><el-input v-model.trim="fieldForm.name" placeholder="如 死亡时间" /></el-form-item>
-              <el-form-item label="标准数据类型" prop="dataType"><el-select v-model="fieldForm.dataType" placeholder="选择数据类型"><el-option v-for="item in semanticDataTypes" :key="item" :label="item" :value="item" /></el-select></el-form-item>
+              <el-form-item label="标准数据类型" prop="dataType"><el-select v-model="fieldForm.dataType" placeholder="选择数据类型"><el-option v-for="item in semanticDataTypes" :key="item" :label="dataTypeLabel(item)" :value="item" /></el-select></el-form-item>
               <el-form-item label="敏感信息" prop="sensitive"><el-switch v-model="fieldForm.sensitive" active-text="是" inactive-text="否" /></el-form-item>
             </div>
             <div class="mapping-actions">
@@ -208,6 +228,18 @@
         <el-button type="primary" :loading="createLoading" :disabled="!sourceTables.length" @click="submitCreate">确认创建</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="valueSetDialogVisible" title="绑定语义字段值集" width="560px" destroy-on-close>
+      <StatePanel v-if="valueSetBindingLoading" type="loading" title="正在加载值集绑定信息" />
+      <template v-else>
+        <p class="field-help">字段：{{ selectedValueSetField?.code || '—' }} · 仅可绑定已发布值集。</p>
+        <el-select v-model="selectedValueSetId" filterable clearable placeholder="选择已发布值集" style="width: 100%">
+          <el-option v-for="item in valueSetOptions" :key="item.id" :label="`${item.code} · ${item.name}`" :value="String(item.id)" />
+        </el-select>
+        <div v-if="valueSetBinding" class="binding-summary">当前绑定：{{ valueSetBinding.valueSet?.code || '未绑定' }} · 资源版本 {{ valueSetBinding.semanticField?.resourceVersion ?? selectedValueSetField?.resourceVersion ?? '—' }}</div>
+      </template>
+      <template #footer><el-button @click="valueSetDialogVisible = false">取消</el-button><el-button type="primary" :loading="valueSetBindingSaving" :disabled="!selectedValueSetId" @click="saveValueSetBinding">确认绑定</el-button></template>
+    </el-dialog>
   </div>
 </template>
 
@@ -220,6 +252,7 @@ import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import { createSemanticTable, fetchDataDomains, fetchSemanticTableFields, fetchSemanticTables, fetchSourceTableFields, fetchSourceTables, saveSemanticField, updateDefaultTimeField } from '@/idmp/api/modules/meta'
+import { fetchSemanticFieldValueSet, bindSemanticFieldValueSet, fetchValueSets } from '@/idmp/api/modules/valueSets'
 import { adaptDataDomainList, adaptSemanticFieldList, adaptSemanticTableList, adaptSourceFieldList, adaptSourceTableList, normalizeSemanticTable } from '@/idmp/api/adapters/meta'
 
 const route = useRoute()
@@ -248,6 +281,13 @@ const fieldSaveFeedback = ref(null)
 const createError = ref(null)
 const createDialogVisible = ref(false)
 const createFormRef = ref(null)
+const valueSetDialogVisible = ref(false)
+const valueSetBindingLoading = ref(false)
+const valueSetBindingSaving = ref(false)
+const selectedValueSetField = ref(null)
+const valueSetBinding = ref(null)
+const valueSetOptions = ref([])
+const selectedValueSetId = ref('')
 const tableRequestVersion = ref(0)
 const fieldRequestVersion = ref(0)
 const createForm = reactive({ sourceTableName: '', code: '', name: '' })
@@ -390,6 +430,54 @@ function selectSourceField(row) {
   fieldSaveFeedback.value = null
 }
 
+function openStandardization(row) {
+  router.push({
+    name: 'SourceStandardization',
+    params: { mappingId: row.sourceFieldMappingId },
+    query: { sourceField: row.sourceFieldName || row.code }
+  })
+}
+
+async function openValueSetBinding(row) {
+  if (!row?.id) return
+  selectedValueSetField.value = row
+  valueSetDialogVisible.value = true
+  valueSetBindingLoading.value = true
+  try {
+    const [binding, valueSets] = await Promise.all([
+      fetchSemanticFieldValueSet(row.id),
+      fetchValueSets({ status: 'PUBLISHED', page: 1, size: 200 })
+    ])
+    valueSetBinding.value = binding || null
+    valueSetOptions.value = valueSets?.records || valueSets?.items || []
+    selectedValueSetId.value = String(binding?.valueSet?.id || binding?.valueSetId || '')
+  } catch (error) {
+    valueSetBinding.value = null
+    ElMessage.error(formatErrorMessage(error, '值集绑定信息加载失败'))
+  } finally {
+    valueSetBindingLoading.value = false
+  }
+}
+
+async function saveValueSetBinding() {
+  if (!selectedValueSetField.value || valueSetBindingSaving.value) return
+  valueSetBindingSaving.value = true
+  try {
+    const resourceVersion = valueSetBinding.value?.semanticField?.resourceVersion ?? selectedValueSetField.value.resourceVersion
+    await bindSemanticFieldValueSet(selectedValueSetField.value.id, {
+      resourceVersion: resourceVersion ?? 0,
+      valueSetId: selectedValueSetId.value
+    })
+    valueSetDialogVisible.value = false
+    ElMessage.success('值集绑定成功')
+    await loadSelectedTableFields(selectedTable.value)
+  } catch (error) {
+    ElMessage.error(formatErrorMessage(error, '值集绑定失败'))
+  } finally {
+    valueSetBindingSaving.value = false
+  }
+}
+
 function isMapped(row) {
   return semanticFields.value.some((item) => item.sourceFieldName === row.columnName)
 }
@@ -506,6 +594,10 @@ function sourceTableLabel(item) {
   return item.comment ? `${item.tableName}（${item.comment}）` : item.tableName
 }
 
+function dataTypeLabel(value) {
+  return ({ STRING: '文本（STRING）', INTEGER: '整数（INTEGER）', DECIMAL: '小数（DECIMAL）', NUMBER: '数值（NUMBER）', DATE: '日期（DATE）', DATETIME: '日期时间（DATETIME）', BOOLEAN: '布尔（BOOLEAN）', CODE: '编码（CODE）' })[String(value || '').toUpperCase()] || value || '未知类型'
+}
+
 function stateTypeForError(error) {
   if (error?.status === 401 || error?.status === 403) return 'permission'
   if (error?.status === 404 || error?.status === 501 || error?.status === 503) return 'unavailable'
@@ -546,10 +638,18 @@ function formatErrorMessage(error, fallback) {
 .selected-context { color: var(--idmp-text-secondary); font-size: 13px; }
 .selected-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 0; padding-top: 0; border-top: 0; }
 .field-mapping-card { padding: 18px; }
-.field-mapping-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 16px; }
+.field-mapping-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .field-pane { min-width: 0; padding: 14px; background: var(--idmp-layer-02); border: 1px solid var(--idmp-border-subtle); }
+.mapping-table-scroll { max-height: 360px; overflow-y: auto; overflow-x: hidden; border: 1px solid var(--idmp-border-subtle); background: var(--idmp-layer-01); }
+.mapping-table-scroll :deep(.el-table) { width: 100%; min-width: 0; }
+.mapping-table-scroll :deep(.el-table__header-wrapper), .mapping-table-scroll :deep(.el-table__body-wrapper) { min-width: 0; }
+.field-pane:nth-child(2) .mapping-table-scroll { overflow-x: auto; }
+.field-pane:nth-child(2) .mapping-table-scroll :deep(.el-table) { min-width: 760px; }
 .field-pane__heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; color: var(--idmp-text-primary); }
 .field-pane__heading span { color: var(--idmp-text-helper); font-size: 12px; }
+.source-field-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.source-field-cell strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-field-cell small { overflow: hidden; color: var(--idmp-text-helper); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .mapping-editor { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--idmp-border-subtle); }
 .field-form-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 .field-form-grid :deep(.el-select), .field-form-grid :deep(.el-input) { width: 100%; }

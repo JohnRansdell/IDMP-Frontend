@@ -58,6 +58,36 @@ onMounted(load)
 
 <style scoped>
 .recycle-bin-page .filter-card { margin-bottom: 16px; }
-.pagination-row { display: flex; justify-content: space-between; align-items: center; padding-top: 16px; }
+.pagination-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 16px;
+  gap: 16px;
+}
+
+.pagination-row > span {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.pagination-row :deep(.el-pagination) {
+  flex: 0 1 auto;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .pagination-row {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .pagination-row > span {
+    flex-basis: 100%;
+  }
+}
+
 .restore-button { margin-top: 20px; }
 </style>
