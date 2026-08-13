@@ -54,7 +54,7 @@ async function loadVersion(versionId = selectedVersionId.value) {
   items.value = Array.isArray(itemRows) ? itemRows : itemRows?.items || []
 }
 function selectVersion(row) { loadVersion(row.id) }
-function editVersion() { router.push({ name: 'ValueSetVersionEditor', params: { versionId: selectedVersionId }, query: { valueSetId: route.params.valueSetId } }) }
+function editVersion() { router.push({ name: 'ValueSetVersionEditor', params: { versionId: selectedVersionId.value }, query: { valueSetId: route.params.valueSetId } }) }
 onMounted(loadAll)
 </script>
 
