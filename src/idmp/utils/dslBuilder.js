@@ -1,5 +1,6 @@
 ﻿export function serializeFilterNode(node) {
-  if (!node) return { nodeType: 'AND', children: [] }
+  if (!node) return { nodeType: 'TRUE' }
+  if (node.nodeType === 'TRUE') return { nodeType: 'TRUE' }
   if (node.nodeType === 'PREDICATE') {
     const result = { nodeType: 'PREDICATE', fieldCode: node.fieldCode, operator: node.operator }
     if (node.parameter) result.parameter = node.parameter
@@ -7,6 +8,7 @@
     return result
   }
   if (node.nodeType === 'NOT') return { nodeType: 'NOT', child: serializeFilterNode(node.child) }
+  if (!(node.children || []).length) return { nodeType: 'TRUE' }
   return { nodeType: node.nodeType === 'OR' ? 'OR' : 'AND', children: (node.children || []).map(serializeFilterNode) }
 }
 

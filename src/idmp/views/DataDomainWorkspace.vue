@@ -3,7 +3,7 @@
     <PageHeader title="标准数据模型工作台">
       <template #meta>
         <span class="data-source-badge is-live">真实接口</span>
-        <span class="header-meta">在数据域中维护语义表、语义字段及其物理来源映射</span>
+        <span class="header-meta">按步骤完成实体接入、字段映射和时间口径配置</span>
       </template>
       <template #actions>
         <el-button @click="router.push({ name: 'DataDomainManagement' })">返回数据域目录</el-button>
@@ -25,6 +25,16 @@
           <div><dt>说明</dt><dd>{{ domain.description || '—' }}</dd></div>
           <div><dt>创建时间</dt><dd>{{ domain.createdAt || '—' }}</dd></div>
         </dl>
+      </section>
+
+      <section class="surface-card model-progress-card">
+        <div class="section-title"><div><h2>模型建设进度</h2><p class="section-title__description">当前阶段先完成来源接入和语义映射，发布与影响分析待后端能力接入</p></div></div>
+        <div class="model-progress-steps">
+          <div class="model-progress-step is-done"><b>1</b><span>数据域</span></div><i>→</i>
+          <div class="model-progress-step is-done"><b>2</b><span>语义表</span></div><i>→</i>
+          <div class="model-progress-step" :class="{ 'is-current': selectedTable }"><b>3</b><span>字段映射</span></div><i>→</i>
+          <div class="model-progress-step"><b>4</b><span>校验发布</span></div>
+        </div>
       </section>
 
       <section class="surface-card table-card">
@@ -88,7 +98,7 @@
         <div class="section-title">
           <div>
             <h2>当前语义表上下文</h2>
-            <p class="section-title__description">本阶段只建立语义表选择上下文，不加载或编辑语义字段。</p>
+            <p class="section-title__description">先选择一张语义表，再在下方完成物理字段到业务字段的映射</p>
           </div>
           <span class="selected-context">{{ selectedTable?.code || '未选择语义表' }}</span>
         </div>
@@ -111,14 +121,14 @@
         <div class="section-title section-title--toolbar">
           <div>
             <h2>语义字段映射</h2>
-            <p class="section-title__description">当前语义表：{{ selectedTable.code }}；只允许维护本表对应源字段。</p>
+            <p class="section-title__description">当前语义表：{{ selectedTable.code }} · 已映射 {{ semanticFields.length }} / {{ sourceFields.length }} 个来源字段</p>
           </div>
           <StatusBadge v-if="fieldSaveFeedback" :status="fieldSaveFeedback.status" :label="fieldSaveFeedback.label" :tone="fieldSaveFeedback.tone" />
         </div>
 
         <div class="field-mapping-grid">
           <div class="field-pane">
-            <div class="field-pane__heading"><strong>物理源字段</strong><span>{{ sourceFields.length }} 个</span></div>
+              <div class="field-pane__heading"><strong>来源字段</strong><span>{{ sourceFields.length }} 个 · 点击一行开始映射</span></div>
             <StatePanel v-if="fieldLoading" type="loading" title="正在加载字段" />
             <StatePanel v-else-if="fieldError" :type="stateTypeForError(fieldError)" title="物理字段加载失败" :description="fieldErrorMessage" />
             <StatePanel v-else-if="!sourceFields.length" type="empty" title="暂无物理字段" description="请确认源表元数据已经同步。" />
@@ -132,7 +142,7 @@
           </div>
 
           <div class="field-pane">
-            <div class="field-pane__heading"><strong>已映射语义字段</strong><span>{{ semanticFields.length }} 个</span></div>
+              <div class="field-pane__heading"><strong>标准业务字段</strong><span>{{ semanticFields.length }} 个</span></div>
             <StatePanel v-if="fieldLoading" type="loading" title="正在加载语义字段" />
             <StatePanel v-else-if="fieldError" :type="stateTypeForError(fieldError)" title="语义字段加载失败" :description="fieldErrorMessage" />
             <StatePanel v-else-if="!semanticFields.length" type="empty" title="暂无语义字段" description="从左侧选择源字段开始建立映射。" />
@@ -154,11 +164,11 @@
           <div class="field-pane__heading"><strong>新增或更新映射</strong><span>{{ selectedSourceField?.columnName || '请先选择左侧源字段' }}</span></div>
           <el-form ref="fieldFormRef" :model="fieldForm" :rules="fieldRules" label-position="top" :disabled="!selectedSourceField">
             <div class="field-form-grid">
-              <el-form-item label="sourceFieldName" prop="sourceFieldName"><el-input v-model="fieldForm.sourceFieldName" readonly /></el-form-item>
-              <el-form-item label="语义编码 code" prop="code"><el-input v-model.trim="fieldForm.code" maxlength="64" show-word-limit placeholder="如 DEATH_DATETIME" /></el-form-item>
-              <el-form-item label="语义名称 name" prop="name"><el-input v-model.trim="fieldForm.name" placeholder="如 死亡时间" /></el-form-item>
-              <el-form-item label="数据类型 dataType" prop="dataType"><el-select v-model="fieldForm.dataType" placeholder="选择语义数据类型"><el-option v-for="item in semanticDataTypes" :key="item" :label="item" :value="item" /></el-select></el-form-item>
-              <el-form-item label="敏感字段 sensitive" prop="sensitive"><el-switch v-model="fieldForm.sensitive" active-text="是" inactive-text="否" /></el-form-item>
+              <el-form-item label="来源字段" prop="sourceFieldName"><el-input v-model="fieldForm.sourceFieldName" readonly /></el-form-item>
+              <el-form-item label="标准字段编码" prop="code"><el-input v-model.trim="fieldForm.code" maxlength="64" show-word-limit placeholder="如 DEATH_DATETIME" /></el-form-item>
+              <el-form-item label="业务名称" prop="name"><el-input v-model.trim="fieldForm.name" placeholder="如 死亡时间" /></el-form-item>
+              <el-form-item label="标准数据类型" prop="dataType"><el-select v-model="fieldForm.dataType" placeholder="选择数据类型"><el-option v-for="item in semanticDataTypes" :key="item" :label="item" :value="item" /></el-select></el-form-item>
+              <el-form-item label="敏感信息" prop="sensitive"><el-switch v-model="fieldForm.sensitive" active-text="是" inactive-text="否" /></el-form-item>
             </div>
             <div class="mapping-actions">
               <span class="field-help">不接受 SQL 或跨表字段；保存对象始终属于当前语义表。</span>
@@ -514,6 +524,14 @@ function formatErrorMessage(error, fallback) {
 
 <style scoped lang="scss">
 .data-domain-workspace { display: flex; flex-direction: column; gap: 16px; }
+.model-progress-card { padding: 18px; }
+.model-progress-steps { display: flex; align-items: center; gap: 14px; }
+.model-progress-steps > i { color: var(--idmp-text-helper); font-style: normal; }
+.model-progress-step { display: flex; align-items: center; gap: 8px; color: var(--idmp-text-helper); font-size: 13px; }
+.model-progress-step b { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 50%; background: var(--idmp-layer-02); border: 1px solid var(--idmp-border-subtle); font-weight: 500; }
+.model-progress-step.is-done, .model-progress-step.is-current { color: var(--idmp-text-primary); }
+.model-progress-step.is-done b { background: var(--idmp-brand); border-color: var(--idmp-brand); color: #fff; }
+.model-progress-step.is-current b { border-color: var(--idmp-brand); color: var(--idmp-brand); }
 .domain-summary, .table-card, .selected-table-card { padding: 18px; }
 .summary-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .summary-heading h2 { margin: 4px 0; font-size: 20px; }
@@ -542,6 +560,6 @@ function formatErrorMessage(error, fallback) {
 .dialog-api-note { margin-bottom: 18px; color: var(--idmp-text-helper); font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; }
 .field-help { margin-top: 5px; color: var(--idmp-text-helper); font-size: 12px; line-height: 18px; }
 .create-error { margin-top: 8px; }
-@media (max-width: 1100px) { .selected-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .field-form-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .default-time-editor { grid-template-columns: 1fr 220px; } .default-time-editor .el-button { grid-column: 2; } }
-@media (max-width: 900px) { .summary-grid, .selected-grid { grid-template-columns: 1fr; } .toolbar-meta { align-items: flex-end; flex-direction: column; } .field-mapping-grid { grid-template-columns: 1fr; } .field-form-grid { grid-template-columns: 1fr 1fr; } .default-time-editor { grid-template-columns: 1fr; } .default-time-editor .el-button { grid-column: auto; } }
+@media (max-width: 1100px) { .model-progress-steps { gap: 8px; } .selected-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .field-form-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .default-time-editor { grid-template-columns: 1fr 220px; } .default-time-editor .el-button { grid-column: 2; } }
+@media (max-width: 900px) { .model-progress-steps { align-items: flex-start; flex-direction: column; } .model-progress-steps > i { display: none; } .summary-grid, .selected-grid { grid-template-columns: 1fr; } .toolbar-meta { align-items: flex-end; flex-direction: column; } .field-mapping-grid { grid-template-columns: 1fr; } .field-form-grid { grid-template-columns: 1fr 1fr; } .default-time-editor { grid-template-columns: 1fr; } .default-time-editor .el-button { grid-column: auto; } }
 </style>

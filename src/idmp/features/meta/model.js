@@ -63,6 +63,11 @@ export function normalizeSemanticField(item = {}) {
     code: item.code || item.fieldCode || item.semanticCode || '',
     name: item.name || item.fieldName || item.semanticName || '',
     dataType: item.dataType || '',
+    semanticRole: item.semanticRole || item.role || '',
+    groupable: item.groupable,
+    aggregatable: item.aggregatable,
+    filterable: item.filterable,
+    options: item.options || item.values || item.enumValues || [],
     sensitive: normalizeBoolean(item.sensitive),
     sourceFieldName: item.sourceFieldName || item.sourceColumn || item.columnName || ''
   }

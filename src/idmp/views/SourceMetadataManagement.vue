@@ -3,7 +3,7 @@
     <PageHeader title="数据源管理">
       <template #meta>
         <span class="data-source-badge is-live">真实接口</span>
-        <span class="header-meta">当前提供数据表、视图与字段结构同步，为数据模型接入提供基础</span>
+        <span class="header-meta">查看已接入系统的来源结构，并将其交给标准数据模型使用</span>
       </template>
       <template #actions>
         <el-button :icon="Refresh" :loading="syncLoading" @click="handleSync">
@@ -15,19 +15,30 @@
       </template>
     </PageHeader>
 
-    <div v-if="!hasAccessToken" class="notice-strip is-warning">
-      当前未保存访问令牌；如果后端启用鉴权，数据源管理接口可能返回未登录或权限错误。
-    </div>
+    <section class="source-overview-grid">
+      <article class="surface-card overview-card"><span>已发现数据对象</span><strong>{{ sourceTables.length }}</strong><small>表和视图</small></article>
+      <article class="surface-card overview-card"><span>已发现字段</span><strong>{{ totalFieldCount }}</strong><small>来自最近一次同步目录</small></article>
+      <article class="surface-card overview-card"><span>最近同步</span><strong class="overview-card__status">{{ lastSyncLabel }}</strong><small>{{ syncFeedback?.message || '尚未执行本次会话同步' }}</small></article>
+    </section>
 
-    <div class="notice-strip">
-      当前页面用于管理已接入数据源的数据结构；数据源连接的创建、测试与停用需由后端提供相应接口后接入本页。
-    </div>
+    <section class="surface-card workflow-card">
+      <div class="section-title">
+        <div><h2>接入流程</h2><p class="section-title__description">先确认来源结构，再进入数据模型工作台完成语义映射</p></div>
+      </div>
+      <div class="workflow-steps">
+        <div class="workflow-step is-current"><b>1</b><div><strong>同步来源结构</strong><span>读取表、视图和字段</span></div></div>
+        <div class="workflow-arrow">→</div>
+        <div class="workflow-step"><b>2</b><div><strong>建立标准模型</strong><span>选择数据域和语义表</span></div></div>
+        <div class="workflow-arrow">→</div>
+        <div class="workflow-step"><b>3</b><div><strong>完成字段映射</strong><span>将物理字段转为业务语义</span></div></div>
+      </div>
+    </section>
 
     <section class="surface-card sync-card">
       <div class="section-title">
         <div>
           <h2>数据结构同步</h2>
-          <p class="section-title__description">POST /api/v1/meta/source-mappings/sync</p>
+          <p class="section-title__description">读取远程系统的最新表、视图和字段结构</p>
         </div>
         <StatusBadge
           v-if="syncFeedback"
@@ -70,7 +81,7 @@
       <div class="section-title section-title--toolbar">
         <div>
           <h2>数据表与视图</h2>
-          <p class="section-title__description">GET /api/v1/meta/source-tables</p>
+          <p class="section-title__description">选择对象后查看字段详情，并用于创建语义表</p>
         </div>
         <span class="table-count">共 {{ filteredTables.length }} / {{ sourceTables.length }} 个对象</span>
       </div>
@@ -139,7 +150,7 @@
       direction="rtl"
       @closed="clearSelectedTable"
     >
-      <p class="drawer-api-note">GET /api/v1/meta/source-tables/{tableName}/fields</p>
+      <p class="drawer-api-note">字段详情 · {{ selectedTable?.comment || '暂无对象说明' }}</p>
       <StatePanel v-if="fieldLoading" type="loading" title="正在加载字段结构" />
       <StatePanel
         v-else-if="fieldError"
@@ -176,7 +187,6 @@ import { Refresh } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
-import { getAccessToken } from '@/idmp/api/request'
 import { fetchSourceTableFields, fetchSourceTables, syncSourceMappings } from '@/idmp/api/modules/meta'
 import { adaptSourceFieldList, adaptSourceTableList } from '@/idmp/api/adapters/meta'
 
@@ -192,7 +202,7 @@ const fieldError = ref(null)
 const syncError = ref(null)
 const syncSummary = ref(null)
 const syncFeedback = ref(null)
-const hasAccessToken = ref(Boolean(getAccessToken()))
+const lastSyncAt = ref(null)
 
 const filters = reactive({ tableName: '', tableType: '', comment: '' })
 
@@ -206,6 +216,9 @@ const filteredTables = computed(() => {
       && (!comment || item.comment.toLowerCase().includes(comment))
   })
 })
+
+const totalFieldCount = computed(() => sourceTables.value.reduce((sum, item) => sum + Number(item.fieldCount || 0), 0))
+const lastSyncLabel = computed(() => lastSyncAt.value ? formatSyncTime(lastSyncAt.value) : '未同步')
 
 const tableErrorMessage = computed(() => formatErrorMessage(tableError.value, '数据表与视图加载失败'))
 const fieldErrorMessage = computed(() => formatErrorMessage(fieldError.value, '物理字段加载失败'))
@@ -249,6 +262,7 @@ async function handleSync() {
   }
 
   syncLoading.value = true
+  lastSyncAt.value = new Date()
   syncError.value = null
   syncSummary.value = null
   syncFeedback.value = { status: 'RUNNING', label: '同步中', message: '正在读取远程数据源结构。' }
@@ -322,6 +336,10 @@ function nullableLabel(value) {
   return '未知'
 }
 
+function formatSyncTime(value) {
+  return new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' }).format(value)
+}
+
 function stateTypeForError(error) {
   const status = error?.status
   if (status === 401) return 'permission'
@@ -345,6 +363,22 @@ function formatErrorMessage(error, fallback) {
 
 <style scoped lang="scss">
 .source-metadata-page { display: flex; flex-direction: column; gap: 16px; }
+.source-overview-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.overview-card { display: flex; flex-direction: column; gap: 5px; padding: 18px; }
+.overview-card > span { color: var(--idmp-text-secondary); font-size: 13px; }
+.overview-card strong { color: var(--idmp-text-primary); font-size: 28px; font-variant-numeric: tabular-nums; }
+.overview-card__status { font-size: 20px !important; }
+.overview-card small { overflow: hidden; color: var(--idmp-text-helper); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.workflow-card { padding: 18px; }
+.workflow-steps { display: flex; align-items: center; gap: 14px; }
+.workflow-step { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; padding: 10px 12px; border: 1px solid var(--idmp-border-subtle); background: var(--idmp-layer-02); }
+.workflow-step b { display: grid; width: 26px; height: 26px; flex: 0 0 26px; place-items: center; border-radius: 50%; background: var(--idmp-border-subtle); color: var(--idmp-text-secondary); }
+.workflow-step.is-current { border-color: var(--idmp-brand); }
+.workflow-step.is-current b { background: var(--idmp-brand); color: #fff; }
+.workflow-step strong, .workflow-step span { display: block; }
+.workflow-step strong { color: var(--idmp-text-primary); font-size: 13px; }
+.workflow-step span { margin-top: 3px; color: var(--idmp-text-helper); font-size: 12px; }
+.workflow-arrow { color: var(--idmp-text-helper); font-size: 20px; }
 .sync-card, .table-card { padding: 18px; }
 .section-title--toolbar { align-items: center; }
 .sync-summary { display: grid; grid-template-columns: 180px 180px 1fr; gap: 16px; align-items: center; padding: 14px 16px; background: var(--idmp-layer-02); border: 1px solid var(--idmp-border-subtle); }
@@ -363,6 +397,9 @@ function formatErrorMessage(error, fallback) {
 .filter-bar { display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr)) auto; gap: 10px; margin-bottom: 14px; }
 .drawer-api-note { margin: -8px 0 16px; color: var(--idmp-text-helper); font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; }
 @media (max-width: 900px) {
+  .source-overview-grid { grid-template-columns: 1fr; }
+  .workflow-steps { align-items: stretch; flex-direction: column; }
+  .workflow-arrow { display: none; }
   .sync-summary { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
   .sync-summary__message { grid-column: 1 / -1; }
   .filter-bar { grid-template-columns: 1fr 1fr; }

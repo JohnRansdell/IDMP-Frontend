@@ -3,7 +3,7 @@
     <PageHeader title="数据模型管理">
       <template #meta>
         <span class="data-source-badge is-live">真实接口</span>
-        <span class="header-meta">以数据域、语义表和语义字段统一业务口径</span>
+        <span class="header-meta">把医院物理表转换为指标可复用的业务语义</span>
       </template>
       <template #actions>
         <el-button :icon="Refresh" :loading="listLoading" @click="loadDomains">刷新列表</el-button>
@@ -11,11 +11,17 @@
       </template>
     </PageHeader>
 
+    <section class="model-summary-grid">
+      <article class="surface-card model-summary-card"><span>全部模型</span><strong>{{ domains.length }}</strong><small>按业务主题组织</small></article>
+      <article class="surface-card model-summary-card"><span>已发布</span><strong>{{ publishedCount }}</strong><small>可被下游配置引用</small></article>
+      <article class="surface-card model-summary-card"><span>待完善</span><strong>{{ draftCount }}</strong><small>草稿或尚未发布</small></article>
+    </section>
+
     <section class="surface-card table-card">
       <div class="section-title section-title--toolbar">
         <div>
           <h2>数据域目录</h2>
-          <p class="section-title__description">GET /api/v1/meta/data-domains</p>
+          <p class="section-title__description">按主题查找模型，进入工作台维护语义表和字段映射</p>
         </div>
         <span class="table-count">共 {{ filteredDomains.length }} / {{ domains.length }} 个</span>
       </div>
@@ -72,12 +78,9 @@
         max-height="560"
         @row-click="openWorkspace"
       >
-        <el-table-column label="ID" width="205">
-          <template #default="{ row }"><span class="mono-data">{{ row.id }}</span></template>
-        </el-table-column>
         <el-table-column prop="code" label="数据域编码" min-width="220" show-overflow-tooltip />
         <el-table-column prop="name" label="数据域名称" min-width="190" show-overflow-tooltip />
-        <el-table-column prop="description" label="说明" min-width="250" show-overflow-tooltip>
+        <el-table-column prop="description" label="业务说明" min-width="250" show-overflow-tooltip>
           <template #default="{ row }">{{ row.description || '—' }}</template>
         </el-table-column>
         <el-table-column label="状态" width="130">
@@ -153,6 +156,8 @@ const page = ref(1)
 const pageSize = 20
 const filters = reactive({ code: '', name: '', status: '' })
 const createForm = reactive({ code: '', name: '', description: '' })
+const publishedCount = computed(() => domains.value.filter((item) => item.status?.toUpperCase() === 'PUBLISHED').length)
+const draftCount = computed(() => domains.value.filter((item) => item.status?.toUpperCase() !== 'PUBLISHED').length)
 
 const createRules = {
   code: [
@@ -290,6 +295,11 @@ function formatErrorMessage(error, fallback) {
 
 <style scoped lang="scss">
 .data-domain-page { display: flex; flex-direction: column; gap: 16px; }
+.model-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.model-summary-card { display: flex; flex-direction: column; gap: 5px; padding: 18px; }
+.model-summary-card span { color: var(--idmp-text-secondary); font-size: 13px; }
+.model-summary-card strong { color: var(--idmp-text-primary); font-size: 28px; font-variant-numeric: tabular-nums; }
+.model-summary-card small { color: var(--idmp-text-helper); font-size: 12px; }
 .table-card { padding: 18px; }
 .section-title--toolbar { align-items: center; }
 .filter-bar { display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr)) auto; gap: 10px; margin-bottom: 14px; }
@@ -298,5 +308,5 @@ function formatErrorMessage(error, fallback) {
 .dialog-api-note { margin-bottom: 18px; color: var(--idmp-text-helper); font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; }
 .field-help { margin-top: 5px; color: var(--idmp-text-helper); font-size: 12px; line-height: 18px; }
 .create-error { margin-top: 8px; }
-@media (max-width: 900px) { .filter-bar { grid-template-columns: 1fr 1fr; } .pagination-bar { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 900px) { .model-summary-grid { grid-template-columns: 1fr; } .filter-bar { grid-template-columns: 1fr 1fr; } .pagination-bar { align-items: flex-start; flex-direction: column; } }
 </style>

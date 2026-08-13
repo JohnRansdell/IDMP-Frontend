@@ -1,0 +1,12 @@
+{
+  "resourceVersion": 0,
+  "indicators": [
+    {
+      "indicatorVersionId": 7720406205279055,
+      "displayOrder": 0,
+      "required": true,
+      "reportRequirementText": "每月上报",
+      "mappingOriginType": "MANUAL"
+    }
+  ]
+}

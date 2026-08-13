@@ -1,0 +1,16 @@
+{
+  "resourceVersion": 1,
+  "overrides": [
+    {
+      "indicatorVersionId": 7720406205279055,
+      "overrideType": "DISPLAY",
+      "targetNodePath": "root",
+      "overrideValue": {
+        "unit": "orders_per_inpatient_visit",
+        "decimalPlaces": 4
+      },
+      "displayText": "每住院就诊抗菌药物医嘱数",
+      "priority": 100
+    }
+  ]
+}

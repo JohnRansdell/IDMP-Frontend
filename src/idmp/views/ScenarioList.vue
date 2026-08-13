@@ -29,7 +29,7 @@
         <el-table-column prop="indicatorCount" label="指标数" width="90" />
         <el-table-column label="状态" width="110"><template #default="{ row }"><StatusBadge :label="publicationStatusLabel(row.status)" :status="row.status" /></template></el-table-column>
         <el-table-column prop="updatedAt" label="更新时间" width="180" />
-        <el-table-column label="操作" width="180" fixed="right"><template #default="{ row }"><button class="action-link" type="button" @click="open(row)">查看/编辑</button><button class="action-link" type="button" @click="newVersion(row)">新建版本</button></template></el-table-column>
+        <el-table-column label="操作" width="110" fixed="right"><template #default="{ row }"><button class="action-link" type="button" @click="open(row)">查看/编辑</button></template></el-table-column>
       </el-table>
       <div class="table-footer"><span>共 {{ total }} 条</span><el-pagination v-model:current-page="page" v-model:page-size="size" layout="prev, pager, next, sizes" :page-sizes="[10, 20, 50]" :total="total" @current-change="load" @size-change="load" /></div>
     </section>
@@ -55,8 +55,8 @@ import { useRouter } from 'vue-router'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
-import { createScenario, createScenarioVersion, fetchScenarios } from '@/idmp/api/modules/scenarios'
-import { normalizePage, PERIOD_TYPES, SCENARIO_TYPES, publicationStatusLabel, scenarioTypeLabel } from '@/idmp/api/adapters/scenario'
+import { createScenario, fetchScenarios, fetchScenarioVersions } from '@/idmp/api/modules/scenarios'
+import { normalizePage, PERIOD_TYPES, SCENARIO_TYPES, publicationStatusLabel, scenarioTypeLabel, selectScenarioVersion } from '@/idmp/api/adapters/scenario'
 
 const router = useRouter()
 const rows = ref([])
@@ -83,19 +83,25 @@ async function load() {
 }
 
 function reset() { Object.assign(filters, { code: '', name: '', type: '', publicationStatus: '' }); page.value = 1; load() }
-function open(row) { router.push({ name: 'ScenarioEditor', params: { scenarioId: row.id }, query: { versionId: row.currentPublishedVersionId || undefined } }) }
-async function newVersion(row) {
-  if (!row.currentPublishedVersionId) return open(row)
+async function open(row) {
   try {
-    const detail = await createScenarioVersion(row.id, { copyFromVersionId: row.currentPublishedVersionId }, `scenario-version-${row.id}-${row.currentPublishedVersionId}-${Date.now()}`)
-    router.push({ name: 'ScenarioEditor', params: { scenarioId: row.id }, query: { versionId: detail?.version?.id } })
-  } catch (error) { ElMessage.error(error?.message || '创建场景版本失败') }
+    let versions = []
+    try {
+      versions = await fetchScenarioVersions(row.id)
+    } catch (error) {
+      if (!row.currentPublishedVersionId) throw error
+      versions = [{ id: row.currentPublishedVersionId, publicationStatus: 'PUBLISHED' }]
+    }
+    const version = selectScenarioVersion(versions, row.currentPublishedVersionId)
+    if (!version?.id) throw new Error('该场景暂无可查看版本')
+    router.push({ name: 'ScenarioEditor', params: { scenarioId: row.id }, query: { versionId: version.id } })
+  } catch (error) { ElMessage.error(error?.message || '场景版本加载失败') }
 }
 async function create() {
   await formRef.value?.validate()
   saving.value = true
   try {
-    const result = await createScenario({ ...form, defaultParameters: {}, defaultExclusionDsl: { nodeType: 'TRUE' } }, `scenario-create-${Date.now()}`)
+    const result = await createScenario({ ...form, defaultParameters: {}, defaultExclusionDsl: { nodeType: 'TRUE' }, defaultDataSourcePriority: {} }, `scenario-create-${Date.now()}`)
     createOpen.value = false
     router.push({ name: 'ScenarioEditor', params: { scenarioId: result?.scenario?.id }, query: { versionId: result?.version?.id } })
   } catch (error) { ElMessage.error(error?.message || '创建场景失败') } finally { saving.value = false }

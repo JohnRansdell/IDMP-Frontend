@@ -9,6 +9,10 @@ export function normalizeSemanticField(item = {}) {
     dataType,
     kind: normalizeFieldKind(dataType),
     options: item.options || item.values || item.enumValues || [],
+    semanticRole: item.semanticRole || item.role || '',
+    groupable: item.groupable,
+    aggregatable: item.aggregatable,
+    filterable: item.filterable,
     sensitive: item.sensitive === true || item.sensitive === 1 || item.sensitive === '1' || item.sensitive === 'true',
     sourceFieldName: item.sourceFieldName || item.sourceField || item.columnName || ''
   }

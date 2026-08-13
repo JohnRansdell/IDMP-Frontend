@@ -65,9 +65,45 @@ export function normalizePage(payload) {
   return {
     items: payload?.items || payload?.records || payload?.list || [],
     total: Number(payload?.total ?? 0),
-    page: Number(payload?.page ?? 1),
-    size: Number(payload?.size ?? 20)
+    page: Number(payload?.page ?? payload?.pageNum ?? 1),
+    size: Number(payload?.size ?? payload?.pageSize ?? 20)
   }
+}
+
+export function normalizeResourceId(value) {
+  if (value === undefined || value === null || value === '') return ''
+  return String(value)
+}
+
+export function normalizeMergeObject(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value
+  return {}
+}
+
+export function normalizePublicationStatus(value) {
+  if (value === undefined || value === null || value === '') return 'UNKNOWN'
+  const status = String(value).trim().toUpperCase()
+  return ['DRAFT', 'PUBLISHED', 'ARCHIVED'].includes(status) ? status : 'UNKNOWN'
+}
+
+export function scenarioVersionCapabilities(value) {
+  const status = normalizePublicationStatus(value)
+  return {
+    status,
+    canView: true,
+    canEdit: status === 'DRAFT',
+    canValidate: status === 'DRAFT',
+    canPublish: status === 'DRAFT',
+    canStartEdit: status === 'PUBLISHED'
+  }
+}
+
+export function selectScenarioVersion(versions = [], currentPublishedVersionId = '') {
+  const list = Array.isArray(versions) ? versions : []
+  return list.find((item) => normalizePublicationStatus(item.publicationStatus ?? item.status) === 'DRAFT')
+    || list.find((item) => normalizeResourceId(item.id) === normalizeResourceId(currentPublishedVersionId))
+    || list[0]
+    || null
 }
 
 export function scenarioTypeLabel(value) {
@@ -79,7 +115,8 @@ export function periodTypeLabel(value) {
 }
 
 export function publicationStatusLabel(value) {
-  return { DRAFT: '草稿', VALIDATED: '已校验', PUBLISHED: '已发布', ARCHIVED: '已归档' }[value] || value || '-'
+  const status = normalizePublicationStatus(value)
+  return { DRAFT: '草稿', PUBLISHED: '已发布', ARCHIVED: '已归档', UNKNOWN: '状态未知' }[status]
 }
 
 export function scenarioDetailToForm(detail) {
@@ -97,14 +134,17 @@ export function scenarioDetailToForm(detail) {
     defaultParameters: version.defaultParameters || {},
     defaultExclusionDsl: version.defaultExclusionDsl || { nodeType: 'TRUE' },
     defaultExclusionDisplayText: version.defaultExclusionDisplayText || '',
-    defaultDataSourcePriority: version.defaultDataSourcePriority || [],
+    defaultDataSourcePriority: normalizeMergeObject(version.defaultDataSourcePriority),
     displayText: version.displayText || '',
     effectiveStartDate: version.effectiveStartDate || '',
     effectiveEndDate: version.effectiveEndDate || '',
     resourceVersion: version.resourceVersion ?? 0,
-    publicationStatus: version.publicationStatus || 'DRAFT',
+    publicationStatus: normalizePublicationStatus(version.publicationStatus ?? version.status),
     versionNo: version.versionNo || '-',
-    indicators: (version.indicators || []).map((item) => ({ ...item })),
+    indicators: (version.indicators || []).map((item) => ({
+      ...item,
+      indicatorVersionId: normalizeResourceId(item.indicatorVersionId)
+    })),
     overrides: (version.overrides || []).map((item) => ({
       ...item,
       overrideValue: item.overrideValue ?? item.value
@@ -126,7 +166,7 @@ export function scenarioFormToPatch(form) {
     defaultParameters: form.defaultParameters,
     defaultExclusionDsl: form.defaultExclusionDsl,
     defaultExclusionDisplayText: form.defaultExclusionDisplayText,
-    defaultDataSourcePriority: form.defaultDataSourcePriority,
+    defaultDataSourcePriority: normalizeMergeObject(form.defaultDataSourcePriority),
     displayText: form.displayText,
     effectiveStartDate: form.effectiveStartDate || null,
     effectiveEndDate: form.effectiveEndDate || null
@@ -135,7 +175,7 @@ export function scenarioFormToPatch(form) {
 
 export function toIndicatorBinding(item, index) {
   return {
-    indicatorVersionId: Number(item.indicatorVersionId ?? item.id ?? item.versionId),
+    indicatorVersionId: normalizeResourceId(item.indicatorVersionId ?? item.id ?? item.versionId),
     displayOrder: Number(item.displayOrder ?? index),
     required: item.required !== false,
     reportRequirementText: item.reportRequirementText || '',
@@ -145,7 +185,7 @@ export function toIndicatorBinding(item, index) {
 
 export function toOverridePayload(item) {
   return {
-    indicatorVersionId: item.indicatorVersionId ? Number(item.indicatorVersionId) : null,
+    indicatorVersionId: item.indicatorVersionId ? normalizeResourceId(item.indicatorVersionId) : null,
     overrideType: item.overrideType,
     targetNodePath: item.targetNodePath,
     overrideValue: item.overrideValue,
