@@ -4,17 +4,23 @@ export function normalizeSemanticField(item = {}) {
   const code = item.code ?? item.fieldCode
   const dataType = String(item.dataType ?? item.fieldType ?? 'STRING').toUpperCase()
   return {
+    id: item.id ?? item.fieldId ?? '',
     code,
     label: item.displayName || item.label || item.name || semanticFieldMap[code]?.label || code,
+    name: item.name || item.displayName || item.label || semanticFieldMap[code]?.label || code,
     dataType,
     kind: normalizeFieldKind(dataType),
     options: item.options || item.values || item.enumValues || [],
+    semanticKind: item.semanticKind || item.semanticRole || item.role || '',
     semanticRole: item.semanticRole || item.role || '',
     groupable: item.groupable,
     aggregatable: item.aggregatable,
     filterable: item.filterable,
     sensitive: item.sensitive === true || item.sensitive === 1 || item.sensitive === '1' || item.sensitive === 'true',
-    sourceFieldName: item.sourceFieldName || item.sourceField || item.columnName || ''
+    sourceFieldName: item.sourceFieldName || item.sourceField || item.columnName || '',
+    sourceFieldMappingId: item.sourceFieldMappingId ?? item.mappingId ?? '',
+    valueSetId: item.valueSetId ?? '',
+    resourceVersion: item.resourceVersion ?? null
   }
 }
 

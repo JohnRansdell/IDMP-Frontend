@@ -136,7 +136,7 @@
             <el-table :data="sourceFields" row-key="columnName" highlight-current-row table-layout="fixed" @row-click="selectSourceField">
               <el-table-column label="源字段" min-width="230" show-overflow-tooltip>
                 <template #default="{ row }">
-                  <div class="source-field-cell"><strong>{{ row.columnName }}</strong><small>{{ row.comment || '暂无字段中文注释' }}</small></div>
+                  <div class="source-field-cell"><small>{{ row.comment || '暂无字段中文注释' }}</small><strong>{{ row.columnName }}</strong></div>
                 </template>
               </el-table-column>
               <el-table-column label="物理类型" width="125"><template #default="{ row }">{{ dataTypeLabel(row.columnType) }}</template></el-table-column>
@@ -154,25 +154,22 @@
             <StatePanel v-else-if="!semanticFields.length" type="empty" title="暂无语义字段" description="从左侧选择源字段开始建立映射。" />
             <div v-else class="mapping-table-scroll">
             <el-table :data="semanticFields" row-key="id" table-layout="fixed">
-              <el-table-column prop="sourceFieldName" label="源字段" min-width="150" show-overflow-tooltip>
+              <el-table-column prop="sourceFieldName" label="来源字段" min-width="135" show-overflow-tooltip>
                 <template #default="{ row }">{{ row.sourceFieldName || '未返回映射来源' }}</template>
               </el-table-column>
-              <el-table-column prop="code" label="语义编码" min-width="150" show-overflow-tooltip />
-              <el-table-column prop="name" label="语义名称" min-width="140" show-overflow-tooltip />
-              <el-table-column prop="dataType" label="数据类型" width="110" />
-              <el-table-column prop="sensitive" label="敏感" width="80">
+              <el-table-column label="标准业务字段" min-width="165" show-overflow-tooltip>
+                <template #default="{ row }"><div class="semantic-field-cell"><strong>{{ row.name || '未命名字段' }}</strong><small>{{ row.code || '未返回编码' }}</small></div></template>
+              </el-table-column>
+              <el-table-column label="类型" width="88"><template #default="{ row }">{{ semanticDataTypeLabel(row.dataType) }}</template></el-table-column>
+              <el-table-column prop="sensitive" label="敏感" width="58">
                 <template #default="{ row }">{{ row.sensitive ? '是' : '否' }}</template>
               </el-table-column>
-              <el-table-column label="标准化" width="110" fixed="right">
+              <el-table-column label="操作" width="105" fixed="right">
                 <template #default="{ row }">
-                  <el-button v-if="row.sourceFieldMappingId" link type="primary" @click="openStandardization(row)">查看画像</el-button>
-                  <span v-else class="field-help">未返回映射ID</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="值集" width="110" fixed="right">
-                <template #default="{ row }">
-                  <el-button v-if="row.semanticRole === 'DIMENSION' || row.dataType === 'CODE' || row.dataType === 'STRING'" link type="primary" @click.stop="openValueSetBinding(row)">绑定值集</el-button>
-                  <span v-else class="field-help">非维度字段</span>
+                  <div class="field-actions">
+                    <div class="field-action-row"><el-button v-if="row.sourceFieldMappingId" link type="primary" @click="openStandardization(row)">标准化</el-button><span v-else class="field-action-disabled">未映射</span></div>
+                    <div class="field-action-row"><el-button v-if="row.semanticRole === 'DIMENSION' || row.dataType === 'CODE' || row.dataType === 'STRING'" link type="primary" @click.stop="openValueSetBinding(row)">绑定值集</el-button><span v-else class="field-action-disabled">不适用</span></div>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>
@@ -187,7 +184,7 @@
               <el-form-item label="来源字段" prop="sourceFieldName"><el-input v-model="fieldForm.sourceFieldName" readonly /></el-form-item>
               <el-form-item label="标准字段编码" prop="code"><el-input v-model.trim="fieldForm.code" maxlength="64" show-word-limit placeholder="如 DEATH_DATETIME" /></el-form-item>
               <el-form-item label="业务名称" prop="name"><el-input v-model.trim="fieldForm.name" placeholder="如 死亡时间" /></el-form-item>
-              <el-form-item label="标准数据类型" prop="dataType"><el-select v-model="fieldForm.dataType" placeholder="选择数据类型"><el-option v-for="item in semanticDataTypes" :key="item" :label="dataTypeLabel(item)" :value="item" /></el-select></el-form-item>
+              <el-form-item label="标准数据类型" prop="dataType"><el-select v-model="fieldForm.dataType" placeholder="选择数据类型"><el-option v-for="item in semanticDataTypes" :key="item" :label="semanticDataTypeLabel(item)" :value="item" /></el-select></el-form-item>
               <el-form-item label="敏感信息" prop="sensitive"><el-switch v-model="fieldForm.sensitive" active-text="是" inactive-text="否" /></el-form-item>
             </div>
             <div class="mapping-actions">
@@ -433,8 +430,8 @@ function selectSourceField(row) {
 function openStandardization(row) {
   router.push({
     name: 'SourceStandardization',
-    params: { mappingId: row.sourceFieldMappingId },
-    query: { sourceField: row.sourceFieldName || row.code }
+      params: { mappingId: row.sourceFieldMappingId },
+      query: { sourceField: row.sourceFieldName || row.code, fieldId: row.id || undefined }
   })
 }
 
@@ -598,6 +595,10 @@ function dataTypeLabel(value) {
   return ({ STRING: '文本（STRING）', INTEGER: '整数（INTEGER）', DECIMAL: '小数（DECIMAL）', NUMBER: '数值（NUMBER）', DATE: '日期（DATE）', DATETIME: '日期时间（DATETIME）', BOOLEAN: '布尔（BOOLEAN）', CODE: '编码（CODE）' })[String(value || '').toUpperCase()] || value || '未知类型'
 }
 
+function semanticDataTypeLabel(value) {
+  return ({ STRING: '文本', INTEGER: '整数', DECIMAL: '小数', NUMBER: '数值', DATE: '日期', DATETIME: '日期时间', BOOLEAN: '布尔', CODE: '编码' })[String(value || '').toUpperCase()] || value || '未知类型'
+}
+
 function stateTypeForError(error) {
   if (error?.status === 401 || error?.status === 403) return 'permission'
   if (error?.status === 404 || error?.status === 501 || error?.status === 503) return 'unavailable'
@@ -638,18 +639,22 @@ function formatErrorMessage(error, fallback) {
 .selected-context { color: var(--idmp-text-secondary); font-size: 13px; }
 .selected-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 0; padding-top: 0; border-top: 0; }
 .field-mapping-card { padding: 18px; }
-.field-mapping-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.field-mapping-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 16px; align-items: start; }
 .field-pane { min-width: 0; padding: 14px; background: var(--idmp-layer-02); border: 1px solid var(--idmp-border-subtle); }
 .mapping-table-scroll { max-height: 360px; overflow-y: auto; overflow-x: hidden; border: 1px solid var(--idmp-border-subtle); background: var(--idmp-layer-01); }
 .mapping-table-scroll :deep(.el-table) { width: 100%; min-width: 0; }
 .mapping-table-scroll :deep(.el-table__header-wrapper), .mapping-table-scroll :deep(.el-table__body-wrapper) { min-width: 0; }
-.field-pane:nth-child(2) .mapping-table-scroll { overflow-x: auto; }
-.field-pane:nth-child(2) .mapping-table-scroll :deep(.el-table) { min-width: 760px; }
+.semantic-field-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.semantic-field-cell strong, .semantic-field-cell small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.semantic-field-cell small { color: var(--idmp-text-helper); font: 11px ui-monospace, SFMono-Regular, Consolas, monospace; }
+.field-actions { display: flex; flex-direction: column; align-items: stretch; gap: 2px; }
+.field-action-row { display: flex; min-height: 24px; align-items: center; }
+.field-action-disabled { color: var(--idmp-text-helper); font-size: 12px; }
 .field-pane__heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; color: var(--idmp-text-primary); }
 .field-pane__heading span { color: var(--idmp-text-helper); font-size: 12px; }
 .source-field-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .source-field-cell strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.source-field-cell small { overflow: hidden; color: var(--idmp-text-helper); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.source-field-cell small { order: -1; overflow: hidden; color: var(--idmp-text-helper); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .mapping-editor { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--idmp-border-subtle); }
 .field-form-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 .field-form-grid :deep(.el-select), .field-form-grid :deep(.el-input) { width: 100%; }

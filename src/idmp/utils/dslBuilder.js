@@ -4,6 +4,7 @@
   if (node.nodeType === 'PREDICATE') {
     const result = { nodeType: 'PREDICATE', fieldCode: node.fieldCode, operator: node.operator }
     if (node.parameter) result.parameter = node.parameter
+    if (node.operator === 'IN_VALUE_SET') result.itemCodes = Array.isArray(node.itemCodes) ? node.itemCodes : []
     else if (node.value !== undefined && node.value !== '') result.value = node.value
     return result
   }
@@ -43,7 +44,7 @@ export function validateFilterNode(node, errors = []) {
   if (node.nodeType === 'PREDICATE') {
     if (!node.fieldCode) errors.push('请选择筛选字段')
     else if (!node.operator) errors.push('请选择该字段的判断方式')
-    else if (!node.parameter && isEmptyFilterValue(node.value)) errors.push('请填写或选择条件值')
+    else if (node.operator === 'IN_VALUE_SET' ? isEmptyFilterValue(node.itemCodes) : (!node.parameter && isEmptyFilterValue(node.value))) errors.push('请填写或选择条件值')
     return errors
   }
   if (node.nodeType === 'NOT') return validateFilterNode(node.child, errors)

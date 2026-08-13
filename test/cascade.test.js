@@ -31,3 +31,12 @@ test('filter validation reports the exact missing step', () => {
   assert.deepEqual(validateFilterNode({ nodeType: 'PREDICATE', fieldCode: 'SEX', operator: '', value: '' }), ['请选择该字段的判断方式'])
   assert.deepEqual(validateFilterNode({ nodeType: 'PREDICATE', fieldCode: 'SEX', operator: 'EQ', value: [] }), ['请填写或选择条件值'])
 })
+
+test('value-set predicates serialize stable item codes and validate selections', () => {
+  const filters = { nodeType: 'AND', children: [{ nodeType: 'PREDICATE', fieldCode: 'PATIENT_SEX', operator: 'IN_VALUE_SET', itemCodes: ['MALE'] }] }
+  assert.deepEqual(validateFilterNode(filters), [])
+  assert.deepEqual(buildFactorDsl({ domainCode: 'D', semanticTableCode: 'T', aggregation: 'COUNT', filters }).filters.children[0], {
+    nodeType: 'PREDICATE', fieldCode: 'PATIENT_SEX', operator: 'IN_VALUE_SET', itemCodes: ['MALE']
+  })
+  assert.deepEqual(validateFilterNode({ nodeType: 'PREDICATE', fieldCode: 'PATIENT_SEX', operator: 'IN_VALUE_SET', itemCodes: [] }), ['请填写或选择条件值'])
+})

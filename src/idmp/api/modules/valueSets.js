@@ -4,6 +4,14 @@ export function fetchValueSets(params = {}) {
   return requestJson(withQuery('/meta/value-sets', params))
 }
 
+export function createValueSet(payload) {
+  return requestJson('/meta/value-sets', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export function createValueSetVersion(valueSetId, payload = {}) {
+  return requestJson(`/meta/value-sets/${encodeURIComponent(valueSetId)}/versions`, { method: 'POST', body: JSON.stringify(payload) })
+}
+
 export function fetchValueSet(valueSetId) {
   return requestJson(`/meta/value-sets/${encodeURIComponent(valueSetId)}`)
 }
