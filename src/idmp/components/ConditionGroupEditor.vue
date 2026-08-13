@@ -1,14 +1,14 @@
 ﻿<template>
   <div class="rule-group" :class="{ nested: depth > 0 }">
-    <div class="rule-group__head"><span>统计周期条件</span><small>条件值取自本页下方“本次试算周期”</small></div>
-    <div v-if="!node.children?.length" class="rule-empty"><strong>尚未添加周期条件</strong><span>请选择语义表中的日期字段，将它绑定到本次试算周期。</span><el-button type="primary" plain size="small" @click="addPredicate">添加日期条件</el-button></div>
+    <div class="rule-group__head"><span>业务筛选条件</span><small>支持试算周期与已发布值集的标准业务值</small></div>
+    <div v-if="!node.children?.length" class="rule-empty"><strong>尚未添加筛选条件</strong><span>可选择日期字段绑定试算周期，或选择已绑定值集的维度字段按标准值筛选。</span><el-button type="primary" plain size="small" @click="addPredicate">添加筛选条件</el-button></div>
     <div v-for="(child,index) in node.children" :key="child.id" class="rule-row" draggable="true" @dragstart="dragStart(index)" @dragover.prevent @drop="drop(index)">
       <span class="drag-handle">⋮⋮</span>
       <template v-if="child.nodeType === 'PREDICATE'"><SemanticFieldSelector :model-value="child.fieldCode" :fields="fields" @update:model-value="fieldChanged(child, $event)" /><el-select :model-value="child.operator" :disabled="!child.fieldCode" placeholder="选择判断方式" @update:model-value="operatorChanged(child, $event)"><el-option v-for="option in operatorOptions(child)" :key="option.value" :label="option.label" :value="option.value" /></el-select><RuleValueEditor :field="fieldByCodeLocal(child.fieldCode)" :operator="child.operator" :parameter="child.parameter" :model-value="child.operator === 'IN_VALUE_SET' ? child.itemCodes : child.value" @update:model-value="valueChanged(child, $event)" /><el-button link type="danger" @click="removeChild(index)">删除</el-button></template>
       <template v-else-if="child.nodeType === 'NOT'"><span class="not-label">不满足</span><ConditionGroupEditor :node="child.child" :fields="fields" :depth="depth+1" @remove="removeChild(index)" @update="emitUpdate" /></template>
       <ConditionGroupEditor v-else :node="child" :fields="fields" :depth="depth+1" @remove="removeChild(index)" @update="emitUpdate" />
     </div>
-    <div class="rule-actions"><el-button link type="primary" @click="addPredicate">+ 添加日期条件</el-button></div>
+    <div class="rule-actions"><el-button link type="primary" @click="addPredicate">+ 添加筛选条件</el-button></div>
   </div>
 </template>
 <script setup>

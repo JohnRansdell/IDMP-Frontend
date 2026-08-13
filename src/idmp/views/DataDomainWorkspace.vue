@@ -128,12 +128,13 @@
 
         <div class="field-mapping-grid">
           <div class="field-pane">
-              <div class="field-pane__heading"><strong>来源字段</strong><span>{{ sourceFields.length }} 个 · 点击一行开始映射</span></div>
+              <div class="field-pane__heading"><div class="field-pane__heading-main"><strong>来源字段</strong><span>{{ filteredSourceFields.length }} / {{ sourceFields.length }} 个 · 点击一行开始映射</span></div><el-input v-model.trim="sourceFieldKeyword" class="field-search-input" size="small" clearable placeholder="搜索字段名、注释或类型" aria-label="搜索来源字段" /></div>
             <StatePanel v-if="fieldLoading" type="loading" title="正在加载字段" />
             <StatePanel v-else-if="fieldError" :type="stateTypeForError(fieldError)" title="物理字段加载失败" :description="fieldErrorMessage" />
             <StatePanel v-else-if="!sourceFields.length" type="empty" title="暂无物理字段" description="请确认源表元数据已经同步。" />
+            <StatePanel v-else-if="!filteredSourceFields.length" type="empty" title="没有匹配的来源字段" description="请调整搜索关键词或清空搜索条件。" />
             <div v-else class="mapping-table-scroll">
-            <el-table :data="sourceFields" row-key="columnName" highlight-current-row table-layout="fixed" @row-click="selectSourceField">
+            <el-table :data="filteredSourceFields" row-key="columnName" highlight-current-row table-layout="fixed" @row-click="selectSourceField">
               <el-table-column label="源字段" min-width="230" show-overflow-tooltip>
                 <template #default="{ row }">
                   <div class="source-field-cell"><small>{{ row.comment || '暂无字段中文注释' }}</small><strong>{{ row.columnName }}</strong></div>
@@ -148,12 +149,13 @@
           </div>
 
           <div class="field-pane">
-              <div class="field-pane__heading"><strong>标准业务字段</strong><span>{{ semanticFields.length }} 个</span></div>
+              <div class="field-pane__heading"><div class="field-pane__heading-main"><strong>标准业务字段</strong><span>{{ filteredSemanticFields.length }} / {{ semanticFields.length }} 个</span></div><el-input v-model.trim="semanticFieldKeyword" class="field-search-input" size="small" clearable placeholder="搜索字段名称、编码或来源字段" aria-label="搜索标准业务字段" /></div>
             <StatePanel v-if="fieldLoading" type="loading" title="正在加载语义字段" />
             <StatePanel v-else-if="fieldError" :type="stateTypeForError(fieldError)" title="语义字段加载失败" :description="fieldErrorMessage" />
             <StatePanel v-else-if="!semanticFields.length" type="empty" title="暂无语义字段" description="从左侧选择源字段开始建立映射。" />
+            <StatePanel v-else-if="!filteredSemanticFields.length" type="empty" title="没有匹配的标准业务字段" description="请调整搜索关键词或清空搜索条件。" />
             <div v-else class="mapping-table-scroll">
-            <el-table :data="semanticFields" row-key="id" table-layout="fixed">
+            <el-table :data="filteredSemanticFields" row-key="id" table-layout="fixed">
               <el-table-column prop="sourceFieldName" label="来源字段" min-width="135" show-overflow-tooltip>
                 <template #default="{ row }">{{ row.sourceFieldName || '未返回映射来源' }}</template>
               </el-table-column>
@@ -262,6 +264,8 @@ const selectedTableCode = ref('')
 const selectedSourceField = ref(null)
 const sourceFields = ref([])
 const semanticFields = ref([])
+const sourceFieldKeyword = ref('')
+const semanticFieldKeyword = ref('')
 const defaultTimeFieldCode = ref('')
 const fieldFormRef = ref(null)
 const domainLoading = ref(false)
@@ -305,6 +309,16 @@ const tableErrorMessage = computed(() => formatErrorMessage(tableError.value, '�
 const createErrorMessage = computed(() => formatErrorMessage(createError.value, '语义表创建失败'))
 const fieldErrorMessage = computed(() => formatErrorMessage(fieldError.value, '字段加载失败'))
 const timeFieldOptions = computed(() => semanticFields.value.filter((item) => item.dataType === 'DATE' || item.dataType === 'DATETIME'))
+const filteredSourceFields = computed(() => {
+  const keyword = sourceFieldKeyword.value.trim().toLowerCase()
+  if (!keyword) return sourceFields.value
+  return sourceFields.value.filter((item) => [item.columnName, item.comment, item.columnType].some((value) => String(value || '').toLowerCase().includes(keyword)))
+})
+const filteredSemanticFields = computed(() => {
+  const keyword = semanticFieldKeyword.value.trim().toLowerCase()
+  if (!keyword) return semanticFields.value
+  return semanticFields.value.filter((item) => [item.sourceFieldName, item.code, item.name, item.dataType].some((value) => String(value || '').toLowerCase().includes(keyword)))
+})
 
 const fieldRules = {
   sourceFieldName: [{ required: true, message: '请选择源字段', trigger: 'change' }],
@@ -381,6 +395,8 @@ function selectSemanticTable(row) {
   selectedSourceField.value = null
   sourceFields.value = []
   semanticFields.value = []
+  sourceFieldKeyword.value = ''
+  semanticFieldKeyword.value = ''
   fieldError.value = null
   fieldSaveFeedback.value = null
   defaultTimeFieldCode.value = row?.defaultTimeSemanticFieldCode || ''
@@ -651,7 +667,9 @@ function formatErrorMessage(error, fallback) {
 .field-action-row { display: flex; min-height: 24px; align-items: center; }
 .field-action-disabled { color: var(--idmp-text-helper); font-size: 12px; }
 .field-pane__heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; color: var(--idmp-text-primary); }
-.field-pane__heading span { color: var(--idmp-text-helper); font-size: 12px; }
+.field-pane__heading-main { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; }
+.field-pane__heading-main span { color: var(--idmp-text-helper); font-size: 12px; white-space: nowrap; }
+.field-search-input { flex: 0 1 220px; min-width: 150px; }
 .source-field-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .source-field-cell strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .source-field-cell small { order: -1; overflow: hidden; color: var(--idmp-text-helper); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
@@ -667,4 +685,5 @@ function formatErrorMessage(error, fallback) {
 .create-error { margin-top: 8px; }
 @media (max-width: 1100px) { .model-progress-steps { gap: 8px; } .selected-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .field-form-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .default-time-editor { grid-template-columns: 1fr 220px; } .default-time-editor .el-button { grid-column: 2; } }
 @media (max-width: 900px) { .model-progress-steps { align-items: flex-start; flex-direction: column; } .model-progress-steps > i { display: none; } .summary-grid, .selected-grid { grid-template-columns: 1fr; } .toolbar-meta { align-items: flex-end; flex-direction: column; } .field-mapping-grid { grid-template-columns: 1fr; } .field-form-grid { grid-template-columns: 1fr 1fr; } .default-time-editor { grid-template-columns: 1fr; } .default-time-editor .el-button { grid-column: auto; } }
+@media (max-width: 560px) { .field-pane__heading { align-items: stretch; flex-direction: column; } .field-search-input { flex-basis: auto; min-width: 0; width: 100%; } }
 </style>
