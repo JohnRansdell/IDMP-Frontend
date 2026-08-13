@@ -56,6 +56,7 @@ export function normalizeSemanticTable(item = {}) {
 }
 
 export function normalizeSemanticField(item = {}) {
+  const semanticKind = String(item.semanticKind || item.semanticRole || item.role || '').toUpperCase()
   return {
     id: toOpaqueId(item.id),
     domainId: toOpaqueId(item.domainId),
@@ -63,7 +64,8 @@ export function normalizeSemanticField(item = {}) {
     code: item.code || item.fieldCode || item.semanticCode || '',
     name: item.name || item.fieldName || item.semanticName || '',
     dataType: item.dataType || '',
-    semanticRole: item.semanticRole || item.role || '',
+    semanticKind,
+    semanticRole: semanticKind,
     groupable: item.groupable,
     aggregatable: item.aggregatable,
     filterable: item.filterable,

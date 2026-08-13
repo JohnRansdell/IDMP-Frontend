@@ -132,13 +132,14 @@
                   <strong>指标结果下钻路径</strong>
                   <el-tag size="small" type="warning">当前为默认路径配置</el-tag>
                 </div>
-                <p>创建指标版本时后端要求指定下钻路径。当前接口文档尚未提供路径列表接口，页面先使用环境配置的默认组织路径。</p>
+                <p>首次保存公式时会把公式和下钻路径一起创建为指标版本。总体粒度因子请选择时间路径；组织路径要求分子、分母都输出对应组织粒度。</p>
                 <div class="drill-config-card__fields">
                   <el-form-item label="路径编码" label-width="88px" prop="drillPathCode">
-                    <el-select v-model="drillConfig.pathCode" aria-label="指标下钻路径">
+                    <el-select v-model="drillConfig.pathCode" aria-label="指标下钻路径" @change="handleDrillPathChange">
                       <el-option label="组织下钻（ORGANIZATION）" value="ORGANIZATION" />
+                      <el-option label="时间下钻（TIME）" value="TIME" />
                       <el-option
-                        v-if="drillConfig.pathCode && drillConfig.pathCode !== 'ORGANIZATION'"
+                        v-if="drillConfig.pathCode && !['ORGANIZATION', 'TIME'].includes(drillConfig.pathCode)"
                         :label="`${drillConfig.pathCode}（环境默认）`"
                         :value="drillConfig.pathCode"
                       />
@@ -146,8 +147,15 @@
                   </el-form-item>
                   <el-form-item label="最大层级" label-width="88px" prop="drillMaxLevel">
                     <el-select v-model="drillConfig.maxLevel" aria-label="下钻最大层级">
-                      <el-option label="医院（HOSPITAL）" value="HOSPITAL" />
-                      <el-option label="出院科室（OUT_DEPT）" value="OUT_DEPT" />
+                      <template v-if="drillConfig.pathCode === 'TIME'">
+                        <el-option label="年度（YEAR）" value="YEAR" />
+                        <el-option label="季度（QUARTER）" value="QUARTER" />
+                        <el-option label="月度（MONTH）" value="MONTH" />
+                      </template>
+                      <template v-else>
+                        <el-option label="医院（HOSPITAL）" value="HOSPITAL" />
+                        <el-option label="出院科室（OUT_DEPT）" value="OUT_DEPT" />
+                      </template>
                     </el-select>
                   </el-form-item>
                 </div>
@@ -161,13 +169,13 @@
               <small>
                 {{
                   isNew
-                    ? (indicatorWorkflow.indicatorId ? `已保存指标 ${indicatorWorkflow.indicatorId}` : '先保存基本信息，再创建可配置版本')
+                    ? (indicatorWorkflow.indicatorId ? `已保存指标 ${indicatorWorkflow.indicatorId}` : '先保存基本信息，再选择公式并创建版本')
                     : (indicatorWorkflow.indicatorId ? `正在编辑指标 ${indicatorWorkflow.indicatorId}，可创建新的草稿版本` : '等待指标目录摘要或详情接口回填')
                 }}
               </small>
             </div>
             <el-button :loading="workflowLoading.basic" @click="saveIndicatorBasicInfo">保存基本信息</el-button>
-            <el-button :disabled="!indicatorWorkflow.indicatorId" :loading="workflowLoading.version" @click="createIndicatorDraftVersion">
+            <el-button v-if="indicatorWorkflow.versionId" :loading="workflowLoading.version" @click="createIndicatorDraftVersion">
               创建指标版本
             </el-button>
             <el-button
@@ -313,10 +321,10 @@
             <div class="business-action-bar formula-actions">
               <div>
                 <span>公式与试算操作</span>
-                <small>{{ indicatorWorkflow.versionId ? `当前版本 ${indicatorWorkflow.versionId}` : '请先在基本信息页签创建指标版本' }}</small>
+                <small>{{ indicatorWorkflow.versionId ? `当前版本 ${indicatorWorkflow.versionId}` : (indicatorWorkflow.indicatorId ? '选择分子、分母后首次保存将创建指标版本' : '请先保存指标基本信息') }}</small>
               </div>
-              <el-button :disabled="!indicatorWorkflow.versionId || indicatorWorkflow.published" :loading="workflowLoading.formula" @click="saveIndicatorFormulaOnly">
-                保存公式
+              <el-button :disabled="!indicatorWorkflow.indicatorId || indicatorWorkflow.published" :loading="workflowLoading.formula || workflowLoading.version" @click="saveIndicatorFormulaOnly">
+                {{ indicatorWorkflow.versionId ? '保存公式' : '创建版本并保存公式' }}
               </el-button>
               <el-button :disabled="!indicatorWorkflow.formulaSaved" :loading="workflowLoading.compile" @click="compileIndicatorFormulaOnly">
                 公式校验
@@ -649,16 +657,14 @@ import {
   trialIndicatorVersion,
   updateIndicator
 } from '@/idmp/api/modules/indicators'
-import { buildIndicatorVersionPayload, defaultDrillConfig, normalizeDrillConfig } from '@/idmp/api/adapters/indicator'
+import { buildIndicatorVersionPayload, defaultDrillConfig, findUnsupportedDrillFactors, normalizeDrillConfig } from '@/idmp/api/adapters/indicator'
 import { fetchFactorVersions } from '@/idmp/api/modules/factors'
 import { fetchAsyncTask, fetchCalcBatch } from '@/idmp/api/modules/calculation'
 import {
   createMortalityFormulaPayload,
-  createMortalityTrialPayload,
-  mortalityChainConfig
+  createMortalityTrialPayload
 } from '@/idmp/api/modules/mortality'
 import {
-  editorFactors,
   editorPolicyRows,
   editorSceneRows
 } from '@/idmp/data/demo'
@@ -670,8 +676,8 @@ const routeIndicatorKey = computed(() => String(route.params.id || ''))
 const activeTab = ref('basic')
 const formRef = ref()
 const backendEditorFactors = ref([])
-const deathFactorVersionId = ref(mortalityChainConfig.deathFactorVersionId)
-const dischargeFactorVersionId = ref(mortalityChainConfig.dischargeFactorVersionId)
+const deathFactorVersionId = ref('')
+const dischargeFactorVersionId = ref('')
 const buildInfo = {
   commit: typeof __APP_GIT_COMMIT__ === 'undefined' ? 'dev' : __APP_GIT_COMMIT__,
   time: typeof __APP_BUILD_TIME__ === 'undefined' ? 'dev' : __APP_BUILD_TIME__
@@ -692,7 +698,9 @@ const indicatorWorkflow = reactive({
   publishedVersionId: '',
   publishIdempotencyKey: ''
 })
-const drillConfig = reactive({ ...defaultDrillConfig })
+const drillConfig = reactive(isNew.value
+  ? { ...defaultDrillConfig, pathCode: 'TIME', maxLevel: 'MONTH', pathVersionId: '' }
+  : { ...defaultDrillConfig })
 const workflowDebug = reactive({
   step: '',
   endpoint: '',
@@ -999,12 +1007,12 @@ const formulaModes = [
 ]
 const formulaMode = ref('简单比率型')
 const activeMode = computed(() => formulaModes.find(item => item.name === formulaMode.value))
-const numeratorFactors = ref([editorFactors.find(item => item.code === 'F-002')])
-const denominatorFactors = ref([editorFactors.find(item => item.code === 'F-001')])
+const numeratorFactors = ref([])
+const denominatorFactors = ref([])
 const draggedFactor = ref()
 const factorSearch = ref('')
 const factorCategory = ref('')
-const factorLibraryRows = computed(() => backendEditorFactors.value.length ? backendEditorFactors.value : editorFactors)
+const factorLibraryRows = computed(() => backendEditorFactors.value)
 const factorCategories = computed(() => [...new Set(factorLibraryRows.value.map(item => item.category).filter(Boolean))])
 const zeroStrategy = ref('返回 NULL')
 
@@ -1063,7 +1071,7 @@ async function loadPublishedFactorVersions() {
     refreshSelectedFactorReferences()
   } catch (error) {
     backendEditorFactors.value = []
-    ElMessage.warning(error?.message || '已发布因子版本接口暂不可用，公式因子库使用演示数据')
+    ElMessage.warning(error?.message || '已发布因子版本接口暂不可用，无法配置真实指标公式')
   } finally {
     workflowLoading.factors = false
   }
@@ -1382,6 +1390,7 @@ async function saveIndicatorBasicInfo() {
       '',
       resolveResourceVersion(indicator)
     )
+    await router.replace(`/indicator/edit/${encodeURIComponent(indicatorId)}`)
     ElMessage.success('指标基本信息已保存到后端')
     return true
   } catch (error) {
@@ -1398,16 +1407,16 @@ async function createIndicatorDraftVersion() {
     return false
   }
 
+  if (!indicatorWorkflow.versionId) {
+    activeTab.value = 'formula'
+    ElMessage.info('请先选择分子、分母；首次保存公式时会同时创建指标版本')
+    return false
+  }
+
   workflowLoading.version = true
   try {
-    const copyFromVersionId = isNew.value ? '' : indicatorWorkflow.versionId
-    // The current backend contract requires a formula when creating the first
-    // version. Existing indicators can still create a draft by copying the
-    // current version, so do not send both modes together.
-    const formula = isNew.value
-      ? createIndicatorFormulaPayload(0).formula
-      : undefined
-    const versionPayload = buildIndicatorVersionPayload({ copyFromVersionId, drillConfig, formula })
+    const copyFromVersionId = indicatorWorkflow.versionId
+    const versionPayload = buildIndicatorVersionPayload({ copyFromVersionId, drillConfig })
     recordWorkflowRequest({
       step: '创建指标版本',
       endpoint: `/api/v1/indicators/${indicatorWorkflow.indicatorId}/versions`,
@@ -1448,29 +1457,19 @@ async function createIndicatorDraftVersion() {
 }
 
 async function saveBasicAndCreateVersion() {
-  if (!isNew.value) {
-    if (indicatorWorkflow.indicatorId) {
-      return createIndicatorDraftVersion()
-    }
-    ElMessage.warning('请等待指标目录摘要加载完成，或等待后端详情接口接入后再创建版本')
-    return false
-  }
-
   const basicSaved = await saveIndicatorBasicInfo()
   if (!basicSaved) return
+  activeTab.value = 'formula'
+  ElMessage.success(indicatorWorkflow.versionId ? '基本信息已保存，可以继续配置公式' : '基本信息已保存，请选择分子、分母并创建首个版本')
+}
 
-  if (indicatorWorkflow.versionId) {
-    activeTab.value = 'formula'
-    ElMessage.success('指标与版本已就绪，可以配置公式')
-    return
-  }
-
-  await createIndicatorDraftVersion()
+function handleDrillPathChange(pathCode) {
+  drillConfig.maxLevel = pathCode === 'TIME' ? 'MONTH' : 'OUT_DEPT'
 }
 
 async function saveIndicatorFormulaOnly() {
-  if (!indicatorWorkflow.versionId) {
-    ElMessage.warning('请先创建指标版本')
+  if (!indicatorWorkflow.indicatorId) {
+    ElMessage.warning('请先保存指标基本信息')
     return
   }
   if (indicatorWorkflow.published) {
@@ -1478,15 +1477,25 @@ async function saveIndicatorFormulaOnly() {
     return
   }
 
+  const validationMessage = validateFormulaAndDrillSelection()
+  if (validationMessage) {
+    ElMessage.warning(validationMessage)
+    return
+  }
+
   workflowLoading.formula = true
   try {
-    await refreshIndicatorVersionState()
-    try {
-      await persistIndicatorFormula()
-    } catch (error) {
-      if (!isOptimisticLockError(error)) throw error
+    if (!indicatorWorkflow.versionId) {
+      await createFirstIndicatorVersionWithFormula()
+    } else {
       await refreshIndicatorVersionState()
-      await persistIndicatorFormula()
+      try {
+        await persistIndicatorFormula()
+      } catch (error) {
+        if (!isOptimisticLockError(error)) throw error
+        await refreshIndicatorVersionState()
+        await persistIndicatorFormula()
+      }
     }
     ElMessage.success('计算公式已保存')
   } catch (error) {
@@ -1495,6 +1504,56 @@ async function saveIndicatorFormulaOnly() {
   } finally {
     workflowLoading.formula = false
   }
+}
+
+function validateFormulaAndDrillSelection() {
+  if (numeratorFactors.value.length !== 1) return '简单比率型必须选择一个分子因子'
+  if (denominatorFactors.value.length !== 1) return '简单比率型必须选择一个分母因子'
+  if (!drillConfig.pathCode || !drillConfig.maxLevel) return '请选择下钻路径和最大层级'
+
+  const unsupported = findUnsupportedDrillFactors(
+    [...numeratorFactors.value, ...denominatorFactors.value],
+    drillConfig
+  )
+  if (!unsupported.length) return ''
+
+  return unsupported.map(({ factor, missing }) =>
+    `${factor.name || factor.code || factor.versionId} 的输出粒度缺少 ${missing.join('、')}`
+  ).join('；') + '。请选择时间下钻，或重新发布包含所需组织粒度的因子'
+}
+
+async function createFirstIndicatorVersionWithFormula() {
+  const formulaPayload = createIndicatorFormulaPayload(0)
+  const versionPayload = buildIndicatorVersionPayload({
+    drillConfig,
+    formula: formulaPayload.formula
+  })
+  recordWorkflowRequest({
+    step: '创建首个指标版本并保存公式',
+    endpoint: `/api/v1/indicators/${indicatorWorkflow.indicatorId}/versions`,
+    indicatorId: indicatorWorkflow.indicatorId,
+    requestBody: versionPayload
+  })
+  const version = await createIndicatorVersion(indicatorWorkflow.indicatorId, versionPayload)
+  const versionId = resolveIndicatorVersionId(version)
+  if (!versionId) throw new Error('后端未返回指标版本 ID，无法继续公式流程')
+
+  Object.assign(indicatorWorkflow, {
+    versionId,
+    resourceVersion: resolveResourceVersion(version),
+    metadataVersionId: toOpaqueId(version.metadataVersionId ?? versionId),
+    metadataResourceVersion: resolveMetadataResourceVersion(version),
+    formulaSaved: true,
+    compiled: Boolean(version.currentArtifactId),
+    taskId: '',
+    batchId: '',
+    displayValue: '',
+    resultValue: '',
+    published: false,
+    publishedVersionId: '',
+    publishIdempotencyKey: ''
+  })
+  recordWorkflowSuccess(`首个指标版本及公式已保存：${versionId}`)
 }
 
 async function compileIndicatorFormulaOnly() {
@@ -1683,7 +1742,6 @@ async function persistIndicatorFormula() {
 
 async function ensureIndicatorPublishPrerequisites() {
   if (!indicatorWorkflow.formulaSaved) {
-    usePublishedMortalityFactorVersions()
     await saveIndicatorFormulaOnly()
     if (!indicatorWorkflow.formulaSaved) return false
   }
@@ -1715,24 +1773,18 @@ async function refreshIndicatorVersionState() {
   return latest
 }
 
-function usePublishedMortalityFactorVersions() {
-  deathFactorVersionId.value = mortalityChainConfig.deathFactorVersionId
-  dischargeFactorVersionId.value = mortalityChainConfig.dischargeFactorVersionId
-  applySelectedFactorReferences()
-  indicatorWorkflow.formulaSaved = false
-  indicatorWorkflow.compiled = false
-  indicatorWorkflow.batchId = ''
-  indicatorWorkflow.displayValue = ''
-  indicatorWorkflow.resultValue = ''
-}
-
 function isOptimisticLockError(error) {
   return error?.status === 409 || /已被修改|乐观锁|resourceVersion/i.test(error?.message || '')
 }
 
 function createIndicatorFormulaPayload(resourceVersion) {
-  deathFactorVersionId.value = numeratorFactors.value[0]?.versionId || deathFactorVersionId.value
-  dischargeFactorVersionId.value = denominatorFactors.value[0]?.versionId || dischargeFactorVersionId.value
+  const numeratorVersionId = numeratorFactors.value[0]?.versionId
+  const denominatorVersionId = denominatorFactors.value[0]?.versionId
+  if (!numeratorVersionId || !denominatorVersionId) {
+    throw new Error('请先选择已发布的分子、分母因子')
+  }
+  deathFactorVersionId.value = toOpaqueId(numeratorVersionId)
+  dischargeFactorVersionId.value = toOpaqueId(denominatorVersionId)
 
   return createMortalityFormulaPayload({
     deathFactorVersionId: deathFactorVersionId.value,

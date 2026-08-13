@@ -10,10 +10,12 @@ test('API adapters preserve BIGINT ids as opaque strings', () => {
 })
 
 test('semantic field adapter exposes stable fields and validates code/type', () => {
-  const field = adaptSemanticFieldList([{ id: '1', code: 'DEATH_DATETIME', name: '死亡时间', dataType: 'DATETIME', sensitive: true }])[0]
+  const field = adaptSemanticFieldList([{ id: '1', code: 'DEATH_DATETIME', name: '死亡时间', dataType: 'DATETIME', semanticKind: 'dimension', sensitive: true }])[0]
   assert.equal(field.code, 'DEATH_DATETIME')
   assert.equal(field.dataType, 'DATETIME')
   assert.equal(field.sensitive, true)
+  assert.equal(field.semanticKind, 'DIMENSION')
+  assert.equal(field.semanticRole, 'DIMENSION')
   assert.equal(validateSemanticFieldCode('death-time'), false)
   assert.equal(validateSemanticFieldCode('DEATH_DATETIME'), true)
   assert.ok(SEMANTIC_DATA_TYPES.includes('DATE'))

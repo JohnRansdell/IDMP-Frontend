@@ -36,3 +36,23 @@ export function buildIndicatorVersionPayload({ copyFromVersionId = '', drillConf
     }]
   }
 }
+
+export function requiredGrainForDrill(drillConfig = {}) {
+  const pathCode = String(drillConfig.pathCode || '').toUpperCase()
+  const maxLevel = String(drillConfig.maxLevel || '').toUpperCase()
+  if (pathCode !== 'ORGANIZATION') return []
+  if (maxLevel === 'HOSPITAL') return ['HOSPITAL_CODE']
+  if (maxLevel === 'OUT_DEPT') return ['HOSPITAL_CODE', 'OUT_DEPT_CODE']
+  return []
+}
+
+export function findUnsupportedDrillFactors(factors = [], drillConfig = {}) {
+  const required = requiredGrainForDrill(drillConfig)
+  if (!required.length) return []
+  return factors.map((factor) => {
+    const grain = factor?.dsl?.output?.grain || factor?.output?.grain || factor?.dsl?.groupBy || []
+    const available = new Set(grain.map((item) => String(item?.fieldCode || item).toUpperCase()))
+    const missing = required.filter((code) => !available.has(code))
+    return missing.length ? { factor, missing } : null
+  }).filter(Boolean)
+}

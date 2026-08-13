@@ -3,6 +3,7 @@
 export function normalizeSemanticField(item = {}) {
   const code = item.code ?? item.fieldCode
   const dataType = String(item.dataType ?? item.fieldType ?? 'STRING').toUpperCase()
+  const semanticKind = String(item.semanticKind || item.semanticRole || item.role || '').toUpperCase()
   return {
     id: item.id ?? item.fieldId ?? '',
     code,
@@ -11,8 +12,8 @@ export function normalizeSemanticField(item = {}) {
     dataType,
     kind: normalizeFieldKind(dataType),
     options: item.options || item.values || item.enumValues || [],
-    semanticKind: item.semanticKind || item.semanticRole || item.role || '',
-    semanticRole: item.semanticRole || item.role || '',
+    semanticKind,
+    semanticRole: semanticKind,
     groupable: item.groupable,
     aggregatable: item.aggregatable,
     filterable: item.filterable,

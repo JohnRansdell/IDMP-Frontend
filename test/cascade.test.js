@@ -24,6 +24,9 @@ test('explicit period filter is complete without a literal value', () => {
   assert.deepEqual(buildFactorDsl({ domainCode: 'D', semanticTableCode: 'T', aggregation: 'COUNT', filters }).filters.children[0], {
     nodeType: 'PREDICATE', fieldCode: 'OUT_DATE', operator: 'BETWEEN', parameter: 'period'
   })
+  assert.deepEqual(buildFactorDsl({ domainCode: 'D', semanticTableCode: 'T', aggregation: 'COUNT', filters }).parameters, [
+    { code: 'period', type: 'PERIOD', source: 'RUNTIME' }
+  ])
 })
 
 test('filter validation reports the exact missing step', () => {
@@ -39,4 +42,17 @@ test('value-set predicates serialize stable item codes and validate selections',
     nodeType: 'PREDICATE', fieldCode: 'PATIENT_SEX', operator: 'IN_VALUE_SET', itemCodes: ['MALE']
   })
   assert.deepEqual(validateFilterNode({ nodeType: 'PREDICATE', fieldCode: 'PATIENT_SEX', operator: 'IN_VALUE_SET', itemCodes: [] }), ['请填写或选择条件值'])
+})
+
+test('value-set predicates carry the bound published version into compiler DSL', () => {
+  const filters = { nodeType: 'AND', children: [{ nodeType: 'PREDICATE', fieldCode: 'PATIENT_SEX', operator: 'IN_VALUE_SET', itemCodes: ['MALE'] }] }
+  const fields = [{ code: 'PATIENT_SEX', valueSetVersionId: '102027642458358887' }]
+  const dsl = buildFactorDsl({ domainCode: 'D', semanticTableCode: 'T', aggregation: 'COUNT', filters, fields })
+  assert.deepEqual(dsl.filters.children[0], {
+    nodeType: 'PREDICATE',
+    fieldCode: 'PATIENT_SEX',
+    operator: 'IN_VALUE_SET',
+    itemCodes: ['MALE'],
+    valueSetVersionId: '102027642458358887'
+  })
 })

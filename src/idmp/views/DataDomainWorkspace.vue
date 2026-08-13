@@ -163,14 +163,15 @@
                 <template #default="{ row }"><div class="semantic-field-cell"><strong>{{ row.name || '未命名字段' }}</strong><small>{{ row.code || '未返回编码' }}</small></div></template>
               </el-table-column>
               <el-table-column label="类型" width="88"><template #default="{ row }">{{ semanticDataTypeLabel(row.dataType) }}</template></el-table-column>
+              <el-table-column label="业务角色" width="86"><template #default="{ row }">{{ semanticKindLabel(row.semanticKind) }}</template></el-table-column>
               <el-table-column prop="sensitive" label="敏感" width="58">
                 <template #default="{ row }">{{ row.sensitive ? '是' : '否' }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="105" fixed="right">
+              <el-table-column label="操作" width="112" fixed="right">
                 <template #default="{ row }">
                   <div class="field-actions">
-                    <div class="field-action-row"><el-button v-if="row.sourceFieldMappingId" link type="primary" @click="openStandardization(row)">标准化</el-button><span v-else class="field-action-disabled">未映射</span></div>
-                    <div class="field-action-row"><el-button v-if="row.semanticRole === 'DIMENSION' || row.dataType === 'CODE' || row.dataType === 'STRING'" link type="primary" @click.stop="openValueSetBinding(row)">绑定值集</el-button><span v-else class="field-action-disabled">不适用</span></div>
+                    <div class="field-action-row"><el-button v-if="row.sourceFieldMappingId && isDimensionField(row)" link type="primary" @click="openStandardization(row)">标准化</el-button><span v-else class="field-action-disabled">{{ row.sourceFieldMappingId ? '非维度' : '未映射' }}</span></div>
+                    <div class="field-action-row"><el-button v-if="isDimensionField(row)" link type="primary" @click.stop="openValueSetBinding(row)">绑定值集</el-button><span v-else class="field-action-disabled">非维度</span></div>
                   </div>
                 </template>
               </el-table-column>
@@ -181,12 +182,14 @@
 
         <div class="mapping-editor">
           <div class="field-pane__heading"><strong>新增或更新映射</strong><span>{{ selectedSourceField ? `${selectedSourceField.columnName} · ${selectedSourceField.comment || '暂无中文注释'}` : '请先选择左侧源字段' }}</span></div>
+          <el-alert class="semantic-role-alert" type="info" :closable="false" show-icon title="业务角色决定字段用途：维度字段可筛选、分组并绑定值集；度量字段用于数值聚合；属性字段只承载描述信息。数据类型与业务角色需要分别选择。" />
           <el-form ref="fieldFormRef" :model="fieldForm" :rules="fieldRules" label-position="top" :disabled="!selectedSourceField">
             <div class="field-form-grid">
               <el-form-item label="来源字段" prop="sourceFieldName"><el-input v-model="fieldForm.sourceFieldName" readonly /></el-form-item>
               <el-form-item label="标准字段编码" prop="code"><el-input v-model.trim="fieldForm.code" maxlength="64" show-word-limit placeholder="如 DEATH_DATETIME" /></el-form-item>
               <el-form-item label="业务名称" prop="name"><el-input v-model.trim="fieldForm.name" placeholder="如 死亡时间" /></el-form-item>
               <el-form-item label="标准数据类型" prop="dataType"><el-select v-model="fieldForm.dataType" placeholder="选择数据类型"><el-option v-for="item in semanticDataTypes" :key="item" :label="semanticDataTypeLabel(item)" :value="item" /></el-select></el-form-item>
+              <el-form-item label="业务角色" prop="semanticKind"><el-select v-model="fieldForm.semanticKind" placeholder="选择业务角色"><el-option v-for="item in semanticKinds" :key="item" :label="semanticKindOptionLabel(item)" :value="item" /></el-select></el-form-item>
               <el-form-item label="敏感信息" prop="sensitive"><el-switch v-model="fieldForm.sensitive" active-text="是" inactive-text="否" /></el-form-item>
             </div>
             <div class="mapping-actions">
@@ -292,8 +295,9 @@ const selectedValueSetId = ref('')
 const tableRequestVersion = ref(0)
 const fieldRequestVersion = ref(0)
 const createForm = reactive({ sourceTableName: '', code: '', name: '' })
-const fieldForm = reactive({ sourceFieldName: '', code: '', name: '', dataType: '', sensitive: false })
+const fieldForm = reactive({ sourceFieldName: '', code: '', name: '', dataType: '', semanticKind: '', sensitive: false })
 const semanticDataTypes = ['STRING', 'INTEGER', 'DECIMAL', 'DATE', 'DATETIME', 'BOOLEAN', 'CODE']
+const semanticKinds = ['DIMENSION', 'MEASURE', 'ATTRIBUTE']
 
 const createRules = {
   sourceTableName: [{ required: true, message: '请选择已同步源表', trigger: 'change' }],
@@ -327,7 +331,8 @@ const fieldRules = {
     { pattern: /^[A-Z][A-Z0-9_]{0,63}$/, message: '编码仅允许大写字母、数字和下划线，且长度不超过 64', trigger: 'blur' }
   ],
   name: [{ required: true, message: '请输入语义字段名称', trigger: 'blur' }],
-  dataType: [{ required: true, message: '请选择语义数据类型', trigger: 'change' }]
+  dataType: [{ required: true, message: '请选择语义数据类型', trigger: 'change' }],
+  semanticKind: [{ required: true, message: '请选择业务角色', trigger: 'change' }]
 }
 
 onMounted(loadWorkspace)
@@ -438,12 +443,17 @@ function selectSourceField(row) {
     code: existing?.code || '',
     name: existing?.name || row.comment || row.columnName,
     dataType: existing?.dataType || inferSemanticDataType(row.columnType),
+    semanticKind: existing?.semanticKind || '',
     sensitive: existing?.sensitive || false
   })
   fieldSaveFeedback.value = null
 }
 
 function openStandardization(row) {
+  if (!isDimensionField(row)) {
+    ElMessage.warning('当前字段不是 DIMENSION，不能维护枚举值标准化规则；请使用后端已配置的维度字段。')
+    return
+  }
   router.push({
     name: 'SourceStandardization',
       params: { mappingId: row.sourceFieldMappingId },
@@ -453,6 +463,10 @@ function openStandardization(row) {
 
 async function openValueSetBinding(row) {
   if (!row?.id) return
+  if (!isDimensionField(row)) {
+    ElMessage.warning('只有后端明确标记为 DIMENSION 的语义字段可以绑定值集；CODE/STRING 数据类型不会自动成为维度字段。')
+    return
+  }
   selectedValueSetField.value = row
   valueSetDialogVisible.value = true
   valueSetBindingLoading.value = true
@@ -495,8 +509,12 @@ function isMapped(row) {
   return semanticFields.value.some((item) => item.sourceFieldName === row.columnName)
 }
 
+function isDimensionField(row) {
+  return String(row?.semanticKind || row?.semanticRole || '').toUpperCase() === 'DIMENSION'
+}
+
 function resetFieldForm() {
-  Object.assign(fieldForm, { sourceFieldName: '', code: '', name: '', dataType: '', sensitive: false })
+  Object.assign(fieldForm, { sourceFieldName: '', code: '', name: '', dataType: '', semanticKind: '', sensitive: false })
 }
 
 function inferSemanticDataType(columnType) {
@@ -520,11 +538,18 @@ async function saveFieldMapping() {
       code: fieldForm.code,
       name: fieldForm.name,
       dataType: fieldForm.dataType,
+      semanticKind: fieldForm.semanticKind,
       sensitive: fieldForm.sensitive
     })
     await loadSelectedTableFields(selectedTable.value)
-    fieldSaveFeedback.value = { status: 'SUCCEEDED', label: '保存成功', message: `字段 ${fieldForm.sourceFieldName} 已完成映射。` }
-    ElMessage.success('语义字段映射保存成功')
+    const savedField = semanticFields.value.find((item) => item.sourceFieldName === fieldForm.sourceFieldName)
+    if (String(savedField?.semanticKind || '').toUpperCase() === fieldForm.semanticKind) {
+      fieldSaveFeedback.value = { status: 'SUCCEEDED', label: '保存成功', message: `字段 ${fieldForm.sourceFieldName} 已完成映射，业务角色为 ${semanticKindLabel(fieldForm.semanticKind)}。` }
+      ElMessage.success('语义字段映射保存成功')
+    } else {
+      fieldSaveFeedback.value = { status: 'WARNING', label: '角色未生效', tone: 'warning', message: `字段 ${fieldForm.sourceFieldName} 已映射，但后端返回的业务角色与本次选择不一致。` }
+      ElMessage.warning('字段映射已保存，但业务角色未生效；请刷新后核对接口返回的 semanticKind。')
+    }
   } catch (error) {
     fieldSaveFeedback.value = { status: 'FAILED', label: '保存失败', tone: 'danger', message: formatErrorMessage(error, '语义字段映射保存失败') }
     ElMessage.error(fieldSaveFeedback.value.message)
@@ -613,6 +638,14 @@ function dataTypeLabel(value) {
 
 function semanticDataTypeLabel(value) {
   return ({ STRING: '文本', INTEGER: '整数', DECIMAL: '小数', NUMBER: '数值', DATE: '日期', DATETIME: '日期时间', BOOLEAN: '布尔', CODE: '编码' })[String(value || '').toUpperCase()] || value || '未知类型'
+}
+
+function semanticKindLabel(value) {
+  return ({ DIMENSION: '维度', MEASURE: '度量', ATTRIBUTE: '属性' })[String(value || '').toUpperCase()] || '未配置'
+}
+
+function semanticKindOptionLabel(value) {
+  return ({ DIMENSION: '维度（筛选、分组、值集）', MEASURE: '度量（数值聚合）', ATTRIBUTE: '属性（描述信息）' })[value] || value
 }
 
 function stateTypeForError(error) {

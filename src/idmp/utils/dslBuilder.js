@@ -1,19 +1,26 @@
-﻿export function serializeFilterNode(node) {
+export function serializeFilterNode(node, fields = []) {
   if (!node) return { nodeType: 'TRUE' }
   if (node.nodeType === 'TRUE') return { nodeType: 'TRUE' }
   if (node.nodeType === 'PREDICATE') {
     const result = { nodeType: 'PREDICATE', fieldCode: node.fieldCode, operator: node.operator }
     if (node.parameter) result.parameter = node.parameter
-    if (node.operator === 'IN_VALUE_SET') result.itemCodes = Array.isArray(node.itemCodes) ? node.itemCodes : []
-    else if (node.value !== undefined && node.value !== '') result.value = node.value
+    if (node.operator === 'IN_VALUE_SET') {
+      result.itemCodes = Array.isArray(node.itemCodes) ? node.itemCodes : []
+      const field = fields.find((item) => item.code === node.fieldCode)
+      const valueSetVersionId = node.valueSetVersionId || field?.valueSetVersionId
+      if (valueSetVersionId) result.valueSetVersionId = String(valueSetVersionId)
+    } else if (node.value !== undefined && node.value !== '') result.value = node.value
     return result
   }
-  if (node.nodeType === 'NOT') return { nodeType: 'NOT', child: serializeFilterNode(node.child) }
+  if (node.nodeType === 'NOT') return { nodeType: 'NOT', child: serializeFilterNode(node.child, fields) }
   if (!(node.children || []).length) return { nodeType: 'TRUE' }
-  return { nodeType: node.nodeType === 'OR' ? 'OR' : 'AND', children: (node.children || []).map(serializeFilterNode) }
+  return {
+    nodeType: node.nodeType === 'OR' ? 'OR' : 'AND',
+    children: (node.children || []).map((child) => serializeFilterNode(child, fields))
+  }
 }
 
-export function buildFactorDsl({ domainCode, semanticTableCode, aggregation, fieldCode, groupBy = [], filters }) {
+export function buildFactorDsl({ domainCode, semanticTableCode, aggregation, fieldCode, groupBy = [], filters, fields = [] }) {
   const aggregationNode = aggregation === 'COUNT'
     ? { function: 'COUNT', ...(fieldCode ? { fieldCode } : {}) }
     : { function: aggregation, fieldCode }
@@ -21,7 +28,7 @@ export function buildFactorDsl({ domainCode, semanticTableCode, aggregation, fie
     schemaVersion: '1.0',
     dslType: 'FACTOR',
     primaryDomain: { domainCode, ...(semanticTableCode ? { semanticTableCode } : {}) },
-    filters: serializeFilterNode(filters),
+    filters: serializeFilterNode(filters, fields),
     aggregation: aggregationNode,
     groupBy,
     parameters: collectParameters(filters),
@@ -32,7 +39,7 @@ export function buildFactorDsl({ domainCode, semanticTableCode, aggregation, fie
 export function collectParameters(node, result = []) {
   if (!node) return result
   if (node.nodeType === 'PREDICATE' && node.parameter && !result.some((item) => item.code === node.parameter)) {
-    result.push({ code: node.parameter, type: 'DATETIME_RANGE' })
+    result.push({ code: node.parameter, type: 'PERIOD', source: 'RUNTIME' })
   }
   ;(node.children || []).forEach((child) => collectParameters(child, result))
   if (node.child) collectParameters(node.child, result)
