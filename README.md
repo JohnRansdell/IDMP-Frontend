@@ -605,18 +605,18 @@ http://192.168.123.14/
 
 - 服务器 Nginx 当前静态目录为 `/home/ljh/IDMP_UI`。
 - 每次上传前建议清空旧文件，避免旧 hash 文件残留。
-- 当前 `dist` 已由 `ljh` 分支构建生成。
+- 当前 `dist` 已由 `L` 分支构建生成。
 
 ## 分支说明
 
 当前分支：
 
 ```text
-ljh
+L
 ```
 
 推送：
 
 ```powershell
-git push origin ljh
+git push origin l
 ```
