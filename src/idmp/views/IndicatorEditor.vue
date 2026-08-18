@@ -127,40 +127,6 @@
                   <el-checkbox v-for="item in policyOptions" :key="item" :value="item">{{ item }}</el-checkbox>
                 </el-checkbox-group>
               </el-form-item>
-              <div class="drill-config-card form-span-2">
-                <div class="drill-config-card__heading">
-                  <strong>指标结果下钻路径</strong>
-                  <el-tag size="small" type="warning">当前为默认路径配置</el-tag>
-                </div>
-                <p>首次保存公式时会把公式和下钻路径一起创建为指标版本。总体粒度因子请选择时间路径；组织路径要求分子、分母都输出对应组织粒度。</p>
-                <div class="drill-config-card__fields">
-                  <el-form-item label="路径编码" label-width="88px" prop="drillPathCode">
-                    <el-select v-model="drillConfig.pathCode" aria-label="指标下钻路径" @change="handleDrillPathChange">
-                      <el-option label="组织下钻（ORGANIZATION）" value="ORGANIZATION" />
-                      <el-option label="时间下钻（TIME）" value="TIME" />
-                      <el-option
-                        v-if="drillConfig.pathCode && !['ORGANIZATION', 'TIME'].includes(drillConfig.pathCode)"
-                        :label="`${drillConfig.pathCode}（环境默认）`"
-                        :value="drillConfig.pathCode"
-                      />
-                    </el-select>
-                  </el-form-item>
-                  <el-form-item label="最大层级" label-width="88px" prop="drillMaxLevel">
-                    <el-select v-model="drillConfig.maxLevel" aria-label="下钻最大层级">
-                      <template v-if="drillConfig.pathCode === 'TIME'">
-                        <el-option label="年度（YEAR）" value="YEAR" />
-                        <el-option label="季度（QUARTER）" value="QUARTER" />
-                        <el-option label="月度（MONTH）" value="MONTH" />
-                      </template>
-                      <template v-else>
-                        <el-option label="医院（HOSPITAL）" value="HOSPITAL" />
-                        <el-option label="出院科室（OUT_DEPT）" value="OUT_DEPT" />
-                      </template>
-                    </el-select>
-                  </el-form-item>
-                </div>
-                <small class="drill-config-card__hint">路径选择接口接入后将替换为服务端已发布路径，当前配置会随版本创建请求发送。</small>
-              </div>
             </div>
           </el-form>
           <div class="business-action-bar">
@@ -175,15 +141,12 @@
               </small>
             </div>
             <el-button :loading="workflowLoading.basic" @click="saveIndicatorBasicInfo">保存基本信息</el-button>
-            <el-button v-if="indicatorWorkflow.versionId" :loading="workflowLoading.version" @click="createIndicatorDraftVersion">
-              创建指标版本
-            </el-button>
             <el-button
               type="primary"
               :loading="workflowLoading.basic || workflowLoading.version"
-              @click="saveBasicAndCreateVersion"
+              @click="saveBasicAndOpenFormula"
             >
-              {{ isNew ? '保存并进入公式配置' : '为当前指标创建草稿版本' }}
+              保存并进入公式配置
             </el-button>
           </div>
         </section>
@@ -318,22 +281,73 @@
                 </span>
               </el-tooltip>
             </div>
+            <section class="drill-capability-card" aria-label="指标版本下钻能力预检">
+              <div class="drill-config-card__heading">
+                <div>
+                  <strong>下钻能力预检</strong>
+                  <p>根据当前 Formula AST 中的全部因子版本计算共同下钻能力；预检成功后才能创建指标版本。</p>
+                </div>
+                <el-tag :type="drillCapabilityTagType" size="small">{{ drillCapabilityTagText }}</el-tag>
+              </div>
+              <div class="business-action-bar drill-capability-actions">
+                <div>
+                  <span>预检接口</span>
+                  <small class="mono-data">POST /api/v1/indicator-versions/drill-capabilities</small>
+                </div>
+                <el-button type="primary" :disabled="!formulaValid" :loading="workflowLoading.capability" @click="runDrillCapabilityPreflight()">预检下钻能力</el-button>
+              </div>
+              <el-alert v-if="drillCapability.status === 'idle'" title="请选择一个分子和一个分母因子后执行预检；修改因子会使已有预检结果失效。" type="info" :closable="false" show-icon />
+              <StatePanel v-else-if="drillCapability.status === 'loading'" type="loading" title="正在预检下钻能力" />
+              <el-alert v-else-if="drillCapability.status === 'error'" :title="drillCapability.errorMessage || '下钻能力预检失败'" type="error" :closable="false" show-icon />
+              <template v-else-if="drillCapability.status === 'ready'">
+                <p class="drill-capability-coverage">本次预检覆盖因子版本：{{ drillCapability.factorVersionIds.join('、') || '-' }}</p>
+                <el-table :data="drillCapability.dimensions" size="small" border class="drill-capability-table">
+                  <el-table-column label="启用" width="76"><template #default="{ row }"><el-checkbox :model-value="isDrillPathSelected(row.pathCode)" :disabled="!row.supported" :aria-label="`启用 ${row.pathCode} 下钻路径`" @change="checked => toggleDrillPath(row, checked)" /></template></el-table-column>
+                  <el-table-column prop="pathCode" label="路径" min-width="145" />
+                  <el-table-column label="能力" min-width="120"><template #default="{ row }"><el-tag :type="row.supported ? 'success' : 'info'" size="small">{{ row.supported ? `最大 ${row.maxLevel || '-'}` : '不支持' }}</el-tag></template></el-table-column>
+                  <el-table-column label="本版本最大层级" min-width="210"><template #default="{ row }"><el-select :model-value="selectedDrillPathLevel(row.pathCode)" :disabled="!row.supported || !isDrillPathSelected(row.pathCode)" placeholder="选择层级" @update:model-value="level => setDrillPathLevel(row.pathCode, level)"><el-option v-for="level in capabilityLevels(row)" :key="level.code" :label="`${level.name}（${level.code}）`" :value="level.code" /></el-select></template></el-table-column>
+                  <el-table-column label="限制原因" min-width="280"><template #default="{ row }"><span v-if="row.limitingFactors.length">{{ limitingFactorText(row) }}</span><span v-else class="muted-text">-</span></template></el-table-column>
+                </el-table>
+                <el-alert v-if="!selectedDrillPaths.length" title="请至少启用一条支持的下钻路径。" type="warning" :closable="false" show-icon class="drill-capability-selection-hint" />
+              </template>
+            </section>
+            <div class="indicator-trial-period">
+              <div>
+                <strong>本次试算周期</strong>
+                <small>仅作为本次运行参数，按半开区间 [开始时间，结束时间) 同时传给分子和分母因子。</small>
+              </div>
+              <el-date-picker
+                v-model="indicatorTrialPeriod"
+                type="datetimerange"
+                value-format="YYYY-MM-DDTHH:mm:ss"
+                start-placeholder="开始时间"
+                end-placeholder="结束时间"
+                :disabled="!indicatorWorkflow.versionId"
+                @change="resetIndicatorTrialAfterPeriodChange"
+              />
+            </div>
             <div class="business-action-bar formula-actions">
               <div>
                 <span>公式与试算操作</span>
                 <small>{{ indicatorWorkflow.versionId ? `当前版本 ${indicatorWorkflow.versionId}` : (indicatorWorkflow.indicatorId ? '选择分子、分母后首次保存将创建指标版本' : '请先保存指标基本信息') }}</small>
               </div>
-              <el-button :disabled="!indicatorWorkflow.indicatorId || indicatorWorkflow.published" :loading="workflowLoading.formula || workflowLoading.version" @click="saveIndicatorFormulaOnly">
+              <el-button
+                v-if="indicatorWorkflow.published"
+                type="primary"
+                :disabled="drillCapability.status !== 'ready' || !selectedDrillPaths.length"
+                :loading="workflowLoading.version"
+                @click="createIndicatorDraftVersion"
+              >
+                按当前公式与路径创建草稿版本
+              </el-button>
+              <el-button v-else :disabled="!indicatorWorkflow.indicatorId" :loading="workflowLoading.formula || workflowLoading.version" @click="saveIndicatorFormulaOnly">
                 {{ indicatorWorkflow.versionId ? '保存公式' : '创建版本并保存公式' }}
               </el-button>
               <el-button :disabled="!indicatorWorkflow.formulaSaved" :loading="workflowLoading.compile" @click="compileIndicatorFormulaOnly">
                 公式校验
               </el-button>
-              <el-button type="primary" :disabled="!indicatorWorkflow.compiled" :loading="workflowLoading.trial" @click="trialIndicatorOnly">
-                发起试算
-              </el-button>
-              <el-button :disabled="!indicatorWorkflow.batchId" :loading="workflowLoading.result" @click="loadIndicatorTrialResultOnly">
-                查看结果
+              <el-button type="primary" :disabled="!indicatorWorkflow.compiled || !hasIndicatorTrialPeriod" :loading="workflowLoading.trial || workflowLoading.result" @click="trialIndicatorAndLoadResult">
+                {{ indicatorTrialButtonLabel }}
               </el-button>
               <el-button
                 type="success"
@@ -342,6 +356,9 @@
                 @click="publishIndicatorVersionOnly"
               >
                 发布指标版本
+              </el-button>
+              <el-button v-if="indicatorWorkflow.published" type="primary" plain :loading="workflowLoading.formal" @click="generateFormalResultAndOpenAnalysis">
+                生成正式结果并去指标分析
               </el-button>
             </div>
             <div v-if="indicatorWorkflow.displayValue" class="workflow-result">
@@ -624,7 +641,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -646,23 +663,29 @@ import {
   compileIndicatorFormula,
   createIndicator,
   createIndicatorVersion,
+  fetchIndicatorAnalysis,
   fetchIndicator,
   fetchIndicatorFormula,
   fetchIndicators,
   fetchIndicatorVersion,
   fetchIndicatorVersions,
   fetchIndicatorTrialResults,
+  preflightIndicatorDrillCapabilities,
   publishIndicatorVersion,
   saveIndicatorFormula,
   trialIndicatorVersion,
   updateIndicator
 } from '@/idmp/api/modules/indicators'
-import { buildIndicatorVersionPayload, defaultDrillConfig, findUnsupportedDrillFactors, normalizeDrillConfig } from '@/idmp/api/adapters/indicator'
-import { fetchFactorVersions } from '@/idmp/api/modules/factors'
-import { fetchAsyncTask, fetchCalcBatch } from '@/idmp/api/modules/calculation'
 import {
-  createMortalityFormulaPayload,
-  createMortalityTrialPayload
+  buildIndicatorVersionPayload,
+  normalizeDrillCapabilities,
+  normalizeDrillPaths,
+  validateDrillSelection
+} from '@/idmp/api/adapters/indicator'
+import { fetchFactorVersions } from '@/idmp/api/modules/factors'
+import { createCalcBatch, fetchAsyncTask, fetchCalcBatch } from '@/idmp/api/modules/calculation'
+import {
+  createMortalityFormulaPayload
 } from '@/idmp/api/modules/mortality'
 import {
   editorPolicyRows,
@@ -696,11 +719,19 @@ const indicatorWorkflow = reactive({
   resultValue: '',
   published: false,
   publishedVersionId: '',
-  publishIdempotencyKey: ''
+  publishIdempotencyKey: '',
+  formalBatchId: '',
+  formalIdempotencyKey: ''
 })
-const drillConfig = reactive(isNew.value
-  ? { ...defaultDrillConfig, pathCode: 'TIME', maxLevel: 'MONTH', pathVersionId: '' }
-  : { ...defaultDrillConfig })
+const indicatorTrialPeriod = ref(initialIndicatorTrialPeriod())
+const selectedDrillPaths = ref([])
+const drillCapability = reactive({
+  status: 'idle',
+  formulaSignature: '',
+  factorVersionIds: [],
+  dimensions: [],
+  errorMessage: ''
+})
 const workflowDebug = reactive({
   step: '',
   endpoint: '',
@@ -722,7 +753,9 @@ const workflowLoading = reactive({
   trial: false,
   result: false,
   publish: false,
-  factors: false
+  formal: false,
+  factors: false,
+  capability: false
 })
 const editLoadState = reactive({
   loading: false,
@@ -1035,6 +1068,146 @@ const formulaPreview = computed(() => {
   const denominator = denominatorFactors.value.map(item => item.name).join(' + ') || '请拖入分母因子'
   return `${numerator} ÷ ${denominator} × 100%`
 })
+const indicatorTrialButtonLabel = computed(() => {
+  if (workflowLoading.trial || workflowLoading.result) return '正在试算并读取结果'
+  if (indicatorWorkflow.displayValue) return '重新试算并查看结果'
+  if (indicatorWorkflow.batchId) return '继续查询并查看结果'
+  return '试算并查看结果'
+})
+const drillCapabilityTagText = computed(() => ({
+  idle: '待预检',
+  loading: '预检中',
+  ready: '预检完成',
+  error: '预检失败'
+}[drillCapability.status] || '待预检'))
+const drillCapabilityTagType = computed(() => ({
+  idle: 'info',
+  loading: 'warning',
+  ready: 'success',
+  error: 'danger'
+}[drillCapability.status] || 'info'))
+
+let drillCapabilityRequestId = 0
+
+function formulaSignature(formula) {
+  return JSON.stringify(formula)
+}
+
+function resetDrillCapability() {
+  drillCapabilityRequestId += 1
+  Object.assign(drillCapability, {
+    status: 'idle',
+    formulaSignature: '',
+    factorVersionIds: [],
+    dimensions: [],
+    errorMessage: ''
+  })
+  selectedDrillPaths.value = []
+}
+
+function capabilityLevels(dimension) {
+  if (dimension?.levels?.length) return dimension.levels
+  return dimension?.maxLevel ? [{ code: dimension.maxLevel, name: dimension.maxLevel }] : []
+}
+
+function isDrillPathSelected(pathCode) {
+  return selectedDrillPaths.value.some((path) => path.pathCode === pathCode)
+}
+
+function selectedDrillPathLevel(pathCode) {
+  return selectedDrillPaths.value.find((path) => path.pathCode === pathCode)?.maxLevel || ''
+}
+
+function toggleDrillPath(dimension, checked) {
+  const pathCode = String(dimension?.pathCode || '')
+  if (!pathCode || !dimension?.supported) return
+  if (!checked) {
+    selectedDrillPaths.value = selectedDrillPaths.value.filter((path) => path.pathCode !== pathCode)
+    return
+  }
+  const levels = capabilityLevels(dimension)
+  const maxLevel = levels[levels.length - 1]?.code || dimension.maxLevel
+  if (!maxLevel) return
+  selectedDrillPaths.value = [...selectedDrillPaths.value, { pathCode, maxLevel }]
+}
+
+function setDrillPathLevel(pathCode, maxLevel) {
+  selectedDrillPaths.value = selectedDrillPaths.value.map((path) => (
+    path.pathCode === pathCode ? { ...path, maxLevel: String(maxLevel || '') } : path
+  ))
+}
+
+function limitingFactorText(dimension) {
+  return dimension.limitingFactors.map((factor) => (
+    `${factor.factorVersionId || '未知因子'}：${factor.reason || `最大 ${factor.maxLevel || '-'}`}`
+  )).join('；')
+}
+
+async function runDrillCapabilityPreflight(providedFormula) {
+  let formula = providedFormula
+  try {
+    formula = formula || createIndicatorFormulaPayload(0).formula
+  } catch (error) {
+    ElMessage.warning(error?.message || '请先选择已发布的分子、分母因子')
+    return false
+  }
+
+  const signature = formulaSignature(formula)
+  const requestId = ++drillCapabilityRequestId
+  Object.assign(drillCapability, {
+    status: 'loading',
+    formulaSignature: signature,
+    factorVersionIds: [],
+    dimensions: [],
+    errorMessage: ''
+  })
+  workflowLoading.capability = true
+  try {
+    const response = await preflightIndicatorDrillCapabilities(formula)
+    if (requestId !== drillCapabilityRequestId) return false
+    const capability = normalizeDrillCapabilities(response)
+    Object.assign(drillCapability, {
+      status: 'ready',
+      formulaSignature: signature,
+      factorVersionIds: capability.factorVersionIds,
+      dimensions: capability.dimensions,
+      errorMessage: ''
+    })
+    selectedDrillPaths.value = selectedDrillPaths.value.filter((path) => !validateDrillSelection(capability, [path]))
+    return true
+  } catch (error) {
+    if (requestId !== drillCapabilityRequestId) return false
+    Object.assign(drillCapability, {
+      status: 'error',
+      formulaSignature: signature,
+      factorVersionIds: [],
+      dimensions: [],
+      errorMessage: error?.message || '下钻能力预检失败'
+    })
+    return false
+  } finally {
+    if (requestId === drillCapabilityRequestId) workflowLoading.capability = false
+  }
+}
+
+async function ensureFreshDrillCapability(formula) {
+  const signature = formulaSignature(formula)
+  if (drillCapability.status === 'ready' && drillCapability.formulaSignature === signature) return true
+  return runDrillCapabilityPreflight(formula)
+}
+
+watch(
+  () => [
+    ...numeratorFactors.value.map((factor) => String(factor.versionId || factor.code || '')),
+    '|',
+    ...denominatorFactors.value.map((factor) => String(factor.versionId || factor.code || ''))
+  ],
+  resetDrillCapability,
+  { flush: 'sync' }
+)
+const hasIndicatorTrialPeriod = computed(() =>
+  Array.isArray(indicatorTrialPeriod.value) && indicatorTrialPeriod.value.length === 2
+)
 
 const dragFactor = factor => {
   draggedFactor.value = factor
@@ -1200,8 +1373,10 @@ function hydrateIndicatorSummary(item) {
     displayValue: '',
     resultValue: '',
     published: false,
-     publishedVersionId: '',
-     publishIdempotencyKey: ''
+    publishedVersionId: '',
+    publishIdempotencyKey: '',
+    formalBatchId: '',
+    formalIdempotencyKey: ''
   })
 }
 
@@ -1219,13 +1394,15 @@ function hydrateIndicatorVersion(version) {
     displayValue: '',
     resultValue: '',
     published: status === 'PUBLISHED',
-    publishedVersionId: status === 'PUBLISHED' ? resolveIndicatorVersionId(version) : ''
+    publishedVersionId: status === 'PUBLISHED' ? resolveIndicatorVersionId(version) : '',
+    formalBatchId: '',
+    formalIdempotencyKey: ''
   })
 
-  Object.assign(drillConfig, normalizeDrillConfig(version, drillConfig))
-
   const formula = extractFormula(version)
+  resetDrillCapability()
   hydrateFormulaFactors(formula)
+  selectedDrillPaths.value = normalizeDrillPaths(version)
 }
 
 function extractFormula(payload) {
@@ -1340,7 +1517,9 @@ function resetIndicatorWorkflowAfterBasic(indicatorId, versionId = '', resourceV
     resultValue: '',
     published: false,
     publishedVersionId: '',
-    publishIdempotencyKey: ''
+    publishIdempotencyKey: '',
+    formalBatchId: '',
+    formalIdempotencyKey: ''
   })
 }
 
@@ -1413,10 +1592,18 @@ async function createIndicatorDraftVersion() {
     return false
   }
 
-  workflowLoading.version = true
   try {
+    const formula = createIndicatorFormulaPayload(0).formula
+    if (!await ensureFreshDrillCapability(formula)) return false
+    const validationMessage = validateFormulaAndDrillSelection(formula)
+    if (validationMessage) {
+      ElMessage.warning(validationMessage)
+      return false
+    }
+
+    workflowLoading.version = true
     const copyFromVersionId = indicatorWorkflow.versionId
-    const versionPayload = buildIndicatorVersionPayload({ copyFromVersionId, drillConfig })
+    const versionPayload = buildIndicatorVersionPayload({ copyFromVersionId, drillPaths: selectedDrillPaths.value })
     recordWorkflowRequest({
       step: '创建指标版本',
       endpoint: `/api/v1/indicators/${indicatorWorkflow.indicatorId}/versions`,
@@ -1442,7 +1629,9 @@ async function createIndicatorDraftVersion() {
       resultValue: '',
       published: false,
       publishedVersionId: '',
-      publishIdempotencyKey: ''
+      publishIdempotencyKey: '',
+      formalBatchId: '',
+      formalIdempotencyKey: ''
     })
     hydrateFormulaFactors(extractFormula(version))
     activeTab.value = 'formula'
@@ -1456,15 +1645,11 @@ async function createIndicatorDraftVersion() {
   }
 }
 
-async function saveBasicAndCreateVersion() {
+async function saveBasicAndOpenFormula() {
   const basicSaved = await saveIndicatorBasicInfo()
   if (!basicSaved) return
   activeTab.value = 'formula'
   ElMessage.success(indicatorWorkflow.versionId ? '基本信息已保存，可以继续配置公式' : '基本信息已保存，请选择分子、分母并创建首个版本')
-}
-
-function handleDrillPathChange(pathCode) {
-  drillConfig.maxLevel = pathCode === 'TIME' ? 'MONTH' : 'OUT_DEPT'
 }
 
 async function saveIndicatorFormulaOnly() {
@@ -1477,7 +1662,15 @@ async function saveIndicatorFormulaOnly() {
     return
   }
 
-  const validationMessage = validateFormulaAndDrillSelection()
+  let formula
+  try {
+    formula = createIndicatorFormulaPayload(0).formula
+  } catch (error) {
+    ElMessage.warning(error?.message || '请先选择已发布的分子、分母因子')
+    return
+  }
+  if (!await ensureFreshDrillCapability(formula)) return
+  const validationMessage = validateFormulaAndDrillSelection(formula)
   if (validationMessage) {
     ElMessage.warning(validationMessage)
     return
@@ -1486,7 +1679,7 @@ async function saveIndicatorFormulaOnly() {
   workflowLoading.formula = true
   try {
     if (!indicatorWorkflow.versionId) {
-      await createFirstIndicatorVersionWithFormula()
+      await createFirstIndicatorVersionWithFormula(formula)
     } else {
       await refreshIndicatorVersionState()
       try {
@@ -1506,27 +1699,19 @@ async function saveIndicatorFormulaOnly() {
   }
 }
 
-function validateFormulaAndDrillSelection() {
+function validateFormulaAndDrillSelection(formula) {
   if (numeratorFactors.value.length !== 1) return '简单比率型必须选择一个分子因子'
   if (denominatorFactors.value.length !== 1) return '简单比率型必须选择一个分母因子'
-  if (!drillConfig.pathCode || !drillConfig.maxLevel) return '请选择下钻路径和最大层级'
-
-  const unsupported = findUnsupportedDrillFactors(
-    [...numeratorFactors.value, ...denominatorFactors.value],
-    drillConfig
-  )
-  if (!unsupported.length) return ''
-
-  return unsupported.map(({ factor, missing }) =>
-    `${factor.name || factor.code || factor.versionId} 的输出粒度缺少 ${missing.join('、')}`
-  ).join('；') + '。请选择时间下钻，或重新发布包含所需组织粒度的因子'
+  if (drillCapability.status !== 'ready' || drillCapability.formulaSignature !== formulaSignature(formula)) {
+    return '请先对当前公式执行下钻能力预检'
+  }
+  return validateDrillSelection(drillCapability, selectedDrillPaths.value)
 }
 
-async function createFirstIndicatorVersionWithFormula() {
-  const formulaPayload = createIndicatorFormulaPayload(0)
+async function createFirstIndicatorVersionWithFormula(formula) {
   const versionPayload = buildIndicatorVersionPayload({
-    drillConfig,
-    formula: formulaPayload.formula
+    drillPaths: selectedDrillPaths.value,
+    formula
   })
   recordWorkflowRequest({
     step: '创建首个指标版本并保存公式',
@@ -1551,8 +1736,11 @@ async function createFirstIndicatorVersionWithFormula() {
     resultValue: '',
     published: false,
     publishedVersionId: '',
-    publishIdempotencyKey: ''
+    publishIdempotencyKey: '',
+    formalBatchId: '',
+    formalIdempotencyKey: ''
   })
+  selectedDrillPaths.value = normalizeDrillPaths(version)
   recordWorkflowSuccess(`首个指标版本及公式已保存：${versionId}`)
 }
 
@@ -1601,9 +1789,17 @@ async function trialIndicatorOnly() {
     return
   }
 
+  if (!hasIndicatorTrialPeriod.value) {
+    ElMessage.warning('请选择完整的指标试算周期')
+    return
+  }
+
   workflowLoading.trial = true
   try {
-    const trialPayload = createMortalityTrialPayload()
+    const trialPayload = {
+      periodStart: indicatorTrialPeriod.value[0],
+      periodEnd: indicatorTrialPeriod.value[1]
+    }
     const idempotencyKey = createIdempotencyKey('indicator-workflow')
     recordWorkflowRequest({
       step: '发起试算',
@@ -1631,6 +1827,108 @@ async function trialIndicatorOnly() {
     ElMessage.error(error?.message || '指标试算失败')
   } finally {
     workflowLoading.trial = false
+  }
+}
+
+async function trialIndicatorAndLoadResult() {
+  if (!indicatorWorkflow.compiled) {
+    ElMessage.warning('请先完成公式校验')
+    return
+  }
+
+  if (indicatorWorkflow.batchId && !indicatorWorkflow.displayValue) {
+    await loadIndicatorTrialResultOnly()
+    return
+  }
+
+  await trialIndicatorOnly()
+  if (indicatorWorkflow.batchId) await loadIndicatorTrialResultOnly()
+}
+
+function resetIndicatorTrialAfterPeriodChange() {
+  indicatorWorkflow.taskId = ''
+  indicatorWorkflow.batchId = ''
+  indicatorWorkflow.displayValue = ''
+  indicatorWorkflow.resultValue = ''
+  indicatorWorkflow.formalBatchId = ''
+  indicatorWorkflow.formalIdempotencyKey = ''
+}
+
+function openIndicatorAnalysis() {
+  const query = {
+    indicator: indicatorWorkflow.indicatorId,
+    indicatorVersionId: indicatorWorkflow.publishedVersionId || indicatorWorkflow.versionId
+  }
+  if (hasIndicatorTrialPeriod.value) {
+    query.periodStart = indicatorTrialPeriod.value[0]
+    query.periodEnd = indicatorTrialPeriod.value[1]
+    rememberAnalysisPeriod(query.indicator, query.indicatorVersionId, indicatorTrialPeriod.value)
+  }
+  router.push({ path: '/analysis', query })
+}
+
+async function generateFormalResultAndOpenAnalysis() {
+  if (!indicatorWorkflow.published) {
+    ElMessage.warning('请先发布指标版本')
+    return
+  }
+  if (!hasIndicatorTrialPeriod.value) {
+    ElMessage.warning('请选择需要查看的正式结果周期')
+    return
+  }
+
+  workflowLoading.formal = true
+  const versionId = indicatorWorkflow.publishedVersionId || indicatorWorkflow.versionId
+  const [periodStart, periodEnd] = indicatorTrialPeriod.value
+  try {
+    try {
+      const existing = await fetchIndicatorAnalysis(indicatorWorkflow.indicatorId, {
+        indicatorVersionId: versionId,
+        periodStart,
+        periodEnd,
+        granularity: 'MONTHLY'
+      })
+      if (existing?.dataAvailable && (existing?.overview || existing?.dimensionComparison?.length)) {
+        openIndicatorAnalysis()
+        return
+      }
+    } catch {
+      // 当前周期尚无已激活正式结果，继续创建正式计算批次。
+    }
+
+    const payload = {
+      ownerType: 'INDICATOR',
+      ownerVersionId: versionId,
+      batchType: 'FULL',
+      periodStart,
+      periodEnd
+    }
+    const idempotencyKey = indicatorWorkflow.formalIdempotencyKey ||
+      (indicatorWorkflow.formalIdempotencyKey = createIdempotencyKey(`indicator-full-${versionId}`))
+    recordWorkflowRequest({
+      step: '生成指定周期正式结果',
+      endpoint: '/api/v1/calc/batches',
+      versionId,
+      idempotencyKey,
+      requestBody: payload
+    })
+    const accepted = await createCalcBatch(payload, idempotencyKey)
+    const batchId = resolveBatchId(accepted)
+    if (!batchId) throw new Error('后端未返回正式计算批次 ID')
+    indicatorWorkflow.formalBatchId = batchId
+    const batch = await pollBackendBatch(batchId)
+    const status = batch.status || batch.batchStatus
+    if (!['SUCCEEDED', 'PARTIAL_SUCCEEDED'].includes(status)) {
+      throw new Error(`正式计算尚未成功，当前状态：${status || 'UNKNOWN'}`)
+    }
+    recordWorkflowSuccess(`指定周期正式结果已生成，批次 ${batchId}`)
+    ElMessage.success('正式结果已生成，正在进入指标分析')
+    openIndicatorAnalysis()
+  } catch (error) {
+    recordWorkflowError(error)
+    ElMessage.error(error?.message || '生成正式指标结果失败')
+  } finally {
+    workflowLoading.formal = false
   }
 }
 
@@ -1809,6 +2107,19 @@ function createIndicatorMetadataPayload() {
     statisticalPeriod: toApiStatisticalPeriod(form.period),
     dataSources: form.sources
   }
+}
+
+function initialIndicatorTrialPeriod() {
+  return route.query.periodStart && route.query.periodEnd
+    ? [String(route.query.periodStart), String(route.query.periodEnd)]
+    : []
+}
+
+function rememberAnalysisPeriod(indicatorId, versionId, range) {
+  if (typeof localStorage === 'undefined' || !Array.isArray(range) || range.length !== 2) return
+  const payload = { periodStart: String(range[0]), periodEnd: String(range[1]) }
+  if (indicatorId) localStorage.setItem(`idmp:analysis-period:indicator:${indicatorId}`, JSON.stringify(payload))
+  if (versionId) localStorage.setItem(`idmp:analysis-period:version:${versionId}`, JSON.stringify(payload))
 }
 
 function toApiStatisticalPeriod(period) {
@@ -2226,6 +2537,64 @@ onMounted(async () => {
 .formula-actions {
   margin: 0 16px 0;
   padding-bottom: 14px;
+}
+
+.indicator-trial-period {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 16px 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--idmp-border-subtle);
+  border-radius: 8px;
+  background: var(--idmp-layer-02);
+
+  > div {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  strong {
+    color: var(--idmp-text-primary);
+    font-size: 14px;
+  }
+
+  small {
+    color: var(--idmp-text-helper);
+    font-size: 12px;
+  }
+}
+
+.drill-capability-card {
+  margin: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--idmp-border-subtle);
+  border-radius: 8px;
+  background: var(--idmp-layer-02);
+}
+
+.drill-capability-card .drill-config-card__heading p {
+  margin: 5px 0 0;
+  color: var(--idmp-text-helper);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.drill-capability-actions {
+  margin: 12px 0;
+}
+
+.drill-capability-coverage {
+  margin: 12px 0 8px;
+  color: var(--idmp-text-helper);
+  font-size: 12px;
+}
+
+.drill-capability-selection-hint {
+  margin-top: 12px;
 }
 
 .workflow-result {

@@ -1,1 +1,0 @@
-import{_ as s,e as a,g as o,s as n}from"./index-CJplyECJ.js";const t={},c={class:"login-placeholder"};function r(l,e){return n(),a("div",c,[...e[0]||(e[0]=[o("h1",null,"IDMP 登录",-1),o("p",null,"当前工程未接入正式登录页，请由统一认证系统完成登录后返回。",-1)])])}const d=s(t,[["render",r],["__scopeId","data-v-a81fa76b"]]);export{d as default};

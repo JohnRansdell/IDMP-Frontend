@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { adaptDrillResult, deriveDrillPathResultIds } from '../src/idmp/api/adapters/drill.js'
+import { adaptDrillResult, deriveDrillPathResultIds, limitDrillNextLevels } from '../src/idmp/api/adapters/drill.js'
 import { createMockDrillResult } from '../src/idmp/features/analysis/drillData.js'
 
 test('drill adapter normalizes opaque ids and paged response fields', () => {
@@ -38,9 +38,15 @@ test('drill adapter uses backend column titles and derives separate multi-path a
   })
 
   assert.deepEqual(pathResultIds, {
-    ORGANIZATION: 'organization-result',
+    ORGANIZATION: 'hospital-result',
     DISEASE: 'case-result'
   })
+})
+
+test('drill adapter stops at the version configured maximum level', () => {
+  assert.deepEqual(limitDrillNextLevels(['OUT_DEPT'], 'ORGANIZATION', 'OUT_DEPT'), ['OUT_DEPT'])
+  assert.deepEqual(limitDrillNextLevels(['ATTENDING_DOCTOR'], 'ORGANIZATION', 'OUT_DEPT'), [])
+  assert.deepEqual(limitDrillNextLevels(['ATTENDING_DOCTOR'], 'ORGANIZATION', 'ATTENDING_DOCTOR'), ['ATTENDING_DOCTOR'])
 })
 
 test('mock drill follows organization levels and stops before patient access', () => {

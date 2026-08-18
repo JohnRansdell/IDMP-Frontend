@@ -68,8 +68,8 @@
         </el-table-column>
         <el-table-column label="操作" width="118" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" :disabled="!row.nextLevel && !result.nextLevels.length" @click="openNextLevel(row)">
-              {{ row.nextLevel || result.nextLevels.length ? '查看下一级' : '已到末级' }}
+              <el-button link type="primary" :disabled="!availableNextLevels.length" @click="openNextLevel(row)">
+                {{ availableNextLevels.length ? '查看下一级' : '已到末级' }}
             </el-button>
           </template>
         </el-table-column>
@@ -113,6 +113,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import { fetchResultFactors, searchResultDrill } from '@/idmp/api/modules/drill'
+import { limitDrillNextLevels } from '@/idmp/api/adapters/drill'
 
 const props = defineProps({
   resultId: { type: [String, Number], default: 'MOCK-RESULT-001' },
@@ -122,6 +123,7 @@ const props = defineProps({
   period: { type: String, default: '2026-06' },
   startLevel: { type: String, default: 'HOSPITAL' },
   startParentKeys: { type: Object, default: () => ({}) },
+  maxLevels: { type: Object, default: () => ({}) },
   embedded: { type: Boolean, default: false }
 })
 const emit = defineEmits(['level-change'])
@@ -141,6 +143,10 @@ const isFactorTraceMode = computed(() => dimension.value === 'FACTOR_TRACE')
 const activeResultId = computed(() => String(
   props.pathResultIds?.[lastDrillDimension.value] || props.resultId || ''
 ))
+const availableNextLevels = computed(() => {
+  const pathCode = lastDrillDimension.value
+  return limitDrillNextLevels(result.value.nextLevels, pathCode, props.maxLevels?.[pathCode])
+})
 const resolvedPeriod = computed(() => {
   const start = result.value.context?.periodStart
   const end = result.value.context?.periodEnd
@@ -191,7 +197,7 @@ async function loadDrill() {
 }
 
 function openNextLevel(row) {
-  const nextLevel = row.nextLevel || result.value.nextLevels[0]
+  const nextLevel = availableNextLevels.value[0]
   if (!nextLevel) return
   const nextKeys = { ...parentKeys.value }
   const parentKey = parentKeyForLevel(currentLevel.value)

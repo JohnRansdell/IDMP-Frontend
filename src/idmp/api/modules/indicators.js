@@ -1,4 +1,5 @@
 import { requestJson } from '@/idmp/api/request'
+import { normalizeIndicatorAnalysisParams } from '@/idmp/api/adapters/indicator'
 
 export function fetchIndicators(params = {}) {
   return requestJson(withQuery('/indicators', params))
@@ -22,6 +23,14 @@ export function fetchIndicatorVersion(versionId) {
 
 export function fetchIndicatorFormula(versionId) {
   return requestJson(`/indicator-versions/${versionId}/formula`)
+}
+
+export function preflightIndicatorDrillCapabilities(formula, options = {}) {
+  return requestJson('/indicator-versions/drill-capabilities', {
+    method: 'POST',
+    signal: options.signal,
+    body: JSON.stringify({ formula })
+  })
 }
 
 export function createIndicator(payload) {
@@ -107,7 +116,10 @@ export function fetchIndicatorTrialResults(versionId, batchId, page = 1, size = 
 }
 
 export function fetchIndicatorAnalysis(indicatorId, params = {}) {
-  return requestJson(withQuery(`/analysis/indicators/${indicatorId}/analysis`, params))
+  return requestJson(withQuery(
+    `/analysis/indicators/${indicatorId}/analysis`,
+    normalizeIndicatorAnalysisParams(params)
+  ))
 }
 
 function withQuery(path, params = {}) {

@@ -14,6 +14,31 @@ export const DRILL_LEVELS = Object.freeze({
   PATIENT: 'PATIENT'
 })
 
+const DRILL_LEVEL_RANKS = Object.freeze({
+  ORGANIZATION: Object.freeze({
+    HOSPITAL: 1,
+    OUT_DEPT: 2,
+    DEPARTMENT: 2,
+    MEDICAL_GROUP: 3,
+    ATTENDING_DOCTOR: 4,
+    DOCTOR: 4
+  }),
+  DISEASE: Object.freeze({
+    ALL_SINGLE_DISEASE: 1,
+    SINGLE_DISEASE: 2,
+    CASE: 3,
+    PATIENT: 3
+  })
+})
+
+export function limitDrillNextLevels(nextLevels = [], pathCode = '', maxLevel = '') {
+  const levels = Array.isArray(nextLevels) ? nextLevels : []
+  const ranks = DRILL_LEVEL_RANKS[pathCode] || {}
+  const maxRank = ranks[maxLevel]
+  if (!maxRank) return levels
+  return levels.filter((level) => ranks[level] && ranks[level] <= maxRank)
+}
+
 export function adaptDrillResult(payload = {}) {
   const data = payload?.data || payload || {}
   return {
@@ -76,13 +101,14 @@ export function deriveDrillPathResultIds(analysis = {}) {
   const candidates = [analysis.overview, ...(Array.isArray(analysis.dimensionComparison) ? analysis.dimensionComparison : [])]
     .filter((item) => item?.resultId)
   const selected = {}
-  const scores = { ORGANIZATION: -1, DISEASE: -1 }
+  const scores = { ORGANIZATION: Number.POSITIVE_INFINITY, DISEASE: -1 }
 
   candidates.forEach((item) => {
     const dimensions = normalizeDimensionKeys(item.dimensions)
     const organizationScore = scoreOrganizationDimensions(dimensions)
     const diseaseScore = scoreDiseaseDimensions(dimensions)
-    if (organizationScore > scores.ORGANIZATION) {
+    // 下钻接口必须始终使用路径根结果作为锚点；组织路径优先全院，而不是更深的科室/医生结果。
+    if (organizationScore > 0 && organizationScore < scores.ORGANIZATION) {
       scores.ORGANIZATION = organizationScore
       selected.ORGANIZATION = toOpaqueId(item.resultId)
     }
@@ -92,7 +118,7 @@ export function deriveDrillPathResultIds(analysis = {}) {
     }
   })
 
-  if (scores.ORGANIZATION <= 0) delete selected.ORGANIZATION
+  if (!Number.isFinite(scores.ORGANIZATION)) delete selected.ORGANIZATION
   if (scores.DISEASE <= 0) delete selected.DISEASE
   if (!selected.ORGANIZATION && !selected.DISEASE && analysis.overview?.resultId) {
     selected.ORGANIZATION = toOpaqueId(analysis.overview.resultId)
@@ -108,6 +134,7 @@ function scoreOrganizationDimensions(keys) {
   if (hasAnyKey(keys, ['attending_doctor_code', 'attending_doctor_name', 'doctor_code', 'doctor_name'])) return 40
   if (hasAnyKey(keys, ['medical_group_code', 'medical_group_name'])) return 30
   if (hasAnyKey(keys, ['out_dept_code', 'out_dept_name', 'department_code', 'department_name'])) return 20
+  if (hasAnyKey(keys, ['hospital_code', 'hospital_name'])) return 10
   return 0
 }
 
