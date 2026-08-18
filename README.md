@@ -2,13 +2,7 @@
 
 本项目是 IDMP 医疗质量指标数据管理平台的前端 Demo 与后端联调版本，基于 Vue 3、Vite、Element Plus、ECharts 实现。
 
-当前工作分支：
-
-```text
-L
-```
-
-截至 2026-08-13，本分支已完成数据资产工作台、来源元数据目录、语义表/字段映射、场景管理闭环，以及因子、指标、看板和分析页面的持续联调；`dist` 为本次前端构建产物。
+截至 2026-08-13，项目已完成数据资产工作台、来源元数据目录、语义表/字段映射、场景管理闭环，以及因子、指标、看板和分析页面的持续联调；`dist` 为前端构建产物。
 
 ## 技术栈
 
@@ -22,7 +16,7 @@ L
 ## 本地运行
 
 ```powershell
-cd "F:\document\project\bilin\ruoyivue_goview\IDMP-Frontend\IDMP-Frontend"
+cd <project-directory>
 pnpm install
 pnpm dev
 ```
@@ -58,7 +52,7 @@ dist
 本地直连后端时，可配置：
 
 ```text
-VITE_API_BASE_URL=http://192.168.123.14:8081/api/v1
+VITE_API_BASE_URL=http://<backend-host>:<backend-port>/api/v1
 ```
 
 ## 当前已实现页面
@@ -581,42 +575,28 @@ POST /api/v1/analysis/dashboards/{code}/query
 
 ## 服务器部署
 
-构建并上传到远程服务器：
+构建并上传到部署服务器（请将以下占位符替换为实际配置）：
 
 ```powershell
-cd "F:\document\paperwork\项目\bilin\ruoyivue_goview\IDMP-Frontend\IDMP-Frontend"
+cd <project-directory>
 
 .\node_modules\.bin\vite.cmd build
 
-ssh ljh@192.168.123.14 "find ~/IDMP_UI -mindepth 1 -maxdepth 1 -exec rm -rf {} +"
+ssh <deploy-user>@<deploy-host> "find <remote-web-root> -mindepth 1 -maxdepth 1 -exec rm -rf {} +"
 
-scp -r .\dist\* ljh@192.168.123.14:/home/ljh/IDMP_UI/
+scp -r .\dist\* <deploy-user>@<deploy-host>:<remote-web-root>/
 
-ssh ljh@192.168.123.14 "sudo nginx -t && sudo systemctl reload nginx"
+ssh <deploy-user>@<deploy-host> "sudo nginx -t && sudo systemctl reload nginx"
 ```
 
 访问地址：
 
 ```text
-http://192.168.123.14/
+http://<public-host>/
 ```
 
 说明：
 
-- 服务器 Nginx 当前静态目录为 `/home/ljh/IDMP_UI`。
+- 服务器 Nginx 的静态目录请以部署环境配置为准。
 - 每次上传前建议清空旧文件，避免旧 hash 文件残留。
-- 当前 `dist` 已由 `L` 分支构建生成。
-
-## 分支说明
-
-当前分支：
-
-```text
-L
-```
-
-推送：
-
-```powershell
-git push origin l
-```
+- 分支名称和远程仓库信息不在本文档中固定记录，请根据项目协作规范操作。
