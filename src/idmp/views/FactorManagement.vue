@@ -7,6 +7,7 @@
     >
       <template #actions>
         <div class="page-toolbar">
+          <el-button @click="router.push('/factor/templates')">模板管理</el-button>
           <el-button type="primary" :icon="Plus" @click="openFactorEditor('new')">
             新增因子
           </el-button>

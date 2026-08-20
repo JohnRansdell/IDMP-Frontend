@@ -95,13 +95,9 @@ export function normalizeLayout(layout, getIndicatorSource, boardScale = 1) {
     ))
     .map((widget) => {
       const normalized = { ...widget }
-      if (
-        normalized.sourceCode &&
-        !normalized.sourceSnapshot &&
-        typeof getIndicatorSource === 'function'
-      ) {
-        normalized.sourceSnapshot = getIndicatorSource(normalized.sourceCode)
-      }
+      // 布局只保存组件配置，不能保存一次查询得到的业务数据快照；否则旧的
+      // 演示数据会在后续真实查询完成后继续覆盖当前数据源。
+      delete normalized.sourceSnapshot
       return constrainWidget(normalized, DASHBOARD_DESIGN_WIDTH, boardScale)
     })
 }

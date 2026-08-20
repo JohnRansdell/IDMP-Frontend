@@ -4,7 +4,7 @@
       title="医疗质量指标总览"
     >
       <template #meta>
-        <span class="data-source-badge" :class="{ 'is-live': dashboardSourceMode === 'mixed' }">
+        <span class="data-source-badge" :class="{ 'is-live': dashboardStatus === 'ready' }">
           {{ dashboardSourceLabel }}
         </span>
         <span>数据期间：{{ period }}</span>
@@ -12,14 +12,10 @@
       </template>
       <template #actions>
         <el-select v-model="period" class="dashboard-filter" aria-label="年度">
-          <el-option label="2024年度" value="2024年度" />
-          <el-option label="2024年Q4" value="2024年Q4" />
-          <el-option label="2024年12月" value="2024年12月" />
+          <el-option v-for="option in periodOptions" :key="option.value" :label="option.label" :value="option.value" />
         </el-select>
         <el-select v-model="department" class="dashboard-filter" aria-label="科室">
-          <el-option label="全院" value="全院" />
-          <el-option label="心外科" value="心外科" />
-          <el-option label="神经外科" value="神经外科" />
+          <el-option v-for="option in departmentOptions" :key="option.value" :label="option.label" :value="option.value" />
         </el-select>
         <template v-if="isEditing">
           <el-button :icon="RefreshLeft" @click="resetDashboardLayout">恢复默认</el-button>
@@ -27,6 +23,7 @@
           <el-button type="primary" :icon="Check" @click="saveDashboardLayout">保存布局</el-button>
         </template>
         <el-button v-else type="primary" :icon="Edit" @click="startDashboardEdit">编辑看板</el-button>
+        <el-button v-if="dashboardStatus === 'unpublished'" @click="loadDashboard">重新加载</el-button>
       </template>
     </PageHeader>
 
@@ -35,6 +32,30 @@
       <span>{{ dashboardLoadMessage }}</span>
     </div>
 
+    <StatePanel
+      v-if="dashboardStatus === 'loading'"
+      type="loading"
+      title="正在加载质量看板"
+      description="正在读取已发布看板定义和当前筛选条件下的正式结果。"
+    />
+    <StatePanel
+      v-else-if="dashboardStatus === 'error'"
+      type="error"
+      title="质量看板加载失败"
+      :description="dashboardLoadMessage || '未展示演示数据，请检查后端看板是否已发布后重试。'"
+    >
+      <template #actions><el-button type="primary" @click="loadDashboard">重新加载</el-button></template>
+    </StatePanel>
+    <StatePanel
+      v-else-if="dashboardStatus === 'empty'"
+      type="empty"
+      title="当前条件暂无正式结果"
+      description="后端已返回看板，但当前统计周期和范围没有可展示的正式数据。"
+    >
+      <template #actions><el-button @click="loadDashboard">重新加载</el-button></template>
+    </StatePanel>
+
+    <template v-else-if="dashboardStatus === 'ready' || dashboardStatus === 'demo'">
     <section v-if="isEditing" class="surface-card dashboard-editor-panel">
       <div class="dashboard-editor-panel__left">
         <span class="dashboard-editor-panel__label">数据组件</span>
@@ -42,7 +63,7 @@
           v-model="selectedDataCode"
           class="dashboard-editor-panel__data-select"
           aria-label="指标数据"
-          :loading="indicatorSourceLoading"
+            :loading="dashboardLoading"
         >
           <el-option
             v-for="source in indicatorDataSources"
@@ -112,7 +133,7 @@
               <h2>{{ visibleKpis[0].title }}</h2>
             </div>
             <span class="status-pill" :class="`is-${visibleKpis[0].status}`">
-              {{ visibleKpis[0].status === 'danger' ? '超出目标' : '在目标内' }}
+              {{ visibleKpis[0].status === 'danger' ? '超出目标' : visibleKpis[0].status === 'info' ? '待配置' : '在目标内' }}
             </span>
           </div>
           <div class="primary-metric__value clinical-metric">{{ visibleKpis[0].value }}</div>
@@ -139,7 +160,7 @@
             type="button"
             class="supporting-metric"
             :tabindex="isEditing ? -1 : 0"
-            @click.stop="goIndicatorAnalysis(getKpiIndicatorCode(index + 1, item))"
+            @click.stop="goIndicatorAnalysis(item.code)"
           >
             <span class="supporting-metric__name">{{ item.title }}</span>
             <strong class="clinical-metric">{{ item.value }}</strong>
@@ -186,10 +207,11 @@
           </div>
           <IdmpChart
             :option="getWidgetChartOption(widget)"
+            :empty="isChartEmpty(widget)"
             height="100%"
             fit-container
             :aria-label="`${getWidgetTitle(widget)}图表`"
-            updated-at="演示周期：2024 年 12 月"
+            :updated-at="dashboardQueryLabel"
           >
             <template #table>
               <table
@@ -228,7 +250,7 @@
             <h2><el-icon><Bell /></el-icon>预警指标</h2>
             <button type="button" class="action-link" :tabindex="isEditing ? -1 : 0" @click.stop="goAlerts">查看全部</button>
           </div>
-          <ul class="warning-list">
+          <ul v-if="dashboardWarnings.length" class="warning-list">
             <li v-for="warning in dashboardWarnings" :key="warning.text">
               <span class="warning-icon" :class="`is-${warning.level}`">
                 <el-icon><WarningFilled v-if="warning.level !== 'info'" /><InfoFilled v-else /></el-icon>
@@ -237,18 +259,19 @@
               <time>{{ warning.time }}</time>
             </li>
           </ul>
+          <StatePanel v-else type="empty" title="暂无预警数据" description="当前看板查询接口未返回预警事件。" />
         </article>
 
         <article v-else-if="widget.type === 'ranking'" class="surface-card list-card">
           <div class="section-title">
-            <h2><el-icon><TrophyBase /></el-icon>科室指标排名（手术并发症率）</h2>
+            <h2><el-icon><TrophyBase /></el-icon>科室指标排名</h2>
           </div>
           <ol class="ranking-list">
             <li v-for="row in departmentRanking" :key="row.department">
               <span class="rank" :class="{ 'is-top': row.rank <= 3 }">{{ row.rank }}</span>
               <span class="department">{{ row.department }}</span>
               <span class="rank-bar">
-                <i :style="{ width: `${Math.max(14, parseFloat(row.value) * 16)}%` }" />
+                <i :style="{ width: `${Math.max(14, row.rawValue * 16)}%` }" />
               </span>
               <strong>{{ row.value }}</strong>
             </li>
@@ -268,11 +291,12 @@
       </div>
       </section>
     </div>
+    </template>
   </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Bell,
@@ -291,17 +315,13 @@ import {
 } from '@element-plus/icons-vue'
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
+import StatePanel from '@/idmp/components/StatePanel.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
 import { fetchDashboardBootstrap } from '@/idmp/api/modules/analysisDashboard'
-import { fetchIndicators } from '@/idmp/api/modules/indicators'
 import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
-import {
-  categoryRates,
-  dashboardKpis,
-  dashboardTrend,
-  dashboardWarnings,
-  departmentRanking
-} from '@/idmp/data/demo'
+import { dashboardTrend, dashboardWarnings as mockDashboardWarnings, departmentRanking as mockDepartmentRanking } from '@/idmp/data/demo'
+import { mockIndicatorDataSources } from '@/idmp/features/dashboard/mockData'
+import { applyMortalityReadonlyChain } from '@/idmp/features/dashboard/mortalityAdapter'
 import {
   DASHBOARD_CODE,
   DASHBOARD_DESIGN_WIDTH,
@@ -320,8 +340,6 @@ import {
   normalizeLayout,
   widgetStyle
 } from '@/idmp/features/dashboard/layout'
-import { mockIndicatorDataSources } from '@/idmp/features/dashboard/mockData'
-import { applyMortalityReadonlyChain } from '@/idmp/features/dashboard/mortalityAdapter'
 import {
   createDashboardChartOption,
   createKpiData,
@@ -329,39 +347,51 @@ import {
 } from '@/idmp/features/dashboard/visualization'
 
 const router = useRouter()
-const period = ref('2024年度')
-const department = ref('全院')
+const periodOptions = [
+  { label: '全部期间', value: '' },
+  { label: '2025 年 12 月', value: '2025-12' }
+]
+const departmentOptions = [{ label: '全院', value: '' }]
+const period = ref('2025-12')
+const department = ref('')
 const boardRef = ref()
 const boardWidth = ref(0)
 const isEditing = ref(false)
 const activeWidgetId = ref('')
-const selectedDataCode = ref(mockIndicatorDataSources[0].code)
+const selectedDataCode = ref('')
 const addWidgetType = ref('kpi')
-const indicatorDataSources = ref(cloneIndicatorSources(mockIndicatorDataSources))
-const indicatorSourceLoading = ref(false)
-const dashboardSourceMode = ref('demo')
+const indicatorDataSources = ref(cloneDashboardSources(mockIndicatorDataSources))
+const dashboardStatus = ref('loading')
 const dashboardLoadMessage = ref('')
 const dashboardLayout = ref(createDefaultLayout())
 const editSnapshot = ref([])
-const backendDashboard = ref(null)
-const mortalityChain = ref(null)
+const dashboardDefinition = ref(null)
+const dashboardQueryResult = ref(null)
+let dashboardAbortController
 let boardResizeObserver
-const dashboardKpiIndicatorCodes = [
-  'MORTALITY_INPATIENT',
-  'OUTPATIENT_DISCHARGE_RATIO',
-  'SURGERY_COMPLICATION',
-  'ANTIBIOTIC_DDDS',
-  'ESSENTIAL_MEDICINE_RATIO',
-  'MEDICAL_SERVICE_REVENUE_RATIO'
-]
+
+const dashboardLoading = computed(() => dashboardStatus.value === 'loading')
+const dashboardQueryLabel = computed(() => {
+  const selectedPeriod = periodOptions.find((item) => item.value === period.value)?.label || '全部期间'
+  return `查询条件：${selectedPeriod} · ${department.value ? department.value : '全院'}`
+})
+const dashboardWarnings = computed(() => dashboardStatus.value === 'ready' ? [] : mockDashboardWarnings)
+const departmentRanking = computed(() => {
+  const rows = normalizeRanking(dashboardQueryResult.value?.departmentRanking)
+  return rows.length ? rows : mockDepartmentRanking.map((item) => ({ ...item, rawValue: Number.parseFloat(item.value) }))
+})
 
 const selectedDataSource = computed(() =>
   indicatorDataSources.value.find((source) => source.code === selectedDataCode.value)
 )
 
-const dashboardSourceLabel = computed(() => (
-  dashboardSourceMode.value === 'mixed' ? '接口元数据 + 演示指标值' : '演示数据'
-))
+const dashboardSourceLabel = computed(() => ({
+  loading: '正在加载正式数据',
+  ready: '正式接口数据',
+  empty: '正式接口数据（暂无结果）',
+  demo: '演示数据（正式接口不可用）',
+  error: '正式接口数据加载失败'
+}[dashboardStatus.value] || '正在加载正式数据'))
 
 const effectiveDashboardLayout = computed(() =>
   normalizeLayout(dashboardLayout.value, getDashboardIndicatorSource, getBoardScale())
@@ -377,34 +407,12 @@ const activeWidgetName = computed(() => {
   return `已选中：${getWidgetTitle(widget)}。位置 ${widget.x}, ${widget.y}；尺寸 ${widget.w} × ${widget.h}。方向键移动，Shift 加方向键调整尺寸，Delete 删除。`
 })
 
-const departmentMultiplier = computed(() => {
-  if (department.value === '心外科') return 1.08
-  if (department.value === '神经外科') return 1.04
-  return 1
+const visibleKpis = computed(() => indicatorDataSources.value.map(createKpiData))
+
+const trendTableRows = computed(() => {
+  const rows = normalizeMonthlyTrend(dashboardQueryResult.value?.monthlyTrend)
+  return rows.length ? rows : dashboardTrend.months.map((period, index) => ({ period, value: dashboardTrend.mortality[index] }))
 })
-
-const visibleKpis = computed(() => dashboardKpis.map((item, index) => {
-  if (index === 0) {
-    return createKpiData(getDashboardIndicatorSource('MORTALITY_INPATIENT') || indicatorDataSources.value[0])
-  }
-  if (department.value === '全院' || index > 2) return item
-  const numeric = Number.parseFloat(item.value)
-  if (Number.isNaN(numeric)) return item
-  const suffix = item.value.replace(String(numeric), '')
-  return {
-    ...item,
-    value: `${(numeric * departmentMultiplier.value).toFixed(index === 1 ? 1 : 2)}${suffix}`
-  }
-}))
-
-const trendTableRows = computed(() =>
-  dashboardTrend.months.map((month, index) => ({
-    period: month,
-    mortality: (dashboardTrend.mortality[index] * departmentMultiplier.value).toFixed(2),
-    complication: (dashboardTrend.complication[index] * departmentMultiplier.value).toFixed(2),
-    antibiotic: dashboardTrend.antibiotic[index]
-  }))
-)
 
 const boardHeight = computed(() => {
   const maxBottom = effectiveDashboardLayout.value.reduce(
@@ -415,60 +423,29 @@ const boardHeight = computed(() => {
 })
 
 const trendOption = computed(() => ({
-  color: ['#b4232c', '#b75d00', IDMP_CHART_COLORS[0]],
+  color: [IDMP_CHART_COLORS[0]],
   tooltip: { trigger: 'axis' },
-  legend: {
-    bottom: 0,
-    itemWidth: 14,
-    itemHeight: 8
-  },
+  legend: { show: false },
   grid: { top: 12, left: 44, right: 44, bottom: 46, containLabel: false },
   xAxis: {
     type: 'category',
     boundaryGap: false,
-    data: dashboardTrend.months
+    data: trendTableRows.value.map((item) => item.period)
   },
-  yAxis: [
-    {
-      type: 'value',
-      min: 0,
-      max: 4
-    },
-    {
-      type: 'value',
-      min: 0,
-      max: 50,
-      splitLine: { show: false }
-    }
-  ],
+  yAxis: [{ type: 'value' }],
   series: [
     {
-      name: '住院死亡率',
+      name: '指标值',
       type: 'line',
       smooth: true,
       symbolSize: 5,
-      data: dashboardTrend.mortality.map(value => +(value * departmentMultiplier.value).toFixed(2))
-    },
-    {
-      name: '手术并发症率',
-      type: 'line',
-      smooth: true,
-      symbolSize: 5,
-      data: dashboardTrend.complication.map(value => +(value * departmentMultiplier.value).toFixed(2))
-    },
-    {
-      name: '抗菌药物使用强度',
-      type: 'line',
-      smooth: true,
-      symbolSize: 5,
-      yAxisIndex: 1,
-      data: dashboardTrend.antibiotic
+      data: trendTableRows.value.map((item) => item.value)
     }
   ]
 }))
 
 const rateOption = computed(() => ({
-  color: ['#247a4d', '#b75d00', '#b4232c'],
+  color: IDMP_CHART_COLORS,
   tooltip: { trigger: 'item', formatter: '{b}: {d}%' },
   legend: {
     bottom: 2,
@@ -488,7 +465,7 @@ const rateOption = computed(() => ({
         formatter: '{b}\n{d}%'
       },
       labelLine: { length: 12, length2: 10 },
-      data: categoryRates
+        data: departmentRanking.value.map((item) => ({ name: item.department, value: item.rawValue }))
     }
   ]
 }))
@@ -505,7 +482,6 @@ function getWidgetKpi(widget) {
   if (typeof widget.kpiIndex === 'number') {
     return visibleKpis.value[widget.kpiIndex] || createKpiData(indicatorDataSources.value[0])
   }
-  if (widget.data) return widget.data
   return createKpiData(getDashboardIndicatorSource(widget.sourceCode) || indicatorDataSources.value[0])
 }
 
@@ -513,14 +489,10 @@ function getDashboardIndicatorSource(code) {
   return indicatorDataSources.value.find((source) => source.code === code)
 }
 
-function getKpiIndicatorCode(index, item) {
-  return item?.code || dashboardKpiIndicatorCodes[index] || 'SURGERY_COMPLICATION'
-}
-
 function getWidgetIndicatorCode(widget) {
   if (widget.sourceCode) return widget.sourceCode
-  if (typeof widget.kpiIndex === 'number') return getKpiIndicatorCode(widget.kpiIndex, visibleKpis.value[widget.kpiIndex])
-  return widget.data?.code || 'SURGERY_COMPLICATION'
+  if (typeof widget.kpiIndex === 'number') return visibleKpis.value[widget.kpiIndex]?.code || ''
+  return widget.data?.code || ''
 }
 
 function goWidgetAnalysis(widget) {
@@ -530,7 +502,7 @@ function goWidgetAnalysis(widget) {
 
 function goPrimaryMetricAnalysis() {
   if (isEditing.value) return
-  goIndicatorAnalysis(getKpiIndicatorCode(0, visibleKpis.value[0]))
+  goIndicatorAnalysis(visibleKpis.value[0]?.code)
 }
 
 function getWidgetTitle(widget) {
@@ -539,15 +511,15 @@ function getWidgetTitle(widget) {
   if (isKpiWidget(widget)) return getWidgetKpi(widget).title
   if (widget.type === 'warnings') return '预警指标'
   if (widget.type === 'ranking') return '科室指标排名'
-  if (widget.preset === 'trend') return '近 12 月质量趋势'
-  if (widget.preset === 'rate') return '指标目标分布'
+  if (widget.preset === 'trend') return '月度指标趋势'
+  if (widget.preset === 'rate') return '科室指标分布'
   if (widget.sourceName) return getVisualizationTitle(widget.sourceName, widget.chartKind)
   return widget.title || widgetTypeOptions.find((item) => item.value === widget.chartKind)?.label || '图表'
 }
 
 function getWidgetDescription(widget) {
-  if (widget.preset === 'trend') return '比较死亡率、手术并发症率与抗菌药物使用强度'
-  if (widget.preset === 'rate') return '达标、接近阈值与超标指标占比'
+  if (widget.preset === 'trend') return '按当前筛选条件读取已发布看板的月度数据'
+  if (widget.preset === 'rate') return '按当前筛选条件读取已发布看板的科室数据'
   return ''
 }
 
@@ -560,23 +532,32 @@ function getWidgetIcon(widget) {
 function getWidgetChartOption(widget) {
   return createDashboardChartOption(widget, {
     trendOption: trendOption.value,
-    rateOption: rateOption.value
+    rateOption: rateOption.value,
+    getSource: getDashboardIndicatorSource
   })
+}
+
+function isChartEmpty(widget) {
+  if (widget.preset === 'trend') return !trendTableRows.value.length
+  if (widget.preset === 'rate') return !departmentRanking.value.length
+  const source = getDashboardIndicatorSource(widget.sourceCode)
+  if (!source) return true
+  if (widget.chartKind === 'bar') return !source.departmentData?.length
+  if (widget.chartKind === 'pie') return !source.pieData?.length
+  return !source.trendData?.length
 }
 
 function getWidgetTableColumns(widget) {
   if (widget.preset === 'trend') {
     return [
       { key: 'period', label: '月份' },
-      { key: 'mortality', label: '住院死亡率' },
-      { key: 'complication', label: '手术并发症率' },
-      { key: 'antibiotic', label: '抗菌药物使用强度' }
+      { key: 'value', label: '指标值' }
     ]
   }
   if (widget.preset === 'rate') {
     return [
-      { key: 'label', label: '状态' },
-      { key: 'value', label: '指标数' }
+      { key: 'label', label: '科室' },
+      { key: 'value', label: '指标值' }
     ]
   }
   return [
@@ -588,11 +569,10 @@ function getWidgetTableColumns(widget) {
 function getWidgetTableRows(widget) {
   if (widget.preset === 'trend') return trendTableRows.value
   if (widget.preset === 'rate') {
-    return categoryRates.map((item) => ({ label: item.name, value: item.value }))
+    return departmentRanking.value.map((item) => ({ label: item.department, value: item.value }))
   }
 
-  const source = widget.sourceSnapshot ||
-    getDashboardIndicatorSource(widget.sourceCode) ||
+  const source = getDashboardIndicatorSource(widget.sourceCode) ||
     indicatorDataSources.value[0] ||
     {}
 
@@ -602,8 +582,8 @@ function getWidgetTableRows(widget) {
   if (widget.chartKind === 'pie') {
     return (source.pieData || []).map((item) => ({ label: item.name, value: item.value }))
   }
-  return dashboardTrend.months.map((month, index) => ({
-    label: month,
+  return trendTableRows.value.map((item, index) => ({
+    label: item.period,
     value: source.trendData?.[index] ?? '-'
   }))
 }
@@ -632,7 +612,6 @@ function addDashboardWidget() {
     id,
     sourceCode: source.code,
     sourceName: source.name,
-    sourceSnapshot: cloneIndicatorSource(source),
     visualType: type,
     x: position.x,
     y: position.y
@@ -836,159 +815,163 @@ function loadDashboardLayout() {
   dashboardLayout.value = createDefaultLayout()
 }
 
-async function loadBackendIndicatorSources() {
-  indicatorSourceLoading.value = true
-  try {
-    const rows = await fetchIndicators()
-    const backendSources = normalizeList(rows).map(toDashboardIndicatorSource).filter(Boolean)
-    if (!backendSources.length) {
-      dashboardSourceMode.value = 'demo'
-      dashboardLoadMessage.value = '指标接口未返回可用记录，当前明确展示演示指标。演示值不代表正式计算结果。'
-      return
-    }
+async function loadDashboard() {
+  dashboardAbortController?.abort()
+  const controller = new AbortController()
+  dashboardAbortController = controller
+  dashboardStatus.value = 'loading'
+  dashboardLoadMessage.value = ''
 
-    indicatorDataSources.value = mergeIndicatorSources(backendSources, indicatorDataSources.value)
-    dashboardSourceMode.value = 'mixed'
-    dashboardLoadMessage.value = ''
-    if (!selectedDataSource.value) {
-      selectedDataCode.value = indicatorDataSources.value[0]?.code || ''
+  try {
+    const { definition, queryResult } = await fetchDashboardBootstrap(
+      DASHBOARD_CODE,
+      buildDashboardQuery(),
+      { signal: controller.signal }
+    )
+    if (controller.signal.aborted) return
+
+    dashboardDefinition.value = definition
+    dashboardQueryResult.value = queryResult
+    indicatorDataSources.value = createDashboardSources(queryResult)
+    selectedDataCode.value = indicatorDataSources.value[0]?.code || ''
+    dashboardStatus.value = indicatorDataSources.value.length ? 'ready' : 'empty'
+    if (dashboardStatus.value === 'ready') {
+      await nextTick()
+      observeBoard()
     }
-  } catch {
-    indicatorDataSources.value = cloneIndicatorSources(mockIndicatorDataSources)
-    dashboardSourceMode.value = 'demo'
-    dashboardLoadMessage.value = '指标接口暂不可用，当前明确展示演示数据。可继续查看界面结构，但数值不代表正式计算结果。'
-  } finally {
-    indicatorSourceLoading.value = false
+  } catch (error) {
+    if (controller.signal.aborted) return
+    dashboardDefinition.value = null
+    dashboardQueryResult.value = null
+    applyDemoDashboard(error)
   }
 }
 
-function normalizeList(payload) {
-  if (Array.isArray(payload)) return payload
-  if (Array.isArray(payload?.records)) return payload.records
-  if (Array.isArray(payload?.list)) return payload.list
-  if (Array.isArray(payload?.items)) return payload.items
-  return []
+function buildDashboardQuery() {
+  const [year, month] = String(period.value || '').split('-')
+  return {
+    year: year ? Number(year) : null,
+    month: month ? Number(month) : null,
+    deptCode: department.value || null
+  }
 }
 
-async function loadBackendDashboardContract() {
-  try {
-    backendDashboard.value = await fetchDashboardBootstrap(DASHBOARD_CODE, {
-      year: 2025,
-      month: 12,
-      deptCode: null
-    })
-  } catch {
-    backendDashboard.value = null
+function createDashboardSources(result = {}) {
+  const summary = result?.summaryCards || {}
+  const trendData = trendTableRows.value.map((item) => item.value)
+  const departmentData = departmentRanking.value.map((item) => ({ name: item.department, value: item.rawValue }))
+  const labels = {
+    deathNum: '死亡人数',
+    dischargeNum: '出院人次',
+    outpatientNum: '门诊人次'
   }
+  return Object.entries(labels)
+    .filter(([key]) => Number.isFinite(Number(summary[key])))
+    .map(([key, name]) => ({
+      code: `dashboard-summary-${key}`,
+      name,
+      category: '质量看板汇总',
+      unit: '',
+      currentValue: formatNumber(summary[key]),
+      change: '当前查询结果',
+      target: '来源：已发布看板',
+      status: 'success',
+      origin: 'backend',
+      originLabel: '正式结果',
+      trendData,
+      trendLabels: trendTableRows.value.map((item) => item.period),
+      departmentData,
+      pieData: departmentData
+    }))
+}
+
+function applyDemoDashboard(error) {
+  indicatorDataSources.value = cloneDashboardSources(mockIndicatorDataSources)
+  selectedDataCode.value = indicatorDataSources.value[0]?.code || ''
+  dashboardStatus.value = 'demo'
+  dashboardLoadMessage.value = `${error?.message || '未能读取已发布看板和正式结果。'} 当前展示演示数据；演示值不代表正式计算结果。`
+  nextTick(observeBoard)
+  void loadMortalityReadonlyChain()
 }
 
 async function loadMortalityReadonlyChain() {
-  try {
-    const chain = await fetchMortalityReadonlyChain()
-    const source = applyMortalityReadonlyChain(indicatorDataSources.value, chain)
-    if (source) {
-      applyMortalityReadonlyChain(mockIndicatorDataSources, chain)
-      indicatorDataSources.value = indicatorDataSources.value.map((item) =>
-        item.code === source.code ? { ...source } : item
-      )
-      mortalityChain.value = chain
-      refreshMortalityWidgets(source)
-    }
-  } catch {
-    mortalityChain.value = null
-  }
+  const chain = await fetchMortalityReadonlyChain().catch(() => null)
+  const source = applyMortalityReadonlyChain(indicatorDataSources.value, chain)
+  if (source) indicatorDataSources.value = indicatorDataSources.value.map((item) => item.code === source.code ? { ...source, origin: 'backend', originLabel: '后端试算结果' } : item)
 }
 
-function refreshMortalityWidgets(source) {
-  dashboardLayout.value = dashboardLayout.value.map((widget) => {
-    if (widget.sourceCode !== source.code) return widget
-    if (widget.type !== 'kpi') return widget
-    return {
-      ...widget,
-      data: createKpiData(source)
-    }
-  })
-}
-
-function cloneIndicatorSources(sources) {
+function cloneDashboardSources(sources) {
   return sources.map((source) => ({
     ...source,
-    trendData: Array.isArray(source.trendData) ? [...source.trendData] : source.trendData,
-    departmentData: Array.isArray(source.departmentData) ? source.departmentData.map((item) => ({ ...item })) : source.departmentData,
-    pieData: Array.isArray(source.pieData) ? source.pieData.map((item) => ({ ...item })) : source.pieData
+    origin: source.origin || 'demo',
+    originLabel: source.originLabel || '演示',
+    trendData: [...(source.trendData || [])],
+    departmentData: (source.departmentData || []).map((item) => ({ ...item })),
+    pieData: (source.pieData || []).map((item) => ({ ...item }))
   }))
 }
 
-function toDashboardIndicatorSource(item, index) {
-  if (!item?.code || !item?.name) return null
-  const demoSource = mockIndicatorDataSources.find((source) => source.code === item.code) ||
-    mockIndicatorDataSources[index % mockIndicatorDataSources.length] ||
-    mockIndicatorDataSources[0]
-
-  return {
-    ...cloneIndicatorSource(demoSource),
-    code: item.code,
-    name: item.name,
-    category: item.category || item.categoryName || item.domainName || '后端指标',
-    unit: item.unit || item.unitCode || demoSource?.unit || '',
-    status: item.status === 'DISABLED' ? 'warning' : demoSource?.status || 'success',
-    origin: 'backend',
-    originLabel: '后端'
-  }
+function normalizeMonthlyTrend(rows) {
+  if (!Array.isArray(rows)) return []
+  return rows
+    .map((item) => ({
+      period: item?.period || item?.month || '',
+      value: Number(item?.value)
+    }))
+    .filter((item) => item.period !== '' && Number.isFinite(item.value))
 }
 
-function mergeIndicatorSources(backendSources, currentSources) {
-  const merged = new Map()
-  cloneIndicatorSources(currentSources).forEach((source) => {
-    merged.set(source.code, {
-      ...source,
-      origin: source.origin || 'demo',
-      originLabel: source.originLabel || '演示'
+function normalizeRanking(rows) {
+  if (!Array.isArray(rows)) return []
+  return rows
+    .map((item, index) => {
+      const rawValue = Number(item?.value)
+      return {
+        rank: index + 1,
+        department: item?.deptName || item?.deptCode || '未命名科室',
+        rawValue,
+        value: Number.isFinite(rawValue) ? formatNumber(rawValue) : '-'
+      }
     })
-  })
-  backendSources.forEach((source) => {
-    const current = merged.get(source.code)
-    merged.set(source.code, current ? { ...current, ...source } : source)
-  })
-  return Array.from(merged.values())
+    .filter((item) => Number.isFinite(item.rawValue))
 }
 
-function cloneIndicatorSource(source) {
-  return {
-    ...source,
-    trendData: Array.isArray(source?.trendData) ? [...source.trendData] : source?.trendData,
-    departmentData: Array.isArray(source?.departmentData) ? source.departmentData.map((item) => ({ ...item })) : source?.departmentData,
-    pieData: Array.isArray(source?.pieData) ? source.pieData.map((item) => ({ ...item })) : source?.pieData
-  }
+function formatNumber(value) {
+  return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(Number(value))
+}
+
+function observeBoard() {
+  if (typeof ResizeObserver === 'undefined' || !boardRef.value) return
+  boardWidth.value = boardRef.value.clientWidth
+  boardResizeObserver?.disconnect()
+  boardResizeObserver = new ResizeObserver(([entry]) => {
+    const nextWidth = Math.round(entry.contentRect.width)
+    if (!nextWidth || nextWidth === Math.round(boardWidth.value)) return
+    boardWidth.value = nextWidth
+  })
+  boardResizeObserver.observe(boardRef.value)
 }
 
 const goAlerts = () => router.push('/alerts')
 const goIndicatorAnalysis = (indicatorCode) => {
+  if (!indicatorCode) return
   router.push({
     path: '/analysis',
-    query: { indicator: indicatorCode || 'SURGERY_COMPLICATION' }
+    query: { indicator: indicatorCode }
   })
 }
 
-onMounted(async () => {
+watch([period, department], () => {
+  loadDashboard()
+})
+
+onMounted(() => {
   loadDashboardLayout()
-  if (typeof ResizeObserver !== 'undefined' && boardRef.value) {
-    boardWidth.value = boardRef.value.clientWidth
-    boardResizeObserver = new ResizeObserver(([entry]) => {
-      const nextWidth = Math.round(entry.contentRect.width)
-      if (!nextWidth || nextWidth === Math.round(boardWidth.value)) return
-      boardWidth.value = nextWidth
-    })
-    boardResizeObserver.observe(boardRef.value)
-  }
-  await loadBackendIndicatorSources()
-  await Promise.allSettled([
-    loadBackendDashboardContract(),
-    loadMortalityReadonlyChain()
-  ])
+  loadDashboard()
 })
 
 onBeforeUnmount(() => {
+  dashboardAbortController?.abort()
   boardResizeObserver?.disconnect()
 })
 </script>

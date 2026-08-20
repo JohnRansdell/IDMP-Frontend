@@ -1,28 +1,23 @@
-import { clearAccessToken, requestJson, setAccessToken } from '@/idmp/api/request'
+import { requestJson } from '@/idmp/api/request'
+import {
+  hydrateCurrentUser,
+  loginWithPassword,
+  logoutSession,
+  refreshSession,
+  restoreSession
+} from '@/idmp/auth/session'
 
 export function fetchHealth() {
   return requestJson('/health')
 }
 
-export async function login(payload) {
-  const result = await requestJson('/auth/login', {
-    method: 'POST',
-    body: JSON.stringify(payload)
-  })
-  setAccessToken(result.accessToken)
-  return result
-}
+export const login = loginWithPassword
+export const restoreLoginSession = restoreSession
+export const refreshLoginSession = refreshSession
+export const fetchCurrentUser = hydrateCurrentUser
 
-export async function logout() {
-  try {
-    return await requestJson('/auth/logout', {
-      method: 'POST',
-      body: JSON.stringify({})
-    })
-  } finally {
-    clearAccessToken()
-  }
-}
+export function logout() { return logoutSession(false) }
+export function logoutAll() { return logoutSession(true) }
 
 export function fetchSystemUsers() {
   return requestJson('/system/users')
