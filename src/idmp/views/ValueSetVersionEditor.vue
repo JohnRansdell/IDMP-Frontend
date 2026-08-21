@@ -1,13 +1,13 @@
 <template>
   <div class="idmp-page value-set-editor-page">
     <PageHeader :title="`值集版本 ${version?.versionNo ? `V${version.versionNo}` : '编辑'}`">
-      <template #meta><span class="data-source-badge is-live">真实接口</span><span class="header-meta">{{ valueSet?.code || '—' }} · {{ version?.publicationStatus || '加载中' }}</span></template>
+      <template #meta><span class="data-source-badge is-live">真实接口</span><span class="header-meta">{{ valueSet?.code || '—' }} · {{ version?.publicationStatus ? getStatusLabel(version.publicationStatus) : '加载中' }}</span></template>
       <template #actions><el-button @click="back">返回详情</el-button><el-button :loading="loading" @click="load">刷新</el-button></template>
     </PageHeader>
 
     <StatePanel v-if="error" type="error" title="版本加载失败" :description="error" />
     <template v-else>
-      <section class="surface-card editor-summary"><div><span>资源版本</span><strong>{{ version?.resourceVersion ?? '—' }}</strong></div><div><span>版本状态</span><StatusBadge :status="version?.publicationStatus" /></div><div><span>匹配模式</span><strong>{{ version?.matchMode || '—' }}</strong></div><div><span>值类型</span><strong>{{ version?.valueType || '—' }}</strong></div></section>
+      <section class="surface-card editor-summary"><div><span>资源版本</span><strong>{{ version?.resourceVersion ?? '—' }}</strong></div><div><span>版本状态</span><StatusBadge :status="version?.publicationStatus" /></div><div><span>匹配模式</span><strong>{{ matchModeLabel(version?.matchMode) || '—' }}</strong></div><div><span>值类型</span><strong>{{ dataTypeLabel(version?.valueType) || '—' }}</strong></div></section>
       <section class="surface-card table-card">
         <div class="section-title section-title--toolbar"><div><h2>值项维护</h2><p class="section-title__description">保存采用全量替换语义；删除未提交的行会从版本中移除。</p></div><div><el-button @click="addItem">新增值项</el-button><el-button type="primary" :loading="saving" :disabled="!canEdit" @click="saveItems">保存值项</el-button></div></div>
         <el-alert v-if="!canEdit" title="当前版本不可编辑，仅支持查看、校验或发布状态结果。" type="info" :closable="false" />
@@ -36,6 +36,8 @@ import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import { archiveValueSetVersion, fetchValueSetItems, fetchValueSetVersion, publishValueSetVersion, replaceValueSetItems, validateValueSetVersion } from '@/idmp/api/modules/valueSets'
+import { getStatusLabel } from '@/idmp/design/status'
+import { dataTypeLabel, matchModeLabel } from '@/idmp/features/meta'
 
 const route = useRoute(); const router = useRouter(); const versionId = String(route.params.versionId)
 const valueSet = ref(null); const version = ref(null); const items = ref([]); const originalItems = ref([]); const validation = ref(null); const loading = ref(false); const saving = ref(false); const validating = ref(false); const publishing = ref(false); const archiving = ref(false); const error = ref('')

@@ -1,6 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildFactorDsl, validateFilterNode } from '../src/idmp/utils/dslBuilder.js'
+import { buildFactorDsl, getAggregationLabel, validateFilterNode } from '../src/idmp/utils/dslBuilder.js'
+
+test('聚合方式显示中文且未知码原样返回', () => {
+  assert.equal(getAggregationLabel('COUNT_DISTINCT'), '去重计数')
+  assert.equal(getAggregationLabel('median'), '中位数')
+  assert.equal(getAggregationLabel('CUSTOM_AGGREGATION'), 'CUSTOM_AGGREGATION')
+})
 
 test('cascade context contract requires explicit semantic table selection', () => {
   const dsl = { primaryDomain: { domainCode: 'D', semanticTableCode: 'T2' }, aggregation: { function: 'COUNT', fieldCode: 'F2' }, groupBy: ['F2'] }

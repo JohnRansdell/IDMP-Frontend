@@ -57,7 +57,7 @@
           <el-select v-model="form.status" clearable placeholder="发布状态" aria-label="按发布状态筛选">
             <el-option label="已发布" value="已发布" />
             <el-option label="草稿" value="草稿" />
-            <el-option label="待发布" value="待发布" />
+            <el-option label="已校验" value="已校验" />
           </el-select>
         </el-form-item>
         <el-form-item class="filter-actions">
@@ -98,7 +98,7 @@
                   </div>
                   <div>
                     <dt>聚合方式</dt>
-                    <dd>{{ row.aggregation || '-' }}</dd>
+                    <dd>{{ getAggregationLabel(row.aggregation) }}</dd>
                   </div>
                   <div>
                     <dt>引用次数</dt>
@@ -110,7 +110,7 @@
                   </div>
                   <div>
                     <dt>状态</dt>
-                    <dd>{{ row.status || '-' }}</dd>
+                    <dd>{{ row.status ? getStatusLabel(row.status) : '-' }}</dd>
                   </div>
                 </dl>
               </div>
@@ -133,8 +133,8 @@
           <el-table-column label="发布状态" width="112">
             <template #default="{ row }">
               <StatusBadge
-                :status="row.status === '已发布' ? 'PUBLISHED' : 'DRAFT'"
-                :label="row.status"
+                :status="factorStatusCode(row.status)"
+                :label="row.status ? getStatusLabel(row.status) : '-'"
               />
             </template>
           </el-table-column>
@@ -185,6 +185,8 @@ import PageHeader from '@/idmp/components/PageHeader.vue'
  import ResourceDeleteDialog from '@/idmp/components/ResourceDeleteDialog.vue'
  import { deleteFactor, fetchFactorDeletionImpact, fetchFactors } from '@/idmp/api/modules/factors'
 import { factorRows } from '@/idmp/data/demo'
+import { getStatusLabel } from '@/idmp/design/status'
+import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
 
 const router = useRouter()
 
@@ -220,7 +222,7 @@ const filteredRows = computed(() => {
       (!name || row.name.toLowerCase().includes(name)) &&
       (!filters.type || row.type === filters.type) &&
       (!filters.category || row.category === filters.category) &&
-      (!filters.status || row.status === filters.status)
+      (!filters.status || getStatusLabel(row.status) === filters.status)
     )
   })
 })
@@ -285,16 +287,13 @@ function toFactorRow(item) {
     aggregation: item.aggregation || item.output?.dimension || '-',
     domain: item.domain || item.domainCode || '-',
     references: item.references ?? item.referenceCount ?? 0,
-    status: normalizeStatus(item.status),
+    status: item.status || 'UNKNOWN',
     publishedVersionId: item.publishedVersionId
   }
 }
 
-function normalizeStatus(status) {
-  if (status === 'PUBLISHED') return '已发布'
-  if (status === 'DRAFT') return '草稿'
-  if (status === 'VALIDATED') return '待发布'
-  return status || '未知'
+function factorStatusCode(status) {
+  return { 已发布: 'PUBLISHED', 草稿: 'DRAFT', 已校验: 'VALIDATED' }[status] || status
 }
 
 function normalizeList(payload) {

@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { adaptDataDomainList, adaptSemanticFieldList, adaptSemanticTableList, adaptSourceFieldList } from '../src/idmp/api/adapters/meta.js'
+import { dataTypeLabel, matchModeLabel, semanticKindLabel, sourceObjectTypeLabel, transformOptionLabel } from '../src/idmp/features/meta/index.js'
 import { validateSemanticFieldCode, SEMANTIC_DATA_TYPES } from '../src/idmp/utils/validation.js'
 
 test('API adapters preserve BIGINT ids as opaque strings', () => {
@@ -26,4 +27,14 @@ test('source field adapter preserves Chinese comments for mapping guidance', () 
   assert.equal(field.columnName, 'death_datetime')
   assert.equal(field.comment, '死亡时间')
   assert.equal(field.nullable, true)
+})
+
+test('metadata enum labels are Chinese and preserve unknown backend codes', () => {
+  assert.equal(matchModeLabel('exact'), '精确匹配')
+  assert.equal(dataTypeLabel('DATETIME'), '日期时间')
+  assert.equal(dataTypeLabel('VALUE_SET'), '值集')
+  assert.equal(semanticKindLabel('dimension'), '维度')
+  assert.equal(sourceObjectTypeLabel('BASE TABLE'), '数据表')
+  assert.equal(transformOptionLabel('TRIM'), '去除首尾空白')
+  assert.equal(matchModeLabel('REGEX'), 'REGEX')
 })

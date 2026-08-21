@@ -142,6 +142,7 @@ import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import { createDataDomain, fetchDataDomains } from '@/idmp/api/modules/meta'
 import { adaptDataDomainList, normalizeDataDomain } from '@/idmp/api/adapters/meta'
+import { getStatusLabel } from '@/idmp/design/status'
 
 const router = useRouter()
 const domains = ref([])
@@ -250,7 +251,7 @@ async function submitCreate() {
     await loadDomains()
     const createdRow = domains.value.find((item) => item.id === created.id || item.code === created.code)
     if (createdRow) newlyCreatedId.value = createdRow.id
-    ElMessage.success(`数据域 ${created.code} 创建成功，当前状态为${created.status || 'DRAFT'}`)
+    ElMessage.success(`数据域 ${created.code} 创建成功，当前状态为${getStatusLabel(created.status || 'DRAFT')}`)
   } catch (error) {
     createError.value = error
     ElMessage.error(createErrorMessage.value)

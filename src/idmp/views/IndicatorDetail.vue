@@ -97,7 +97,7 @@
               @click="selectVersion(version)"
             >
               <strong>V{{ version.versionNo || '-' }}</strong>
-              <span>{{ version.status || '-' }}</span>
+              <span>{{ version.status ? getStatusLabel(version.status) : '-' }}</span>
               <small class="mono-data">{{ resolveIndicatorVersionId(version) }}</small>
             </button>
           </div>
@@ -146,6 +146,7 @@ import {
   fetchIndicatorVersions
 } from '@/idmp/api/modules/indicators'
 import { indicatorRows } from '@/idmp/data/demo'
+import { getStatusLabel } from '@/idmp/design/status'
 
 const route = useRoute()
 const router = useRouter()
