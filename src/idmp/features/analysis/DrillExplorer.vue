@@ -36,13 +36,13 @@
       <div><span>指标值</span><strong>{{ result.summary.displayValue || result.summary.indicatorValue || '-' }}</strong></div>
       <div><span>分子</span><strong>{{ result.summary.numerator ?? '-' }}</strong></div>
       <div><span>分母</span><strong>{{ result.summary.denominator ?? '-' }}</strong></div>
-      <div><span>质量状态</span><strong>{{ result.summary.qualityStatus || '-' }}</strong></div>
+      <div><span>质量状态</span><strong>{{ result.summary.qualityStatus ? getStatusLabel(result.summary.qualityStatus) : '-' }}</strong></div>
     </div>
 
     <div class="drill-table-heading">
       <div>
         <h3>当前层：{{ currentLevelLabel }}</h3>
-        <p>下一层入口由下钻配置和接口返回的 nextLevels 决定。</p>
+        <p>下一层入口由下钻配置和接口返回的可用层级决定。</p>
       </div>
       <span class="drill-table-heading__count">{{ result.pageInfo.total || 0 }} 条</span>
     </div>
@@ -91,7 +91,9 @@
         <template #actions><el-button size="small" @click="loadFactorTrace">重试</el-button></template>
       </StatePanel>
       <el-table v-else-if="factorTrace" :data="factorTrace.factors || []" table-layout="fixed">
-        <el-table-column prop="formulaRole" label="公式角色" width="120" />
+        <el-table-column label="公式角色" width="120">
+          <template #default="{ row }">{{ formulaRoleLabel(row.formulaRole) }}</template>
+        </el-table-column>
         <el-table-column prop="factorName" label="因子" min-width="220" show-overflow-tooltip />
         <el-table-column prop="factorVersionId" label="因子版本" min-width="180" />
         <el-table-column label="结果匹配" width="110">
@@ -101,7 +103,7 @@
           <template #default="{ row }">{{ row.result?.displayValue ?? row.result?.value ?? '-' }}</template>
         </el-table-column>
         <el-table-column label="质量状态" width="130">
-          <template #default="{ row }">{{ row.result?.qualityStatus || '-' }}</template>
+          <template #default="{ row }">{{ row.result?.qualityStatus ? getStatusLabel(row.result.qualityStatus) : '-' }}</template>
         </el-table-column>
       </el-table>
     </section>
@@ -114,6 +116,7 @@ import { useRoute, useRouter } from 'vue-router'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import { fetchResultFactors, searchResultDrill } from '@/idmp/api/modules/drill'
 import { limitDrillNextLevels } from '@/idmp/api/adapters/drill'
+import { getStatusLabel } from '@/idmp/design/status'
 
 const props = defineProps({
   resultId: { type: [String, Number], default: 'MOCK-RESULT-001' },
@@ -168,6 +171,10 @@ const currentLevelLabel = computed(() => ({
 
 function emptyResult() {
   return { context: {}, breadcrumb: [], summary: {}, columns: [], records: [], nextLevels: [], pageInfo: { total: 0 }, dataSource: 'live' }
+}
+
+function formulaRoleLabel(role) {
+  return { NUMERATOR: '分子', DENOMINATOR: '分母' }[String(role || '').toUpperCase()] || role || '-'
 }
 
 function buildPayload() {

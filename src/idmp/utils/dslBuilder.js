@@ -1,3 +1,17 @@
+const AGGREGATION_LABELS = {
+  COUNT: '记录计数',
+  COUNT_DISTINCT: '去重计数',
+  SUM: '数值求和',
+  AVG: '平均值',
+  MIN: '最小值',
+  MAX: '最大值',
+  MEDIAN: '中位数'
+}
+
+export function getAggregationLabel(value) {
+  return AGGREGATION_LABELS[String(value || '').trim().toUpperCase()] || value || '-'
+}
+
 export function serializeFilterNode(node, fields = []) {
   if (!node) return { nodeType: 'TRUE' }
   if (node.nodeType === 'TRUE') return { nodeType: 'TRUE' }

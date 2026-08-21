@@ -105,7 +105,7 @@
               class="filter-select small"
               aria-label="按指标状态筛选"
             >
-              <el-option v-for="item in statuses" :key="item" :label="item" :value="item" />
+              <el-option v-for="item in statuses" :key="item" :label="getStatusLabel(item)" :value="item" />
             </el-select>
           </el-form-item>
           <el-form-item>
@@ -248,6 +248,7 @@ import StatusBadge from '@/idmp/components/StatusBadge.vue'
  import ResourceDeleteDialog from '@/idmp/components/ResourceDeleteDialog.vue'
  import { deleteIndicator, fetchIndicatorDeletionImpact, fetchIndicators, fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
 import { indicatorRows } from '@/idmp/data/demo'
+import { getStatusLabel } from '@/idmp/design/status'
 
 const router = useRouter()
 const viewMode = ref('table')

@@ -25,7 +25,7 @@
       <el-table v-else :data="rows" row-key="id" table-layout="fixed">
         <el-table-column prop="code" label="编码" min-width="220" />
         <el-table-column prop="name" label="名称" min-width="180" />
-        <el-table-column prop="matchMode" label="匹配模式" width="130" />
+        <el-table-column label="匹配模式" width="130"><template #default="{ row }">{{ matchModeLabel(row.matchMode) || '—' }}</template></el-table-column>
         <el-table-column prop="status" label="状态" width="130"><template #default="{ row }"><StatusBadge :status="row.status" /></template></el-table-column>
         <el-table-column label="当前发布版本" width="180"><template #default="{ row }">{{ row.currentPublishedVersionId || '—' }}</template></el-table-column>
         <el-table-column label="操作" width="130" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openDetail(row)">查看版本</el-button></template></el-table-column>
@@ -43,6 +43,7 @@ import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import { createValueSet, fetchValueSets } from '@/idmp/api/modules/valueSets'
+import { matchModeLabel } from '@/idmp/features/meta'
 
 const router = useRouter()
 const filters = reactive({ code: '', name: '', status: '' })

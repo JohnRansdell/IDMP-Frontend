@@ -3,6 +3,7 @@
     <PageHeader
       :title="editorTitle"
       :status="editorStatus"
+      :status-label="editorStatusLabel"
     >
       <template #meta>
         <span>{{ isNew ? '新建模式' : '编辑模式' }}</span>
@@ -187,7 +188,7 @@
               @drop="dropFactor('numerator')"
               @mouseup="dropFactor('numerator')"
             >
-              <div class="slot-label">分子（NUMERATOR）<span>拖入因子</span></div>
+              <div class="slot-label">分子<span>拖入因子</span></div>
               <div class="slot-content">
                 <div v-for="factor in numeratorFactors" :key="factor.code" class="selected-factor">
                   <span>{{ factor.name }}</span>
@@ -215,7 +216,7 @@
               @drop="dropFactor('denominator')"
               @mouseup="dropFactor('denominator')"
             >
-              <div class="slot-label">分母（DENOMINATOR）<span>拖入因子</span></div>
+              <div class="slot-label">分母<span>拖入因子</span></div>
               <div class="slot-content">
                 <div v-for="factor in denominatorFactors" :key="factor.code" class="selected-factor">
                   <span>{{ factor.name }}</span>
@@ -264,7 +265,7 @@
                 <el-icon><Tickets /></el-icon>
                 <div>
                   <strong>{{ factor.name }}</strong>
-                  <small>{{ factor.code }} | {{ factor.aggregation }} | {{ factor.domain }}</small>
+                  <small>{{ factor.code }} | {{ getAggregationLabel(factor.aggregation) }} | {{ factor.domain }}</small>
                 </div>
                 <el-button text type="primary" @click="quickAdd(factor)">添加</el-button>
               </article>
@@ -302,10 +303,10 @@
               <template v-else-if="drillCapability.status === 'ready'">
                 <p class="drill-capability-coverage">本次预检覆盖因子版本：{{ drillCapability.factorVersionIds.join('、') || '-' }}</p>
                 <el-table :data="drillCapability.dimensions" size="small" border class="drill-capability-table">
-                  <el-table-column label="启用" width="76"><template #default="{ row }"><el-checkbox :model-value="isDrillPathSelected(row.pathCode)" :disabled="!row.supported" :aria-label="`启用 ${row.pathCode} 下钻路径`" @change="checked => toggleDrillPath(row, checked)" /></template></el-table-column>
-                  <el-table-column prop="pathCode" label="路径" min-width="145" />
-                  <el-table-column label="能力" min-width="120"><template #default="{ row }"><el-tag :type="row.supported ? 'success' : 'info'" size="small">{{ row.supported ? `最大 ${row.maxLevel || '-'}` : '不支持' }}</el-tag></template></el-table-column>
-                  <el-table-column label="本版本最大层级" min-width="210"><template #default="{ row }"><el-select :model-value="selectedDrillPathLevel(row.pathCode)" :disabled="!row.supported || !isDrillPathSelected(row.pathCode)" placeholder="选择层级" @update:model-value="level => setDrillPathLevel(row.pathCode, level)"><el-option v-for="level in capabilityLevels(row)" :key="level.code" :label="`${level.name}（${level.code}）`" :value="level.code" /></el-select></template></el-table-column>
+                  <el-table-column label="启用" width="76"><template #default="{ row }"><el-checkbox :model-value="isDrillPathSelected(row.pathCode)" :disabled="!row.supported" :aria-label="`启用${drillPathLabel(row.pathCode)}下钻路径`" @change="checked => toggleDrillPath(row, checked)" /></template></el-table-column>
+                  <el-table-column label="路径" min-width="145"><template #default="{ row }">{{ drillPathLabel(row.pathCode) }}</template></el-table-column>
+                  <el-table-column label="能力" min-width="120"><template #default="{ row }"><el-tag :type="row.supported ? 'success' : 'info'" size="small">{{ row.supported ? `最深到${drillLevelLabel(row.maxLevel)}` : '不支持' }}</el-tag></template></el-table-column>
+                  <el-table-column label="本版本最大层级" min-width="210"><template #default="{ row }"><el-select :model-value="selectedDrillPathLevel(row.pathCode)" :disabled="!row.supported || !isDrillPathSelected(row.pathCode)" placeholder="选择层级" @update:model-value="level => setDrillPathLevel(row.pathCode, level)"><el-option v-for="level in capabilityLevels(row)" :key="level.code" :label="drillLevelOptionLabel(level)" :value="level.code" /></el-select></template></el-table-column>
                   <el-table-column label="限制原因" min-width="280"><template #default="{ row }"><span v-if="row.limitingFactors.length">{{ limitingFactorText(row) }}</span><span v-else class="muted-text">-</span></template></el-table-column>
                 </el-table>
                 <el-alert v-if="!selectedDrillPaths.length" title="请至少启用一条支持的下钻路径。" type="warning" :closable="false" show-icon class="drill-capability-selection-hint" />
@@ -431,7 +432,7 @@
             <div class="formula-settings">
               <label>分母为零策略</label>
               <el-select v-model="zeroStrategy" aria-label="分母为零策略">
-                <el-option label="返回 NULL" value="返回 NULL" />
+                <el-option label="返回空值" value="返回 NULL" />
                 <el-option label="返回 0" value="返回 0" />
                 <el-option label="标记异常" value="标记异常" />
               </el-select>
@@ -678,6 +679,8 @@ import {
 } from '@/idmp/api/modules/indicators'
 import {
   buildIndicatorVersionPayload,
+  drillLevelLabel,
+  drillPathLabel,
   normalizeDrillCapabilities,
   normalizeDrillPaths,
   validateDrillSelection
@@ -691,6 +694,8 @@ import {
   editorPolicyRows,
   editorSceneRows
 } from '@/idmp/data/demo'
+import { getStatusLabel } from '@/idmp/design/status'
+import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
 
 const route = useRoute()
 const router = useRouter()
@@ -785,7 +790,7 @@ const publishPanelDescription = computed(() => {
   }
   if (!indicatorWorkflow.versionId) return '请先创建指标版本。'
   if (missingPeriodFactors.value.length) {
-    return `依赖因子缺少 period BETWEEN 时间过滤：${missingPeriodFactors.value.map((item) => item.versionId || item.code).join('、')}。请重新创建并发布带统计周期过滤的因子，再回到公式中选择新因子版本。`
+    return `依赖因子缺少统计周期范围过滤：${missingPeriodFactors.value.map((item) => item.versionId || item.code).join('、')}。请重新创建并发布带统计周期过滤的因子，再回到公式中选择新因子版本。`
   }
   if (!indicatorWorkflow.compiled) return '发布按钮已开放；若公式尚未编译通过，后端发布接口会返回具体原因。'
   if (!indicatorWorkflow.displayValue) return '发布按钮已开放；建议先试算并查看结果，最终是否允许发布以后端校验为准。'
@@ -802,7 +807,7 @@ const workflowSteps = computed(() => [
   {
     key: 'formula',
     label: '公式编译',
-    description: indicatorWorkflow.compiled ? '服务端编译状态为 VALID' : '保存 Formula AST 后执行服务端编译',
+    description: indicatorWorkflow.compiled ? '服务端编译已通过' : '保存 Formula AST 后执行服务端编译',
     state: indicatorWorkflow.compiled ? 'complete' : indicatorWorkflow.versionId ? 'current' : 'pending'
   },
   {
@@ -838,7 +843,7 @@ const publishGates = computed(() => [
   },
   {
     label: 'Formula AST 服务端编译',
-    description: indicatorWorkflow.compiled ? '服务端返回 VALID' : '尚未取得有效编译产物',
+    description: indicatorWorkflow.compiled ? '服务端编译校验已通过' : '尚未取得有效编译产物',
     state: indicatorWorkflow.compiled ? 'pass' : 'pending',
     stateLabel: indicatorWorkflow.compiled ? '已通过' : '待完成'
   },
@@ -947,6 +952,16 @@ const editorStatus = computed(() => {
   if (indicatorWorkflow.indicatorId) return 'INDICATOR_READY'
   return isNew.value ? 'NEW' : 'DETAIL_PENDING'
 })
+const editorStatusLabel = computed(() => ({
+  NEW: '新建',
+  DETAIL_PENDING: '等待加载详情',
+  INDICATOR_READY: '指标已就绪',
+  VERSION_DRAFT: '草稿版本',
+  FORMULA_SAVED: '公式已保存',
+  COMPILED: '已编译',
+  TRIAL_SUBMITTED: '试算已提交',
+  TRIAL_READY: '试算结果已就绪'
+}[editorStatus.value] || getStatusLabel(editorStatus.value)))
 
 const required = message => ({ required: true, message, trigger: ['blur', 'change'] })
 const rules = {
@@ -1110,6 +1125,12 @@ function capabilityLevels(dimension) {
   return dimension?.maxLevel ? [{ code: dimension.maxLevel, name: dimension.maxLevel }] : []
 }
 
+function drillLevelOptionLabel(level) {
+  const code = String(level?.code || '')
+  const localized = drillLevelLabel(code)
+  return localized !== code ? localized : level?.name || code || '-'
+}
+
 function isDrillPathSelected(pathCode) {
   return selectedDrillPaths.value.some((path) => path.pathCode === pathCode)
 }
@@ -1139,7 +1160,7 @@ function setDrillPathLevel(pathCode, maxLevel) {
 
 function limitingFactorText(dimension) {
   return dimension.limitingFactors.map((factor) => (
-    `${factor.factorVersionId || '未知因子'}：${factor.reason || `最大 ${factor.maxLevel || '-'}`}`
+    `${factor.factorVersionId || '未知因子'}：${factor.reason || `最深到${drillLevelLabel(factor.maxLevel)}`}`
   )).join('；')
 }
 
@@ -1257,7 +1278,7 @@ function toEditorFactor(item) {
     code: item.factorCode || item.code || `FV-${item.id}`,
     name: item.factorName || item.name || item.factorCode || item.code || `因子版本 ${item.id}`,
     aggregation,
-    category: item.category || item.status || '已发布版本',
+    category: item.category || (item.status ? getStatusLabel(item.status) : '已发布版本'),
     domain,
     versionId: toOpaqueId(item.id ?? item.versionId),
     factorId: toOpaqueId(item.factorId),
@@ -1768,11 +1789,11 @@ async function compileIndicatorFormulaOnly() {
     indicatorWorkflow.resourceVersion = resolveResourceVersion(artifact, indicatorWorkflow.resourceVersion)
     indicatorWorkflow.compiled = ['VALID', 'VALID_WITH_WARNINGS', 'COMPILED', 'COMPILED_WITH_WARNINGS'].includes(compileStatus)
     await refreshIndicatorVersionState()
-    recordWorkflowSuccess(`公式校验状态：${compileStatus || '未知'}`)
+    recordWorkflowSuccess(`公式校验状态：${compileStatus ? getStatusLabel(compileStatus) : '未知'}`)
     if (indicatorWorkflow.compiled) {
       ElMessage.success('公式校验通过')
     } else {
-      ElMessage.warning(`公式校验状态：${compileStatus || '未知'}`)
+      ElMessage.warning(`公式校验状态：${compileStatus ? getStatusLabel(compileStatus) : '未知'}`)
     }
   } catch (error) {
     indicatorWorkflow.compiled = false
@@ -1919,7 +1940,7 @@ async function generateFormalResultAndOpenAnalysis() {
     const batch = await pollBackendBatch(batchId)
     const status = batch.status || batch.batchStatus
     if (!['SUCCEEDED', 'PARTIAL_SUCCEEDED'].includes(status)) {
-      throw new Error(`正式计算尚未成功，当前状态：${status || 'UNKNOWN'}`)
+      throw new Error(`正式计算尚未成功，当前状态：${getStatusLabel(status || 'UNKNOWN')}`)
     }
     recordWorkflowSuccess(`指定周期正式结果已生成，批次 ${batchId}`)
     ElMessage.success('正式结果已生成，正在进入指标分析')
@@ -1948,7 +1969,7 @@ async function loadIndicatorTrialResultOnly() {
     const batch = await pollBackendBatch(indicatorWorkflow.batchId)
     const batchStatus = batch.status || batch.batchStatus
     if (!['SUCCEEDED', 'PARTIAL_SUCCEEDED'].includes(batchStatus)) {
-      recordWorkflowSuccess(`试算批次仍在处理中：${batchStatus || '未知'}`)
+      recordWorkflowSuccess(`试算批次仍在处理中：${batchStatus ? getStatusLabel(batchStatus) : '未知'}`)
       ElMessage.info('试算仍在处理中，请稍后再查看结果')
       return
     }
@@ -2301,11 +2322,11 @@ async function refreshTrialTaskStatus() {
       versionId: indicatorWorkflow.versionId
     })
     const task = await pollBackendTask(indicatorWorkflow.taskId)
-    recordWorkflowSuccess(`试算任务状态：${task.status || '未知'}，批次：${indicatorWorkflow.batchId}`)
+    recordWorkflowSuccess(`试算任务状态：${task.status ? getStatusLabel(task.status) : '未知'}，批次：${indicatorWorkflow.batchId}`)
     if (task.status === 'SUCCEEDED') {
       ElMessage.success('指标试算已完成，可以查看结果')
     } else if (['FAILED', 'CANCELED', 'CANCELLED'].includes(task.status)) {
-      ElMessage.warning(`指标试算任务状态：${task.status}`)
+      ElMessage.warning(`指标试算任务状态：${getStatusLabel(task.status)}`)
     }
   } catch (error) {
     recordWorkflowError(error)

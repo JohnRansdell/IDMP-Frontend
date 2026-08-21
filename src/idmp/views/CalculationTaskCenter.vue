@@ -87,9 +87,9 @@
             </el-form-item>
             <el-form-item label="批次类型">
               <el-select v-model="createForm.batchType">
-                <el-option label="试算 TRIAL" value="TRIAL" />
-                <el-option label="正式 FULL" value="FULL" />
-                <el-option label="重算 RECALC" value="RECALC" />
+                <el-option label="试算" value="TRIAL" />
+                <el-option label="正式计算" value="FULL" />
+                <el-option label="重算" value="RECALC" />
               </el-select>
             </el-form-item>
             <el-form-item label="开始时间">
@@ -142,7 +142,7 @@
         <dl v-else class="detail-list">
           <div><dt>任务 ID</dt><dd class="mono-data">{{ displayId(taskDetail.taskId) }}</dd></div>
           <div><dt>批次 ID</dt><dd class="mono-data">{{ displayId(taskDetail.batchId) }}</dd></div>
-          <div><dt>任务类型</dt><dd>{{ taskDetail.taskType || '-' }}</dd></div>
+          <div><dt>任务类型</dt><dd>{{ technicalEnumLabel(taskDetail.taskType, TASK_TYPE_LABELS) }}</dd></div>
           <div class="status-row">
             <dt>状态</dt>
             <dd>
@@ -188,7 +188,7 @@
           <div><dt>批次 ID</dt><dd class="mono-data">{{ displayId(batchDetail.batchId) }}</dd></div>
           <div><dt>任务 ID</dt><dd class="mono-data">{{ displayId(batchDetail.taskId) }}</dd></div>
           <div><dt>批次编码</dt><dd class="mono-data">{{ batchDetail.batchCode || '-' }}</dd></div>
-          <div><dt>批次类型</dt><dd>{{ batchDetail.batchType || '-' }}</dd></div>
+          <div><dt>批次类型</dt><dd>{{ technicalEnumLabel(batchDetail.batchType, BATCH_TYPE_LABELS) }}</dd></div>
           <div class="status-row">
             <dt>状态</dt>
             <dd>
@@ -219,7 +219,7 @@
       <div class="section-title">
         <div>
           <h2>计算目标与节点</h2>
-          <p class="section-title__description">节点重试会修改后端任务状态，仅 FAILED 节点可提交。</p>
+          <p class="section-title__description">节点重试会修改后端任务状态，仅失败节点可提交。</p>
         </div>
         <span class="endpoint-note">{{ flatNodes.length }} 个节点</span>
       </div>
@@ -261,7 +261,9 @@
       <div v-else class="table-scroll">
         <el-table :data="flatNodes" row-key="nodeId" table-layout="fixed">
           <el-table-column prop="targetKey" label="目标" min-width="180" show-overflow-tooltip />
-          <el-table-column prop="ownerType" label="对象类型" width="104" />
+          <el-table-column label="对象类型" width="160">
+            <template #default="{ row }">{{ technicalEnumLabel(row.ownerType, OWNER_TYPE_LABELS) }}</template>
+          </el-table-column>
           <el-table-column label="版本 ID" min-width="178">
             <template #default="{ row }">
               <span class="mono-data">{{ displayId(row.ownerVersionId) }}</span>
@@ -323,6 +325,10 @@ const createForm = reactive({
   periodStart: '2000-01-01T00:00:00',
   periodEnd: '2030-01-01T00:00:00'
 })
+
+const OWNER_TYPE_LABELS = { INDICATOR: '指标版本', FACTOR: '因子版本' }
+const BATCH_TYPE_LABELS = { TRIAL: '试算', FULL: '正式计算', RECALC: '重算' }
+const TASK_TYPE_LABELS = { FACTOR_TRIAL: '因子试算', INDICATOR_TRIAL: '指标试算' }
 
 const hasAccessToken = ref(Boolean(getAccessToken()))
 const taskDetail = ref(null)
@@ -423,7 +429,7 @@ async function createBatch() {
 
   try {
     await ElMessageBox.confirm(
-      `将为 ${createForm.ownerType} 版本 ${createForm.ownerVersionId} 创建 ${createForm.batchType} 批次。该操作会写入后端并启动异步计算，是否继续？`,
+      `将为${enumLabel(createForm.ownerType, OWNER_TYPE_LABELS)} ${createForm.ownerVersionId} 创建${enumLabel(createForm.batchType, BATCH_TYPE_LABELS)}批次。该操作会写入后端并启动异步计算，是否继续？`,
       '确认创建计算批次',
       {
         confirmButtonText: '确认创建',
@@ -581,6 +587,15 @@ function toOpaqueId(value) {
 
 function displayId(value) {
   return toOpaqueId(value) || '-'
+}
+
+function enumLabel(value, labels) {
+  return labels[String(value || '').trim().toUpperCase()] || value || '-'
+}
+
+function technicalEnumLabel(value, labels) {
+  const label = enumLabel(value, labels)
+  return value && label !== value ? `${label}（${value}）` : label
 }
 
 function formatProgress(task) {

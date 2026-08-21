@@ -19,7 +19,28 @@ export const STATUS_DEFINITIONS = {
   ENABLED: { label: '启用', tone: 'success' },
   INACTIVE: { label: '未启用', tone: 'neutral' },
   PENDING: { label: '待处理', tone: 'warning' },
-  RESOLVED: { label: '已处理', tone: 'success' }
+  RESOLVED: { label: '已处理', tone: 'success' },
+  SUCCESS: { label: '已成功', tone: 'success' },
+  CANCELED: { label: '已取消', tone: 'neutral' },
+  PASSED: { label: '已通过', tone: 'success' },
+  PASS: { label: '已通过', tone: 'success' },
+  TRIAL_PASS: { label: '试算通过', tone: 'success' },
+  TRIAL: { label: '试算结果', tone: 'info' },
+  NOT_CALCULABLE: { label: '不可计算', tone: 'warning' },
+  VALID: { label: '校验通过', tone: 'success' },
+  VALID_WITH_WARNINGS: { label: '校验通过（有警告）', tone: 'warning' },
+  COMPILED: { label: '已编译', tone: 'success' },
+  COMPILED_WITH_WARNINGS: { label: '已编译（有警告）', tone: 'warning' },
+  WARN: { label: '警告', tone: 'warning' },
+  WARNING: { label: '警告', tone: 'warning' },
+  ERROR: { label: '错误', tone: 'danger' },
+  BLOCK: { label: '阻断', tone: 'danger' },
+  UNKNOWN: { label: '状态未知', tone: 'neutral' },
+  MATCHED: { label: '已匹配', tone: 'success' },
+  UNMATCHED: { label: '未匹配', tone: 'warning' },
+  REJECTED: { label: '已拒绝', tone: 'danger' },
+  MAPPED: { label: '已映射', tone: 'success' },
+  UNMAPPED: { label: '未映射', tone: 'neutral' }
 }
 
 export const getStatusDefinition = (status) => {
@@ -27,6 +48,16 @@ export const getStatusDefinition = (status) => {
   return STATUS_DEFINITIONS[normalized] || {
     label: status || '未知',
     tone: 'neutral'
+  }
+}
+
+export const getStatusLabel = (status) => getStatusDefinition(status).label
+
+export const resolveStatusPresentation = ({ status = '', label = '', tone = '' } = {}) => {
+  const definition = getStatusDefinition(status || label)
+  return {
+    label: label ? getStatusLabel(label) : definition.label,
+    tone: tone || definition.tone
   }
 }
 

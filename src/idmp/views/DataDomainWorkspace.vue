@@ -82,7 +82,7 @@
           <el-table-column prop="name" label="语义表名称" min-width="180" show-overflow-tooltip />
           <el-table-column prop="sourceTableName" label="来源物理表" min-width="220" show-overflow-tooltip />
           <el-table-column prop="sourceObjectType" label="源对象类型" width="140">
-            <template #default="{ row }">{{ row.sourceObjectType || '—' }}</template>
+            <template #default="{ row }">{{ sourceObjectTypeLabel(row.sourceObjectType) || '—' }}</template>
           </el-table-column>
           <el-table-column prop="defaultTimeSemanticFieldCode" label="默认时间字段" min-width="180" show-overflow-tooltip>
             <template #default="{ row }">{{ row.defaultTimeSemanticFieldCode || '未配置' }}</template>
@@ -140,7 +140,7 @@
                   <div class="source-field-cell"><small>{{ row.comment || '暂无字段中文注释' }}</small><strong>{{ row.columnName }}</strong></div>
                 </template>
               </el-table-column>
-              <el-table-column label="物理类型" width="125"><template #default="{ row }">{{ dataTypeLabel(row.columnType) }}</template></el-table-column>
+              <el-table-column label="物理类型" width="125"><template #default="{ row }">{{ physicalDataTypeLabel(row.columnType) }}</template></el-table-column>
               <el-table-column label="映射状态" width="120">
                 <template #default="{ row }"><StatusBadge :status="isMapped(row) ? 'MAPPED' : 'UNMAPPED'" :label="isMapped(row) ? '已映射' : '未映射'" :tone="isMapped(row) ? 'success' : 'neutral'" /></template>
               </el-table-column>
@@ -162,8 +162,8 @@
               <el-table-column label="标准业务字段" min-width="165" show-overflow-tooltip>
                 <template #default="{ row }"><div class="semantic-field-cell"><strong>{{ row.name || '未命名字段' }}</strong><small>{{ row.code || '未返回编码' }}</small></div></template>
               </el-table-column>
-              <el-table-column label="类型" width="88"><template #default="{ row }">{{ semanticDataTypeLabel(row.dataType) }}</template></el-table-column>
-              <el-table-column label="业务角色" width="86"><template #default="{ row }">{{ semanticKindLabel(row.semanticKind) }}</template></el-table-column>
+              <el-table-column label="类型" width="88"><template #default="{ row }">{{ semanticDataTypeLabel(row.dataType) || '未知类型' }}</template></el-table-column>
+              <el-table-column label="业务角色" width="86"><template #default="{ row }">{{ semanticKindLabel(row.semanticKind) || '未配置' }}</template></el-table-column>
               <el-table-column prop="sensitive" label="敏感" width="58">
                 <template #default="{ row }">{{ row.sensitive ? '是' : '否' }}</template>
               </el-table-column>
@@ -200,7 +200,7 @@
         </div>
 
         <div class="default-time-editor">
-          <div><strong>默认时间字段</strong><p>只能选择当前语义表已映射的 DATE 或 DATETIME 字段。</p></div>
+          <div><strong>默认时间字段</strong><p>只能选择当前语义表已映射的日期或日期时间字段。</p></div>
           <el-select v-model="defaultTimeFieldCode" :disabled="!timeFieldOptions.length || defaultTimeLoading" placeholder="未配置默认时间字段">
             <el-option v-for="item in timeFieldOptions" :key="item.code" :label="`${item.code}（${item.name}）`" :value="item.code" />
           </el-select>
@@ -256,6 +256,7 @@ import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import { createSemanticTable, fetchDataDomains, fetchSemanticTableFields, fetchSemanticTables, fetchSourceTableFields, fetchSourceTables, saveSemanticField, updateDefaultTimeField } from '@/idmp/api/modules/meta'
 import { fetchSemanticFieldValueSet, bindSemanticFieldValueSet, fetchValueSets } from '@/idmp/api/modules/valueSets'
 import { adaptDataDomainList, adaptSemanticFieldList, adaptSemanticTableList, adaptSourceFieldList, adaptSourceTableList, normalizeSemanticTable } from '@/idmp/api/adapters/meta'
+import { dataTypeLabel as semanticDataTypeLabel, semanticKindLabel, sourceObjectTypeLabel } from '@/idmp/features/meta'
 
 const route = useRoute()
 const router = useRouter()
@@ -451,7 +452,7 @@ function selectSourceField(row) {
 
 function openStandardization(row) {
   if (!isDimensionField(row)) {
-    ElMessage.warning('当前字段不是 DIMENSION，不能维护枚举值标准化规则；请使用后端已配置的维度字段。')
+    ElMessage.warning('当前字段的业务角色不是“维度”，不能维护枚举值标准化规则；请使用后端已配置的维度字段。')
     return
   }
   router.push({
@@ -464,7 +465,7 @@ function openStandardization(row) {
 async function openValueSetBinding(row) {
   if (!row?.id) return
   if (!isDimensionField(row)) {
-    ElMessage.warning('只有后端明确标记为 DIMENSION 的语义字段可以绑定值集；CODE/STRING 数据类型不会自动成为维度字段。')
+    ElMessage.warning('只有后端明确标记为“维度”的语义字段可以绑定值集；编码或文本数据类型不会自动成为维度字段。')
     return
   }
   selectedValueSetField.value = row
@@ -548,7 +549,7 @@ async function saveFieldMapping() {
       ElMessage.success('语义字段映射保存成功')
     } else {
       fieldSaveFeedback.value = { status: 'WARNING', label: '角色未生效', tone: 'warning', message: `字段 ${fieldForm.sourceFieldName} 已映射，但后端返回的业务角色与本次选择不一致。` }
-      ElMessage.warning('字段映射已保存，但业务角色未生效；请刷新后核对接口返回的 semanticKind。')
+      ElMessage.warning('字段映射已保存，但业务角色未生效；请刷新后核对接口返回的业务角色。')
     }
   } catch (error) {
     fieldSaveFeedback.value = { status: 'FAILED', label: '保存失败', tone: 'danger', message: formatErrorMessage(error, '语义字段映射保存失败') }
@@ -562,7 +563,7 @@ async function saveDefaultTimeField() {
   if (defaultTimeLoading.value || !selectedTable.value) return
   const option = timeFieldOptions.value.find((item) => item.code === defaultTimeFieldCode.value)
   if (defaultTimeFieldCode.value && !option) {
-    ElMessage.warning('默认时间字段只能选择当前语义表已映射的 DATE 或 DATETIME 字段')
+    ElMessage.warning('默认时间字段只能选择当前语义表已映射的日期或日期时间字段')
     return
   }
   defaultTimeLoading.value = true
@@ -632,16 +633,8 @@ function sourceTableLabel(item) {
   return item.comment ? `${item.tableName}（${item.comment}）` : item.tableName
 }
 
-function dataTypeLabel(value) {
+function physicalDataTypeLabel(value) {
   return ({ STRING: '文本（STRING）', INTEGER: '整数（INTEGER）', DECIMAL: '小数（DECIMAL）', NUMBER: '数值（NUMBER）', DATE: '日期（DATE）', DATETIME: '日期时间（DATETIME）', BOOLEAN: '布尔（BOOLEAN）', CODE: '编码（CODE）' })[String(value || '').toUpperCase()] || value || '未知类型'
-}
-
-function semanticDataTypeLabel(value) {
-  return ({ STRING: '文本', INTEGER: '整数', DECIMAL: '小数', NUMBER: '数值', DATE: '日期', DATETIME: '日期时间', BOOLEAN: '布尔', CODE: '编码' })[String(value || '').toUpperCase()] || value || '未知类型'
-}
-
-function semanticKindLabel(value) {
-  return ({ DIMENSION: '维度', MEASURE: '度量', ATTRIBUTE: '属性' })[String(value || '').toUpperCase()] || '未配置'
 }
 
 function semanticKindOptionLabel(value) {

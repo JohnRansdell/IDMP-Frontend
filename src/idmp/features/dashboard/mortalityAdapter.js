@@ -1,3 +1,5 @@
+import { getStatusLabel } from '@/idmp/design/status'
+
 const MORTALITY_SOURCE_CODE = 'MORTALITY_INPATIENT'
 
 export function applyMortalityReadonlyChain(dataSources, chain) {
@@ -48,7 +50,7 @@ function getFirstRecordValue(result) {
 
 function buildQualityText(chain) {
   const status = chain.indicatorResult?.qualityStatus || chain.calcBatch?.qualityStatus || 'UNKNOWN'
-  return `后端试算：${status}`
+  return `后端试算：${getStatusLabel(status)}`
 }
 
 function buildTargetText(deathCount, dischargeCount) {

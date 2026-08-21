@@ -15,7 +15,7 @@
       <el-table :data="records" v-loading="loading" empty-text="回收站为空">
         <el-table-column prop="resourceCode" label="编码" min-width="160" />
         <el-table-column prop="resourceName" label="名称" min-width="180" />
-        <el-table-column prop="status" label="删除前状态" width="120" />
+        <el-table-column label="删除前状态" width="120"><template #default="{ row }">{{ row.status ? getStatusLabel(row.status) : '-' }}</template></el-table-column>
         <el-table-column prop="deletedByName" label="删除人" width="120" />
         <el-table-column prop="deletedAt" label="删除时间" min-width="180" />
         <el-table-column prop="deleteReason" label="删除原因" min-width="220" show-overflow-tooltip />
@@ -29,7 +29,7 @@
     <el-drawer v-model="detailVisible" :title="`${resourceLabel}回收站详情`" size="520px">
       <template v-if="detail">
         <el-descriptions :column="1" border><el-descriptions-item label="编码">{{ detail.resource.resourceCode }}</el-descriptions-item><el-descriptions-item label="名称">{{ detail.resource.resourceName }}</el-descriptions-item><el-descriptions-item label="删除人">{{ detail.resource.deletedByName || detail.resource.deletedBy || '-' }}</el-descriptions-item><el-descriptions-item label="删除原因">{{ detail.resource.deleteReason }}</el-descriptions-item><el-descriptions-item label="删除时间">{{ detail.resource.deletedAt }}</el-descriptions-item></el-descriptions>
-        <h3>保留版本</h3><el-table :data="detail.versions || []"><el-table-column prop="versionNo" label="版本" /><el-table-column prop="status" label="状态" /><el-table-column prop="createdAt" label="创建时间" /></el-table>
+        <h3>保留版本</h3><el-table :data="detail.versions || []"><el-table-column prop="versionNo" label="版本" /><el-table-column label="状态"><template #default="{ row }">{{ row.status ? getStatusLabel(row.status) : '-' }}</template></el-table-column><el-table-column prop="createdAt" label="创建时间" /></el-table>
         <el-button class="restore-button" type="success" :loading="restoringId === detail.resource.resourceId" @click="restore(detail.resource)">恢复此资源</el-button>
       </template>
     </el-drawer>
@@ -41,6 +41,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PageHeader from '@/idmp/components/PageHeader.vue'
+import { getStatusLabel } from '@/idmp/design/status'
 import { formatApiError } from '@/idmp/utils/apiError'
 import { fetchFactorRecycleBin, fetchFactorRecycleDetail, restoreFactor } from '@/idmp/api/modules/factors'
 import { fetchIndicatorRecycleBin, fetchIndicatorRecycleDetail, restoreIndicator } from '@/idmp/api/modules/indicators'

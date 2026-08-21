@@ -207,7 +207,7 @@
             <div>
               <h2>科室指标排名</h2>
               <p v-if="hasBackendRankData">后端维度对比数据，按 {{ currentProfile.name }} 由高到低排列。</p>
-              <p v-else>本地 profile 演示排名，按 {{ currentProfile.name }} 由高到低排列；尚未接入服务端分页。</p>
+              <p v-else>本地配置演示排名，按 {{ currentProfile.name }} 由高到低排列；尚未接入服务端分页。</p>
             </div>
             <StatusBadge :status="hasBackendRankData ? 'ACTIVE' : 'DRAFT'" :label="hasBackendRankData ? '后端维度数据' : '演示数据 · 2024 年度'" tone="neutral" />
           </div>
@@ -294,6 +294,7 @@ import { fetchIndicatorAnalysis, fetchIndicators, fetchIndicatorVersion } from '
 import { deriveDrillPathResultIds } from '@/idmp/api/adapters/drill'
 import { fetchMortalityReadonlyChain, mortalityChainConfig } from '@/idmp/api/modules/mortality'
 import { costChainConfig, COST_INDICATOR_IDS, fetchCostAnalysis } from '@/idmp/api/modules/costChain'
+import { getStatusLabel } from '@/idmp/design/status'
 import {
   DEFAULT_ANALYSIS_INDICATOR,
   getAnalysisProfileOptions,
@@ -369,7 +370,7 @@ const hasBackendAnalysisData = computed(() => Boolean(backendAnalysis.value?.dat
 const notCalculableMessage = computed(() => {
   if (analysisOverview.value?.qualityStatus !== 'NOT_CALCULABLE') return ''
   const periodText = formatAnalysisPeriod(analysisOverview.value)
-  return `${periodText ? `${periodText}：` : ''}指标在该周期不可计算。计算任务已完成，但结果没有有效值；请检查分子、分母因子是否命中数据。若分母为 0，除法指标会按公式规则返回 NOT_CALCULABLE。`
+  return `${periodText ? `${periodText}：` : ''}指标在该周期不可计算。计算任务已完成，但结果没有有效值；请检查分子、分母因子是否命中数据。若分母为 0，除法指标会按公式规则返回“不可计算”。`
 })
 const backendDepartmentComparisons = computed(() =>
   (Array.isArray(backendAnalysis.value?.dimensionComparison) ? backendAnalysis.value.dimensionComparison : [])
@@ -403,7 +404,7 @@ const secondaryMetrics = computed(() => {
   const context = backendAnalysis.value?.resultContext
   if (hasBackendAnalysisData.value) {
     return [
-      { label: '质量状态', value: overview.qualityStatus || '-', tone: overview.qualityStatus === 'PASSED' ? 'success' : 'warning' },
+      { label: '质量状态', value: displayStatus(overview.qualityStatus), tone: overview.qualityStatus === 'PASSED' ? 'success' : 'warning' },
       { label: '结果批次', value: context?.batchId || '-', tone: 'neutral' },
       { label: '维度组合', value: overview.dimensionHash || '全院汇总', tone: 'neutral' }
     ]
@@ -583,7 +584,7 @@ const mortalityChainStatusText = computed(() => {
   if (!hasBackendMortalityData.value) return '接口无可用结果 / 演示摘要'
   const batchStatus = mortalityChain.value.indicatorResult?.batchStatus || mortalityChain.value.calcBatch?.batchStatus || '-'
   const qualityStatus = mortalityChain.value.indicatorResult?.qualityStatus || mortalityChain.value.calcBatch?.qualityStatus || '-'
-  return `${batchStatus} / ${qualityStatus}`
+  return `${displayStatus(batchStatus)} / ${displayStatus(qualityStatus)}`
 })
 const mortalityChainNodes = computed(() => {
   const chain = mortalityChain.value
@@ -616,13 +617,13 @@ const mortalityChainNodes = computed(() => {
     },
     {
       label: '异步任务',
-      value: chain?.asyncTask?.status || '-',
+      value: displayStatus(chain?.asyncTask?.status),
       meta: `任务 ${config.indicatorBatchId || '-'}`
     },
     {
       label: '计算批次',
-      value: chain?.calcBatch?.batchStatus || chain?.indicatorResult?.batchStatus || '-',
-      meta: chain?.calcBatch?.qualityStatus || chain?.indicatorResult?.qualityStatus || '-'
+      value: displayStatus(chain?.calcBatch?.batchStatus || chain?.indicatorResult?.batchStatus),
+      meta: displayStatus(chain?.calcBatch?.qualityStatus || chain?.indicatorResult?.qualityStatus)
     },
     {
       label: '编译产物',
@@ -682,6 +683,10 @@ function formatCount(value) {
 function formatDecimal(value) {
   const number = Number(value)
   return Number.isFinite(number) ? number.toFixed(8) : '-'
+}
+
+function displayStatus(value) {
+  return value ? getStatusLabel(value) : '-'
 }
 
 function resolveCurrentMetricValue() {
@@ -756,7 +761,7 @@ function buildArtifactStatus(chain) {
     chain?.deathFactorArtifact?.status,
     chain?.dischargeFactorArtifact?.status,
     chain?.indicatorFormulaArtifact?.status
-  ].filter(Boolean).join(' / ') || '-'
+  ].filter(Boolean).map(displayStatus).join(' / ') || '-'
 }
 
 function firstPresent(...values) {

@@ -141,7 +141,7 @@
           </el-table-column>
            <el-table-column prop="code" label="数据域编码" min-width="210" show-overflow-tooltip />
            <el-table-column prop="name" label="数据域名称" min-width="180" show-overflow-tooltip />
-           <el-table-column prop="status" label="状态" width="120" />
+           <el-table-column label="状态" width="120"><template #default="{ row }"><StatusBadge :status="row.status" /></template></el-table-column>
           <el-table-column label="操作" width="120" fixed="right">
             <template #default="{ row }">
               <button type="button" class="action-link" @click.stop="selectDomain(row)">查看语义字段</button>
@@ -190,7 +190,7 @@
         <el-table :data="semanticFields" table-layout="fixed">
            <el-table-column prop="code" label="字段编码" min-width="190" show-overflow-tooltip />
            <el-table-column prop="name" label="字段名称" min-width="170" show-overflow-tooltip />
-          <el-table-column prop="dataType" label="数据类型" width="132" />
+          <el-table-column label="数据类型" width="132"><template #default="{ row }">{{ dataTypeLabel(row.dataType) || '—' }}</template></el-table-column>
            <el-table-column prop="sourceFieldName" label="源字段" min-width="180" show-overflow-tooltip />
            <el-table-column prop="sensitive" label="敏感字段" width="120">
              <template #default="{ row }">{{ row.sensitive ? '是' : '否' }}</template>
@@ -284,6 +284,7 @@ import {
   adaptSemanticTableList,
   toOpaqueId
 } from '@/idmp/api/adapters/meta'
+import { dataTypeLabel } from '@/idmp/features/meta'
 
 const dataDomains = ref([])
 const semanticFields = ref([])

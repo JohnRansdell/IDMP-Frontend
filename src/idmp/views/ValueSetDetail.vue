@@ -7,16 +7,16 @@
     <StatePanel v-if="error" type="error" title="值集详情加载失败" :description="error" />
     <template v-else>
       <section class="surface-card value-set-summary">
-        <div><span>编码</span><strong>{{ valueSet?.code || '—' }}</strong></div><div><span>匹配模式</span><strong>{{ version?.matchMode || valueSet?.matchMode || '—' }}</strong></div><div><span>状态</span><StatusBadge :status="valueSet?.status" /></div><div><span>当前发布版本</span><strong>{{ valueSet?.currentPublishedVersionId || '—' }}</strong></div>
+        <div><span>编码</span><strong>{{ valueSet?.code || '—' }}</strong></div><div><span>匹配模式</span><strong>{{ matchModeLabel(version?.matchMode || valueSet?.matchMode) || '—' }}</strong></div><div><span>状态</span><StatusBadge :status="valueSet?.status" /></div><div><span>当前发布版本</span><strong>{{ valueSet?.currentPublishedVersionId || '—' }}</strong></div>
       </section>
       <section class="surface-card table-card">
-        <div class="section-title section-title--toolbar"><div><h2>版本历史</h2><p class="section-title__description">选择版本查看完整值项；草稿和已校验版本可进入编辑。</p></div><div><el-select v-model="selectedVersionId" placeholder="选择版本" @change="loadVersion"><el-option v-for="item in versions" :key="item.id" :label="`V${item.versionNo} · ${item.publicationStatus}`" :value="String(item.id)" /></el-select><el-button v-if="selectedVersionId" type="primary" @click="editVersion">编辑版本</el-button></div></div>
-        <el-table v-if="versions.length" :data="versions" row-key="id" highlight-current-row @row-click="selectVersion"><el-table-column prop="versionNo" label="版本" width="100" /><el-table-column prop="publicationStatus" label="状态" width="150" /><el-table-column prop="resourceVersion" label="资源版本" width="120" /><el-table-column prop="id" label="版本 ID" min-width="220" /></el-table>
+        <div class="section-title section-title--toolbar"><div><h2>版本历史</h2><p class="section-title__description">选择版本查看完整值项；草稿和已校验版本可进入编辑。</p></div><div><el-select v-model="selectedVersionId" placeholder="选择版本" @change="loadVersion"><el-option v-for="item in versions" :key="item.id" :label="`V${item.versionNo} · ${item.publicationStatus ? getStatusLabel(item.publicationStatus) : '—'}`" :value="String(item.id)" /></el-select><el-button v-if="selectedVersionId" type="primary" @click="editVersion">编辑版本</el-button></div></div>
+        <el-table v-if="versions.length" :data="versions" row-key="id" highlight-current-row @row-click="selectVersion"><el-table-column prop="versionNo" label="版本" width="100" /><el-table-column label="状态" width="150"><template #default="{ row }"><StatusBadge :status="row.publicationStatus" /></template></el-table-column><el-table-column prop="resourceVersion" label="资源版本" width="120" /><el-table-column prop="id" label="版本 ID" min-width="220" /></el-table>
         <StatePanel v-else type="empty" title="暂无版本" description="该值集没有可查看的版本。" />
       </section>
       <section class="surface-card table-card">
-        <div class="section-title"><div><h2>值项</h2><p class="section-title__description">{{ version?.publicationStatus || '—' }} · {{ items.length }} 项</p></div></div>
-        <el-table v-if="items.length" :data="items" table-layout="fixed"><el-table-column prop="code" label="编码" min-width="160" /><el-table-column prop="value" label="标准值" min-width="160" /><el-table-column prop="label" label="标签" min-width="160" /><el-table-column prop="sortOrder" label="排序" width="100" /><el-table-column prop="enableStatus" label="启用状态" width="130" /></el-table>
+        <div class="section-title"><div><h2>值项</h2><p class="section-title__description">{{ version?.publicationStatus ? getStatusLabel(version.publicationStatus) : '—' }} · {{ items.length }} 项</p></div></div>
+        <el-table v-if="items.length" :data="items" table-layout="fixed"><el-table-column prop="code" label="编码" min-width="160" /><el-table-column prop="value" label="标准值" min-width="160" /><el-table-column prop="label" label="标签" min-width="160" /><el-table-column prop="sortOrder" label="排序" width="100" /><el-table-column label="启用状态" width="130"><template #default="{ row }">{{ row.enableStatus ? getStatusLabel(row.enableStatus) : '—' }}</template></el-table-column></el-table>
         <StatePanel v-else type="empty" title="暂无值项" description="该版本当前没有值项。" />
       </section>
     </template>
@@ -30,6 +30,8 @@ import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import { fetchValueSet, fetchValueSetItems, fetchValueSetVersions, fetchValueSetVersion } from '@/idmp/api/modules/valueSets'
+import { getStatusLabel } from '@/idmp/design/status'
+import { matchModeLabel } from '@/idmp/features/meta'
 
 const route = useRoute(); const router = useRouter()
 const valueSet = ref(null); const versions = ref([]); const version = ref(null); const items = ref([]); const selectedVersionId = ref(''); const loading = ref(false); const error = ref('')
