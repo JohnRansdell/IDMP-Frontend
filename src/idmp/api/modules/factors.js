@@ -105,6 +105,53 @@ export function fetchFactorTemplateParameterSchema(templateId) {
   return requestJson(`/factor-templates/${templateId}/parameter-schema`)
 }
 
+export function fetchFactorTemplates(params = {}) {
+  return requestJson(withQuery('/factor-templates', params))
+}
+
+export function createFactorTemplate(payload) {
+  return requestJson('/factor-templates', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function fetchFactorTemplateVersions(templateId) {
+  return requestJson(`/factor-templates/${templateId}/versions`)
+}
+
+export function createFactorTemplateVersion(templateId, payload) {
+  return requestJson(`/factor-templates/${templateId}/versions`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function fetchFactorTemplateVersion(versionId) {
+  return requestJson(`/factor-template-versions/${versionId}`)
+}
+
+export function updateFactorTemplateVersion(versionId, payload) {
+  return requestJson(`/factor-template-versions/${versionId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function validateFactorTemplateVersion(versionId) {
+  return requestJson(`/factor-template-versions/${versionId}/validate`, {
+    method: 'POST',
+    body: JSON.stringify({})
+  })
+}
+
+export function publishFactorTemplateVersion(versionId, resourceVersion) {
+  return requestJson(`/factor-template-versions/${versionId}/publish`, {
+    method: 'POST',
+    body: JSON.stringify({ resourceVersion })
+  })
+}
+
 export function instantiateFactorTemplateVersion(versionId, payload) {
   return requestJson(`/factor-template-versions/${versionId}/instantiate`, {
     method: 'POST',

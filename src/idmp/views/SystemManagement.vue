@@ -7,12 +7,13 @@
     >
       <template #meta>
         <span class="data-source-badge is-live">真实接口</span>
-        <span class="header-meta">当前后端未提供 auth/me、auth/refresh 与 logout-all</span>
+        <span class="header-meta">会话支持 auth/me、刷新令牌轮换与全端退出</span>
       </template>
       <template #actions>
         <div class="page-toolbar">
           <el-button :icon="Refresh" :loading="healthLoading" @click="checkHealth">检查服务</el-button>
-          <el-button :disabled="!hasAccessToken" :loading="logoutLoading" @click="handleLogout">退出登录</el-button>
+          <el-button :disabled="!hasAccessToken" :loading="logoutLoading" @click="handleLogout">退出当前会话</el-button>
+          <el-button :disabled="!hasAccessToken" :loading="logoutLoading" @click="handleLogoutAll">退出全部会话</el-button>
         </div>
       </template>
     </PageHeader>
@@ -245,7 +246,8 @@ import {
   fetchHealth,
   fetchSystemUsers,
   login,
-  logout
+  logout,
+  logoutAll
 } from '@/idmp/api/modules/system'
 
 const loginForm = reactive({
@@ -372,6 +374,22 @@ async function handleLogout() {
       createdRole.value = null
     }
     logoutLoading.value = false
+  }
+}
+
+async function handleLogoutAll() {
+  if (!hasAccessToken.value || logoutLoading.value) return
+  try {
+    await ElMessageBox.confirm('确认退出该账号在所有终端的会话？', '退出全部会话', { confirmButtonText: '确认退出', cancelButtonText: '取消', type: 'warning' })
+  } catch { return }
+  logoutLoading.value = true
+  try {
+    await logoutAll()
+    ElMessage.success('已退出全部会话')
+  } catch (error) {
+    ElMessage.error(error?.message || '退出全部会话失败，本地会话已清除')
+  } finally {
+    loginState.accessToken = getAccessToken(); loginState.user = null; loginState.expiresInSeconds = ''; logoutLoading.value = false
   }
 }
 

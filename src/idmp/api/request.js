@@ -1,5 +1,10 @@
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 const AUTH_TOKEN_STORAGE_KEY = 'idmp_access_token'
+let sessionRecoveryHandler = null
+
+export function setSessionRecoveryHandler(handler) {
+  sessionRecoveryHandler = typeof handler === 'function' ? handler : null
+}
 
 export function getAccessToken() {
   return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) || ''
@@ -19,7 +24,13 @@ export function clearAccessToken() {
 
 export async function requestJson(path, options = {}) {
   const token = getAccessToken()
-  const { headers: optionHeaders, timeoutMs = 30000, signal: externalSignal, ...fetchOptions } = options
+  const {
+    headers: optionHeaders,
+    timeoutMs = 30000,
+    signal: externalSignal,
+    skipSessionRecovery = false,
+    ...fetchOptions
+  } = options
   const headers = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -38,6 +49,7 @@ export async function requestJson(path, options = {}) {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...fetchOptions,
       headers,
+      credentials: fetchOptions.credentials || 'include',
       ...(controller ? { signal: controller.signal } : {})
     })
   } catch (error) {
@@ -58,8 +70,17 @@ export async function requestJson(path, options = {}) {
   if (!response.ok) {
     const error = createApiError(response.status, payload, path)
     if (response.status === 401) {
+      const isAuthEndpoint = path.startsWith('/auth/')
+      if (!skipSessionRecovery && !isAuthEndpoint && sessionRecoveryHandler) {
+        const recovered = await sessionRecoveryHandler()
+        if (recovered) {
+          return requestJson(path, { ...options, skipSessionRecovery: true })
+        }
+      }
       clearAccessToken()
-      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('idmp:unauthorized', { detail: { path } }))
+      if (!skipSessionRecovery && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('idmp:unauthorized', { detail: { path } }))
+      }
     }
     throw error
   }

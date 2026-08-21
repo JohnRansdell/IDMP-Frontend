@@ -6,6 +6,7 @@ import '@/idmp/styles/index.scss'
 
 import App from './App.vue'
 import router from './router'
+import { restoreSession } from '@/idmp/auth/session'
 
 const app = createApp(App)
 
@@ -21,3 +22,5 @@ window.addEventListener('idmp:unauthorized', () => {
 })
 
 app.mount('#app')
+
+void restoreSession()

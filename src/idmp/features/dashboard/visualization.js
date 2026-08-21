@@ -1,10 +1,4 @@
-import { dashboardTrend } from '@/idmp/data/demo'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
-import { mockIndicatorDataSources } from './mockData'
-
-export function getIndicatorSource(code) {
-  return mockIndicatorDataSources.find((source) => source.code === code)
-}
 
 export function formatIndicatorValue(source) {
   if (!source) return ''
@@ -34,13 +28,13 @@ export function getVisualizationTitle(sourceName, visualType) {
 export function createDashboardChartOption(widget, presetOptions = {}) {
   if (widget.preset === 'trend') return presetOptions.trendOption
   if (widget.preset === 'rate') return presetOptions.rateOption
-  if (widget.chartKind === 'bar') return createVirtualBarOption(widget)
-  if (widget.chartKind === 'pie') return createVirtualPieOption(widget)
-  return createVirtualLineOption(widget)
+  if (widget.chartKind === 'bar') return createVirtualBarOption(widget, presetOptions)
+  if (widget.chartKind === 'pie') return createVirtualPieOption(widget, presetOptions)
+  return createVirtualLineOption(widget, presetOptions)
 }
 
-function createVirtualBarOption(widget) {
-  const source = getWidgetSource(widget)
+function createVirtualBarOption(widget, presetOptions) {
+  const source = getWidgetSource(widget, presetOptions)
   const rows = source.departmentData || []
   return {
     color: [IDMP_CHART_COLORS[0]],
@@ -52,20 +46,20 @@ function createVirtualBarOption(widget) {
   }
 }
 
-function createVirtualLineOption(widget) {
-  const source = getWidgetSource(widget)
+function createVirtualLineOption(widget, presetOptions) {
+  const source = getWidgetSource(widget, presetOptions)
   return {
     color: [IDMP_CHART_COLORS[1]],
     tooltip: { trigger: 'axis' },
     grid: { top: 24, left: 42, right: 20, bottom: 34 },
-    xAxis: { type: 'category', boundaryGap: false, data: dashboardTrend.months },
+    xAxis: { type: 'category', boundaryGap: false, data: source.trendLabels || [] },
     yAxis: { type: 'value' },
     series: [{ name: source.name, type: 'line', smooth: true, symbolSize: 5, data: source.trendData }]
   }
 }
 
-function createVirtualPieOption(widget) {
-  const source = getWidgetSource(widget)
+function createVirtualPieOption(widget, presetOptions) {
+  const source = getWidgetSource(widget, presetOptions)
   return {
     color: IDMP_CHART_COLORS,
     tooltip: { trigger: 'item', formatter: '{b}: {d}%' },
@@ -82,6 +76,6 @@ function createVirtualPieOption(widget) {
   }
 }
 
-function getWidgetSource(widget) {
-  return widget.sourceSnapshot || getIndicatorSource(widget.sourceCode) || mockIndicatorDataSources[0]
+function getWidgetSource(widget, presetOptions) {
+  return presetOptions.getSource?.(widget.sourceCode) || {}
 }

@@ -52,6 +52,24 @@ const routes = [
         meta: { title: '因子管理', breadcrumb: ['首页', '因子管理'] }
       },
       {
+        path: 'factor/templates',
+        name: 'FactorTemplateManagement',
+        component: () => import('@/idmp/views/FactorTemplateManagement.vue'),
+        meta: { title: '因子模板管理', activeMenu: '/factor/templates', breadcrumb: ['首页', '因子管理', '因子模板'] }
+      },
+      {
+        path: 'factor/templates/new',
+        name: 'FactorTemplateCreate',
+        component: () => import('@/idmp/views/FactorTemplateEditor.vue'),
+        meta: { title: '新建因子模板', activeMenu: '/factor/templates', breadcrumb: ['首页', '因子管理', '因子模板', '新建'] }
+      },
+      {
+        path: 'factor/templates/:templateId/versions/:versionId',
+        name: 'FactorTemplateEditor',
+        component: () => import('@/idmp/views/FactorTemplateEditor.vue'),
+        meta: { title: '编辑因子模板', activeMenu: '/factor/templates', breadcrumb: ['首页', '因子管理', '因子模板', '版本编辑'] }
+      },
+      {
         path: 'factor/edit/:id?',
         name: 'FactorEditor',
         component: () => import('@/idmp/views/FactorEditor.vue'),
