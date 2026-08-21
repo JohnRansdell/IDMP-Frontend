@@ -1,1 +1,0 @@
-import{aA as o,r as t,aB as s}from"./index-DfvWYwM1.js";function n(){return t("/health")}const a=o;function u(){return s(!1)}function l(){return s(!0)}function i(){return t("/system/users")}function f(e){return t("/system/roles",{method:"POST",body:JSON.stringify(e)})}export{l as a,a as b,i as c,f as d,n as f,u as l};

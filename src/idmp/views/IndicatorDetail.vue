@@ -63,7 +63,7 @@
           </div>
           <div>
             <dt>关联场景</dt>
-            <dd>{{ detail.scenes ?? 0 }} 个</dd>
+            <dd>{{ detail.scenes === null ? '—' : `${detail.scenes} 个` }}</dd>
           </div>
         </dl>
 
@@ -145,6 +145,7 @@ import {
   fetchIndicatorVersion,
   fetchIndicatorVersions
 } from '@/idmp/api/modules/indicators'
+import { fetchScenarioVersion, fetchScenarios } from '@/idmp/api/modules/scenarios'
 import { indicatorRows } from '@/idmp/data/demo'
 import { getStatusLabel } from '@/idmp/design/status'
 
@@ -164,7 +165,7 @@ const detail = reactive({
   direction: '',
   source: '',
   status: '',
-  scenes: 0,
+  scenes: null,
   description: ''
 })
 
@@ -182,7 +183,7 @@ function hydrateDetail(item) {
     direction: item.direction || '监测比较',
     source: item.source || '后端接口',
     status: item.status || 'UNKNOWN',
-    scenes: item.scenes || 0,
+    scenes: null,
     description: item.description || ''
   })
 }
@@ -223,8 +224,28 @@ async function loadBackendDetail() {
   if (!target) return false
 
   hydrateDetail(target)
-  await loadVersions(detail.id)
+  await Promise.allSettled([loadScenarioCount(), loadVersions(detail.id)])
   return true
+}
+
+async function loadScenarioCount() {
+  try {
+    const scenarios = normalizeList(await fetchScenarios({ page: 1, size: 100 }))
+    const versionResults = await Promise.allSettled(
+      scenarios.filter((scenario) => scenario.currentPublishedVersionId)
+        .map((scenario) => fetchScenarioVersion(scenario.currentPublishedVersionId))
+    )
+    detail.scenes = versionResults
+      .filter((result) => result.status === 'fulfilled')
+      .reduce((count, result) => (
+        result.value?.version?.indicators?.some((item) => toOpaqueId(item.indicatorId) === detail.id)
+          ? count + 1
+          : count
+      ), 0)
+  } catch (error) {
+    console.warn('指标关联场景加载失败', error)
+    detail.scenes = null
+  }
 }
 
 async function loadVersions(indicatorId) {
