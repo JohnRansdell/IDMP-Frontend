@@ -353,7 +353,8 @@ const toIndicatorRow = (item) => ({
   direction: item.direction || '监测比较',
   source: item.source || '后端接口',
   status: item.status || '未知',
-  scenes: Number(item.scenarioCount ?? 0),
+  // 场景数由指标主对象接口聚合返回；字段缺失时保留未知状态，避免误显示为 0。
+  scenes: toScenarioCount(item.scenarioCount),
   description: item.description,
   id: item.id,
   indicatorId: item.id,
@@ -369,7 +370,8 @@ const toPublishedIndicatorVersionRow = (item) => ({
   direction: item.direction || '监测比较',
   source: item.source || '已发布版本',
   status: item.status || item.publicationStatus || 'PUBLISHED',
-  scenes: Number(item.scenarioCount ?? item.indicator?.scenarioCount ?? 0),
+  // 指标版本列表并不保证返回 scenarioCount，不能以 0 覆盖指标目录的聚合结果。
+  scenes: toScenarioCount(item.scenarioCount ?? item.indicator?.scenarioCount),
   description: item.description,
   id: item.indicatorId || item.indicator?.id || item.id,
   indicatorId: item.indicatorId || item.indicator?.id || '',
@@ -384,6 +386,8 @@ function mergePublishedIndicatorVersions(indicatorRows, publishedRows) {
     rowsByCode.set(versionRow.code, {
       ...(existing || {}),
       ...versionRow,
+      // 目录接口是关联场景数的权威来源；版本接口只补充版本信息。
+      scenes: existing?.scenes ?? versionRow.scenes ?? null,
       id: versionRow.indicatorId || existing?.id || versionRow.id,
       indicatorId: versionRow.indicatorId || existing?.indicatorId || existing?.id || '',
       status: 'PUBLISHED',
@@ -391,6 +395,12 @@ function mergePublishedIndicatorVersions(indicatorRows, publishedRows) {
     })
   })
   return Array.from(rowsByCode.values())
+}
+
+function toScenarioCount(value) {
+  if (value === undefined || value === null || value === '') return null
+  const count = Number(value)
+  return Number.isFinite(count) && count >= 0 ? count : null
 }
 
 const openEditor = id => router.push(`/indicator/edit/${id}`)

@@ -50,22 +50,23 @@
     />
     <section v-if="selectedBackendIndicator" class="surface-card report-context" aria-label="当前报告期">
       <div class="report-context__title">
-        <span>当前报告期</span>
+        <span>源数据可用范围：<strong>{{ availablePeriodText || '暂未获取' }}</strong></span>
         <small>选择时间范围后，更新本期指标值、排名和下钻结果</small>
       </div>
-      <el-date-picker
-        v-model="reportPeriodRange"
-        type="daterange"
-        value-format="YYYY-MM-DD"
-        start-placeholder="开始日期"
-        end-placeholder="结束日期"
-        range-separator="至"
-        size="default"
-        class="report-period-picker"
-      />
-      <el-button type="primary" :loading="mortalityChainLoading" @click="applyReportPeriod">查看报告</el-button>
-      <el-button link @click="showDataDiagnostics = true">数据说明</el-button>
-      <small v-if="availablePeriodText" class="report-context__hint">源数据可用范围：{{ availablePeriodText }}</small>
+      <div class="report-context__controls">
+        <el-date-picker
+          v-model="reportPeriodRange"
+          type="daterange"
+          value-format="YYYY-MM-DD"
+          start-placeholder="开始日期"
+          end-placeholder="结束日期"
+          range-separator="至"
+          size="default"
+          class="report-period-picker"
+        />
+        <el-button type="primary" :loading="mortalityChainLoading" @click="applyReportPeriod">查看报告</el-button>
+        <el-button @click="showDataDiagnostics = true">数据说明</el-button>
+      </div>
     </section>
     <section v-if="analysisNotice" class="analysis-state-notice" :class="`is-${analysisAvailability.status.toLowerCase()}`">
       <div><strong>{{ analysisNotice.title }}</strong><p>{{ analysisNotice.message }}</p></div>
@@ -83,9 +84,11 @@
       </article>
       <div class="metric-summary-grid" :class="summaryMetricGridClass">
         <article v-for="item in summaryMetrics" :key="item.label" class="surface-card metric-summary-card">
-          <span>{{ item.label }}</span>
+          <div class="metric-summary-card__header">
+            <span>{{ item.label }}</span>
+          </div>
           <strong :class="metricToneClass(item.tone)">{{ item.value }}</strong>
-          <small v-if="item.description">{{ item.description }}</small>
+          <p>{{ item.description || ' ' }}</p>
         </article>
       </div>
     </section>
@@ -153,7 +156,7 @@
               <p>展示本院实际值与同级医院均值的周期变化</p>
             </div>
             <div class="trend-controls">
-              <el-date-picker v-model="analysisPeriodRange" class="trend-period-picker" type="daterange" value-format="YYYY-MM-DD" start-placeholder="趋势开始日期" end-placeholder="趋势结束日期" range-separator="至" size="small" @change="applyTrendConditions" />
+              <el-date-picker v-model="analysisPeriodRange" class="trend-period-picker" type="daterange" format="YYYY-MM-DD" value-format="YYYY-MM-DD" start-placeholder="开始" end-placeholder="结束" range-separator="至" size="small" @change="applyTrendConditions" />
               <el-radio-group v-model="period" size="small" aria-label="趋势统计粒度" @change="applyTrendConditions">
                 <el-radio-button v-for="item in analysisPeriodOptions" :key="item" :value="item">{{ item }}</el-radio-button>
               </el-radio-group>
@@ -875,7 +878,15 @@ async function loadBackendAnalysisIndicators() {
       normalizeList(indicators),
       normalizeList(publishedVersions)
     )
-    if (selectedBackendIndicator.value) await refreshMortalityAnalysis()
+    if (selectedBackendIndicator.value) {
+      await refreshMortalityAnalysis()
+    } else if (backendIndicators.value.length) {
+      const firstOption = createBackendAnalysisOptions(backendIndicators.value, localAnalysisOptions.value)[0]
+      if (firstOption?.code) {
+        selectedIndicatorCode.value = firstOption.code
+        await router.replace({ path: '/analysis', query: { ...route.query, indicator: firstOption.code } })
+      }
+    }
   } catch {
     backendIndicators.value = []
     ElMessage.warning('后端已发布指标列表暂不可用，当前没有可选指标')
@@ -904,7 +915,19 @@ function createBackendAnalysisOptions(indicators, profileOptions) {
 function mergePublishedAnalysisIndicators(indicators, publishedVersions) {
   const indicatorsById = new Map(indicators.map((item) => [String(item.id || item.indicatorId || ''), item]))
   const indicatorsByCode = new Map(indicators.map((item) => [String(item.code || ''), item]))
-  return publishedVersions.map((version) => {
+  const directoryOrder = new Map(indicators.map((item, index) => [getIndicatorDirectoryKey(item), index]))
+  const orderedVersions = [...publishedVersions].sort((left, right) => {
+    const leftIndicator = left.indicator || {}
+    const rightIndicator = right.indicator || {}
+    const leftBase = indicatorsById.get(String(left.indicatorId || leftIndicator.id || '')) || indicatorsByCode.get(String(left.indicatorCode || left.code || leftIndicator.code || '')) || left
+    const rightBase = indicatorsById.get(String(right.indicatorId || rightIndicator.id || '')) || indicatorsByCode.get(String(right.indicatorCode || right.code || rightIndicator.code || '')) || right
+    const leftCreated = getIndicatorCreatedAt(leftBase)
+    const rightCreated = getIndicatorCreatedAt(rightBase)
+    if (leftCreated && rightCreated && leftCreated !== rightCreated) return rightCreated.localeCompare(leftCreated)
+    return (directoryOrder.get(getIndicatorDirectoryKey(leftBase)) ?? Number.MAX_SAFE_INTEGER) -
+      (directoryOrder.get(getIndicatorDirectoryKey(rightBase)) ?? Number.MAX_SAFE_INTEGER)
+  })
+  return orderedVersions.map((version) => {
     const versionIndicator = version.indicator || {}
     const indicatorId = String(version.indicatorId || versionIndicator.id || '')
     const code = String(version.indicatorCode || version.code || versionIndicator.code || '')
@@ -922,6 +945,15 @@ function mergePublishedAnalysisIndicators(indicators, publishedVersions) {
       publishedVersionId: versionId
     }
   }).filter((item) => item.code || item.indicatorId || item.id)
+}
+
+function getIndicatorDirectoryKey(indicator) {
+  return String(indicator?.id || indicator?.indicatorId || indicator?.code || '')
+}
+
+function getIndicatorCreatedAt(indicator) {
+  const value = indicator?.createdAt || indicator?.createTime || indicator?.created_at
+  return value ? String(value) : ''
 }
 
 function isPublishedIndicator(indicator) {
@@ -1173,19 +1205,20 @@ function formatRange(range) {
 }
 
 .report-context {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  grid-template-areas: 'title controls';
   align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
+  column-gap: 24px;
   margin-bottom: 16px;
-  padding: 13px 16px;
+  padding: 14px 18px;
   background: var(--idmp-surface-subtle, #f8fafc);
 }
 
 .report-context__title {
   display: grid;
-  flex: 1 1 220px;
-  gap: 2px;
+  grid-area: title;
+  gap: 4px;
 }
 
 .report-context__title > span {
@@ -1194,14 +1227,22 @@ function formatRange(range) {
   font-weight: 600;
 }
 
-.report-context__title > small,
-.report-context__hint {
+.report-context__title > span strong {
+  color: var(--idmp-text-secondary, #475467);
+  font-weight: 600;
+}
+
+.report-context__title > small {
   color: var(--idmp-text-secondary, #667085);
   font-size: 12px;
 }
 
-.report-context__hint {
-  flex-basis: 100%;
+.report-context__controls {
+  display: flex;
+  grid-area: controls;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .report-period-picker {
@@ -1341,34 +1382,45 @@ function formatRange(range) {
 
 .metric-summary-card {
   display: flex;
-  align-items: center;
-  justify-content: center;
   flex-direction: column;
+  justify-content: flex-start;
   grid-column: span 2;
   min-width: 0;
-  min-height: 96px;
-  padding: var(--idmp-space-4);
-  text-align: center;
+  min-height: 112px;
+  padding: var(--idmp-space-5);
+  text-align: left;
 
-  span,
-  small {
-    display: block;
-    color: var(--idmp-text-helper);
-    font-size: 13px;
+  .metric-summary-card__header {
+    display: flex;
+    min-height: 18px;
+    align-items: center;
+  }
+
+  span {
+    color: var(--idmp-text-secondary);
+    font-size: 14px;
     line-height: 18px;
   }
 
   strong {
     display: block;
     min-width: 0;
-    margin: var(--idmp-space-2) 0 var(--idmp-space-1);
+    margin: var(--idmp-space-5) 0 var(--idmp-space-2);
     color: var(--idmp-text-primary);
-    font-size: 22px;
+    font-size: 24px;
     font-weight: 650;
-    line-height: 26px;
+    line-height: 32px;
     font-variant-numeric: tabular-nums;
     overflow-wrap: anywhere;
     word-break: break-word;
+  }
+
+  p {
+    margin: 0;
+    min-height: 18px;
+    color: var(--idmp-text-helper);
+    font-size: 12px;
+    line-height: 18px;
   }
 }
 
@@ -1627,15 +1679,48 @@ function formatRange(range) {
   gap: 8px;
   min-width: 0;
   flex: 1 1 auto;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  padding-right: 4px;
 }
 
 .trend-period-picker {
-  width: 280px;
+  width: 210px !important;
+  min-width: 0 !important;
+  max-width: 210px !important;
+  flex: 0 0 210px;
+}
+
+.trend-controls :deep(.trend-period-picker.el-date-editor) {
+  width: 210px !important;
+  min-width: 0 !important;
+  max-width: 210px !important;
+}
+
+.trend-controls :deep(.trend-period-picker.el-date-editor.el-input__wrapper) {
+  width: 210px !important;
+  min-width: 0 !important;
+  max-width: 210px !important;
 }
 
 .trend-controls :deep(.el-radio-group) {
-  margin-left: auto;
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  margin-left: 0;
+  overflow: visible;
+  white-space: nowrap;
+}
+
+.trend-controls :deep(.el-radio-button__inner) {
+  box-sizing: border-box;
+  padding-right: 8px;
+  padding-left: 8px;
+}
+
+.trend-controls :deep(.el-radio-button:last-child .el-radio-button__inner) {
+  border-right-width: 1px;
+  border-top-right-radius: 4px;
+  border-bottom-right-radius: 4px;
 }
 
 .period-control {
@@ -1810,6 +1895,18 @@ function formatRange(range) {
 }
 
 @media (max-width: 1180px) {
+  .report-context {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      'title'
+      'controls';
+  }
+
+  .report-context__controls {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
   .metric-overview {
     grid-template-columns: 1fr;
   }
@@ -1820,6 +1917,7 @@ function formatRange(range) {
 
   .trend-controls {
     justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
   .trend-controls :deep(.el-radio-group) {

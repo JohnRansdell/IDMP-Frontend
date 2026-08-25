@@ -113,7 +113,7 @@ const routes = [
         component: () => import('@/idmp/views/IndicatorAnalysis.vue'),
         meta: {
           title: '指标分析',
-          breadcrumb: ['首页', '指标分析', '手术患者并发症发生率']
+          breadcrumb: ['首页', '指标分析']
         }
       },
       {
