@@ -115,6 +115,14 @@ export function fetchIndicatorTrialResults(versionId, batchId, page = 1, size = 
   return requestJson(`/indicator-versions/${versionId}/trials/${batchId}/results?page=${page}&size=${size}`)
 }
 
+export function fetchIndicatorScenarios(indicatorId, params = {}) {
+  return requestJson(withQuery(`/indicators/${encodeURIComponent(indicatorId)}/scenarios`, params))
+}
+
+export function fetchIndicatorAvailablePeriod(versionId) {
+  return requestJson(`/indicator-versions/${encodeURIComponent(versionId)}/available-period`)
+}
+
 export function fetchIndicatorAnalysis(indicatorId, params = {}) {
   return requestJson(withQuery(
     `/analysis/indicators/${indicatorId}/analysis`,

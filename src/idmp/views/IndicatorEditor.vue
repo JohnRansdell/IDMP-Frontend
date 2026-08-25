@@ -367,6 +367,11 @@
               <strong>{{ indicatorWorkflow.displayValue }}</strong>
               <small>批次 {{ indicatorWorkflow.batchId }}</small>
             </div>
+            <ResultAvailabilityPanel
+              v-if="indicatorWorkflow.trialAvailability"
+              :availability="indicatorWorkflow.trialAvailability"
+              @open-batch="batchId => router.push({ path: '/calc', query: { batchId } })"
+            />
             <div v-if="workflowDebug.step" class="workflow-debug">
               <div>
                 <span>最近一次后端请求</span>
@@ -659,6 +664,7 @@ import {
 } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
+import ResultAvailabilityPanel from '@/idmp/components/ResultAvailabilityPanel.vue'
 import { API_BASE_URL } from '@/idmp/api/request'
 import {
   compileIndicatorFormula,
@@ -695,6 +701,7 @@ import {
   editorSceneRows
 } from '@/idmp/data/demo'
 import { getStatusLabel } from '@/idmp/design/status'
+import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
 import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
 
 const route = useRoute()
@@ -726,7 +733,8 @@ const indicatorWorkflow = reactive({
   publishedVersionId: '',
   publishIdempotencyKey: '',
   formalBatchId: '',
-  formalIdempotencyKey: ''
+  formalIdempotencyKey: '',
+  trialAvailability: null
 })
 const indicatorTrialPeriod = ref(initialIndicatorTrialPeriod())
 const selectedDrillPaths = ref([])
@@ -1871,6 +1879,7 @@ function resetIndicatorTrialAfterPeriodChange() {
   indicatorWorkflow.batchId = ''
   indicatorWorkflow.displayValue = ''
   indicatorWorkflow.resultValue = ''
+  indicatorWorkflow.trialAvailability = null
   indicatorWorkflow.formalBatchId = ''
   indicatorWorkflow.formalIdempotencyKey = ''
 }
@@ -1968,17 +1977,19 @@ async function loadIndicatorTrialResultOnly() {
     })
     const batch = await pollBackendBatch(indicatorWorkflow.batchId)
     const batchStatus = batch.status || batch.batchStatus
-    if (!['SUCCEEDED', 'PARTIAL_SUCCEEDED'].includes(batchStatus)) {
+    if (!['SUCCEEDED', 'PARTIAL_SUCCEEDED', 'FAILED', 'CANCELLED', 'CANCELED'].includes(batchStatus)) {
       recordWorkflowSuccess(`试算批次仍在处理中：${batchStatus ? getStatusLabel(batchStatus) : '未知'}`)
       ElMessage.info('试算仍在处理中，请稍后再查看结果')
       return
     }
     const resultSet = await fetchIndicatorTrialResults(indicatorWorkflow.versionId, indicatorWorkflow.batchId)
+    indicatorWorkflow.trialAvailability = resolveResultAvailability({ ...resultSet, batchStatus })
     const record = resultSet.results?.records?.[0]
-    indicatorWorkflow.displayValue = record?.displayValue || '-'
+    indicatorWorkflow.displayValue = record?.displayValue ?? (indicatorWorkflow.trialAvailability.status === 'CALCULATION_ERROR' ? '计算失败' : '-')
     indicatorWorkflow.resultValue = record?.resultValue ?? ''
-    recordWorkflowSuccess(`试算结果：${indicatorWorkflow.displayValue}`)
-    ElMessage.success('试算结果已读取')
+    recordWorkflowSuccess(`试算结论：${getStatusLabel(indicatorWorkflow.trialAvailability.status)}`)
+    if (indicatorWorkflow.trialAvailability.status === 'CALCULATION_ERROR') ElMessage.warning('试算失败，已展示源数据画像与错误详情')
+    else ElMessage.success('试算结果已读取')
   } catch (error) {
     recordWorkflowError(error)
     ElMessage.error(error?.message || '试算结果读取失败')
@@ -2056,6 +2067,7 @@ async function persistIndicatorFormula() {
   indicatorWorkflow.formulaSaved = true
   indicatorWorkflow.compiled = false
   indicatorWorkflow.displayValue = ''
+  indicatorWorkflow.trialAvailability = null
   recordWorkflowSuccess('保存公式成功')
 }
 

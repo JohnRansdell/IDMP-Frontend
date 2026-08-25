@@ -5,13 +5,15 @@
       <template #actions><el-button :loading="loading" @click="loadValueSets">刷新</el-button><el-button type="primary" @click="openCreate">新建值集</el-button></template>
     </PageHeader>
 
-    <section class="surface-card value-set-toolbar">
-      <el-input v-model="filters.code" clearable placeholder="值集编码" @keyup.enter="loadValueSets" />
-      <el-input v-model="filters.name" clearable placeholder="值集名称" @keyup.enter="loadValueSets" />
-      <el-select v-model="filters.status" clearable placeholder="状态">
-        <el-option label="草稿" value="DRAFT" /><el-option label="已发布" value="PUBLISHED" />
-      </el-select>
-      <el-button type="primary" @click="loadValueSets">查询</el-button>
+    <section class="surface-card filter-card value-set-filter" aria-label="值集筛选">
+      <el-form :inline="true" @submit.prevent="loadValueSets">
+        <el-form-item><el-input v-model="filters.code" class="filter-code" clearable placeholder="值集编码" @keyup.enter="loadValueSets" /></el-form-item>
+        <el-form-item><el-input v-model="filters.name" class="filter-name" clearable placeholder="值集名称" @keyup.enter="loadValueSets" /></el-form-item>
+        <el-form-item><el-select v-model="filters.status" class="filter-select filter-select--small" clearable placeholder="状态">
+          <el-option label="草稿" value="DRAFT" /><el-option label="已发布" value="PUBLISHED" />
+        </el-select></el-form-item>
+        <el-form-item><el-button type="primary" native-type="submit">查询</el-button></el-form-item>
+      </el-form>
     </section>
     <el-dialog v-model="createVisible" title="新建值集" width="520px" destroy-on-close>
       <el-form label-position="top"><el-form-item label="编码"><el-input v-model.trim="createForm.code" placeholder="如 SEX" /></el-form-item><el-form-item label="名称"><el-input v-model.trim="createForm.name" placeholder="如 性别" /></el-form-item><el-form-item label="值类型"><el-select v-model="createForm.valueType"><el-option label="文本" value="STRING" /><el-option label="整数" value="INTEGER" /><el-option label="小数" value="DECIMAL" /><el-option label="日期" value="DATE" /></el-select></el-form-item><el-form-item label="匹配模式"><el-select v-model="createForm.matchMode"><el-option label="精确匹配" value="EXACT" /><el-option label="前缀匹配" value="PREFIX" /><el-option label="范围匹配" value="RANGE" /><el-option label="层级匹配" value="HIERARCHICAL" /></el-select></el-form-item><el-form-item label="说明"><el-input v-model="createForm.description" type="textarea" /></el-form-item></el-form>
@@ -74,8 +76,11 @@ onMounted(loadValueSets)
 </script>
 
 <style scoped>
-.value-set-toolbar { display: flex; gap: 12px; margin-bottom: 16px; }
-.value-set-toolbar .el-input { max-width: 220px; }
-.value-set-toolbar .el-select { width: 150px; }
+.value-set-filter :deep(.el-form) { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px; }
+.value-set-filter :deep(.el-form-item) { margin: 0; }
+.filter-code { width: 140px; }
+.filter-name { width: 200px; }
+.filter-select { width: 156px; }
+.filter-select--small { width: 112px; }
 .pagination-bar { display: flex; justify-content: space-between; align-items: center; padding-top: 16px; color: var(--idmp-text-secondary); font-size: 12px; }
 </style>

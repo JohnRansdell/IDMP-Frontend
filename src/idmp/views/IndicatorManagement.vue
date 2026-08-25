@@ -247,7 +247,6 @@ import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
  import ResourceDeleteDialog from '@/idmp/components/ResourceDeleteDialog.vue'
 import { deleteIndicator, fetchIndicatorDeletionImpact, fetchIndicators, fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
-import { fetchScenarioVersion, fetchScenarios } from '@/idmp/api/modules/scenarios'
 import { indicatorRows } from '@/idmp/data/demo'
 import { getStatusLabel } from '@/idmp/design/status'
 
@@ -323,10 +322,9 @@ const loadBackendIndicators = async () => {
       fetchIndicators({ page: 1, size: 100 }),
       fetchIndicatorVersionList({ publicationStatus: 'PUBLISHED', page: 1, size: 100 })
     ])
-    const scenarioUsage = await loadPublishedScenarioUsage()
     backendIndicatorRows.value = mergePublishedIndicatorVersions(
-      normalizeList(indicators).map((item) => toIndicatorRow(item, scenarioUsage)),
-      normalizeList(publishedVersions).map((item) => toPublishedIndicatorVersionRow(item, scenarioUsage))
+      normalizeList(indicators).map(toIndicatorRow),
+      normalizeList(publishedVersions).map(toPublishedIndicatorVersionRow)
     )
     sourceMode.value = 'live'
   } catch (error) {
@@ -346,26 +344,7 @@ function normalizeList(payload) {
   return []
 }
 
-async function loadPublishedScenarioUsage() {
-  try {
-    const scenarios = normalizeList(await fetchScenarios({ page: 1, size: 100 }))
-    const versionResults = await Promise.allSettled(
-      scenarios.filter((scenario) => scenario.currentPublishedVersionId)
-        .map((scenario) => fetchScenarioVersion(scenario.currentPublishedVersionId))
-    )
-    const counts = new Map()
-    versionResults.filter((result) => result.status === 'fulfilled').forEach((result) => {
-      const indicatorIds = new Set((result.value?.version?.indicators || []).map((item) => String(item.indicatorId)))
-      indicatorIds.forEach((indicatorId) => counts.set(indicatorId, (counts.get(indicatorId) || 0) + 1))
-    })
-    return { available: true, counts }
-  } catch (error) {
-    console.warn('场景关联数加载失败', error)
-    return { available: false, counts: new Map() }
-  }
-}
-
-const toIndicatorRow = (item, scenarioUsage) => ({
+const toIndicatorRow = (item) => ({
   code: item.code,
   name: item.name,
   category: item.category || '后端指标',
@@ -374,14 +353,14 @@ const toIndicatorRow = (item, scenarioUsage) => ({
   direction: item.direction || '监测比较',
   source: item.source || '后端接口',
   status: item.status || '未知',
-  scenes: scenarioUsage.available ? (scenarioUsage.counts.get(String(item.id)) || 0) : null,
+  scenes: Number(item.scenarioCount ?? 0),
   description: item.description,
   id: item.id,
   indicatorId: item.id,
   versionId: item.currentVersionId || item.latestVersionId || item.publishedVersionId || ''
 })
 
-const toPublishedIndicatorVersionRow = (item, scenarioUsage) => ({
+const toPublishedIndicatorVersionRow = (item) => ({
   code: item.indicatorCode || item.code,
   name: item.indicatorName || item.name || item.indicatorCode || item.code,
   category: item.category || '后端指标',
@@ -390,7 +369,7 @@ const toPublishedIndicatorVersionRow = (item, scenarioUsage) => ({
   direction: item.direction || '监测比较',
   source: item.source || '已发布版本',
   status: item.status || item.publicationStatus || 'PUBLISHED',
-  scenes: scenarioUsage.available ? (scenarioUsage.counts.get(String(item.indicatorId || item.indicator?.id)) || 0) : null,
+  scenes: Number(item.scenarioCount ?? item.indicator?.scenarioCount ?? 0),
   description: item.description,
   id: item.indicatorId || item.indicator?.id || item.id,
   indicatorId: item.indicatorId || item.indicator?.id || '',

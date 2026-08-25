@@ -10,7 +10,7 @@
         <div><span>编码</span><strong>{{ valueSet?.code || '—' }}</strong></div><div><span>匹配模式</span><strong>{{ matchModeLabel(version?.matchMode || valueSet?.matchMode) || '—' }}</strong></div><div><span>状态</span><StatusBadge :status="valueSet?.status" /></div><div><span>当前发布版本</span><strong>{{ valueSet?.currentPublishedVersionId || '—' }}</strong></div>
       </section>
       <section class="surface-card table-card">
-        <div class="section-title section-title--toolbar"><div><h2>版本历史</h2><p class="section-title__description">选择版本查看完整值项；草稿和已校验版本可进入编辑。</p></div><div><el-select v-model="selectedVersionId" placeholder="选择版本" @change="loadVersion"><el-option v-for="item in versions" :key="item.id" :label="`V${item.versionNo} · ${item.publicationStatus ? getStatusLabel(item.publicationStatus) : '—'}`" :value="String(item.id)" /></el-select><el-button v-if="selectedVersionId" type="primary" @click="editVersion">编辑版本</el-button></div></div>
+        <div class="section-title section-title--toolbar"><div><h2>版本历史</h2><p class="section-title__description">选择版本查看完整值项；草稿和已校验版本可进入编辑。</p></div><div class="version-history-actions"><el-select v-model="selectedVersionId" placeholder="选择版本" @change="loadVersion"><el-option v-for="item in versions" :key="item.id" :label="`V${item.versionNo} · ${item.publicationStatus ? getStatusLabel(item.publicationStatus) : '—'}`" :value="String(item.id)" /></el-select><el-button v-if="selectedVersionId" type="primary" @click="editVersion">编辑版本</el-button></div></div>
         <el-table v-if="versions.length" :data="versions" row-key="id" highlight-current-row @row-click="selectVersion"><el-table-column prop="versionNo" label="版本" width="100" /><el-table-column label="状态" width="150"><template #default="{ row }"><StatusBadge :status="row.publicationStatus" /></template></el-table-column><el-table-column prop="resourceVersion" label="资源版本" width="120" /><el-table-column prop="id" label="版本 ID" min-width="220" /></el-table>
         <StatePanel v-else type="empty" title="暂无版本" description="该值集没有可查看的版本。" />
       </section>
@@ -63,5 +63,6 @@ onMounted(loadAll)
 <style scoped>
 .value-set-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; padding: 18px; }
 .value-set-summary div { display: flex; flex-direction: column; gap: 6px; }.value-set-summary span { color: var(--idmp-text-secondary); font-size: 12px; }.value-set-summary strong { font-size: 16px; }
-.table-card { margin-bottom: 16px; }.section-title--toolbar { display: flex; justify-content: space-between; align-items: center; }
+.table-card { margin-bottom: 16px; }.section-title--toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; }.version-history-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; }.version-history-actions .el-select { width: 180px; }
+@media (max-width: 720px) { .section-title--toolbar { align-items: flex-start; flex-direction: column; }.version-history-actions { width: 100%; }.version-history-actions .el-select { flex: 1; width: auto; } }
 </style>

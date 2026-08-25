@@ -71,6 +71,21 @@
           <span>指标说明</span>
           <p>{{ detail.description || '当前指标目录接口未返回详细说明。' }}</p>
         </div>
+
+        <div class="related-scenarios">
+          <div class="section-title compact"><div><h2>关联场景</h2><p class="section-title__description">按指标主 ID 反查当前有效场景，并展示实际引用的指标版本。</p></div></div>
+          <StatePanel v-if="scenarioLoading" type="loading" title="正在加载关联场景" />
+          <StatePanel v-else-if="scenarioError" type="error" title="关联场景加载失败" :description="scenarioError" />
+          <StatePanel v-else-if="!scenarioRows.length" type="empty" title="暂无关联场景" description="该有效指标当前没有场景引用。" />
+          <el-table v-else :data="scenarioRows" size="small" table-layout="fixed">
+            <el-table-column prop="code" label="场景编码" min-width="180" />
+            <el-table-column prop="name" label="场景名称" min-width="180" />
+            <el-table-column label="场景版本" width="120"><template #default="{ row }">V{{ row.scenarioVersionNo || '-' }}</template></el-table-column>
+            <el-table-column prop="versionSource" label="版本来源" width="150" />
+            <el-table-column label="引用的指标版本" min-width="180"><template #default="{ row }">{{ scenarioReferenceText(row) }}</template></el-table-column>
+            <el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="openScenario(row)">查看</el-button></template></el-table-column>
+          </el-table>
+        </div>
       </article>
 
       <aside class="detail-side">
@@ -142,10 +157,10 @@ import {
   fetchIndicator,
   fetchIndicatorFormula,
   fetchIndicators,
+  fetchIndicatorScenarios,
   fetchIndicatorVersion,
   fetchIndicatorVersions
 } from '@/idmp/api/modules/indicators'
-import { fetchScenarioVersion, fetchScenarios } from '@/idmp/api/modules/scenarios'
 import { indicatorRows } from '@/idmp/data/demo'
 import { getStatusLabel } from '@/idmp/design/status'
 
@@ -155,6 +170,9 @@ const routeIndicatorKey = computed(() => String(route.params.id || ''))
 const loadError = ref('')
 const versionRows = ref([])
 const selectedVersion = ref(null)
+const scenarioRows = ref([])
+const scenarioLoading = ref(false)
+const scenarioError = ref('')
 const detail = reactive({
   id: '',
   code: '',
@@ -183,7 +201,7 @@ function hydrateDetail(item) {
     direction: item.direction || '监测比较',
     source: item.source || '后端接口',
     status: item.status || 'UNKNOWN',
-    scenes: null,
+    scenes: item.scenarioCount ?? null,
     description: item.description || ''
   })
 }
@@ -224,28 +242,36 @@ async function loadBackendDetail() {
   if (!target) return false
 
   hydrateDetail(target)
-  await Promise.allSettled([loadScenarioCount(), loadVersions(detail.id)])
+  await Promise.allSettled([loadRelatedScenarios(), loadVersions(detail.id)])
   return true
 }
 
-async function loadScenarioCount() {
+async function loadRelatedScenarios() {
+  if (!detail.id) return
+  scenarioLoading.value = true
+  scenarioError.value = ''
   try {
-    const scenarios = normalizeList(await fetchScenarios({ page: 1, size: 100 }))
-    const versionResults = await Promise.allSettled(
-      scenarios.filter((scenario) => scenario.currentPublishedVersionId)
-        .map((scenario) => fetchScenarioVersion(scenario.currentPublishedVersionId))
-    )
-    detail.scenes = versionResults
-      .filter((result) => result.status === 'fulfilled')
-      .reduce((count, result) => (
-        result.value?.version?.indicators?.some((item) => toOpaqueId(item.indicatorId) === detail.id)
-          ? count + 1
-          : count
-      ), 0)
+    const page = await fetchIndicatorScenarios(detail.id, { page: 1, size: 100 })
+    scenarioRows.value = normalizeList(page)
+    detail.scenes = Number(page?.total ?? scenarioRows.value.length)
   } catch (error) {
-    console.warn('指标关联场景加载失败', error)
+    scenarioRows.value = []
+    scenarioError.value = error?.message || '关联场景接口暂不可用。'
     detail.scenes = null
+  } finally {
+    scenarioLoading.value = false
   }
+}
+
+function scenarioReferenceText(row) {
+  const refs = Array.isArray(row.references) ? row.references : []
+  return refs.map((item) => `V${item.indicatorVersionNo || '-'}（${item.indicatorVersionId || '-'}）`).join('，') || '-'
+}
+
+function openScenario(row) {
+  const scenarioId = row.id || row.scenarioId
+  if (!scenarioId) return
+  router.push({ name: 'ScenarioEditor', params: { scenarioId }, query: { versionId: row.scenarioVersionId } })
 }
 
 async function loadVersions(indicatorId) {

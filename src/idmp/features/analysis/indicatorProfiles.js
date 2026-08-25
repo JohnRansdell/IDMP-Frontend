@@ -181,8 +181,7 @@ export const analysisProfiles = {
       { label: '目标值', value: '-' },
       { label: '上期值', value: '-' },
       { label: '变化', value: '-' },
-      { label: '维度', value: '出院科室' },
-      { label: '记录数', value: '53条' }
+      { label: '维度分析', value: '演示数据' }
     ],
     rankRows: []
   },
@@ -199,8 +198,7 @@ export const analysisProfiles = {
       { label: '目标值', value: '-' },
       { label: '上期值', value: '-' },
       { label: '变化', value: '-' },
-      { label: '维度', value: '出院科室' },
-      { label: '记录数', value: '53条' }
+      { label: '维度分析', value: '演示数据' }
     ],
     rankRows: []
   }

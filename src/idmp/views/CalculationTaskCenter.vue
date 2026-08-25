@@ -276,6 +276,14 @@
               <StatusBadge :status="row.status" />
             </template>
           </el-table-column>
+          <el-table-column label="结果结论" width="130">
+            <template #default="{ row }"><StatusBadge :status="row.resultOutcomeStatus" /></template>
+          </el-table-column>
+          <el-table-column label="源数据" width="120">
+            <template #default="{ row }"><StatusBadge :status="row.sourceDataStatus" /></template>
+          </el-table-column>
+          <el-table-column prop="sourceRecordCount" label="源记录数" width="105" />
+          <el-table-column prop="errorMessage" label="错误信息" min-width="190" show-overflow-tooltip />
           <el-table-column prop="attemptNo" label="尝试次数" width="92" />
           <el-table-column prop="workerId" label="Worker" min-width="150" show-overflow-tooltip />
           <el-table-column label="操作" width="112" fixed="right">
@@ -298,7 +306,8 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
@@ -313,9 +322,10 @@ import {
   retryCalcNode
 } from '@/idmp/api/modules/calculation'
 
+const route = useRoute()
 const queryForm = reactive({
   taskId: '101996817981379215',
-  batchId: '101996817981379215'
+  batchId: String(route.query.batchId || '101996817981379215')
 })
 
 const createForm = reactive({
@@ -364,10 +374,14 @@ const flatNodes = computed(() => {
     (Array.isArray(target.nodes) ? target.nodes : []).map((node) => ({
       ...node,
       targetId: toOpaqueId(target.targetId),
-      targetKey: target.targetKey,
-      ownerType: target.ownerType,
-      ownerVersionId: toOpaqueId(target.ownerVersionId),
-      nodeId: toOpaqueId(node.nodeId)
+       targetKey: target.targetKey,
+       ownerType: target.ownerType,
+       ownerVersionId: toOpaqueId(target.ownerVersionId),
+       resultOutcomeStatus: target.resultOutcomeStatus || target.outcomeStatus || '',
+       sourceDataStatus: node.sourceDataStatus || '',
+       sourceRecordCount: node.sourceRecordCount ?? '-',
+       errorMessage: node.errorMessage || target.errorMessage || '',
+       nodeId: toOpaqueId(node.nodeId)
     }))
   )
 })
@@ -592,6 +606,10 @@ function displayId(value) {
 function enumLabel(value, labels) {
   return labels[String(value || '').trim().toUpperCase()] || value || '-'
 }
+
+onMounted(() => {
+  if (route.query.batchId) loadBatch()
+})
 
 function technicalEnumLabel(value, labels) {
   const label = enumLabel(value, labels)

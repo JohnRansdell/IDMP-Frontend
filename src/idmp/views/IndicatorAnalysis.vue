@@ -6,10 +6,9 @@
       status-tone="info"
     >
       <template #meta>
-        <span>指标版本 <strong class="mono-data">{{ analysisMetadata.version }}</strong></span>
-        <span>结果批次 <strong class="mono-data">{{ analysisMetadata.batch }}</strong></span>
-        <span>数据水位 <strong>{{ analysisMetadata.watermark }}</strong></span>
-        <span>更新时间 <strong class="mono-data">{{ analysisUpdatedAt }}</strong></span>
+        <span>报告期 <strong>{{ reportPeriodLabel }}</strong></span>
+        <span>统计粒度 <strong>{{ period }}</strong></span>
+        <span>更新时间 <strong>{{ analysisUpdatedAt }}</strong></span>
       </template>
       <template #actions>
         <div class="page-toolbar">
@@ -49,37 +48,44 @@
       :closable="false"
       :title="analysisErrorMessage"
     />
-    <el-alert
-      v-if="notCalculableMessage"
-      class="analysis-error-alert"
-      type="warning"
-      show-icon
-      :closable="false"
-      :title="notCalculableMessage"
-    />
+    <section v-if="selectedBackendIndicator" class="surface-card report-context" aria-label="当前报告期">
+      <div class="report-context__title">
+        <span>当前报告期</span>
+        <small>选择时间范围后，更新本期指标值、排名和下钻结果</small>
+      </div>
+      <el-date-picker
+        v-model="reportPeriodRange"
+        type="daterange"
+        value-format="YYYY-MM-DD"
+        start-placeholder="开始日期"
+        end-placeholder="结束日期"
+        range-separator="至"
+        size="default"
+        class="report-period-picker"
+      />
+      <el-button type="primary" :loading="mortalityChainLoading" @click="applyReportPeriod">查看报告</el-button>
+      <el-button link @click="showDataDiagnostics = true">数据说明</el-button>
+      <small v-if="availablePeriodText" class="report-context__hint">源数据可用范围：{{ availablePeriodText }}</small>
+    </section>
+    <section v-if="analysisNotice" class="analysis-state-notice" :class="`is-${analysisAvailability.status.toLowerCase()}`">
+      <div><strong>{{ analysisNotice.title }}</strong><p>{{ analysisNotice.message }}</p></div>
+      <el-button size="small" @click="showDataDiagnostics = true">查看数据诊断</el-button>
+    </section>
 
     <section class="metric-overview" aria-label="指标核心数据">
       <article class="surface-card primary-metric">
         <div>
-          <span>当前指标值</span>
-          <StatusBadge status="ACTIVE" label="当前展示结果" />
+          <span>{{ primaryMetric.label }}</span>
+          <StatusBadge :status="primaryMetric.status" :label="primaryMetric.statusLabel" />
         </div>
         <strong>{{ primaryMetric.value }}</strong>
-        <p>{{ currentProfile.targetLabel }} · {{ analysisSourceLabel }}</p>
+        <p>{{ primaryMetric.periodLabel }} · {{ currentProfile.targetLabel }}</p>
       </article>
-      <article
-        v-for="item in factorMetrics"
-        :key="item.label"
-        class="surface-card factor-metric"
-      >
-        <span>{{ item.label }}</span>
-        <strong>{{ item.value }}</strong>
-        <small>{{ item.label === '分子' ? '计入事件数' : '统计对象总量' }}</small>
-      </article>
-      <div class="surface-card supporting-metrics">
-        <article v-for="item in secondaryMetrics" :key="item.label">
+      <div class="metric-summary-grid" :class="summaryMetricGridClass">
+        <article v-for="item in summaryMetrics" :key="item.label" class="surface-card metric-summary-card">
           <span>{{ item.label }}</span>
           <strong :class="metricToneClass(item.tone)">{{ item.value }}</strong>
+          <small v-if="item.description">{{ item.description }}</small>
         </article>
       </div>
     </section>
@@ -146,29 +152,10 @@
               <h2>指标变化趋势</h2>
               <p>展示本院实际值与同级医院均值的周期变化</p>
             </div>
-            <div class="period-control">
-              <span class="period-range">{{ currentTrend.range }}</span>
-              <el-date-picker
-                v-if="selectedBackendIndicator"
-                v-model="analysisPeriodRange"
-                type="datetimerange"
-                value-format="YYYY-MM-DDTHH:mm:ss"
-                start-placeholder="结果开始时间"
-                end-placeholder="结果结束时间"
-                size="small"
-                clearable
-              />
-              <el-button v-if="selectedBackendIndicator" size="small" :loading="mortalityChainLoading" @click="applyAnalysisPeriod">
-                查询周期
-              </el-button>
-              <el-radio-group v-model="period" size="small" aria-label="分析周期">
-                <el-radio-button
-                  v-for="item in periodOptions"
-                  :key="item"
-                  :value="item"
-                >
-                  {{ item }}
-                </el-radio-button>
+            <div class="trend-controls">
+              <el-date-picker v-model="analysisPeriodRange" class="trend-period-picker" type="daterange" value-format="YYYY-MM-DD" start-placeholder="趋势开始日期" end-placeholder="趋势结束日期" range-separator="至" size="small" @change="applyTrendConditions" />
+              <el-radio-group v-model="period" size="small" aria-label="趋势统计粒度" @change="applyTrendConditions">
+                <el-radio-button v-for="item in analysisPeriodOptions" :key="item" :value="item">{{ item }}</el-radio-button>
               </el-radio-group>
             </div>
           </div>
@@ -211,7 +198,7 @@
             </div>
             <StatusBadge :status="hasBackendRankData ? 'ACTIVE' : 'DRAFT'" :label="hasBackendRankData ? '后端维度数据' : '演示数据 · 2024 年度'" tone="neutral" />
           </div>
-          <div class="table-scroll">
+          <div class="table-scroll rank-table-scroll">
             <el-table
               :data="rankTableData"
               table-layout="fixed"
@@ -277,6 +264,26 @@
         </el-tab-pane>
       </el-tabs>
     </section>
+    <el-drawer v-model="showDataDiagnostics" title="数据诊断" size="520px" destroy-on-close>
+      <p class="diagnostics-intro">这里用于解释当前报告期没有结果的原因，以及依赖数据可用情况；正常分析时无需关注。</p>
+      <ResultAvailabilityPanel v-if="analysisAvailability" :availability="analysisAvailability" @open-batch="openCalculationBatch" />
+      <section v-if="availablePeriod" class="diagnostics-section">
+        <h3>可用数据范围</h3>
+        <p>{{ availablePeriodDetailText }}</p>
+        <el-table v-if="availablePeriod.factors?.length" :data="availablePeriod.factors" size="small">
+          <el-table-column prop="factorVersionId" label="因子版本" min-width="150" />
+          <el-table-column prop="availabilityStatus" label="状态" width="110" />
+          <el-table-column label="可用日期" min-width="160"><template #default="{ row }">{{ row.earliestDataDate || '-' }} 至 {{ row.latestDataDate || '-' }}</template></el-table-column>
+          <el-table-column prop="message" label="说明" min-width="180" />
+        </el-table>
+      </section>
+      <section class="diagnostics-section">
+        <h3>结果追溯</h3>
+        <p :title="`指标版本：${analysisMetadata.version}；结果批次：${analysisMetadata.batch}；数据水位：${analysisMetadata.watermark}`">
+          指标版本：{{ compactId(analysisMetadata.version) }}；结果批次：{{ compactId(analysisMetadata.batch) }}；数据水位：{{ compactId(analysisMetadata.watermark) }}
+        </p>
+      </section>
+    </el-drawer>
   </div>
 </template>
 
@@ -288,10 +295,12 @@ import { Connection, Download } from '@element-plus/icons-vue'
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
+import ResultAvailabilityPanel from '@/idmp/components/ResultAvailabilityPanel.vue'
 import DrillExplorer from '@/idmp/features/analysis/DrillExplorer.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
-import { fetchIndicatorAnalysis, fetchIndicators, fetchIndicatorVersion } from '@/idmp/api/modules/indicators'
+import { fetchIndicatorAnalysis, fetchIndicatorAvailablePeriod, fetchIndicators, fetchIndicatorVersion, fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
 import { deriveDrillPathResultIds } from '@/idmp/api/adapters/drill'
+import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
 import { fetchMortalityReadonlyChain, mortalityChainConfig } from '@/idmp/api/modules/mortality'
 import { costChainConfig, COST_INDICATOR_IDS, fetchCostAnalysis } from '@/idmp/api/modules/costChain'
 import { getStatusLabel } from '@/idmp/design/status'
@@ -307,9 +316,12 @@ const route = useRoute()
 const router = useRouter()
 const activeTab = ref('trend')
 const period = ref('月度')
+const reportGranularity = ref('MONTHLY')
 const profileRefreshVersion = ref(0)
 const backendAnalysis = ref(null)
+const trendBackendAnalysis = ref(null)
 const backendIndicatorVersion = ref(null)
+const availablePeriod = ref(null)
 const analysisErrorMessage = ref('')
 const mortalityChain = ref(null)
 const mortalityChainLoading = ref(false)
@@ -321,13 +333,14 @@ const selectedDrillDepartment = ref('')
 const drillStartLevel = ref('HOSPITAL')
 const drillParentKeys = ref({})
 const analysisPeriodRange = ref(initialAnalysisPeriodRange())
+const reportPeriodRange = ref(initialReportPeriodRange())
+const showDataDiagnostics = ref(false)
 
 const indicatorCode = computed(() => String(route.query.indicator || DEFAULT_ANALYSIS_INDICATOR))
 const localAnalysisOptions = computed(() => getAnalysisProfileOptions())
+const analysisPeriodOptions = computed(() => ['日度', ...periodOptions])
 const analysisIndicatorOptions = computed(() =>
-  backendIndicators.value.length
-    ? createBackendAnalysisOptions(backendIndicators.value, localAnalysisOptions.value)
-    : localAnalysisOptions.value.map((item) => ({ ...item, source: '本地配置' }))
+  createBackendAnalysisOptions(backendIndicators.value, localAnalysisOptions.value)
 )
 const selectedBackendIndicator = computed(() => backendIndicators.value.find((item) => {
   const key = getBackendIndicatorKey(item)
@@ -349,7 +362,9 @@ const currentProfile = computed(() => {
   }
   return createGenericAnalysisProfile(backendIndicator)
 })
-const backendAnalysisGranularity = computed(() => {
+const backendAnalysisGranularity = computed(() => reportGranularity.value)
+const trendAnalysisGranularity = computed(() => {
+  if (period.value === '日度') return 'DAILY'
   if (period.value === '月度') return 'MONTHLY'
   if (period.value === '年度') return 'YEARLY'
   if (period.value === '季度') return 'QUARTERLY'
@@ -367,50 +382,75 @@ const analysisOverview = computed(() => {
   }) || backendAnalysis.value?.overview || null
 })
 const hasBackendAnalysisData = computed(() => Boolean(backendAnalysis.value?.dataAvailable && analysisOverview.value))
-const notCalculableMessage = computed(() => {
-  if (analysisOverview.value?.qualityStatus !== 'NOT_CALCULABLE') return ''
-  const periodText = formatAnalysisPeriod(analysisOverview.value)
-  return `${periodText ? `${periodText}：` : ''}指标在该周期不可计算。计算任务已完成，但结果没有有效值；请检查分子、分母因子是否命中数据。若分母为 0，除法指标会按公式规则返回“不可计算”。`
+const hasLiveAnalysisResponse = computed(() => Boolean(backendAnalysis.value && selectedBackendIndicator.value))
+const analysisAvailability = computed(() => backendAnalysis.value ? resolveResultAvailability(backendAnalysis.value) : null)
+const reportPeriodLabel = computed(() => formatAnalysisPeriod(analysisOverview.value) || formatRange(reportPeriodRange.value) || '由最新正式结果确定')
+const analysisNotice = computed(() => {
+  const availability = analysisAvailability.value
+  if (!availability || availability.status === 'ACTIVE_RESULT') return null
+  const title = {
+    CALCULATION_IN_PROGRESS: '该报告期正在生成指标结果',
+    WAITING_FOR_CALCULATION: '该报告期有数据，尚未生成指标结果',
+    NO_DATA: '该报告期暂无符合口径的数据',
+    INCOMPLETE_DATA: '该报告期缺少部分依赖数据，暂时无法计算',
+    NOT_CALCULABLE: '该报告期的数据不满足计算条件',
+    CALCULATION_ERROR: '该报告期的指标计算未完成',
+    UNKNOWN: '暂时无法确认该报告期是否可计算'
+  }[availability.status] || '该报告期暂无可展示结果'
+  return { title, message: availability.message }
 })
 const backendDepartmentComparisons = computed(() =>
   (Array.isArray(backendAnalysis.value?.dimensionComparison) ? backendAnalysis.value.dimensionComparison : [])
     .filter((item) => item?.dimensions?.out_dept_code || item?.dimensions?.out_dept_id)
 )
+const backendDimensionResults = computed(() =>
+  (Array.isArray(backendAnalysis.value?.dimensionComparison) ? backendAnalysis.value.dimensionComparison : [])
+    .filter((item) => Object.keys(item?.dimensions || {}).length > 0)
+)
 const hasBackendRankData = computed(() => backendDepartmentComparisons.value.length > 0)
-const backendTrend = computed(() => createTrendFromBackendAnalysis(backendAnalysis.value, currentProfile.value.unit))
-const currentTrend = computed(() => backendTrend.value || currentProfile.value.trends?.[period.value] || emptyTrend())
+const backendTrend = computed(() => createTrendFromBackendAnalysis(trendBackendAnalysis.value || backendAnalysis.value, currentProfile.value.unit))
+const currentTrend = computed(() => backendTrend.value || (hasLiveAnalysisResponse.value ? emptyTrend() : currentProfile.value.trends?.[period.value] || emptyTrend()))
 const primaryMetric = computed(() => {
   const overview = analysisOverview.value
-  const dashboardValue = resolveDashboardCurrentMetricValue()
-  if (dashboardValue) {
-    return {
-      label: '当前指标值',
-      value: dashboardValue,
-      tone: mortalityIndicatorRecord.value?.qualityStatus === 'TRIAL' ? 'success' : undefined
-    }
-  }
   if (hasBackendAnalysisData.value) {
     return {
-      label: '当前指标值',
+      label: `${formatAnalysisPeriod(overview) || '当前报告期'}指标值`,
       value: resolveCurrentMetricValue(),
-      tone: overview.qualityStatus === 'PASSED' ? 'success' : 'warning'
+      tone: overview.qualityStatus === 'PASSED' ? 'success' : 'warning',
+      status: overview.outcomeStatus || 'ACTIVE',
+      statusLabel: '已发布结果',
+      periodLabel: formatAnalysisPeriod(overview) || '结果周期未返回'
     }
   }
-  return currentProfile.value.summary?.[0] || { label: '当前指标值', value: '-', tone: 'neutral' }
+  if (hasLiveAnalysisResponse.value) return { label: `${formatRange(reportPeriodRange.value) || '当前报告期'}指标值`, value: '-', tone: 'neutral', status: analysisAvailability.value?.status || 'UNKNOWN', statusLabel: '暂无正式结果', periodLabel: formatRange(reportPeriodRange.value) || '请先选择报告期' }
+  return { ...(currentProfile.value.summary?.[0] || { label: '当前指标值', value: '-', tone: 'neutral' }), status: 'ACTIVE', statusLabel: '演示结果', periodLabel: '演示数据' }
 })
-const factorMetrics = computed(() => currentProfile.value.summary?.slice(4, 6) || [])
-const secondaryMetrics = computed(() => {
-  const overview = analysisOverview.value
-  const context = backendAnalysis.value?.resultContext
-  if (hasBackendAnalysisData.value) {
-    return [
-      { label: '质量状态', value: displayStatus(overview.qualityStatus), tone: overview.qualityStatus === 'PASSED' ? 'success' : 'warning' },
-      { label: '结果批次', value: context?.batchId || '-', tone: 'neutral' },
-      { label: '维度组合', value: overview.dimensionHash || '全院汇总', tone: 'neutral' }
-    ]
+const summaryMetrics = computed(() => {
+  if (hasLiveAnalysisResponse.value) {
+    const metrics = []
+    if (analysisOverview.value?.numerator !== undefined && analysisOverview.value?.numerator !== null) metrics.push({ label: '分子', value: formatCount(analysisOverview.value.numerator), description: '计入事件数' })
+    if (analysisOverview.value?.denominator !== undefined && analysisOverview.value?.denominator !== null) metrics.push({ label: '分母', value: formatCount(analysisOverview.value.denominator), description: '统计对象总量' })
+    const dimensions = backendDimensionResults.value
+    const configured = Object.keys(drillMaxLevels.value).length > 0
+    metrics.push(dimensions.length
+      ? { label: '维度结果', value: `${dimensions.length} 个`, description: '本报告期已生成的维度成员数' }
+      : { label: '维度分析', value: configured ? '本期暂无结果' : '未配置', description: configured ? '该报告期未生成维度结果' : '该指标未配置维度分析' })
+    if (hasBackendAnalysisData.value) {
+      metrics.push(
+        { label: '质量状态', value: displayStatus(analysisOverview.value?.qualityStatus), tone: analysisOverview.value?.qualityStatus === 'PASSED' ? 'success' : 'warning' },
+        { label: '结果口径', value: analysisOverview.value?.dimensions && Object.keys(analysisOverview.value.dimensions).length ? '指定维度' : '全院汇总' }
+      )
+    } else {
+      metrics.push(
+        { label: '分析状态', value: displayStatus(analysisAvailability.value?.status) },
+        { label: '结果说明', value: analysisAvailability.value?.message || '请打开数据说明查看原因' }
+      )
+    }
+    return metrics
   }
-  return currentProfile.value.summary?.slice(1, 4) || []
+  return (currentProfile.value.summary?.slice(1) || []).filter((item) => item.label !== '记录数')
 })
+const summaryMetricGridClass = computed(() => `is-${Math.min(Math.max(summaryMetrics.value.length, 1), 6)}`)
 const trendTableRows = computed(() =>
   currentTrend.value.labels.map((label, index) => ({
     label,
@@ -432,6 +472,7 @@ const rankTableData = computed(() => {
       status: item.qualityStatus === 'PASSED' ? '达标' : '预警'
     }))
   }
+  if (hasLiveAnalysisResponse.value) return []
   return (currentProfile.value.rankRows || []).map((row, index) => ({
     ...row,
     departmentKey: row.departmentKey || `DEPT_${index + 1}`
@@ -445,11 +486,19 @@ const hasBackendMortalityData = computed(() => Boolean(
   mortalityChain.value?.dischargeFactor ||
   mortalityChain.value?.calcBatch
 ))
-const analysisSourceLabel = computed(() =>
-  backendTrend.value
-    ? (analysisPeriodRange.value.length === 2 ? '分析结果只读接口（指定周期）' : '分析结果只读接口（全历史趋势）')
-    : hasBackendMortalityData.value ? '计算链路摘要 + 演示趋势' : '本地演示数据'
-)
+const analysisSourceLabel = computed(() => hasBackendAnalysisData.value ? '已发布结果' : hasLiveAnalysisResponse.value ? '暂无正式结果' : hasBackendMortalityData.value ? '计算链路摘要' : '演示数据')
+const availablePeriodText = computed(() => {
+  const value = availablePeriod.value
+  if (!value) return ''
+  if (value.earliestDataDate && value.latestDataDate) return `${value.earliestDataDate} 至 ${value.latestDataDate}`
+  return '暂无法确定'
+})
+const availablePeriodDetailText = computed(() => {
+  if (!availablePeriod.value) return ''
+  return availablePeriodText.value === '暂无法确定'
+    ? (availablePeriod.value.message || '尚未形成共同可用数据范围。')
+    : `所有依赖数据同时可用于计算的日期范围为 ${availablePeriodText.value}。`
+})
 const analysisMetadata = computed(() => {
   const chain = mortalityChain.value
   const config = chain?.config || {}
@@ -492,7 +541,7 @@ const drillResultId = computed(() => String(
 ))
 const drillPeriod = computed(() => String(
   route.query.period || formatAnalysisPeriod(analysisOverview.value) || backendAnalysis.value?.resultContext?.period ||
-  (period.value === '年度' ? '2026' : period.value === '季度' ? '2026-Q2' : '2026-06')
+  (reportGranularity.value === 'YEARLY' ? '2026' : reportGranularity.value === 'QUARTERLY' ? '2026-Q2' : '2026-06')
 ))
 const drillMaxLevels = computed(() => {
   const paths = backendIndicatorVersion.value?.drillConfig?.drillPaths ||
@@ -689,23 +738,16 @@ function displayStatus(value) {
   return value ? getStatusLabel(value) : '-'
 }
 
+function compactId(value) {
+  const text = String(value || '-')
+  return text.length > 22 ? `${text.slice(0, 10)}…${text.slice(-8)}` : text
+}
+
 function resolveCurrentMetricValue() {
   const overview = analysisOverview.value
   if (isUsableDisplayValue(overview?.displayValue)) return overview.displayValue
   if (isUsableRawValue(overview?.value)) return formatMetricValue(overview.value, currentProfile.value.unit)
-
-  const latestTrendPoint = [...(backendAnalysis.value?.trend || [])]
-    .reverse()
-    .find((item) => isUsableDisplayValue(item?.displayValue) || isUsableRawValue(item?.value))
-  if (isUsableDisplayValue(latestTrendPoint?.displayValue)) return latestTrendPoint.displayValue
-  if (isUsableRawValue(latestTrendPoint?.value)) return formatMetricValue(latestTrendPoint.value, currentProfile.value.unit)
-
-  return chainDisplayValue.value
-}
-
-function resolveDashboardCurrentMetricValue() {
-  if (indicatorCode.value !== 'MORTALITY_INPATIENT') return ''
-  return mortalityIndicatorRecord.value?.displayValue || ''
+  return '-'
 }
 
 function isUsableDisplayValue(value) {
@@ -729,13 +771,13 @@ function createTrendFromBackendAnalysis(payload, unit) {
     !payload?.dataAvailable ||
     !Array.isArray(payload.trend) ||
     !payload.trend.length ||
-    payload.granularity !== backendAnalysisGranularity.value
+    payload.granularity !== trendAnalysisGranularity.value
   ) return null
 
   return {
     range: analysisPeriodRange.value.length === 2
-      ? `后端指定周期结果：${formatPeriodLabel(analysisPeriodRange.value[0], analysisPeriodRange.value[1])}`
-      : payload.granularity === 'YEARLY' ? '后端全历史年度结果' : '后端全历史月度结果',
+      ? `展示所选范围：${formatPeriodLabel(analysisPeriodRange.value[0], analysisPeriodRange.value[1])}`
+      : payload.granularity === 'YEARLY' ? '展示全部可用年度结果' : '展示全部可用周期结果',
     labels: payload.trend.map((item) => formatPeriodLabel(item.periodStart, item.periodEnd)),
     actual: payload.trend.map((item) => normalizeTrendValue(item, unit)),
     peer: payload.trend.map(() => null)
@@ -791,12 +833,11 @@ function switchIndicatorAnalysis() {
   })
 }
 
-function applyAnalysisPeriod() {
+function applyReportPeriod() {
   const query = { ...route.query }
-  if (Array.isArray(analysisPeriodRange.value) && analysisPeriodRange.value.length === 2) {
-    query.periodStart = analysisPeriodRange.value[0]
-    query.periodEnd = analysisPeriodRange.value[1]
-    rememberAnalysisPeriod(indicatorCode.value, currentIndicatorVersionId.value, analysisPeriodRange.value)
+  if (Array.isArray(reportPeriodRange.value) && reportPeriodRange.value.length === 2) {
+    query.periodStart = reportPeriodRange.value[0]
+    query.periodEnd = reportPeriodRange.value[1]
   } else {
     delete query.periodStart
     delete query.periodEnd
@@ -805,23 +846,46 @@ function applyAnalysisPeriod() {
   refreshMortalityAnalysis()
 }
 
+function applyTrendConditions() {
+  const query = { ...route.query }
+  if (Array.isArray(analysisPeriodRange.value) && analysisPeriodRange.value.length === 2) {
+    query.trendStart = analysisPeriodRange.value[0]
+    query.trendEnd = analysisPeriodRange.value[1]
+    rememberAnalysisPeriod(indicatorCode.value, currentIndicatorVersionId.value, analysisPeriodRange.value)
+  } else {
+    delete query.trendStart
+    delete query.trendEnd
+  }
+  router.replace({ path: '/analysis', query })
+  refreshMortalityAnalysis()
+}
+
+function openCalculationBatch(batchId) {
+  router.push({ path: '/calc', query: { batchId: String(batchId) } })
+}
+
 async function loadBackendAnalysisIndicators() {
   indicatorOptionsLoading.value = true
   try {
-    const rows = await fetchIndicators()
-    backendIndicators.value = normalizeList(rows)
+    const [indicators, publishedVersions] = await Promise.all([
+      fetchIndicators({ page: 1, size: 100 }),
+      fetchIndicatorVersionList({ publicationStatus: 'PUBLISHED', page: 1, size: 100 })
+    ])
+    backendIndicators.value = mergePublishedAnalysisIndicators(
+      normalizeList(indicators),
+      normalizeList(publishedVersions)
+    )
     if (selectedBackendIndicator.value) await refreshMortalityAnalysis()
   } catch {
     backendIndicators.value = []
-    ElMessage.warning('后端指标列表暂不可用，已使用本地分析配置')
+    ElMessage.warning('后端已发布指标列表暂不可用，当前没有可选指标')
   } finally {
     indicatorOptionsLoading.value = false
   }
 }
 
 function createBackendAnalysisOptions(indicators, profileOptions) {
-  const fallbackOptions = profileOptions.map((item) => ({ ...item, source: '本地配置' }))
-  const mappedOptions = indicators.map((item) => {
+  const mappedOptions = indicators.filter(isPublishedIndicator).map((item) => {
     const profile = matchAnalysisProfile(item, profileOptions)
     const key = getBackendIndicatorKey(item)
     return {
@@ -834,15 +898,49 @@ function createBackendAnalysisOptions(indicators, profileOptions) {
       disabled: false
     }
   })
-  const enabledCodes = new Set(mappedOptions.flatMap((item) => [item.code, item.backendCode].filter(Boolean)))
-  const missingLocalOptions = fallbackOptions
-    .filter((item) => !enabledCodes.has(item.code))
-    .map((item) => ({ ...item, source: '本地配置' }))
-  return [...mappedOptions, ...missingLocalOptions]
+  return mappedOptions
+}
+
+function mergePublishedAnalysisIndicators(indicators, publishedVersions) {
+  const indicatorsById = new Map(indicators.map((item) => [String(item.id || item.indicatorId || ''), item]))
+  const indicatorsByCode = new Map(indicators.map((item) => [String(item.code || ''), item]))
+  return publishedVersions.map((version) => {
+    const versionIndicator = version.indicator || {}
+    const indicatorId = String(version.indicatorId || versionIndicator.id || '')
+    const code = String(version.indicatorCode || version.code || versionIndicator.code || '')
+    const indicator = indicatorsById.get(indicatorId) || indicatorsByCode.get(code) || {}
+    const versionId = version.id || version.versionId || version.indicatorVersionId || ''
+    return {
+      ...indicator,
+      id: indicator.id || indicatorId || versionId,
+      indicatorId: indicator.id || indicator.indicatorId || indicatorId,
+      code: indicator.code || code,
+      name: indicator.name || version.indicatorName || version.name || code,
+      status: 'PUBLISHED',
+      publicationStatus: 'PUBLISHED',
+      currentPublishedVersionId: versionId,
+      publishedVersionId: versionId
+    }
+  }).filter((item) => item.code || item.indicatorId || item.id)
+}
+
+function isPublishedIndicator(indicator) {
+  const status = String(indicator?.publicationStatus ?? indicator?.status ?? '').toUpperCase()
+  return status === 'PUBLISHED' || Boolean(indicator?.currentPublishedVersionId || indicator?.publishedVersionId)
 }
 
 function getBackendIndicatorKey(indicator) {
   return String(indicator?.id || indicator?.indicatorId || indicator?.code || indicator?.name || '')
+}
+
+function buildAnalysisParams(range = [], versionId = currentIndicatorVersionId.value, granularity = backendAnalysisGranularity.value) {
+  const params = { granularity }
+  if (versionId) params.indicatorVersionId = versionId
+  if (Array.isArray(range) && range.length === 2) {
+    params.periodStart = range[0]
+    params.periodEnd = range[1]
+  }
+  return params
 }
 
 function emptyTrend() {
@@ -896,7 +994,9 @@ function normalizeText(value) {
 async function refreshMortalityAnalysis() {
   mortalityChainLoading.value = true
   backendAnalysis.value = null
+  trendBackendAnalysis.value = null
   backendIndicatorVersion.value = null
+  availablePeriod.value = null
   analysisErrorMessage.value = ''
   mortalityChain.value = null
   try {
@@ -909,30 +1009,30 @@ async function refreshMortalityAnalysis() {
     let analysisResult, chain
 
     if (indicatorCode.value === 'MORTALITY_INPATIENT') {
-      ;[analysisResult, chain] = await Promise.allSettled([
+      const [reportResult, trendResult, chainResult] = await Promise.allSettled([
         granularity
-          ? fetchIndicatorAnalysis(mortalityChainConfig.indicatorId, {
-              indicatorVersionId: mortalityChainConfig.indicatorVersionId,
-              granularity
-            })
+          ? fetchIndicatorAnalysis(mortalityChainConfig.indicatorId, buildAnalysisParams(reportPeriodRange.value, mortalityChainConfig.indicatorVersionId))
           : Promise.resolve(null),
+        fetchIndicatorAnalysis(mortalityChainConfig.indicatorId, buildAnalysisParams(analysisPeriodRange.value, mortalityChainConfig.indicatorVersionId, trendAnalysisGranularity.value)),
         fetchMortalityReadonlyChain()
       ])
+      analysisResult = reportResult
+      if (trendResult.status === 'fulfilled') trendBackendAnalysis.value = trendResult.value
+      chain = chainResult
     } else if (isCostIndicator) {
       analysisResult = await Promise.allSettled([
         granularity ? fetchCostAnalysis(indicatorCode.value, granularity) : Promise.resolve(null)
       ])
       chain = { status: 'rejected', reason: null }
     } else if (backendIndicator) {
-      const params = { granularity }
-      if (currentIndicatorVersionId.value) params.indicatorVersionId = currentIndicatorVersionId.value
-      if (Array.isArray(analysisPeriodRange.value) && analysisPeriodRange.value.length === 2) {
-        params.periodStart = analysisPeriodRange.value[0]
-        params.periodEnd = analysisPeriodRange.value[1]
-      }
-      analysisResult = await Promise.allSettled([
-        fetchIndicatorAnalysis(backendIndicatorId, params)
+      const reportParams = buildAnalysisParams(reportPeriodRange.value)
+      const trendParams = buildAnalysisParams(analysisPeriodRange.value, currentIndicatorVersionId.value, trendAnalysisGranularity.value)
+      const [reportResult, trendResult] = await Promise.allSettled([
+        fetchIndicatorAnalysis(backendIndicatorId, reportParams),
+        fetchIndicatorAnalysis(backendIndicatorId, trendParams)
       ])
+      analysisResult = [reportResult]
+      if (trendResult.status === 'fulfilled') trendBackendAnalysis.value = trendResult.value
       chain = { status: 'rejected', reason: null }
     } else {
       mortalityChainLoading.value = false
@@ -943,12 +1043,25 @@ async function refreshMortalityAnalysis() {
     if (backendIndicator && analysisData?.status === 'rejected') throw analysisData.reason
     if (analysisData?.status === 'fulfilled' && analysisData?.value) {
       backendAnalysis.value = analysisData.value
+      if (!trendBackendAnalysis.value) trendBackendAnalysis.value = analysisData.value
+      if (analysisData.value?.granularity) reportGranularity.value = String(analysisData.value.granularity)
+      if (!reportPeriodRange.value.length && analysisData.value?.overview?.periodStart && analysisData.value?.overview?.periodEnd) {
+        reportPeriodRange.value = [analysisData.value.overview.periodStart, analysisData.value.overview.periodEnd]
+      }
       const versionId = analysisData.value.indicatorVersionId || currentIndicatorVersionId.value
       if (backendIndicator && versionId) {
         try {
           backendIndicatorVersion.value = await fetchIndicatorVersion(versionId)
         } catch {
           backendIndicatorVersion.value = null
+        }
+        try {
+          availablePeriod.value = await fetchIndicatorAvailablePeriod(versionId)
+          if (!analysisPeriodRange.value.length && availablePeriod.value?.recommendedPeriodStart && availablePeriod.value?.recommendedPeriodEnd) {
+            analysisPeriodRange.value = [availablePeriod.value.recommendedPeriodStart, availablePeriod.value.recommendedPeriodEnd]
+          }
+        } catch {
+          availablePeriod.value = null
         }
       }
     }
@@ -994,17 +1107,25 @@ onMounted(() => {
 watch(indicatorCode, () => {
   selectedIndicatorCode.value = indicatorCode.value
   analysisPeriodRange.value = initialAnalysisPeriodRange()
-  refreshMortalityAnalysis()
-})
-
-watch(period, () => {
+  reportPeriodRange.value = initialReportPeriodRange()
+  period.value = '月度'
   refreshMortalityAnalysis()
 })
 
 function initialAnalysisPeriodRange() {
-  return route.query.periodStart && route.query.periodEnd
-    ? [String(route.query.periodStart), String(route.query.periodEnd)]
+  return route.query.trendStart && route.query.trendEnd
+    ? [normalizeDateValue(route.query.trendStart), normalizeDateValue(route.query.trendEnd)]
     : readRememberedAnalysisPeriod(route.query.indicator, route.query.indicatorVersionId)
+}
+
+function initialReportPeriodRange() {
+  return route.query.periodStart && route.query.periodEnd
+    ? [normalizeDateValue(route.query.periodStart), normalizeDateValue(route.query.periodEnd)]
+    : []
+}
+
+function normalizeDateValue(value) {
+  return String(value || '').slice(0, 10)
 }
 
 function readRememberedAnalysisPeriod(indicatorId, versionId) {
@@ -1016,7 +1137,7 @@ function readRememberedAnalysisPeriod(indicatorId, versionId) {
   for (const key of keys) {
     try {
       const value = JSON.parse(localStorage.getItem(key) || 'null')
-      if (value?.periodStart && value?.periodEnd) return [String(value.periodStart), String(value.periodEnd)]
+      if (value?.periodStart && value?.periodEnd) return [normalizeDateValue(value.periodStart), normalizeDateValue(value.periodEnd)]
     } catch {
       localStorage.removeItem(key)
     }
@@ -1035,6 +1156,11 @@ function formatAnalysisPeriod(result) {
   if (!result?.periodStart || !result?.periodEnd) return ''
   return `${String(result.periodStart).slice(0, 10)} ～ ${String(result.periodEnd).slice(0, 10)}`
 }
+
+function formatRange(range) {
+  return Array.isArray(range) && range.length === 2 ? formatPeriodLabel(range[0], range[1]) : ''
+}
+
 </script>
 
 <style scoped lang="scss">
@@ -1044,6 +1170,79 @@ function formatAnalysisPeriod(result) {
 
 .analysis-error-alert {
   margin-bottom: 16px;
+}
+
+.report-context {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 13px 16px;
+  background: var(--idmp-surface-subtle, #f8fafc);
+}
+
+.report-context__title {
+  display: grid;
+  flex: 1 1 220px;
+  gap: 2px;
+}
+
+.report-context__title > span {
+  color: var(--idmp-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.report-context__title > small,
+.report-context__hint {
+  color: var(--idmp-text-secondary, #667085);
+  font-size: 12px;
+}
+
+.report-context__hint {
+  flex-basis: 100%;
+}
+
+.report-period-picker {
+  width: 280px;
+}
+
+.analysis-state-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid #fecdca;
+  border-radius: 10px;
+  background: #fffbfa;
+}
+
+.analysis-state-notice.is-no_data,
+.analysis-state-notice.is-waiting_for_calculation,
+.analysis-state-notice.is-not_calculable {
+  border-color: #fedf89;
+  background: #fffaeb;
+}
+
+.analysis-state-notice p,
+.diagnostics-intro,
+.diagnostics-section p {
+  margin: 5px 0 0;
+  color: var(--idmp-text-secondary, #667085);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.diagnostics-section {
+  margin-top: 24px;
+}
+
+.diagnostics-section h3 {
+  margin: 0;
+  font-size: 15px;
 }
 
 .analysis-empty-state {
@@ -1092,13 +1291,12 @@ function formatAnalysisPeriod(result) {
 
 .metric-overview {
   display: grid;
-  grid-template-columns: minmax(280px, 1.7fr) repeat(2, minmax(180px, 1fr));
+  grid-template-columns: minmax(290px, 0.9fr) minmax(0, 1.6fr);
   gap: var(--idmp-space-3);
   margin-bottom: var(--idmp-space-4);
 }
 
 .primary-metric {
-  grid-row: span 2;
   min-height: 190px;
   padding: var(--idmp-space-5);
   border-left: 4px solid var(--idmp-interactive);
@@ -1134,61 +1332,50 @@ function formatAnalysisPeriod(result) {
   }
 }
 
-.factor-metric {
-  min-height: 112px;
+.metric-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--idmp-space-3);
+  align-content: stretch;
+}
+
+.metric-summary-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  grid-column: span 2;
+  min-width: 0;
+  min-height: 96px;
   padding: var(--idmp-space-4);
+  text-align: center;
 
   span,
   small {
     display: block;
     color: var(--idmp-text-helper);
-    font-size: 12px;
+    font-size: 13px;
     line-height: 18px;
   }
 
   strong {
     display: block;
+    min-width: 0;
     margin: var(--idmp-space-2) 0 var(--idmp-space-1);
     color: var(--idmp-text-primary);
     font-size: 22px;
     font-weight: 650;
-    line-height: 28px;
+    line-height: 26px;
     font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 }
 
-.supporting-metrics {
-  display: grid;
-  grid-column: 2 / 4;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  min-height: 66px;
-  padding: 0;
-
-  article {
-    min-width: 0;
-    padding: var(--idmp-space-3) var(--idmp-space-4);
-
-    & + article {
-      border-left: 1px solid var(--idmp-border-subtle);
-    }
-  }
-
-  span {
-    display: block;
-    color: var(--idmp-text-helper);
-    font-size: 12px;
-    line-height: 18px;
-  }
-
-  strong {
-    display: block;
-    margin-top: var(--idmp-space-1);
-    color: var(--idmp-text-primary);
-    font-size: 16px;
-    line-height: 22px;
-    font-variant-numeric: tabular-nums;
-  }
-}
+.metric-summary-grid.is-1 .metric-summary-card { grid-column: span 6; }
+.metric-summary-grid.is-2 .metric-summary-card,
+.metric-summary-grid.is-4 .metric-summary-card { grid-column: span 3; }
+.metric-summary-grid.is-5 .metric-summary-card:nth-child(-n + 2) { grid-column: span 3; }
 
 .scene-comparison {
   display: flex;
@@ -1433,6 +1620,24 @@ function formatAnalysisPeriod(result) {
   }
 }
 
+.trend-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+}
+
+.trend-period-picker {
+  width: 280px;
+}
+
+.trend-controls :deep(.el-radio-group) {
+  margin-left: auto;
+}
+
 .period-control {
   display: flex;
   align-items: center;
@@ -1542,6 +1747,12 @@ function formatAnalysisPeriod(result) {
   min-width: 1060px;
 }
 
+.rank-table-scroll {
+  max-height: 460px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
 .rank-number {
   display: inline-grid;
   width: 25px;
@@ -1577,7 +1788,7 @@ function formatAnalysisPeriod(result) {
   }
 
   .metric-overview {
-    grid-template-columns: minmax(250px, 1.45fr) repeat(2, minmax(150px, 1fr));
+    grid-template-columns: minmax(250px, 0.85fr) minmax(0, 1.55fr);
     gap: var(--idmp-space-2);
   }
 
@@ -1600,17 +1811,44 @@ function formatAnalysisPeriod(result) {
 
 @media (max-width: 1180px) {
   .metric-overview {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
   }
 
   .primary-metric {
-    grid-column: 1 / 3;
-    grid-row: auto;
     min-height: 150px;
   }
 
-  .supporting-metrics {
-    grid-column: 1 / 3;
+  .trend-controls {
+    justify-content: flex-start;
+  }
+
+  .trend-controls :deep(.el-radio-group) {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .report-context :deep(.el-date-editor) {
+    width: 100%;
+  }
+
+  .metric-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metric-summary-card,
+  .metric-summary-grid.is-2 .metric-summary-card,
+  .metric-summary-grid.is-3 .metric-summary-card,
+  .metric-summary-grid.is-4 .metric-summary-card,
+  .metric-summary-grid.is-5 .metric-summary-card,
+  .metric-summary-grid.is-5 .metric-summary-card:nth-child(-n + 2) {
+    grid-column: span 1;
+  }
+
+  .metric-summary-grid.is-1 .metric-summary-card { grid-column: span 2; }
+
+  .trend-controls :deep(.el-date-editor) {
+    width: 100%;
   }
 }
 </style>

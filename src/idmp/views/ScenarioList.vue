@@ -6,14 +6,14 @@
       </template>
     </PageHeader>
 
-    <section class="filter-card">
+    <section class="surface-card filter-card scenario-filter" aria-label="场景筛选">
       <el-form :inline="true" @submit.prevent="load">
-        <el-form-item><el-input v-model.trim="filters.code" clearable placeholder="场景编码" /></el-form-item>
-        <el-form-item><el-input v-model.trim="filters.name" clearable placeholder="场景名称" /></el-form-item>
-        <el-form-item><el-select v-model="filters.type" clearable placeholder="场景类型" style="width: 150px">
+        <el-form-item><el-input v-model.trim="filters.code" class="filter-code" clearable placeholder="场景编码" /></el-form-item>
+        <el-form-item><el-input v-model.trim="filters.name" class="filter-name" clearable placeholder="场景名称" /></el-form-item>
+        <el-form-item><el-select v-model="filters.type" class="filter-select" clearable placeholder="场景类型">
           <el-option v-for="item in SCENARIO_TYPES" :key="item.value" :label="item.label" :value="item.value" />
         </el-select></el-form-item>
-        <el-form-item><el-select v-model="filters.publicationStatus" clearable placeholder="版本状态" style="width: 140px">
+        <el-form-item><el-select v-model="filters.publicationStatus" class="filter-select filter-select--small" clearable placeholder="版本状态">
           <el-option label="已发布" value="PUBLISHED" /><el-option label="草稿" value="DRAFT" />
         </el-select></el-form-item>
         <el-form-item><el-button type="primary" native-type="submit" :icon="Search">查询</el-button><el-button :icon="Refresh" @click="reset">重置</el-button></el-form-item>
@@ -111,7 +111,12 @@ onMounted(load)
 
 <style scoped>
 .scenario-list { min-width: 0; }
-.filter-card { margin-bottom: 16px; padding: 16px; }
+.scenario-filter :deep(.el-form) { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px; }
+.scenario-filter :deep(.el-form-item) { margin: 0; }
+.filter-code { width: 140px; }
+.filter-name { width: 200px; }
+.filter-select { width: 156px; }
+.filter-select--small { width: 112px; }
 .table-card { padding: 16px; }
 .table-footer { display:flex; align-items:center; justify-content:space-between; padding-top:14px; color:var(--idmp-text-helper); }
 .action-link { padding:0; margin-right:14px; border:0; color:var(--idmp-interactive); background:transparent; cursor:pointer; }

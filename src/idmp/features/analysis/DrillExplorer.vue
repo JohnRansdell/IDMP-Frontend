@@ -50,9 +50,19 @@
     <StatePanel v-if="errorMessage" type="error" title="下钻数据加载失败" :description="errorMessage">
       <template #actions><el-button size="small" @click="loadDrill">重试</el-button></template>
     </StatePanel>
-    <StatePanel v-else-if="!loading && !result.records.length" type="empty" title="当前层暂无数据" description="当前口径下没有可展示的记录。" />
+    <section v-else-if="statusRecord" class="drill-status-record">
+      <strong>当前层计算状态：{{ getStatusLabel(statusRecord.resultOutcomeStatus || statusRecord.outcomeStatus || statusRecord.sourceDataStatus) }}</strong>
+      <p>{{ statusRecord.calculationErrorMessage || statusRecord.errorMessage || `源数据状态：${getStatusLabel(statusRecord.sourceDataStatus)}；源记录数：${statusRecord.sourceRecordCount ?? 0}` }}</p>
+      <el-table v-if="statusRecord.factorSourceProfiles?.length" :data="statusRecord.factorSourceProfiles" size="small">
+        <el-table-column prop="factorVersionId" label="因子版本" min-width="160" />
+        <el-table-column label="源数据" width="120"><template #default="{ row }">{{ getStatusLabel(row.sourceDataStatus) }}</template></el-table-column>
+        <el-table-column prop="sourceRecordCount" label="源记录数" width="110" />
+        <el-table-column prop="errorMessage" label="诊断信息" min-width="200" />
+      </el-table>
+    </section>
+    <StatePanel v-else-if="!loading && !memberRecords.length" type="empty" title="当前层暂无数据" description="当前口径下没有可展示的记录。" />
     <div v-else class="table-scroll">
-      <el-table v-loading="loading" :data="result.records" table-layout="fixed" class="analysis-table drill-data-table">
+      <el-table v-loading="loading" :data="memberRecords" table-layout="fixed" class="analysis-table drill-data-table">
         <el-table-column
           v-for="column in result.columns"
           :key="column.field"
@@ -116,6 +126,7 @@ import { useRoute, useRouter } from 'vue-router'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import { fetchResultFactors, searchResultDrill } from '@/idmp/api/modules/drill'
 import { limitDrillNextLevels } from '@/idmp/api/adapters/drill'
+import { isStatusRecord } from '@/idmp/features/analysis/resultAvailability'
 import { getStatusLabel } from '@/idmp/design/status'
 
 const props = defineProps({
@@ -143,6 +154,8 @@ const errorMessage = ref('')
 const factorTrace = ref(null)
 const factorTraceLoading = ref(false)
 const isFactorTraceMode = computed(() => dimension.value === 'FACTOR_TRACE')
+const statusRecord = computed(() => result.value.records.find(isStatusRecord) || null)
+const memberRecords = computed(() => result.value.records.filter((item) => !isStatusRecord(item)))
 const activeResultId = computed(() => String(
   props.pathResultIds?.[lastDrillDimension.value] || props.resultId || ''
 ))
@@ -331,6 +344,9 @@ onMounted(loadDrill)
   justify-content: space-between;
   gap: 16px;
 }
+
+.drill-status-record { margin: 12px 0; padding: 16px; border: 1px solid var(--idmp-border, #d0d5dd); border-radius: 8px; background: #f8fafc; }
+.drill-status-record p { margin: 8px 0 12px; color: var(--idmp-text-secondary, #667085); }
 
 .drill-context-bar {
   min-height: 44px;
