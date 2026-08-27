@@ -62,3 +62,24 @@ test('value-set predicates carry the bound published version into compiler DSL',
     valueSetVersionId: '102027642458358887'
   })
 })
+
+test('continuous range predicates serialize the bound version and preserve a half-open range', () => {
+  const filters = { nodeType: 'AND', children: [{ nodeType: 'PREDICATE', fieldCode: 'TOTAL_COST', operator: 'BETWEEN', value: { start: '1000.00', end: '5000.00' } }] }
+  const fields = [{ code: 'TOTAL_COST', dataType: 'DECIMAL', valueSetMatchMode: 'CONTINUOUS', valueSetVersionId: '102027642460303012', continuousSpec: { unit: 'CNY', precision: 18, scale: 2, minimumValue: '0.00', maximumValue: '100000000.00' } }]
+  assert.deepEqual(validateFilterNode(filters, [], fields), [])
+  assert.deepEqual(buildFactorDsl({ domainCode: 'D', semanticTableCode: 'T', aggregation: 'COUNT', filters, fields }).filters.children[0], {
+    nodeType: 'PREDICATE',
+    fieldCode: 'TOTAL_COST',
+    operator: 'BETWEEN',
+    valueSetVersionId: '102027642460303012',
+    value: { start: '1000.00', end: '5000.00' }
+  })
+})
+
+test('continuous range validation enforces range order, scale and bounds', () => {
+  const field = { code: 'TOTAL_COST', dataType: 'DECIMAL', valueSetMatchMode: 'CONTINUOUS', continuousSpec: { scale: 2, minimumValue: '0.00', maximumValue: '100.00' } }
+  const predicate = (start, end) => ({ nodeType: 'PREDICATE', fieldCode: 'TOTAL_COST', operator: 'BETWEEN', value: { start, end } })
+  assert.deepEqual(validateFilterNode(predicate('10.001', '20.00'), [], [field]), ['小数位不能超过值集定义的 2 位'])
+  assert.deepEqual(validateFilterNode(predicate('20.00', '20.00'), [], [field]), ['连续范围的开始值必须小于结束值'])
+  assert.deepEqual(validateFilterNode(predicate('-1.00', '20.00'), [], [field]), ['开始值不能小于 0.00'])
+})

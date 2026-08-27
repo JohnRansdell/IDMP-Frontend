@@ -325,6 +325,7 @@ const backendAnalysis = ref(null)
 const trendBackendAnalysis = ref(null)
 const backendIndicatorVersion = ref(null)
 const availablePeriod = ref(null)
+let analysisRefreshSequence = 0
 const analysisErrorMessage = ref('')
 const mortalityChain = ref(null)
 const mortalityChainLoading = ref(false)
@@ -494,6 +495,10 @@ const availablePeriodText = computed(() => {
   const value = availablePeriod.value
   if (!value) return ''
   if (value.earliestDataDate && value.latestDataDate) return `${value.earliestDataDate} 至 ${value.latestDataDate}`
+  const status = String(value.availabilityStatus || '').toUpperCase()
+  if (status === 'NO_DATA') return '暂无匹配源数据'
+  if (status === 'NO_COMMON_PERIOD') return '各因子可用时间无交集'
+  if (status === 'PARTIAL') return '部分因子可用范围未完成探测'
   return '暂无法确定'
 })
 const availablePeriodDetailText = computed(() => {
@@ -1024,6 +1029,7 @@ function normalizeText(value) {
 }
 
 async function refreshMortalityAnalysis() {
+  const refreshSequence = ++analysisRefreshSequence
   mortalityChainLoading.value = true
   backendAnalysis.value = null
   trendBackendAnalysis.value = null
@@ -1031,6 +1037,11 @@ async function refreshMortalityAnalysis() {
   availablePeriod.value = null
   analysisErrorMessage.value = ''
   mortalityChain.value = null
+  // 可用范围与“是否已经有正式计算结果”无关。先按当前已发布版本探测，
+  // 这样指定报告期没有结果、分析接口失败时，页面仍可让用户选择有效周期。
+  const initialVersionId = currentIndicatorVersionId.value ||
+    (indicatorCode.value === 'MORTALITY_INPATIENT' ? mortalityChainConfig.indicatorVersionId : '')
+  void loadAvailablePeriod(initialVersionId, refreshSequence)
   try {
     const granularity = backendAnalysisGranularity.value
     const backendIndicator = selectedBackendIndicator.value
@@ -1080,21 +1091,25 @@ async function refreshMortalityAnalysis() {
       if (!reportPeriodRange.value.length && analysisData.value?.overview?.periodStart && analysisData.value?.overview?.periodEnd) {
         reportPeriodRange.value = [analysisData.value.overview.periodStart, analysisData.value.overview.periodEnd]
       }
-      const versionId = analysisData.value.indicatorVersionId || currentIndicatorVersionId.value
-      if (backendIndicator && versionId) {
-        try {
-          backendIndicatorVersion.value = await fetchIndicatorVersion(versionId)
-        } catch {
-          backendIndicatorVersion.value = null
-        }
-        try {
-          availablePeriod.value = await fetchIndicatorAvailablePeriod(versionId)
-          if (!analysisPeriodRange.value.length && availablePeriod.value?.recommendedPeriodStart && availablePeriod.value?.recommendedPeriodEnd) {
-            analysisPeriodRange.value = [availablePeriod.value.recommendedPeriodStart, availablePeriod.value.recommendedPeriodEnd]
+      // 可用范围接口按“指标版本 ID”查询。住院死亡率使用固定的完整链路，
+      // 不一定能在指标下拉列表中匹配到同名后台指标，因此不能把请求绑定到
+      // backendIndicator 是否存在；优先使用分析响应中的版本 ID，再回退到当前
+      // 选择版本，最后使用固定链路的已发布版本。
+      const versionId = String(
+        analysisData.value.indicatorVersionId ||
+        currentIndicatorVersionId.value ||
+        (indicatorCode.value === 'MORTALITY_INPATIENT' ? mortalityChainConfig.indicatorVersionId : '')
+      )
+      if (versionId) {
+        if (backendIndicator) {
+          try {
+            backendIndicatorVersion.value = await fetchIndicatorVersion(versionId)
+          } catch {
+            backendIndicatorVersion.value = null
           }
-        } catch {
-          availablePeriod.value = null
         }
+        // 分析响应中的版本优先级更高；若它与当前已发布版本不同，再按实际版本刷新。
+        if (versionId !== initialVersionId) await loadAvailablePeriod(versionId, refreshSequence)
       }
     }
 
@@ -1128,6 +1143,26 @@ async function refreshMortalityAnalysis() {
     } else {
       ElMessage.warning('住院死亡率后端结果暂不可用，已使用演示数据')
     }
+  }
+}
+
+async function loadAvailablePeriod(versionId, refreshSequence) {
+  if (!versionId) return null
+  try {
+    const value = await fetchIndicatorAvailablePeriod(versionId)
+    if (refreshSequence !== analysisRefreshSequence) return null
+    availablePeriod.value = value
+    if (!analysisPeriodRange.value.length && value?.recommendedPeriodStart && value?.recommendedPeriodEnd) {
+      analysisPeriodRange.value = [
+        normalizeDateValue(value.recommendedPeriodStart),
+        normalizeDateValue(value.recommendedPeriodEnd)
+      ]
+    }
+    return value
+  } catch {
+    // 不把范围探测失败伪装成“没有数据”；保留空值，由页面显示“暂未获取”。
+    if (refreshSequence === analysisRefreshSequence) availablePeriod.value = null
+    return null
   }
 }
 
