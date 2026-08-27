@@ -6,7 +6,28 @@ import {
   getWidgetVisualizationTypes,
   normalizeLayout
 } from '../src/idmp/features/dashboard/layout.js'
-import { createDashboardChartOption } from '../src/idmp/features/dashboard/visualization.js'
+import {
+  buildDashboardDrillRouteQuery,
+  createDashboardChartOption,
+  normalizeDashboardDrillTarget,
+  resolveDashboardChartDrillTarget
+} from '../src/idmp/features/dashboard/visualization.js'
+
+const createDrillTarget = (overrides = {}) => ({
+  resultId: 9001,
+  indicatorId: 1001,
+  indicatorCode: 'IND-001',
+  indicatorName: '住院死亡率',
+  indicatorVersionId: 2001,
+  currentLevel: 'MEDICAL_GROUP',
+  parentKeys: {
+    HOSPITAL_CODE: 1,
+    OUT_DEPT_CODE: 20
+  },
+  snapshotId: 3001,
+  period: '2026-06',
+  ...overrides
+})
 
 test('widget visualization conversion follows the supported matrix', () => {
   const cases = [
@@ -129,6 +150,79 @@ test('layout JSON roundtrip removes legacy data snapshots', () => {
   assert.deepEqual(normalizeLayout(JSON.parse(JSON.stringify(loaded))), loaded)
 })
 
+test('dashboard drill targets use a strict stringified business whitelist', () => {
+  const input = createDrillTarget({
+    currentLevel: 'medical_group',
+    parentKeys: {
+      HOSPITAL_CODE: 1,
+      OUT_DEPT_CODE: 20,
+      MEDICAL_GROUP_CODE: 300,
+      PHYSICAL_COLUMN: 'secret'
+    },
+    ignored: 'value'
+  })
+  const original = structuredClone(input)
+  const target = normalizeDashboardDrillTarget(input, 'mock')
+
+  assert.deepEqual(input, original)
+  assert.deepEqual(target, {
+    resultId: '9001',
+    indicatorId: '1001',
+    indicatorCode: 'IND-001',
+    indicatorName: '住院死亡率',
+    indicatorVersionId: '2001',
+    currentLevel: 'MEDICAL_GROUP',
+    parentKeys: {
+      HOSPITAL_CODE: '1',
+      OUT_DEPT_CODE: '20',
+      MEDICAL_GROUP_CODE: '300'
+    },
+    snapshotId: '3001',
+    period: '2026-06',
+    source: 'mock'
+  })
+  assert.equal(normalizeDashboardDrillTarget(input).source, undefined)
+
+  const invalidTargets = [
+    null,
+    createDrillTarget({ resultId: '' }),
+    createDrillTarget({ indicatorVersionId: null }),
+    createDrillTarget({ currentLevel: 'PATIENT' }),
+    createDrillTarget({ parentKeys: { HOSPITAL_CODE: 'H001' } }),
+    createDrillTarget({ parentKeys: [] })
+  ]
+  invalidTargets.forEach((invalid) => assert.equal(normalizeDashboardDrillTarget(invalid), null))
+})
+
+test('chart drill resolution only trusts params.data.drillTarget and builds a flat route query', () => {
+  const target = resolveDashboardChartDrillTarget({
+    name: '不可作为下钻依据',
+    data: {
+      name: '心外科',
+      value: 98,
+      drillTarget: createDrillTarget()
+    }
+  }, 'mock')
+
+  assert.deepEqual(buildDashboardDrillRouteQuery(target), {
+    resultId: '9001',
+    indicator: 'IND-001',
+    indicatorId: '1001',
+    indicatorName: '住院死亡率',
+    indicatorVersionId: '2001',
+    currentLevel: 'MEDICAL_GROUP',
+    HOSPITAL_CODE: '1',
+    OUT_DEPT_CODE: '20',
+    snapshotId: '3001',
+    period: '2026-06',
+    source: 'mock',
+    from: 'dashboard'
+  })
+  assert.equal(resolveDashboardChartDrillTarget({ name: '心外科' }, 'mock'), null)
+  assert.equal(resolveDashboardChartDrillTarget({ data: { name: '心外科', value: 98 } }), null)
+  assert.equal(buildDashboardDrillRouteQuery(null), null)
+})
+
 test('preset bar options reuse data without mutating source options', () => {
   const trendOption = {
     xAxis: { type: 'category', boundaryGap: false, data: ['1月', '2月'] },
@@ -154,7 +248,7 @@ test('preset bar options reuse data without mutating source options', () => {
       name: '指标值',
       type: 'pie',
       data: [
-        { name: '内科', value: 98 },
+        { name: '内科', value: 98, drillTarget: createDrillTarget() },
         { name: '外科', value: 95 }
       ]
     }]
@@ -175,8 +269,32 @@ test('preset bar options reuse data without mutating source options', () => {
     name: '指标值',
     type: 'bar',
     barWidth: 22,
-    data: [98, 95]
+    data: [
+      { name: '内科', value: 98, drillTarget: createDrillTarget() },
+      { name: '外科', value: 95 }
+    ]
   }])
+  const ratePie = createDashboardChartOption(
+    { preset: 'rate', chartKind: 'pie' },
+    { rateOption }
+  )
+  assert.deepEqual(
+    resolveDashboardChartDrillTarget({ data: ratePie.series[0].data[0] }),
+    resolveDashboardChartDrillTarget({ data: rateBar.series[0].data[0] })
+  )
+
+  const source = {
+    name: '住院死亡率',
+    departmentData: [{ name: '内科', value: 98, drillTarget: createDrillTarget() }]
+  }
+  const originalSource = structuredClone(source)
+  const genericBar = createDashboardChartOption(
+    { chartKind: 'bar', sourceCode: 'IND-001' },
+    { getSource: () => source }
+  )
+  assert.deepEqual(source, originalSource)
+  assert.deepEqual(genericBar.series[0].data, source.departmentData)
+  assert.notStrictEqual(genericBar.series[0].data[0], source.departmentData[0])
 
   const missingSource = createDashboardChartOption(
     { type: 'chart', chartKind: 'line', sourceCode: 'missing' },

@@ -1,5 +1,80 @@
 import { IDMP_CHART_COLORS } from '../../charts/theme.js'
 
+const DASHBOARD_DRILL_LEVELS = new Set([
+  'HOSPITAL',
+  'OUT_DEPT',
+  'DEPARTMENT',
+  'MEDICAL_GROUP',
+  'ATTENDING_DOCTOR',
+  'DOCTOR'
+])
+const DASHBOARD_DRILL_PARENT_KEYS = [
+  'HOSPITAL_CODE',
+  'OUT_DEPT_CODE',
+  'MEDICAL_GROUP_CODE'
+]
+const REQUIRED_DASHBOARD_DRILL_PARENT_KEYS = ['HOSPITAL_CODE', 'OUT_DEPT_CODE']
+
+export function normalizeDashboardDrillTarget(value, source = 'live') {
+  if (!isRecord(value) || !isRecord(value.parentKeys)) return null
+
+  const target = {
+    resultId: toDrillString(value.resultId),
+    indicatorId: toDrillString(value.indicatorId),
+    indicatorCode: toDrillString(value.indicatorCode),
+    indicatorName: toDrillString(value.indicatorName),
+    indicatorVersionId: toDrillString(value.indicatorVersionId),
+    currentLevel: toDrillString(value.currentLevel).toUpperCase(),
+    parentKeys: Object.fromEntries(
+      DASHBOARD_DRILL_PARENT_KEYS
+        .map((key) => [key, toDrillString(value.parentKeys[key])])
+        .filter(([, item]) => item)
+    )
+  }
+  if (
+    !target.resultId ||
+    !target.indicatorId ||
+    !target.indicatorCode ||
+    !target.indicatorName ||
+    !target.indicatorVersionId ||
+    !DASHBOARD_DRILL_LEVELS.has(target.currentLevel) ||
+    REQUIRED_DASHBOARD_DRILL_PARENT_KEYS.some((key) => !target.parentKeys[key])
+  ) return null
+
+  const snapshotId = toDrillString(value.snapshotId)
+  const period = toDrillString(value.period)
+  if (snapshotId) target.snapshotId = snapshotId
+  if (period) target.period = period
+  if (source === 'mock') target.source = 'mock'
+  return target
+}
+
+export function resolveDashboardChartDrillTarget(params, source = 'live') {
+  return normalizeDashboardDrillTarget(
+    isRecord(params?.data) ? params.data.drillTarget : null,
+    source
+  )
+}
+
+export function buildDashboardDrillRouteQuery(value) {
+  const target = normalizeDashboardDrillTarget(value, value?.source)
+  if (!target) return null
+
+  return {
+    resultId: target.resultId,
+    indicator: target.indicatorCode,
+    indicatorId: target.indicatorId,
+    indicatorName: target.indicatorName,
+    indicatorVersionId: target.indicatorVersionId,
+    currentLevel: target.currentLevel,
+    ...target.parentKeys,
+    ...(target.snapshotId ? { snapshotId: target.snapshotId } : {}),
+    ...(target.period ? { period: target.period } : {}),
+    ...(target.source === 'mock' ? { source: 'mock' } : {}),
+    from: 'dashboard'
+  }
+}
+
 export function formatIndicatorValue(source) {
   if (!source) return ''
   if (source.currentValue === null || source.currentValue === undefined || source.currentValue === '') return '暂无数据'
@@ -58,7 +133,7 @@ export function createDashboardChartOption(widget, presetOptions = {}) {
         name: sourceSeries.name || '指标值',
         type: 'bar',
         barWidth: 22,
-        data: rows.map((item) => item.value)
+        data: rows.map(copyChartDataItem)
       }]
     }
   }
@@ -76,7 +151,7 @@ function createVirtualBarOption(widget, presetOptions) {
     grid: { top: 24, left: 42, right: 20, bottom: 34 },
     xAxis: { type: 'category', data: rows.map((item) => item.name) },
     yAxis: { type: 'value' },
-    series: [{ name: source.name, type: 'bar', barWidth: 22, data: rows.map((item) => item.value) }]
+    series: [{ name: source.name, type: 'bar', barWidth: 22, data: rows.map(copyChartDataItem) }]
   }
 }
 
@@ -112,4 +187,19 @@ function createVirtualPieOption(widget, presetOptions) {
 
 function getWidgetSource(widget, presetOptions) {
   return presetOptions.getSource?.(widget.sourceCode) || {}
+}
+
+function copyChartDataItem(item) {
+  return isRecord(item) ? { ...item } : item
+}
+
+function isRecord(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function toDrillString(value) {
+  if (typeof value === 'number' && !Number.isFinite(value)) return ''
+  return typeof value === 'string' || typeof value === 'number'
+    ? String(value).trim()
+    : ''
 }

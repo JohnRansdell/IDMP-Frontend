@@ -220,13 +220,14 @@
             :empty="isChartEmpty(widget)"
             height="100%"
             fit-container
-            :aria-label="`${getWidgetTitle(widget)}图表`"
+            :aria-label="getWidgetChartAriaLabel(widget)"
             :updated-at="dashboardQueryLabel"
+            @chart-click="handleWidgetChartClick(widget, $event)"
           >
             <template #table>
               <table
                 class="dashboard-chart-table"
-                :class="{ 'is-wide': getWidgetTableColumns(widget).length > 2 }"
+                :class="{ 'is-wide': getWidgetTableColumns(widget).length + (widgetHasDrillTargets(widget) ? 1 : 0) > 2 }"
               >
                 <thead>
                   <tr>
@@ -237,6 +238,7 @@
                     >
                       {{ column.label }}
                     </th>
+                    <th v-if="widgetHasDrillTargets(widget)" scope="col">操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -248,6 +250,17 @@
                       <th v-if="columnIndex === 0" scope="row">{{ row[column.key] }}</th>
                       <td v-else>{{ row[column.key] }}</td>
                     </template>
+                    <td v-if="widgetHasDrillTargets(widget)">
+                      <button
+                        v-if="row.drillTarget"
+                        type="button"
+                        class="action-link"
+                        @click.stop="openDashboardDrill(row.drillTarget)"
+                      >
+                        查看下钻
+                      </button>
+                      <span v-else>—</span>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -329,8 +342,8 @@ import StatePanel from '@/idmp/components/StatePanel.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
 import { fetchDashboardBootstrap } from '@/idmp/api/modules/analysisDashboard'
 import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
-import { dashboardTrend, dashboardWarnings as mockDashboardWarnings, departmentRanking as mockDepartmentRanking } from '@/idmp/data/demo'
-import { mockIndicatorDataSources } from '@/idmp/features/dashboard/mockData'
+import { dashboardTrend, dashboardWarnings as mockDashboardWarnings } from '@/idmp/data/demo'
+import { mockDashboardDepartmentRanking, mockIndicatorDataSources } from '@/idmp/features/dashboard/mockData'
 import { applyMortalityReadonlyChain } from '@/idmp/features/dashboard/mortalityAdapter'
 import {
   DASHBOARD_CODE,
@@ -354,9 +367,12 @@ import {
   widgetStyle
 } from '@/idmp/features/dashboard/layout'
 import {
+  buildDashboardDrillRouteQuery,
   createDashboardChartOption,
   createKpiData,
-  getVisualizationTitle
+  getVisualizationTitle,
+  normalizeDashboardDrillTarget,
+  resolveDashboardChartDrillTarget
 } from '@/idmp/features/dashboard/visualization'
 
 const router = useRouter()
@@ -390,8 +406,11 @@ const dashboardQueryLabel = computed(() => {
 })
 const dashboardWarnings = computed(() => dashboardStatus.value === 'ready' ? [] : mockDashboardWarnings)
 const departmentRanking = computed(() => {
-  const rows = normalizeRanking(dashboardQueryResult.value?.departmentRanking)
-  return rows.length ? rows : mockDepartmentRanking.map((item) => ({ ...item, rawValue: Number.parseFloat(item.value) }))
+  const rows = normalizeRanking(dashboardQueryResult.value?.departmentRanking, 'live')
+  if (rows.length) return rows
+  return dashboardStatus.value === 'demo'
+    ? normalizeRanking(mockDashboardDepartmentRanking, 'mock')
+    : []
 })
 
 const selectedDataSource = computed(() =>
@@ -501,7 +520,7 @@ const rateOption = computed(() => ({
         formatter: '{b}\n{d}%'
       },
       labelLine: { length: 12, length2: 10 },
-        data: departmentRanking.value.map((item) => ({ name: item.department, value: item.rawValue }))
+        data: departmentRanking.value.map(toDepartmentChartDatum)
     }
   ]
 }))
@@ -569,8 +588,18 @@ function getWidgetTitle(widget) {
 
 function getWidgetDescription(widget) {
   if (widget.preset === 'trend') return '按当前筛选条件读取已发布看板的月度数据'
-  if (widget.preset === 'rate') return '按当前筛选条件读取已发布看板的科室数据'
+  if (widget.preset === 'rate') {
+    return widgetHasDrillTargets(widget)
+      ? '按当前筛选条件读取已发布看板的科室数据；点击科室查看下钻'
+      : '按当前筛选条件读取已发布看板的科室数据；当前数据未提供下钻上下文'
+  }
+  if (widgetHasDrillTargets(widget)) return '点击科室查看下钻'
   return ''
+}
+
+function getWidgetChartAriaLabel(widget) {
+  const action = widgetHasDrillTargets(widget) ? '；可点击科室查看下钻' : ''
+  return `${getWidgetTitle(widget)}图表${action}`
 }
 
 function getWidgetIcon(widget) {
@@ -619,22 +648,61 @@ function getWidgetTableColumns(widget) {
 function getWidgetTableRows(widget) {
   if (widget.preset === 'trend') return trendTableRows.value
   if (widget.preset === 'rate') {
-    return departmentRanking.value.map((item) => ({ label: item.department, value: item.value }))
+    return departmentRanking.value.map((item) => ({
+      label: item.department,
+      value: item.value,
+      drillTarget: item.drillTarget
+    }))
   }
 
   const source = getWidgetSource(widget)
   if (!source) return []
 
   if (widget.chartKind === 'bar') {
-    return (source.departmentData || []).map((item) => ({ label: item.name, value: item.value }))
+    return (source.departmentData || []).map((item) => ({
+      label: item.name,
+      value: item.value,
+      drillTarget: normalizeDashboardDrillTarget(item.drillTarget, dashboardDrillSource())
+    }))
   }
   if (widget.chartKind === 'pie') {
-    return (source.pieData || []).map((item) => ({ label: item.name, value: item.value }))
+    return (source.pieData || []).map((item) => ({
+      label: item.name,
+      value: item.value,
+      drillTarget: normalizeDashboardDrillTarget(item.drillTarget, dashboardDrillSource())
+    }))
   }
   return trendTableRows.value.map((item, index) => ({
     label: item.period,
     value: source.trendData?.[index] ?? '-'
   }))
+}
+
+function widgetHasDrillTargets(widget) {
+  return getWidgetTableRows(widget).some((row) => row.drillTarget)
+}
+
+function dashboardDrillSource() {
+  return dashboardStatus.value === 'demo' ? 'mock' : 'live'
+}
+
+function toDepartmentChartDatum(item) {
+  return {
+    name: item.department,
+    value: item.rawValue,
+    ...(item.drillTarget ? { drillTarget: item.drillTarget, cursor: 'pointer' } : {})
+  }
+}
+
+function handleWidgetChartClick(widget, params) {
+  if (isEditing.value || !widgetHasDrillTargets(widget)) return
+  const target = resolveDashboardChartDrillTarget(params, dashboardDrillSource())
+  if (target) openDashboardDrill(target)
+}
+
+function openDashboardDrill(target) {
+  const query = buildDashboardDrillRouteQuery(target)
+  if (query) router.push({ name: 'ResultDrill', query })
 }
 
 function getWidgetEditLabel(widget) {
@@ -971,16 +1039,18 @@ function normalizeMonthlyTrend(rows) {
     .filter((item) => item.period !== '' && Number.isFinite(item.value))
 }
 
-function normalizeRanking(rows) {
+function normalizeRanking(rows, source = 'live') {
   if (!Array.isArray(rows)) return []
   return rows
     .map((item, index) => {
       const rawValue = Number(item?.value)
       return {
         rank: index + 1,
+        departmentCode: String(item?.deptCode || item?.departmentCode || ''),
         department: item?.deptName || item?.deptCode || '未命名科室',
         rawValue,
-        value: Number.isFinite(rawValue) ? formatNumber(rawValue) : '-'
+        value: Number.isFinite(rawValue) ? formatNumber(rawValue) : '-',
+        drillTarget: normalizeDashboardDrillTarget(item?.drillTarget, source)
       }
     })
     .filter((item) => Number.isFinite(item.rawValue))
