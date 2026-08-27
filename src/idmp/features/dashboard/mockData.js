@@ -1,5 +1,34 @@
 import { dashboardTrend, departmentRanking } from '@/idmp/data/demo'
 
+const MOCK_DEPARTMENT_CODES = [
+  'DEPT_CARDIO',
+  'DEPT_NEURO',
+  'DEPT_ORTHO',
+  'DEPT_GENERAL',
+  'DEPT_UROLOGY',
+  'DEPT_THORACIC'
+]
+
+export const mockDashboardDepartmentRanking = departmentRanking.map((row, index) => ({
+  deptCode: MOCK_DEPARTMENT_CODES[index],
+  deptName: row.department,
+  value: Number.parseFloat(row.value),
+  drillTarget: {
+    resultId: 'MOCK-RESULT-SURGERY-COMPLICATION',
+    snapshotId: 'MOCK-SNAPSHOT-20260811',
+    indicatorId: 'MOCK-INDICATOR-SURGERY-COMPLICATION',
+    indicatorCode: 'SURGERY_COMPLICATION',
+    indicatorName: '手术患者并发症发生率',
+    indicatorVersionId: 'MOCK-VERSION-SURGERY-COMPLICATION',
+    currentLevel: 'MEDICAL_GROUP',
+    parentKeys: {
+      HOSPITAL_CODE: 'HOSPITAL_MAIN',
+      OUT_DEPT_CODE: MOCK_DEPARTMENT_CODES[index]
+    },
+    period: '2024年度'
+  }
+}))
+
 export const mockDashboardCatalog = [
   {
     code: 'quality-overview',
@@ -22,6 +51,18 @@ export const mockDashboardDefinition = {
       type: 'SUMMARY',
       dataQueryCode: 'quality-overview',
       config: {}
+    },
+    {
+      code: 'rate-chart',
+      name: '科室指标分布',
+      type: 'PIE',
+      dataQueryCode: 'departmentRanking',
+      config: {
+        indicatorId: 'MOCK-INDICATOR-SURGERY-COMPLICATION',
+        indicatorCode: 'SURGERY_COMPLICATION',
+        indicatorVersionId: 'MOCK-VERSION-SURGERY-COMPLICATION',
+        drillPathCode: 'ORGANIZATION'
+      }
     }
   ]
 }
@@ -32,9 +73,7 @@ export const mockDashboardQueryResult = {
     dischargeNum: 300,
     deathNum: 2
   },
-  departmentRanking: [
-    { deptCode: 'D001', deptName: '内科', value: 100 }
-  ],
+  departmentRanking: mockDashboardDepartmentRanking,
   monthlyTrend: [
     { month: 12, value: 300 }
   ]

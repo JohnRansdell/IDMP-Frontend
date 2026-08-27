@@ -5,17 +5,16 @@
         <el-select v-model="dimension" size="small" aria-label="下钻维度" class="drill-dimension-select">
           <el-option label="组织维度" value="ORGANIZATION" :disabled="!pathAvailable('ORGANIZATION')" />
           <el-option label="病种维度" value="DISEASE" :disabled="!pathAvailable('DISEASE')" />
-          <el-option label="因子结果追溯" value="FACTOR_TRACE" />
+          <el-option v-if="source !== 'mock'" label="因子结果追溯" value="FACTOR_TRACE" />
           <el-option label="时间维度（待接入）" value="TIME" disabled />
           <el-option label="场景维度（待接入）" value="SCENARIO" disabled />
         </el-select>
         <span class="drill-context-bar__period">统计周期：{{ resolvedPeriod }}</span>
-        <span class="drill-context-bar__source">{{ result.dataSource === 'mock' ? '演示数据' : '真实接口' }}</span>
-        <el-button v-if="!isFactorTraceMode" size="small" @click="showFactorTrace">
+        <span class="drill-context-bar__source">{{ source === 'mock' ? '演示数据' : '真实接口' }}</span>
+        <el-button v-if="source !== 'mock' && !isFactorTraceMode" size="small" @click="showFactorTrace">
           {{ factorTrace ? '刷新因子追溯' : '查看因子追溯' }}
         </el-button>
       </div>
-      <el-button v-if="!embedded" size="small" @click="backToAnalysis">返回指标分析</el-button>
     </div>
 
     <template v-if="!isFactorTraceMode">
@@ -91,7 +90,7 @@
     </div>
     </template>
 
-    <section v-if="isFactorTraceMode || factorTrace" class="factor-trace-panel" aria-label="因子结果追溯">
+    <section v-if="source !== 'mock' && (isFactorTraceMode || factorTrace)" class="factor-trace-panel" aria-label="因子结果追溯">
       <div class="drill-table-heading">
         <div><h3>因子结果追溯</h3><p>从当前指标结果追溯到公式中的分子、分母因子。</p></div>
         <span class="drill-table-heading__count">{{ factorTrace?.factors?.length || 0 }} 个因子</span>
@@ -138,6 +137,7 @@ const props = defineProps({
   startLevel: { type: String, default: 'HOSPITAL' },
   startParentKeys: { type: Object, default: () => ({}) },
   maxLevels: { type: Object, default: () => ({}) },
+  source: { type: String, default: 'live', validator: (value) => ['live', 'mock'].includes(value) },
   embedded: { type: Boolean, default: false }
 })
 const emit = defineEmits(['level-change'])
@@ -207,7 +207,7 @@ async function loadDrill() {
   loading.value = true
   errorMessage.value = ''
   try {
-    result.value = await searchResultDrill(activeResultId.value, buildPayload(), { source: 'live' })
+    result.value = await searchResultDrill(activeResultId.value, buildPayload(), { source: props.source })
     currentLevel.value = result.value.context.currentLevel || currentLevel.value
   } catch (error) {
     errorMessage.value = error?.message || '请稍后重试。'
@@ -242,7 +242,7 @@ function parentKeyForLevel(level) {
 }
 
 async function loadFactorTrace() {
-  if (!activeResultId.value) return
+  if (!activeResultId.value || props.source === 'mock') return
   factorTraceLoading.value = true
   errorMessage.value = ''
   try {
@@ -255,6 +255,7 @@ async function loadFactorTrace() {
 }
 
 function showFactorTrace() {
+  if (props.source === 'mock') return
   dimension.value = 'FACTOR_TRACE'
 }
 
@@ -294,10 +295,6 @@ function inferDimensionFromLevel(level) {
     : 'ORGANIZATION'
 }
 
-function backToAnalysis() {
-  router.push({ path: '/analysis', query: { indicator: route.query.indicator || undefined } })
-}
-
 watch(() => [props.startLevel, props.startParentKeys], ([level, keys]) => {
   currentLevel.value = level
   parentKeys.value = { ...keys }
@@ -315,6 +312,15 @@ watch(() => [props.resultId, props.pathResultIds], () => {
   if (isFactorTraceMode.value) loadFactorTrace()
   else loadDrill()
 }, { deep: true })
+watch(() => props.source, (source) => {
+  factorTrace.value = null
+  errorMessage.value = ''
+  if (source === 'mock' && isFactorTraceMode.value) {
+    dimension.value = lastDrillDimension.value
+    return
+  }
+  loadDrill()
+})
 watch(dimension, (value) => {
   factorTrace.value = null
   errorMessage.value = ''

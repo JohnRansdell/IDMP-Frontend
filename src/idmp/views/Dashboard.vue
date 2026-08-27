@@ -81,6 +81,21 @@
         <el-button :icon="Plus" :disabled="!selectedDataSource" @click="addDashboardWidget">添加组件</el-button>
       </div>
       <div class="dashboard-editor-panel__right">
+        <div v-if="activeWidgetVisualizationOptions.length" class="dashboard-editor-panel__visualization">
+          <span class="dashboard-editor-panel__label">展示形式</span>
+          <el-select
+            v-model="activeWidgetVisualizationType"
+            class="dashboard-editor-panel__select"
+            aria-label="选中组件展示形式"
+          >
+            <el-option
+              v-for="option in activeWidgetVisualizationOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
+        </div>
         <span class="dashboard-editor-panel__hint" role="status" aria-live="polite">
           {{ activeWidgetName }}
         </span>
@@ -205,13 +220,14 @@
             :empty="isChartEmpty(widget)"
             height="100%"
             fit-container
-            :aria-label="`${getWidgetTitle(widget)}图表`"
+            :aria-label="getWidgetChartAriaLabel(widget)"
             :updated-at="dashboardQueryLabel"
+            @chart-click="handleWidgetChartClick(widget, $event)"
           >
             <template #table>
               <table
                 class="dashboard-chart-table"
-                :class="{ 'is-wide': getWidgetTableColumns(widget).length > 2 }"
+                :class="{ 'is-wide': getWidgetTableColumns(widget).length + (widgetHasDrillTargets(widget) ? 1 : 0) > 2 }"
               >
                 <thead>
                   <tr>
@@ -222,6 +238,7 @@
                     >
                       {{ column.label }}
                     </th>
+                    <th v-if="widgetHasDrillTargets(widget)" scope="col">操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -233,6 +250,17 @@
                       <th v-if="columnIndex === 0" scope="row">{{ row[column.key] }}</th>
                       <td v-else>{{ row[column.key] }}</td>
                     </template>
+                    <td v-if="widgetHasDrillTargets(widget)">
+                      <button
+                        v-if="row.drillTarget"
+                        type="button"
+                        class="action-link"
+                        @click.stop="openDashboardDrill(row.drillTarget)"
+                      >
+                        查看下钻
+                      </button>
+                      <span v-else>—</span>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -314,8 +342,8 @@ import StatePanel from '@/idmp/components/StatePanel.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
 import { fetchDashboardBootstrap } from '@/idmp/api/modules/analysisDashboard'
 import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
-import { dashboardTrend, dashboardWarnings as mockDashboardWarnings, departmentRanking as mockDepartmentRanking } from '@/idmp/data/demo'
-import { mockIndicatorDataSources } from '@/idmp/features/dashboard/mockData'
+import { dashboardTrend, dashboardWarnings as mockDashboardWarnings } from '@/idmp/data/demo'
+import { mockDashboardDepartmentRanking, mockIndicatorDataSources } from '@/idmp/features/dashboard/mockData'
 import { applyMortalityReadonlyChain } from '@/idmp/features/dashboard/mortalityAdapter'
 import {
   DASHBOARD_CODE,
@@ -328,17 +356,23 @@ import {
   widgetTypeOptions
 } from '@/idmp/features/dashboard/constants'
 import {
+  changeWidgetVisualization,
   cloneLayout,
   constrainWidget,
   createDefaultLayout,
+  getWidgetVisualizationType,
+  getWidgetVisualizationTypes,
   getWidgetConstraints,
   normalizeLayout,
   widgetStyle
 } from '@/idmp/features/dashboard/layout'
 import {
+  buildDashboardDrillRouteQuery,
   createDashboardChartOption,
   createKpiData,
-  getVisualizationTitle
+  getVisualizationTitle,
+  normalizeDashboardDrillTarget,
+  resolveDashboardChartDrillTarget
 } from '@/idmp/features/dashboard/visualization'
 
 const router = useRouter()
@@ -372,8 +406,11 @@ const dashboardQueryLabel = computed(() => {
 })
 const dashboardWarnings = computed(() => dashboardStatus.value === 'ready' ? [] : mockDashboardWarnings)
 const departmentRanking = computed(() => {
-  const rows = normalizeRanking(dashboardQueryResult.value?.departmentRanking)
-  return rows.length ? rows : mockDepartmentRanking.map((item) => ({ ...item, rawValue: Number.parseFloat(item.value) }))
+  const rows = normalizeRanking(dashboardQueryResult.value?.departmentRanking, 'live')
+  if (rows.length) return rows
+  return dashboardStatus.value === 'demo'
+    ? normalizeRanking(mockDashboardDepartmentRanking, 'mock')
+    : []
 })
 
 const selectedDataSource = computed(() =>
@@ -396,10 +433,33 @@ const activeWidget = computed(() =>
   effectiveDashboardLayout.value.find((widget) => widget.id === activeWidgetId.value)
 )
 
+const activeWidgetVisualizationTypes = computed(() =>
+  activeWidget.value ? getWidgetVisualizationTypes(activeWidget.value) : []
+)
+
+const activeWidgetVisualizationOptions = computed(() =>
+  widgetTypeOptions.filter((option) => activeWidgetVisualizationTypes.value.includes(option.value))
+)
+
+const activeWidgetVisualizationType = computed({
+  get: () => activeWidget.value ? getWidgetVisualizationType(activeWidget.value) : '',
+  set: (nextType) => {
+    if (!activeWidget.value) return
+    dashboardLayout.value = dashboardLayout.value.map((widget) =>
+      widget.id === activeWidget.value.id
+        ? changeWidgetVisualization(widget, nextType, getBoardScale())
+        : widget
+    )
+  }
+})
+
 const activeWidgetName = computed(() => {
   if (!activeWidget.value) return '未选中组件'
   const widget = activeWidget.value
-  return `已选中：${getWidgetTitle(widget)}。位置 ${widget.x}, ${widget.y}；尺寸 ${widget.w} × ${widget.h}。方向键移动，Shift 加方向键调整尺寸，Delete 删除。`
+  const visualizationHint = activeWidgetVisualizationOptions.value.length
+    ? ''
+    : ' 此组件展示形式固定。'
+  return `已选中：${getWidgetTitle(widget)}。位置 ${widget.x}, ${widget.y}；尺寸 ${widget.w} × ${widget.h}。方向键移动，Shift 加方向键调整尺寸，Delete 删除。${visualizationHint}`
 })
 
 const visibleKpis = computed(() => indicatorDataSources.value.map(createKpiData))
@@ -460,7 +520,7 @@ const rateOption = computed(() => ({
         formatter: '{b}\n{d}%'
       },
       labelLine: { length: 12, length2: 10 },
-        data: departmentRanking.value.map((item) => ({ name: item.department, value: item.rawValue }))
+        data: departmentRanking.value.map(toDepartmentChartDatum)
     }
   ]
 }))
@@ -474,14 +534,25 @@ function isChartWidget(widget) {
 }
 
 function getWidgetKpi(widget) {
-  if (typeof widget.kpiIndex === 'number') {
-    return visibleKpis.value[widget.kpiIndex] || createKpiData(indicatorDataSources.value[0])
+  const source = getWidgetSource(widget)
+  if (source) return createKpiData(source)
+  return {
+    code: widget.sourceCode || '',
+    title: widget.sourceName || '指标数据不可用',
+    value: '暂无数据',
+    change: '当前筛选条件无数据',
+    target: '请调整筛选条件或重新添加',
+    status: 'info'
   }
-  return createKpiData(getDashboardIndicatorSource(widget.sourceCode) || indicatorDataSources.value[0])
 }
 
 function getDashboardIndicatorSource(code) {
   return indicatorDataSources.value.find((source) => source.code === code)
+}
+
+function getWidgetSource(widget) {
+  if (typeof widget.kpiIndex === 'number') return indicatorDataSources.value[widget.kpiIndex]
+  return getDashboardIndicatorSource(widget.sourceCode)
 }
 
 function getWidgetIndicatorCode(widget) {
@@ -508,19 +579,32 @@ function getWidgetTitle(widget) {
   if (widget.type === 'ranking') return '科室指标排名'
   if (widget.preset === 'trend') return '月度指标趋势'
   if (widget.preset === 'rate') return '科室指标分布'
+  if (typeof widget.kpiIndex === 'number') {
+    return getVisualizationTitle(getWidgetSource(widget)?.name || '重点指标', widget.chartKind)
+  }
   if (widget.sourceName) return getVisualizationTitle(widget.sourceName, widget.chartKind)
   return widget.title || widgetTypeOptions.find((item) => item.value === widget.chartKind)?.label || '图表'
 }
 
 function getWidgetDescription(widget) {
   if (widget.preset === 'trend') return '按当前筛选条件读取已发布看板的月度数据'
-  if (widget.preset === 'rate') return '按当前筛选条件读取已发布看板的科室数据'
+  if (widget.preset === 'rate') {
+    return widgetHasDrillTargets(widget)
+      ? '按当前筛选条件读取已发布看板的科室数据；点击科室查看下钻'
+      : '按当前筛选条件读取已发布看板的科室数据；当前数据未提供下钻上下文'
+  }
+  if (widgetHasDrillTargets(widget)) return '点击科室查看下钻'
   return ''
+}
+
+function getWidgetChartAriaLabel(widget) {
+  const action = widgetHasDrillTargets(widget) ? '；可点击科室查看下钻' : ''
+  return `${getWidgetTitle(widget)}图表${action}`
 }
 
 function getWidgetIcon(widget) {
   if (widget.chartKind === 'bar') return Histogram
-  if (widget.chartKind === 'pie' || widget.preset === 'rate') return PieChart
+  if (widget.chartKind === 'pie') return PieChart
   return TrendCharts
 }
 
@@ -528,14 +612,14 @@ function getWidgetChartOption(widget) {
   return createDashboardChartOption(widget, {
     trendOption: trendOption.value,
     rateOption: rateOption.value,
-    getSource: getDashboardIndicatorSource
+    getSource: () => getWidgetSource(widget)
   })
 }
 
 function isChartEmpty(widget) {
   if (widget.preset === 'trend') return !trendTableRows.value.length
   if (widget.preset === 'rate') return !departmentRanking.value.length
-  const source = getDashboardIndicatorSource(widget.sourceCode)
+  const source = getWidgetSource(widget)
   if (!source) return true
   if (widget.chartKind === 'bar') return !source.departmentData?.length
   if (widget.chartKind === 'pie') return !source.pieData?.length
@@ -564,23 +648,61 @@ function getWidgetTableColumns(widget) {
 function getWidgetTableRows(widget) {
   if (widget.preset === 'trend') return trendTableRows.value
   if (widget.preset === 'rate') {
-    return departmentRanking.value.map((item) => ({ label: item.department, value: item.value }))
+    return departmentRanking.value.map((item) => ({
+      label: item.department,
+      value: item.value,
+      drillTarget: item.drillTarget
+    }))
   }
 
-  const source = getDashboardIndicatorSource(widget.sourceCode) ||
-    indicatorDataSources.value[0] ||
-    {}
+  const source = getWidgetSource(widget)
+  if (!source) return []
 
   if (widget.chartKind === 'bar') {
-    return (source.departmentData || []).map((item) => ({ label: item.name, value: item.value }))
+    return (source.departmentData || []).map((item) => ({
+      label: item.name,
+      value: item.value,
+      drillTarget: normalizeDashboardDrillTarget(item.drillTarget, dashboardDrillSource())
+    }))
   }
   if (widget.chartKind === 'pie') {
-    return (source.pieData || []).map((item) => ({ label: item.name, value: item.value }))
+    return (source.pieData || []).map((item) => ({
+      label: item.name,
+      value: item.value,
+      drillTarget: normalizeDashboardDrillTarget(item.drillTarget, dashboardDrillSource())
+    }))
   }
   return trendTableRows.value.map((item, index) => ({
     label: item.period,
     value: source.trendData?.[index] ?? '-'
   }))
+}
+
+function widgetHasDrillTargets(widget) {
+  return getWidgetTableRows(widget).some((row) => row.drillTarget)
+}
+
+function dashboardDrillSource() {
+  return dashboardStatus.value === 'demo' ? 'mock' : 'live'
+}
+
+function toDepartmentChartDatum(item) {
+  return {
+    name: item.department,
+    value: item.rawValue,
+    ...(item.drillTarget ? { drillTarget: item.drillTarget, cursor: 'pointer' } : {})
+  }
+}
+
+function handleWidgetChartClick(widget, params) {
+  if (isEditing.value || !widgetHasDrillTargets(widget)) return
+  const target = resolveDashboardChartDrillTarget(params, dashboardDrillSource())
+  if (target) openDashboardDrill(target)
+}
+
+function openDashboardDrill(target) {
+  const query = buildDashboardDrillRouteQuery(target)
+  if (query) router.push({ name: 'ResultDrill', query })
 }
 
 function getWidgetEditLabel(widget) {
@@ -616,7 +738,6 @@ function addDashboardWidget() {
     dashboardLayout.value.push(constrainWidget({
       ...baseWidget,
       type: 'kpi',
-      data: createKpiData(source),
       w: 240,
       h: 158
     }))
@@ -902,6 +1023,7 @@ function cloneDashboardSources(sources) {
     origin: source.origin || 'demo',
     originLabel: source.originLabel || '演示',
     trendData: [...(source.trendData || [])],
+    trendLabels: [...(source.trendLabels || dashboardTrend.months)],
     departmentData: (source.departmentData || []).map((item) => ({ ...item })),
     pieData: (source.pieData || []).map((item) => ({ ...item }))
   }))
@@ -917,16 +1039,18 @@ function normalizeMonthlyTrend(rows) {
     .filter((item) => item.period !== '' && Number.isFinite(item.value))
 }
 
-function normalizeRanking(rows) {
+function normalizeRanking(rows, source = 'live') {
   if (!Array.isArray(rows)) return []
   return rows
     .map((item, index) => {
       const rawValue = Number(item?.value)
       return {
         rank: index + 1,
+        departmentCode: String(item?.deptCode || item?.departmentCode || ''),
         department: item?.deptName || item?.deptCode || '未命名科室',
         rawValue,
-        value: Number.isFinite(rawValue) ? formatNumber(rawValue) : '-'
+        value: Number.isFinite(rawValue) ? formatNumber(rawValue) : '-',
+        drillTarget: normalizeDashboardDrillTarget(item?.drillTarget, source)
       }
     })
     .filter((item) => Number.isFinite(item.rawValue))
@@ -948,9 +1072,12 @@ function observeBoard() {
   boardResizeObserver.observe(boardRef.value)
 }
 
-const goAlerts = () => router.push('/alerts')
+const goAlerts = () => {
+  if (isEditing.value) return
+  router.push('/alerts')
+}
 const goIndicatorAnalysis = (indicatorCode) => {
-  if (!indicatorCode) return
+  if (isEditing.value || !indicatorCode) return
   router.push({
     path: '/analysis',
     query: { indicator: indicatorCode }
@@ -981,6 +1108,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   margin-bottom: 16px;
   padding: 12px 14px;
   gap: 16px;
@@ -992,6 +1120,16 @@ onBeforeUnmount(() => {
   align-items: center;
   min-width: 0;
   gap: 10px;
+}
+
+.dashboard-editor-panel__right {
+  margin-left: auto;
+}
+
+.dashboard-editor-panel__visualization {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .dashboard-editor-panel__label {
