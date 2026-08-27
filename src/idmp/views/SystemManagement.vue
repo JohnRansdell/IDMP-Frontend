@@ -111,7 +111,7 @@
             <dd>
               <StatusBadge
                 :status="healthStatus"
-                :label="healthStatus"
+                :label="healthStatusLabel"
                 :tone="isHealthy ? 'success' : 'warning'"
               />
             </dd>
@@ -194,7 +194,7 @@
         </div>
       </div>
       <div class="notice-strip is-warning role-warning">
-        角色创建会写入后端；重复 roleCode 会由后端返回冲突，不会在前端伪装成功。
+        角色创建会写入后端；重复的角色编码会由后端返回冲突，不会在前端伪装成功。
       </div>
       <StatePanel
         v-if="!hasAccessToken"
@@ -240,6 +240,7 @@ import { Refresh } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
+import { getStatusLabel } from '@/idmp/design/status'
 import { getAccessToken } from '@/idmp/api/request'
 import {
   createSystemRole,
@@ -287,6 +288,13 @@ const healthStatus = computed(() => {
   if (typeof healthResult.value === 'string') return healthResult.value
   return String(healthResult.value?.status || 'UNKNOWN')
 })
+const healthStatusLabel = computed(() => ({
+  UP: '正常',
+  OK: '正常',
+  HEALTHY: '正常',
+  DOWN: '异常',
+  OUT_OF_SERVICE: '服务不可用'
+}[healthStatus.value.toUpperCase()] || getStatusLabel(healthStatus.value)))
 const isHealthy = computed(() => ['UP', 'OK', 'HEALTHY', 'RUNNING'].includes(healthStatus.value.toUpperCase()))
 
 async function handleLogin() {

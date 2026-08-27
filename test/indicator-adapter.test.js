@@ -2,6 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   buildIndicatorVersionPayload,
+  drillLevelLabel,
+  drillPathLabel,
   findUnsupportedDrillFactors,
   normalizeDrillCapabilities,
   normalizeDrillConfig,
@@ -9,6 +11,12 @@ import {
   normalizeIndicatorAnalysisParams,
   validateDrillSelection
 } from '../src/idmp/api/adapters/indicator.js'
+
+test('下钻路径与层级显示中文且未知码原样返回', () => {
+  assert.equal(drillPathLabel('ORGANIZATION'), '组织维度')
+  assert.equal(drillLevelLabel('OUT_DEPT'), '科室')
+  assert.equal(drillLevelLabel('CUSTOM_LEVEL'), 'CUSTOM_LEVEL')
+})
 
 test('indicator analysis query normalizes runtime datetimes to API date values', () => {
   assert.deepEqual(normalizeIndicatorAnalysisParams({

@@ -1,5 +1,34 @@
 const runtimeEnv = typeof import.meta.env === 'object' && import.meta.env ? import.meta.env : {}
 
+const DRILL_PATH_LABELS = {
+  ORGANIZATION: '组织维度',
+  DISEASE: '病种维度',
+  TIME: '时间维度',
+  FACTOR: '因子维度',
+  SCENARIO: '场景维度'
+}
+
+const DRILL_LEVEL_LABELS = {
+  HOSPITAL: '医院',
+  OUT_DEPT: '科室',
+  DEPARTMENT: '科室',
+  MEDICAL_GROUP: '医疗组',
+  ATTENDING_DOCTOR: '主治医师',
+  DOCTOR: '医师',
+  ALL_SINGLE_DISEASE: '全部病种',
+  SINGLE_DISEASE: '单病种',
+  CASE: '病例',
+  PATIENT: '患者',
+  YEAR: '年',
+  QUARTER: '季度',
+  MONTH: '月',
+  WEEK: '周',
+  DAY: '日'
+}
+
+export const drillPathLabel = value => DRILL_PATH_LABELS[String(value || '').toUpperCase()] || value || '-'
+export const drillLevelLabel = value => DRILL_LEVEL_LABELS[String(value || '').toUpperCase()] || value || '-'
+
 export function normalizeIndicatorAnalysisParams(params = {}) {
   const normalized = { ...params }
   if (normalized.periodStart) normalized.periodStart = toApiDate(normalized.periodStart)
@@ -93,13 +122,13 @@ export function validateDrillSelection(capabilities = {}, drillPaths = []) {
     if (seen.has(pathCode)) return '同一下钻路径只能选择一次'
     seen.add(pathCode)
     const dimension = dimensions.get(pathCode)
-    if (!dimension?.supported) return `${pathCode} 当前不支持下钻`
+    if (!dimension?.supported) return `${drillPathLabel(pathCode)}当前不支持下钻`
     const allowedLevels = dimension.levels.map((level) => level.code)
     if (allowedLevels.length && !allowedLevels.includes(maxLevel)) {
-      return `${pathCode} 不支持层级 ${maxLevel}`
+      return `${drillPathLabel(pathCode)}不支持层级“${drillLevelLabel(maxLevel)}”`
     }
     if (!allowedLevels.length && dimension.maxLevel && dimension.maxLevel !== maxLevel) {
-      return `${pathCode} 仅支持最大层级 ${dimension.maxLevel}`
+      return `${drillPathLabel(pathCode)}仅支持到“${drillLevelLabel(dimension.maxLevel)}”层级`
     }
   }
   return ''

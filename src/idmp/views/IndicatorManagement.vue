@@ -105,7 +105,7 @@
               class="filter-select small"
               aria-label="按指标状态筛选"
             >
-              <el-option v-for="item in statuses" :key="item" :label="item" :value="item" />
+              <el-option v-for="item in statuses" :key="item" :label="getStatusLabel(item)" :value="item" />
             </el-select>
           </el-form-item>
           <el-form-item>
@@ -167,7 +167,7 @@
               <StatusBadge :status="row.status" :label="row.status" :tone="statusTone(row.status)" />
             </template>
           </el-table-column>
-          <el-table-column prop="scenes" label="场景数" width="78" align="center" />
+          <el-table-column label="场景数" width="78" align="center"><template #default="{ row }">{{ row.scenes ?? '—' }}</template></el-table-column>
            <el-table-column label="操作" width="230" fixed="right">
             <template #default="{ row }">
               <button type="button" class="action-link" @click="openDetail(row)">查看</button>
@@ -202,7 +202,7 @@
             <div><dt>版本</dt><dd>{{ row.version }}</dd></div>
             <div><dt>导向</dt><dd>{{ row.direction }}</dd></div>
             <div><dt>来源</dt><dd>{{ row.source }}</dd></div>
-            <div><dt>关联场景</dt><dd>{{ row.scenes }} 个</dd></div>
+            <div><dt>关联场景</dt><dd>{{ row.scenes === null ? '—' : `${row.scenes} 个` }}</dd></div>
           </dl>
           <div class="indicator-card__actions">
             <el-button @click="openDetail(row)">查看详情</el-button>
@@ -246,8 +246,9 @@ import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
  import ResourceDeleteDialog from '@/idmp/components/ResourceDeleteDialog.vue'
- import { deleteIndicator, fetchIndicatorDeletionImpact, fetchIndicators, fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
+import { deleteIndicator, fetchIndicatorDeletionImpact, fetchIndicators, fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
 import { indicatorRows } from '@/idmp/data/demo'
+import { getStatusLabel } from '@/idmp/design/status'
 
 const router = useRouter()
 const viewMode = ref('table')
@@ -343,7 +344,7 @@ function normalizeList(payload) {
   return []
 }
 
-const toIndicatorRow = item => ({
+const toIndicatorRow = (item) => ({
   code: item.code,
   name: item.name,
   category: item.category || '后端指标',
@@ -352,14 +353,15 @@ const toIndicatorRow = item => ({
   direction: item.direction || '监测比较',
   source: item.source || '后端接口',
   status: item.status || '未知',
-  scenes: item.scenes || 0,
+  // 场景数由指标主对象接口聚合返回；字段缺失时保留未知状态，避免误显示为 0。
+  scenes: toScenarioCount(item.scenarioCount),
   description: item.description,
   id: item.id,
   indicatorId: item.id,
   versionId: item.currentVersionId || item.latestVersionId || item.publishedVersionId || ''
 })
 
-const toPublishedIndicatorVersionRow = item => ({
+const toPublishedIndicatorVersionRow = (item) => ({
   code: item.indicatorCode || item.code,
   name: item.indicatorName || item.name || item.indicatorCode || item.code,
   category: item.category || '后端指标',
@@ -368,7 +370,8 @@ const toPublishedIndicatorVersionRow = item => ({
   direction: item.direction || '监测比较',
   source: item.source || '已发布版本',
   status: item.status || item.publicationStatus || 'PUBLISHED',
-  scenes: item.scenes || 0,
+  // 指标版本列表并不保证返回 scenarioCount，不能以 0 覆盖指标目录的聚合结果。
+  scenes: toScenarioCount(item.scenarioCount ?? item.indicator?.scenarioCount),
   description: item.description,
   id: item.indicatorId || item.indicator?.id || item.id,
   indicatorId: item.indicatorId || item.indicator?.id || '',
@@ -383,6 +386,8 @@ function mergePublishedIndicatorVersions(indicatorRows, publishedRows) {
     rowsByCode.set(versionRow.code, {
       ...(existing || {}),
       ...versionRow,
+      // 目录接口是关联场景数的权威来源；版本接口只补充版本信息。
+      scenes: existing?.scenes ?? versionRow.scenes ?? null,
       id: versionRow.indicatorId || existing?.id || versionRow.id,
       indicatorId: versionRow.indicatorId || existing?.indicatorId || existing?.id || '',
       status: 'PUBLISHED',
@@ -390,6 +395,12 @@ function mergePublishedIndicatorVersions(indicatorRows, publishedRows) {
     })
   })
   return Array.from(rowsByCode.values())
+}
+
+function toScenarioCount(value) {
+  if (value === undefined || value === null || value === '') return null
+  const count = Number(value)
+  return Number.isFinite(count) && count >= 0 ? count : null
 }
 
 const openEditor = id => router.push(`/indicator/edit/${id}`)

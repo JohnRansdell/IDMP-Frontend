@@ -36,13 +36,13 @@
       <div><span>指标值</span><strong>{{ result.summary.displayValue || result.summary.indicatorValue || '-' }}</strong></div>
       <div><span>分子</span><strong>{{ result.summary.numerator ?? '-' }}</strong></div>
       <div><span>分母</span><strong>{{ result.summary.denominator ?? '-' }}</strong></div>
-      <div><span>质量状态</span><strong>{{ result.summary.qualityStatus || '-' }}</strong></div>
+      <div><span>质量状态</span><strong>{{ result.summary.qualityStatus ? getStatusLabel(result.summary.qualityStatus) : '-' }}</strong></div>
     </div>
 
     <div class="drill-table-heading">
       <div>
         <h3>当前层：{{ currentLevelLabel }}</h3>
-        <p>下一层入口由下钻配置和接口返回的 nextLevels 决定。</p>
+        <p>下一层入口由下钻配置和接口返回的可用层级决定。</p>
       </div>
       <span class="drill-table-heading__count">{{ result.pageInfo.total || 0 }} 条</span>
     </div>
@@ -50,9 +50,19 @@
     <StatePanel v-if="errorMessage" type="error" title="下钻数据加载失败" :description="errorMessage">
       <template #actions><el-button size="small" @click="loadDrill">重试</el-button></template>
     </StatePanel>
-    <StatePanel v-else-if="!loading && !result.records.length" type="empty" title="当前层暂无数据" description="当前口径下没有可展示的记录。" />
+    <section v-else-if="statusRecord" class="drill-status-record">
+      <strong>当前层计算状态：{{ getStatusLabel(statusRecord.resultOutcomeStatus || statusRecord.outcomeStatus || statusRecord.sourceDataStatus) }}</strong>
+      <p>{{ statusRecord.calculationErrorMessage || statusRecord.errorMessage || `源数据状态：${getStatusLabel(statusRecord.sourceDataStatus)}；源记录数：${statusRecord.sourceRecordCount ?? 0}` }}</p>
+      <el-table v-if="statusRecord.factorSourceProfiles?.length" :data="statusRecord.factorSourceProfiles" size="small">
+        <el-table-column prop="factorVersionId" label="因子版本" min-width="160" />
+        <el-table-column label="源数据" width="120"><template #default="{ row }">{{ getStatusLabel(row.sourceDataStatus) }}</template></el-table-column>
+        <el-table-column prop="sourceRecordCount" label="源记录数" width="110" />
+        <el-table-column prop="errorMessage" label="诊断信息" min-width="200" />
+      </el-table>
+    </section>
+    <StatePanel v-else-if="!loading && !memberRecords.length" type="empty" title="当前层暂无数据" description="当前口径下没有可展示的记录。" />
     <div v-else class="table-scroll">
-      <el-table v-loading="loading" :data="result.records" table-layout="fixed" class="analysis-table drill-data-table">
+      <el-table v-loading="loading" :data="memberRecords" table-layout="fixed" class="analysis-table drill-data-table">
         <el-table-column
           v-for="column in result.columns"
           :key="column.field"
@@ -91,7 +101,9 @@
         <template #actions><el-button size="small" @click="loadFactorTrace">重试</el-button></template>
       </StatePanel>
       <el-table v-else-if="factorTrace" :data="factorTrace.factors || []" table-layout="fixed">
-        <el-table-column prop="formulaRole" label="公式角色" width="120" />
+        <el-table-column label="公式角色" width="120">
+          <template #default="{ row }">{{ formulaRoleLabel(row.formulaRole) }}</template>
+        </el-table-column>
         <el-table-column prop="factorName" label="因子" min-width="220" show-overflow-tooltip />
         <el-table-column prop="factorVersionId" label="因子版本" min-width="180" />
         <el-table-column label="结果匹配" width="110">
@@ -101,7 +113,7 @@
           <template #default="{ row }">{{ row.result?.displayValue ?? row.result?.value ?? '-' }}</template>
         </el-table-column>
         <el-table-column label="质量状态" width="130">
-          <template #default="{ row }">{{ row.result?.qualityStatus || '-' }}</template>
+          <template #default="{ row }">{{ row.result?.qualityStatus ? getStatusLabel(row.result.qualityStatus) : '-' }}</template>
         </el-table-column>
       </el-table>
     </section>
@@ -114,6 +126,8 @@ import { useRoute, useRouter } from 'vue-router'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import { fetchResultFactors, searchResultDrill } from '@/idmp/api/modules/drill'
 import { limitDrillNextLevels } from '@/idmp/api/adapters/drill'
+import { isStatusRecord } from '@/idmp/features/analysis/resultAvailability'
+import { getStatusLabel } from '@/idmp/design/status'
 
 const props = defineProps({
   resultId: { type: [String, Number], default: 'MOCK-RESULT-001' },
@@ -140,6 +154,8 @@ const errorMessage = ref('')
 const factorTrace = ref(null)
 const factorTraceLoading = ref(false)
 const isFactorTraceMode = computed(() => dimension.value === 'FACTOR_TRACE')
+const statusRecord = computed(() => result.value.records.find(isStatusRecord) || null)
+const memberRecords = computed(() => result.value.records.filter((item) => !isStatusRecord(item)))
 const activeResultId = computed(() => String(
   props.pathResultIds?.[lastDrillDimension.value] || props.resultId || ''
 ))
@@ -168,6 +184,10 @@ const currentLevelLabel = computed(() => ({
 
 function emptyResult() {
   return { context: {}, breadcrumb: [], summary: {}, columns: [], records: [], nextLevels: [], pageInfo: { total: 0 }, dataSource: 'live' }
+}
+
+function formulaRoleLabel(role) {
+  return { NUMERATOR: '分子', DENOMINATOR: '分母' }[String(role || '').toUpperCase()] || role || '-'
 }
 
 function buildPayload() {
@@ -324,6 +344,9 @@ onMounted(loadDrill)
   justify-content: space-between;
   gap: 16px;
 }
+
+.drill-status-record { margin: 12px 0; padding: 16px; border: 1px solid var(--idmp-border, #d0d5dd); border-radius: 8px; background: #f8fafc; }
+.drill-status-record p { margin: 8px 0 12px; color: var(--idmp-text-secondary, #667085); }
 
 .drill-context-bar {
   min-height: 44px;

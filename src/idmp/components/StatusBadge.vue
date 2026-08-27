@@ -1,13 +1,13 @@
 <template>
-  <span class="status-badge" :class="`is-${resolvedTone}`">
+  <span class="status-badge" :class="`is-${presentation.tone}`">
     <span class="status-badge__dot" aria-hidden="true" />
-    <span>{{ resolvedLabel }}</span>
+    <span>{{ presentation.label }}</span>
   </span>
 </template>
 
 <script setup>
 import { computed } from 'vue'
-import { getStatusDefinition } from '@/idmp/design/status'
+import { resolveStatusPresentation } from '@/idmp/design/status'
 
 const props = defineProps({
   status: { type: String, default: '' },
@@ -15,8 +15,6 @@ const props = defineProps({
   tone: { type: String, default: '' }
 })
 
-const definition = computed(() => getStatusDefinition(props.status))
-const resolvedLabel = computed(() => props.label || definition.value.label)
-const resolvedTone = computed(() => props.tone || definition.value.tone)
+const presentation = computed(() => resolveStatusPresentation(props))
 </script>
 

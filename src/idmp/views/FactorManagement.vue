@@ -5,11 +5,22 @@
       status-label="演示目录 + 后端新增流程"
       status-tone="info"
     >
+      <template #meta>
+        <span class="data-source-badge" :class="{ 'is-live': sourceMode === 'live' }">
+          {{ sourceMode === 'live' ? '接口数据' : '演示数据' }}
+        </span>
+        <span>共 {{ filteredRows.length }} 条</span>
+      </template>
       <template #actions>
         <div class="page-toolbar">
-          <el-button @click="router.push('/factor/templates')">模板管理</el-button>
           <el-button type="primary" :icon="Plus" @click="openFactorEditor('new')">
-            新增因子
+            新建因子
+          </el-button>
+          <el-button @click="router.push('/factor/templates')">
+            从模板创建因子
+          </el-button>
+          <el-button v-if="canUseAdvancedCreation" @click="openAdvancedFactorEditor">
+            高级自定义创建
           </el-button>
           <el-button @click="router.push('/factor/recycle-bin')">回收站</el-button>
           <el-button :icon="Upload" @click="showUnavailable('批量导入')">批量导入</el-button>
@@ -17,11 +28,12 @@
       </template>
     </PageHeader>
 
-    <section class="filter-card factor-filter" aria-label="因子筛选">
+    <section class="surface-card filter-card factor-filter" aria-label="因子筛选">
       <el-form :inline="true" @submit.prevent="applyFilters">
         <el-form-item>
           <el-input
             v-model.trim="form.code"
+            class="filter-code"
             clearable
             placeholder="因子编码"
             aria-label="按因子编码筛选"
@@ -31,6 +43,7 @@
         <el-form-item>
           <el-input
             v-model.trim="form.name"
+            class="filter-name"
             clearable
             placeholder="因子名称"
             aria-label="按因子名称筛选"
@@ -38,13 +51,13 @@
           />
         </el-form-item>
         <el-form-item>
-          <el-select v-model="form.type" clearable placeholder="因子类型" aria-label="按因子类型筛选">
+          <el-select v-model="form.type" class="filter-select" clearable placeholder="因子类型" aria-label="按因子类型筛选">
             <el-option label="原子因子" value="原子因子" />
             <el-option label="组合因子" value="组合因子" />
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-select v-model="form.category" clearable placeholder="业务分类" aria-label="按业务分类筛选">
+          <el-select v-model="form.category" class="filter-select" clearable placeholder="业务分类" aria-label="按业务分类筛选">
             <el-option
               v-for="category in categoryOptions"
               :key="category"
@@ -54,10 +67,10 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-select v-model="form.status" clearable placeholder="发布状态" aria-label="按发布状态筛选">
+          <el-select v-model="form.status" class="filter-select filter-select--small" clearable placeholder="发布状态" aria-label="按发布状态筛选">
             <el-option label="已发布" value="已发布" />
             <el-option label="草稿" value="草稿" />
-            <el-option label="待发布" value="待发布" />
+            <el-option label="已校验" value="已校验" />
           </el-select>
         </el-form-item>
         <el-form-item class="filter-actions">
@@ -67,78 +80,58 @@
       </el-form>
     </section>
 
-    <section class="surface-card factor-table-card" aria-label="因子列表">
-      <div class="table-card-head">
-        <div>
-          <h2>因子目录</h2>
-          <p>维护可被指标公式引用的计算因子，发布后的版本进入正式计算链路。</p>
-        </div>
-        <el-tag type="info" effect="plain">{{ sourceMode === 'live' ? '列表来自后端因子接口' : '后端不可用时显示演示目录' }}</el-tag>
-      </div>
-
-      <div class="table-scroll">
+    <section class="surface-card table-card factor-table-card" aria-label="因子目录">
+      <StatePanel
+        v-if="!tableLoading && !filteredRows.length"
+        type="empty"
+        title="没有符合条件的因子"
+        description="调整筛选条件或新建因子后再查看。"
+      >
+        <template #actions>
+          <el-button @click="resetFilters">清除筛选</el-button>
+          <el-button type="primary" @click="openFactorEditor('new')">新建因子</el-button>
+        </template>
+      </StatePanel>
+      <div v-else class="table-scroll">
         <el-table
           :data="pagedRows"
           v-loading="tableLoading"
+          row-key="code"
           table-layout="fixed"
-          empty-text="暂无符合条件的因子"
           class="factor-table"
+          @selection-change="selectedRows = $event"
         >
-          <el-table-column type="expand" width="46">
+          <el-table-column type="selection" width="46" />
+          <el-table-column prop="code" label="因子编码" width="140">
             <template #default="{ row }">
-              <div class="factor-expand">
-                <dl>
-                  <div>
-                    <dt>因子 ID</dt>
-                    <dd class="mono-data">{{ row.id || '-' }}</dd>
-                  </div>
-                  <div>
-                    <dt>已发布版本 ID</dt>
-                    <dd class="mono-data">{{ row.publishedVersionId || '-' }}</dd>
-                  </div>
-                  <div>
-                    <dt>聚合方式</dt>
-                    <dd>{{ row.aggregation || '-' }}</dd>
-                  </div>
-                  <div>
-                    <dt>引用次数</dt>
-                    <dd>{{ row.references ?? 0 }}</dd>
-                  </div>
-                  <div>
-                    <dt>数据域</dt>
-                    <dd>{{ row.domain || '-' }}</dd>
-                  </div>
-                  <div>
-                    <dt>状态</dt>
-                    <dd>{{ row.status || '-' }}</dd>
-                  </div>
-                </dl>
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column prop="code" label="因子编码" width="156">
-            <template #default="{ row }">
-              <button class="code-link" type="button" @click="openFactorEditor(row.id || row.code)">
+              <button class="action-link code-link" type="button" @click="openFactorEditor(row.id || row.code)">
                 {{ row.code }}
               </button>
             </template>
           </el-table-column>
-          <el-table-column prop="name" label="因子名称" min-width="190" show-overflow-tooltip>
+          <el-table-column prop="name" label="因子名称" min-width="230" show-overflow-tooltip>
             <template #default="{ row }">
               <span class="factor-name-text">{{ row.name }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="category" label="业务分类" width="110" />
-          <el-table-column prop="domain" label="数据域" min-width="170" show-overflow-tooltip />
-          <el-table-column label="发布状态" width="112">
+          <el-table-column prop="category" label="分类" width="120" />
+          <el-table-column prop="type" label="类型" width="110" />
+          <el-table-column prop="domain" label="数据域" min-width="160" show-overflow-tooltip />
+          <el-table-column label="聚合方式" width="110">
+            <template #default="{ row }">{{ getAggregationLabel(row.aggregation) }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="92">
             <template #default="{ row }">
               <StatusBadge
-                :status="row.status === '已发布' ? 'PUBLISHED' : 'DRAFT'"
-                :label="row.status"
+                :status="factorStatusCode(row.status)"
+                :label="row.status ? getStatusLabel(row.status) : '-'"
               />
             </template>
           </el-table-column>
-           <el-table-column label="操作" width="180" fixed="right">
+          <el-table-column label="引用数" width="78" align="center">
+            <template #default="{ row }">{{ row.references ?? 0 }}</template>
+          </el-table-column>
+           <el-table-column label="操作" width="230" fixed="right">
             <template #default="{ row }">
               <button class="action-link" type="button" @click="openFactorEditor(row.id || row.code)">
                 查看
@@ -152,14 +145,13 @@
         </el-table>
       </div>
 
-      <div class="table-footer">
-        <span v-if="hasActiveFilters">筛选到 {{ filteredRows.length }} 条因子</span>
-        <span v-else>共 {{ sourceRows.length }} 条</span>
+      <div class="pagination-row">
+        <span>共 {{ filteredRows.length }} 条<span v-if="selectedRows.length">，已选 {{ selectedRows.length }} 条</span></span>
         <el-pagination
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
           layout="prev, pager, next, sizes"
-          :page-sizes="[8, 12, 20]"
+          :page-sizes="[6, 9, 12]"
           :total="filteredRows.length"
         />
       </div>
@@ -181,10 +173,14 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
+import StatePanel from '@/idmp/components/StatePanel.vue'
   import StatusBadge from '@/idmp/components/StatusBadge.vue'
  import ResourceDeleteDialog from '@/idmp/components/ResourceDeleteDialog.vue'
  import { deleteFactor, fetchFactorDeletionImpact, fetchFactors } from '@/idmp/api/modules/factors'
 import { factorRows } from '@/idmp/data/demo'
+import { getStatusLabel } from '@/idmp/design/status'
+import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
+import { hasPermission, sessionState } from '@/idmp/auth/session'
 
 const router = useRouter()
 
@@ -202,13 +198,16 @@ const backendFactorRows = ref([])
 const sourceMode = ref('demo')
 const tableLoading = ref(false)
 const currentPage = ref(1)
-const pageSize = ref(8)
+const pageSize = ref(9)
+const selectedRows = ref([])
 const deleteTarget = ref(null)
+const canUseAdvancedCreation = computed(() => {
+  const designerRoles = ['SYSTEM_ADMIN', 'DATA_ADMIN', 'IMPLEMENTATION_ENGINEER', 'SYSTEM_ARCHITECT']
+  return designerRoles.some(role => sessionState.roles.includes(role)) || hasPermission('factor:advanced:create') || hasPermission('factor:template:manage')
+})
 
 const sourceRows = computed(() => sourceMode.value === 'live' ? backendFactorRows.value : factorRows)
 const categoryOptions = computed(() => [...new Set(sourceRows.value.map((item) => item.category).filter(Boolean))])
-
-const hasActiveFilters = computed(() => Object.values(filters).some(Boolean))
 
 const filteredRows = computed(() => {
   const code = filters.code.toLowerCase()
@@ -220,7 +219,7 @@ const filteredRows = computed(() => {
       (!name || row.name.toLowerCase().includes(name)) &&
       (!filters.type || row.type === filters.type) &&
       (!filters.category || row.category === filters.category) &&
-      (!filters.status || row.status === filters.status)
+      (!filters.status || getStatusLabel(row.status) === filters.status)
     )
   })
 })
@@ -249,6 +248,10 @@ watch(filteredRows, () => {
 
 const openFactorEditor = (id) => {
   router.push(`/factor/edit/${encodeURIComponent(id)}`)
+}
+
+const openAdvancedFactorEditor = () => {
+  router.push('/factor/edit/new?mode=advanced')
 }
 
 const showUnavailable = (capability) => {
@@ -285,16 +288,13 @@ function toFactorRow(item) {
     aggregation: item.aggregation || item.output?.dimension || '-',
     domain: item.domain || item.domainCode || '-',
     references: item.references ?? item.referenceCount ?? 0,
-    status: normalizeStatus(item.status),
+    status: item.status || 'UNKNOWN',
     publishedVersionId: item.publishedVersionId
   }
 }
 
-function normalizeStatus(status) {
-  if (status === 'PUBLISHED') return '已发布'
-  if (status === 'DRAFT') return '草稿'
-  if (status === 'VALIDATED') return '待发布'
-  return status || '未知'
+function factorStatusCode(status) {
+  return { 已发布: 'PUBLISHED', 草稿: 'DRAFT', 已校验: 'VALIDATED' }[status] || status
 }
 
 function normalizeList(payload) {
@@ -314,27 +314,23 @@ onMounted(loadBackendFactors)
 }
 
 .factor-filter {
-  margin-bottom: 16px;
-  padding: 16px;
-
   :deep(.el-form) {
     display: flex;
+    align-items: center;
     flex-wrap: wrap;
-    gap: 12px;
+    gap: 10px 12px;
   }
 
   :deep(.el-form-item) {
     margin: 0;
   }
 
-  :deep(.el-input) {
-    width: 178px;
-  }
-
-  :deep(.el-select) {
-    width: 140px;
-  }
 }
+
+.filter-code { width: 140px; }
+.filter-name { width: 200px; }
+.filter-select { width: 156px; }
+.filter-select--small { width: 112px; }
 
 .filter-actions {
   margin-left: 2px !important;
@@ -342,29 +338,6 @@ onMounted(loadBackendFactors)
 
 .factor-table-card {
   min-width: 0;
-  padding: 16px 16px 12px;
-}
-
-.table-card-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 14px;
-
-  h2 {
-    margin: 0 0 4px;
-    color: var(--idmp-text-primary);
-    font-size: 15px;
-    line-height: 22px;
-  }
-
-  p {
-    margin: 0;
-    color: var(--idmp-text-helper);
-    font-size: 12px;
-    line-height: 18px;
-  }
 }
 
 .table-scroll {
@@ -404,41 +377,6 @@ onMounted(loadBackendFactors)
   white-space: nowrap;
 }
 
-.factor-expand {
-  padding: 6px 12px 12px 58px;
-  background: var(--idmp-layer-02);
-
-  dl {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px 14px;
-    margin: 0;
-  }
-
-  div {
-    min-width: 0;
-    padding: 10px;
-    border: 1px solid var(--idmp-border-subtle);
-    border-radius: var(--idmp-radius-sm);
-    background: var(--idmp-layer-01);
-  }
-
-  dt {
-    margin-bottom: 5px;
-    color: var(--idmp-text-helper);
-    font-size: 12px;
-  }
-
-  dd {
-    min-width: 0;
-    margin: 0;
-    overflow: hidden;
-    color: var(--idmp-text-primary);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-}
-
 .code-link,
 .action-link {
   padding: 0;
@@ -461,40 +399,4 @@ onMounted(loadBackendFactors)
   }
 }
 
-.reference-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 24px;
-  height: 22px;
-  padding: 0 7px;
-  color: var(--idmp-support-info);
-  font-size: 12px;
-  line-height: 22px;
-  background: var(--idmp-support-info-bg);
-  border-radius: var(--idmp-radius-sm);
-}
-
-.table-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 45px;
-  padding: 11px 4px 0;
-  color: var(--idmp-text-helper);
-  font-size: 13px;
-  gap: 16px;
-}
-
-.table-footer__hint {
-  color: var(--idmp-text-disabled);
-}
-
-@media (max-width: 1450px) {
-  .factor-filter {
-    :deep(.el-input) {
-      width: 158px;
-    }
-  }
-}
 </style>

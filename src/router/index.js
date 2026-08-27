@@ -70,6 +70,12 @@ const routes = [
         meta: { title: '编辑因子模板', activeMenu: '/factor/templates', breadcrumb: ['首页', '因子管理', '因子模板', '版本编辑'] }
       },
       {
+        path: 'factor/templates/:templateId/versions/:versionId/instantiate',
+        name: 'FactorTemplateInstantiate',
+        component: () => import('@/idmp/views/FactorTemplateInstantiate.vue'),
+        meta: { title: '从模板创建因子', activeMenu: '/factor', breadcrumb: ['首页', '因子管理', '因子模板', '创建因子'] }
+      },
+      {
         path: 'factor/edit/:id?',
         name: 'FactorEditor',
         component: () => import('@/idmp/views/FactorEditor.vue'),
@@ -113,7 +119,7 @@ const routes = [
         component: () => import('@/idmp/views/IndicatorAnalysis.vue'),
         meta: {
           title: '指标分析',
-          breadcrumb: ['首页', '指标分析', '手术患者并发症发生率']
+          breadcrumb: ['首页', '指标分析']
         }
       },
       {
@@ -177,6 +183,12 @@ const routes = [
         name: 'ValueSetManagement',
         component: () => import('@/idmp/views/ValueSetManagement.vue'),
         meta: { title: '值集管理', activeMenu: '/data/value-sets', breadcrumb: ['首页', '数据治理', '值集管理'] }
+      },
+      {
+        path: 'data/value-sets/new',
+        name: 'ValueSetCreate',
+        component: () => import('@/idmp/views/ValueSetCreate.vue'),
+        meta: { title: '新建值集', activeMenu: '/data/value-sets', breadcrumb: ['首页', '数据治理', '值集管理', '新建值集'] }
       },
       {
         path: 'data/value-sets/:valueSetId',

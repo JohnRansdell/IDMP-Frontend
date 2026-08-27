@@ -27,11 +27,6 @@
       </template>
     </PageHeader>
 
-    <div v-if="dashboardLoadMessage" class="notice-strip is-warning dashboard-notice">
-      <el-icon><InfoFilled /></el-icon>
-      <span>{{ dashboardLoadMessage }}</span>
-    </div>
-
     <StatePanel
       v-if="dashboardStatus === 'loading'"
       type="loading"
@@ -389,7 +384,7 @@ const dashboardSourceLabel = computed(() => ({
   loading: '正在加载正式数据',
   ready: '正式接口数据',
   empty: '正式接口数据（暂无结果）',
-  demo: '演示数据（正式接口不可用）',
+  demo: '演示数据',
   error: '正式接口数据加载失败'
 }[dashboardStatus.value] || '正在加载正式数据'))
 
@@ -839,11 +834,11 @@ async function loadDashboard() {
       await nextTick()
       observeBoard()
     }
-  } catch (error) {
+  } catch {
     if (controller.signal.aborted) return
     dashboardDefinition.value = null
     dashboardQueryResult.value = null
-    applyDemoDashboard(error)
+    applyDemoDashboard()
   }
 }
 
@@ -885,11 +880,12 @@ function createDashboardSources(result = {}) {
     }))
 }
 
-function applyDemoDashboard(error) {
+function applyDemoDashboard() {
   indicatorDataSources.value = cloneDashboardSources(mockIndicatorDataSources)
   selectedDataCode.value = indicatorDataSources.value[0]?.code || ''
   dashboardStatus.value = 'demo'
-  dashboardLoadMessage.value = `${error?.message || '未能读取已发布看板和正式结果。'} 当前展示演示数据；演示值不代表正式计算结果。`
+  // 看板尚未发布时静默使用演示布局；数据来源由页头徽标持续标识。
+  dashboardLoadMessage.value = ''
   nextTick(observeBoard)
   void loadMortalityReadonlyChain()
 }
@@ -1026,10 +1022,6 @@ onBeforeUnmount(() => {
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.dashboard-notice {
-  margin-bottom: 16px;
 }
 
 .primary-metric {

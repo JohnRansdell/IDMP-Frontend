@@ -130,7 +130,7 @@
         @row-click="selectSourceTable"
       >
         <el-table-column prop="tableName" label="表/视图名称" min-width="240" show-overflow-tooltip />
-        <el-table-column prop="tableType" label="对象类型" width="150" />
+        <el-table-column label="对象类型" width="150"><template #default="{ row }">{{ sourceObjectTypeLabel(row.tableType) || '—' }}</template></el-table-column>
         <el-table-column prop="comment" label="注释" min-width="220" show-overflow-tooltip>
           <template #default="{ row }">{{ row.comment || '—' }}</template>
         </el-table-column>
@@ -189,6 +189,7 @@ import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import { fetchSourceTableFields, fetchSourceTables, syncSourceMappings } from '@/idmp/api/modules/meta'
 import { adaptSourceFieldList, adaptSourceTableList } from '@/idmp/api/adapters/meta'
+import { sourceObjectTypeLabel } from '@/idmp/features/meta'
 
 const sourceTables = ref([])
 const sourceFields = ref([])
@@ -212,7 +213,7 @@ const filteredTables = computed(() => {
   const comment = filters.comment.trim().toLowerCase()
   return sourceTables.value.filter((item) => {
     return (!tableName || item.tableName.toLowerCase().includes(tableName))
-      && (!tableType || item.tableType.toLowerCase().includes(tableType))
+      && (!tableType || `${item.tableType} ${sourceObjectTypeLabel(item.tableType)}`.toLowerCase().includes(tableType))
       && (!comment || item.comment.toLowerCase().includes(comment))
   })
 })
