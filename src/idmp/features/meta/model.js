@@ -20,8 +20,9 @@ const labelFor = (labels, value) => {
 const MATCH_MODE_LABELS = {
   EXACT: '精确匹配',
   PREFIX: '前缀匹配',
-  RANGE: '范围匹配',
-  HIERARCHICAL: '层级匹配'
+  RANGE: '范围值项匹配',
+  HIERARCHICAL: '层级匹配',
+  CONTINUOUS: '连续范围匹配'
 }
 
 const DATA_TYPE_LABELS = {

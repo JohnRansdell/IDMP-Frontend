@@ -79,6 +79,10 @@ export function trialFactorVersion(versionId, payload, idempotencyKey) {
   })
 }
 
+export function fetchFactorTrialPeriodRecommendation(versionId) {
+  return requestJson(`/factor-versions/${encodeURIComponent(versionId)}/trial-period-recommendation`)
+}
+
 export function fetchFactorTrialResults(versionId, batchId, page = 1, size = 100) {
   return requestJson(`/factor-versions/${versionId}/trials/${batchId}/results?page=${page}&size=${size}`)
 }
@@ -157,4 +161,8 @@ export function instantiateFactorTemplateVersion(versionId, payload) {
     method: 'POST',
     body: JSON.stringify(payload)
   })
+}
+
+export function fetchFactorTemplateInstances(versionId, params = {}) {
+  return requestJson(withQuery(`/factor-template-versions/${versionId}/instances`, params))
 }

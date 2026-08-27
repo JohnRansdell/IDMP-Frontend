@@ -167,11 +167,13 @@
               <el-table-column prop="sensitive" label="敏感" width="58">
                 <template #default="{ row }">{{ row.sensitive ? '是' : '否' }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="112" fixed="right">
+              <el-table-column label="操作" width="170" fixed="right">
                 <template #default="{ row }">
                   <div class="field-actions">
-                    <div class="field-action-row"><el-button v-if="row.sourceFieldMappingId && isDimensionField(row)" link type="primary" @click="openStandardization(row)">标准化</el-button><span v-else class="field-action-disabled">{{ row.sourceFieldMappingId ? '非维度' : '未映射' }}</span></div>
-                    <div class="field-action-row"><el-button v-if="isDimensionField(row)" link type="primary" @click.stop="openValueSetBinding(row)">绑定值集</el-button><span v-else class="field-action-disabled">非维度</span></div>
+                    <el-button v-if="row.sourceFieldMappingId && isDimensionField(row)" link type="primary" @click="openStandardization(row)">标准化</el-button>
+                    <el-button v-if="row.sourceFieldMappingId && canBindValueSet(row)" link type="primary" @click.stop="openValueSetBinding(row)">绑定值集</el-button>
+                    <el-button v-if="row.sourceFieldMappingId" link type="primary" @click.stop="openFieldProfile(row)">字段画像</el-button>
+                    <span v-if="!row.sourceFieldMappingId" class="field-action-disabled">未建立来源字段映射</span>
                   </div>
                 </template>
               </el-table-column>
@@ -234,14 +236,15 @@
     <el-dialog v-model="valueSetDialogVisible" title="绑定语义字段值集" width="560px" destroy-on-close>
       <StatePanel v-if="valueSetBindingLoading" type="loading" title="正在加载值集绑定信息" />
       <template v-else>
-        <p class="field-help">字段：{{ selectedValueSetField?.code || '—' }} · 仅可绑定已发布值集。</p>
-        <el-select v-model="selectedValueSetId" filterable clearable placeholder="选择已发布值集" style="width: 100%">
+        <p class="field-help">字段：{{ selectedValueSetField?.code || '—' }} · 仅可绑定已发布值集；连续值集可绑定到兼容的数值或日期字段。</p>
+        <el-select v-model="selectedValueSetId" filterable clearable placeholder="选择已发布值集" style="width: 100%" @change="validateSelectedValueSet">
           <el-option v-for="item in valueSetOptions" :key="item.id" :label="`${item.code} · ${item.name}`" :value="String(item.id)" />
         </el-select>
         <div v-if="valueSetBinding" class="binding-summary">当前绑定：{{ valueSetBinding.valueSet?.code || '未绑定' }} · 资源版本 {{ valueSetBinding.semanticField?.resourceVersion ?? selectedValueSetField?.resourceVersion ?? '—' }}</div>
       </template>
       <template #footer><el-button @click="valueSetDialogVisible = false">取消</el-button><el-button type="primary" :loading="valueSetBindingSaving" :disabled="!selectedValueSetId" @click="saveValueSetBinding">确认绑定</el-button></template>
     </el-dialog>
+    <el-dialog v-model="profileDialogVisible" :title="`${profileField?.name || profileField?.code || '字段'}值画像`" width="680px" destroy-on-close><StatePanel v-if="profileLoading" type="loading" title="正在读取源字段画像" /><template v-else><el-descriptions :column="3" border><el-descriptions-item label="总记录数">{{ fieldProfile?.totalCount ?? '—' }}</el-descriptions-item><el-descriptions-item label="空值数">{{ fieldProfile?.nullCount ?? '—' }}</el-descriptions-item><el-descriptions-item label="不同值">{{ fieldProfile?.distinctCount ?? '—' }}</el-descriptions-item></el-descriptions><el-table v-if="profileItems.length" :data="profileItems" max-height="300" style="margin-top:16px"><el-table-column prop="value" label="源值" min-width="220" /><el-table-column prop="count" label="记录数" width="120" /><el-table-column prop="percentage" label="占比" width="120"><template #default="{ row }">{{ row.percentage == null ? '—' : `${Number(row.percentage).toFixed(2)}%` }}</template></el-table-column></el-table><StatePanel v-else type="empty" title="未返回离散值明细" description="仍可根据上方总数和不同值数判断字段覆盖情况。" /></template></el-dialog>
   </div>
 </template>
 
@@ -254,7 +257,8 @@ import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import { createSemanticTable, fetchDataDomains, fetchSemanticTableFields, fetchSemanticTables, fetchSourceTableFields, fetchSourceTables, saveSemanticField, updateDefaultTimeField } from '@/idmp/api/modules/meta'
-import { fetchSemanticFieldValueSet, bindSemanticFieldValueSet, fetchValueSets } from '@/idmp/api/modules/valueSets'
+import { fetchSemanticFieldValueSet, bindSemanticFieldValueSet, fetchValueSet, fetchValueSets } from '@/idmp/api/modules/valueSets'
+import { fetchSourceValueProfile } from '@/idmp/api/modules/transformRules'
 import { adaptDataDomainList, adaptSemanticFieldList, adaptSemanticTableList, adaptSourceFieldList, adaptSourceTableList, normalizeSemanticTable } from '@/idmp/api/adapters/meta'
 import { dataTypeLabel as semanticDataTypeLabel, semanticKindLabel, sourceObjectTypeLabel } from '@/idmp/features/meta'
 
@@ -293,6 +297,11 @@ const selectedValueSetField = ref(null)
 const valueSetBinding = ref(null)
 const valueSetOptions = ref([])
 const selectedValueSetId = ref('')
+const profileDialogVisible = ref(false)
+const profileLoading = ref(false)
+const profileField = ref(null)
+const fieldProfile = ref(null)
+const profileItems = ref([])
 const tableRequestVersion = ref(0)
 const fieldRequestVersion = ref(0)
 const createForm = reactive({ sourceTableName: '', code: '', name: '' })
@@ -464,8 +473,8 @@ function openStandardization(row) {
 
 async function openValueSetBinding(row) {
   if (!row?.id) return
-  if (!isDimensionField(row)) {
-    ElMessage.warning('只有后端明确标记为“维度”的语义字段可以绑定值集；编码或文本数据类型不会自动成为维度字段。')
+  if (!canBindValueSet(row)) {
+    ElMessage.warning('该字段既不是维度字段，也不是可绑定连续值集的数值或日期字段。')
     return
   }
   selectedValueSetField.value = row
@@ -512,6 +521,37 @@ function isMapped(row) {
 
 function isDimensionField(row) {
   return String(row?.semanticKind || row?.semanticRole || '').toUpperCase() === 'DIMENSION'
+}
+
+async function validateSelectedValueSet(valueSetId) {
+  if (!valueSetId || !selectedValueSetField.value) return
+  try {
+    const detail = await fetchValueSet(valueSetId)
+    const candidate = detail?.version || detail?.publishedVersion || null
+    const matchMode = String(candidate?.matchMode || detail?.valueSet?.matchMode || '').toUpperCase()
+    const valueType = String(candidate?.valueType || '').toUpperCase()
+    const fieldType = String(selectedValueSetField.value.dataType || selectedValueSetField.value.valueType || '').toUpperCase()
+    const continuous = matchMode === 'CONTINUOUS'
+    const roleAllowed = continuous ? ['INTEGER', 'DECIMAL', 'DATE', 'DATETIME'].includes(fieldType) : isDimensionField(selectedValueSetField.value)
+    if (!roleAllowed || (valueType && fieldType && valueType !== fieldType)) {
+      selectedValueSetId.value = ''
+      ElMessage.warning(continuous ? '连续值集仅可绑定类型一致的数值、日期或日期时间字段' : '枚举值集仅可绑定类型一致的维度字段')
+    }
+  } catch (error) {
+    selectedValueSetId.value = ''
+    ElMessage.error(formatErrorMessage(error, '值集兼容性校验失败'))
+  }
+}
+
+async function openFieldProfile(row) {
+  if (!row?.sourceFieldMappingId) return
+  profileField.value = row; profileDialogVisible.value = true; profileLoading.value = true; fieldProfile.value = null; profileItems.value = []
+  try { const data = await fetchSourceValueProfile(row.sourceFieldMappingId, { page: 1, size: 100 }); fieldProfile.value = data || null; profileItems.value = data?.items || data?.topValues || [] } catch (error) { ElMessage.error(formatErrorMessage(error, '字段画像读取失败')) } finally { profileLoading.value = false }
+}
+
+function canBindValueSet(row) {
+  if (isDimensionField(row)) return true
+  return ['INTEGER', 'DECIMAL', 'DATE', 'DATETIME'].includes(String(row?.dataType || row?.valueType || '').toUpperCase())
 }
 
 function resetFieldForm() {
@@ -689,8 +729,8 @@ function formatErrorMessage(error, fallback) {
 .semantic-field-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .semantic-field-cell strong, .semantic-field-cell small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .semantic-field-cell small { color: var(--idmp-text-helper); font: 11px ui-monospace, SFMono-Regular, Consolas, monospace; }
-.field-actions { display: flex; flex-direction: column; align-items: stretch; gap: 2px; }
-.field-action-row { display: flex; min-height: 24px; align-items: center; }
+.field-actions { display: grid; grid-template-columns: repeat(2, max-content); align-items: center; justify-content: start; column-gap: 8px; row-gap: 2px; min-height: 28px; }
+.field-actions :deep(.el-button + .el-button) { margin-left: 0; }
 .field-action-disabled { color: var(--idmp-text-helper); font-size: 12px; }
 .field-pane__heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; color: var(--idmp-text-primary); }
 .field-pane__heading-main { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; }
