@@ -2,9 +2,10 @@ import {
   DASHBOARD_DESIGN_WIDTH,
   DASHBOARD_LAYOUT_GAP,
   WIDGET_CONSTRAINTS
-} from './constants'
+} from './constants.js'
 
 const VALID_WIDGET_TYPES = new Set(Object.keys(WIDGET_CONSTRAINTS))
+const INDICATOR_VISUALIZATION_TYPES = ['kpi', 'bar', 'line', 'pie']
 
 export function createDefaultLayout() {
   const summaryWidth = DASHBOARD_DESIGN_WIDTH - DASHBOARD_LAYOUT_GAP
@@ -97,9 +98,49 @@ export function normalizeLayout(layout, getIndicatorSource, boardScale = 1) {
       const normalized = { ...widget }
       // 布局只保存组件配置，不能保存一次查询得到的业务数据快照；否则旧的
       // 演示数据会在后续真实查询完成后继续覆盖当前数据源。
+      delete normalized.data
       delete normalized.sourceSnapshot
       return constrainWidget(normalized, DASHBOARD_DESIGN_WIDTH, boardScale)
     })
+}
+
+export function getWidgetVisualizationTypes(widget) {
+  if (!widget || typeof widget !== 'object') return []
+  if (widget.preset === 'trend') return ['line', 'bar']
+  if (widget.preset === 'rate') return ['pie', 'bar']
+  if (widget.preset) return []
+  const isIndicatorWidget = ['primary', 'kpi', 'chart'].includes(widget.type)
+  if (isIndicatorWidget && (
+    widget.type === 'primary' ||
+    typeof widget.kpiIndex === 'number' ||
+    widget.sourceCode
+  )) {
+    return INDICATOR_VISUALIZATION_TYPES
+  }
+  return []
+}
+
+export function getWidgetVisualizationType(widget) {
+  const types = getWidgetVisualizationTypes(widget)
+  if (types.includes(widget?.visualType)) return widget.visualType
+
+  const inferred = widget?.type === 'primary' || widget?.type === 'kpi'
+    ? 'kpi'
+    : widget?.chartKind
+  return types.includes(inferred) ? inferred : ''
+}
+
+export function changeWidgetVisualization(widget, visualType, boardScale = 1) {
+  if (!getWidgetVisualizationTypes(widget).includes(visualType)) return widget
+
+  return constrainWidget({
+    ...widget,
+    type: visualType === 'kpi'
+      ? widget.kpiIndex === 0 ? 'primary' : 'kpi'
+      : 'chart',
+    visualType,
+    ...(visualType === 'kpi' ? {} : { chartKind: visualType })
+  }, DASHBOARD_DESIGN_WIDTH, boardScale)
 }
 
 export function getWidgetConstraints(widget, boardScale = 1) {
