@@ -230,6 +230,14 @@ const idmpPermissionMetadata = {
 routes[0].children.forEach((route) => {
   if (idmpPermissionMetadata[route.name]) route.meta = { ...route.meta, permissions: idmpPermissionMetadata[route.name] }
 })
+if (import.meta.env.DEV) {
+  routes[0].children.push({
+    path: 'dashboard-grid-poc',
+    name: 'DashboardGridPoc',
+    component: () => import('@/idmp/views/DashboardGridPoc.vue'),
+    meta: { title: 'GridStack Dashboard PoC', breadcrumb: ['首页', 'GridStack Dashboard PoC'] }
+  })
+}
 routes.splice(1, 0, { path: '/login', name: 'Login', component: () => import('@/idmp/views/Login.vue'), meta: { title: '登录' } })
 
 const router = createRouter({
