@@ -14,7 +14,14 @@
     <p class="grid-poc-mode">当前模式：{{ floatMode ? '自由网格（float=true），允许组件保留更自由的纵向网格位置。' : '紧凑布局（float=false），组件会自动向上补齐空白区域。' }}</p>
     <section ref="gridElement" class="grid-stack" aria-label="GridStack 测试画布">
       <div v-for="widget in widgets" :key="widget.id" class="grid-stack-item" :gs-id="widget.id" :gs-x="widget.x" :gs-y="widget.y" :gs-w="widget.w" :gs-h="widget.h" :data-widget-id="widget.id">
-        <div class="grid-stack-item-content" :class="`widget-${widget.id}`">{{ widget.title }}</div>
+        <div class="grid-stack-item-content" :class="`widget-${widget.id}`">
+          <template v-if="widget.id === 'a'">
+            <span class="kpi-label">{{ widget.title }}</span>
+            <strong class="kpi-value">{{ widget.value }} <small>{{ widget.unit }}</small></strong>
+            <span class="kpi-change">环比 {{ widget.change }}</span>
+          </template>
+          <template v-else>{{ widget.title }}</template>
+        </div>
       </div>
     </section>
     <section class="diagnostics">
@@ -39,7 +46,7 @@ const domText = ref('点击“读取当前布局”查看')
 const savedText = ref('尚未保存布局')
 const floatMode = ref(false)
 const widgets = [
-  { id: 'a', title: 'A', x: 0, y: 0, w: 12, h: 4 },
+  { id: 'a', title: '平均住院日', value: '7.2', unit: '天', change: '↓ 3.2%', x: 0, y: 0, w: 12, h: 4 },
   { id: 'b', title: 'B', x: 12, y: 0, w: 12, h: 4 },
   { id: 'c', title: 'C', x: 0, y: 4, w: 12, h: 4 },
   { id: 'd', title: 'D', x: 12, y: 4, w: 12, h: 4 }
@@ -123,6 +130,11 @@ onBeforeUnmount(() => grid.value?.destroy(false))
 .grid-poc-mode { margin: 0 0 16px; color: #475467; font-size: 13px; }
 .grid-stack { min-height: 600px; background: #f8fafc; }
 .grid-stack-item-content { display: flex; align-items: center; justify-content: center; border: 1px solid #8aa4c1; border-radius: 6px; background: #fff; color: #174a7c; font-size: 30px; font-weight: 600; }
+.widget-a { flex-direction: column; align-items: flex-start; padding: 24px; gap: 8px; }
+.kpi-label { color: #475467; font-size: 16px; font-weight: 500; }
+.kpi-value { color: #101828; font-size: 38px; line-height: 1.15; }
+.kpi-value small { font-size: 16px; font-weight: 500; }
+.kpi-change { color: #28745a; font-size: 14px; font-weight: 500; }
 .widget-b { color: #8b4b16; } .widget-c { color: #28745a; } .widget-d { color: #704a99; }
 .diagnostics { margin-top: 24px; padding: 16px; border: 1px solid #d0d5dd; background: #fff; }
 .diagnostics h2 { margin: 12px 0 6px; font-size: 15px; } .diagnostics h2:first-child { margin-top: 0; }
