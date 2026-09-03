@@ -20,6 +20,7 @@
             <strong class="kpi-value">{{ widget.value }} <small>{{ widget.unit }}</small></strong>
             <span class="kpi-change">环比 {{ widget.change }}</span>
           </template>
+          <IdmpChart v-else-if="widget.id === 'b'" :option="trendOption" height="100%" fit-container aria-label="平均住院日趋势" />
           <template v-else>{{ widget.title }}</template>
         </div>
       </div>
@@ -37,6 +38,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { GridStack } from 'gridstack'
 import 'gridstack/dist/gridstack.min.css'
+import IdmpChart from '@/idmp/components/IdmpChart.vue'
 
 const gridElement = ref()
 const grid = ref(null)
@@ -47,10 +49,16 @@ const savedText = ref('尚未保存布局')
 const floatMode = ref(false)
 const widgets = [
   { id: 'a', title: '平均住院日', value: '7.2', unit: '天', change: '↓ 3.2%', x: 0, y: 0, w: 12, h: 4 },
-  { id: 'b', title: 'B', x: 12, y: 0, w: 12, h: 4 },
-  { id: 'c', title: 'C', x: 0, y: 4, w: 12, h: 4 },
-  { id: 'd', title: 'D', x: 12, y: 4, w: 12, h: 4 }
+  { id: 'b', title: '平均住院日趋势', x: 12, y: 0, w: 12, h: 6 },
+  { id: 'c', title: 'C', x: 0, y: 6, w: 12, h: 4 },
+  { id: 'd', title: 'D', x: 12, y: 6, w: 12, h: 4 }
 ]
+const trendOption = {
+  tooltip: { trigger: 'axis' },
+  xAxis: { type: 'category', boundaryGap: false, data: ['1月', '2月', '3月', '4月', '5月', '6月'] },
+  yAxis: { type: 'value', name: '天' },
+  series: [{ name: '平均住院日', type: 'line', smooth: true, data: [7.5, 7.3, 7.8, 7.1, 6.9, 7.2] }]
+}
 const serializeNode = (node) => ({ id: String(node.id), x: node.x, y: node.y, w: node.w, h: node.h })
 const readSavedLayout = () => localStorage.getItem('idmp:gridstack-isolated-poc:v2') || '尚未保存布局'
 
@@ -135,7 +143,9 @@ onBeforeUnmount(() => grid.value?.destroy(false))
 .kpi-value { color: #101828; font-size: 38px; line-height: 1.15; }
 .kpi-value small { font-size: 16px; font-weight: 500; }
 .kpi-change { color: #28745a; font-size: 14px; font-weight: 500; }
-.widget-b { color: #8b4b16; } .widget-c { color: #28745a; } .widget-d { color: #704a99; }
+.widget-b { display: block; padding: 12px; color: #8b4b16; }
+.widget-b :deep(.idmp-chart-frame) { height: 100%; }
+.widget-c { color: #28745a; } .widget-d { color: #704a99; }
 .diagnostics { margin-top: 24px; padding: 16px; border: 1px solid #d0d5dd; background: #fff; }
 .diagnostics h2 { margin: 12px 0 6px; font-size: 15px; } .diagnostics h2:first-child { margin-top: 0; }
 .diagnostics pre { margin: 0; overflow: auto; font-size: 12px; }
