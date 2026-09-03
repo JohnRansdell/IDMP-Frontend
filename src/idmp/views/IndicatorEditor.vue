@@ -158,7 +158,7 @@
           <div class="notice-strip is-warning formula-contract-note">
             <el-icon><InfoFilled /></el-icon>
             <span>
-              可视分子/分母会优先从后端版本公式回显；当前保存仍采用简单比率型 AST，规则/场景配置暂不随公式一起持久化。
+              根据计算模式配置公式。保存、编译和下钻预检均使用当前编辑器生成的 Formula AST；规则/场景配置暂不随公式一起持久化。
             </span>
           </div>
           <h2>计算模式</h2>
@@ -180,6 +180,16 @@
 
           <h2 class="formula-section-title">公式编辑器</h2>
           <div class="formula-builder">
+            <div v-if="activeMode.kind === 'statistic'" class="formula-settings formula-settings--top">
+              <label>统计方法</label>
+              <el-select v-model="statisticOperator" aria-label="选择统计方法">
+                <el-option label="平均数" value="AVG" />
+                <el-option label="中位数" value="MEDIAN" />
+                <el-option label="最小值" value="MIN" />
+                <el-option label="最大值" value="MAX" />
+                <el-option label="P90 分位数" value="P90" />
+              </el-select>
+            </div>
             <div
               class="factor-slot"
               :class="{ 'is-empty': !numeratorFactors.length }"
@@ -188,7 +198,7 @@
               @drop="dropFactor('numerator')"
               @mouseup="dropFactor('numerator')"
             >
-              <div class="slot-label">分子<span>拖入因子</span></div>
+              <div class="slot-label">{{ activeMode.leftLabel }}<span>{{ activeMode.leftHint }}</span></div>
               <div class="slot-content">
                 <div v-for="factor in numeratorFactors" :key="factor.code" class="selected-factor">
                   <span>{{ factor.name }}</span>
@@ -202,13 +212,14 @@
                     @click="removeFactor('numerator', factor.code)"
                   />
                 </div>
-                <span v-if="!numeratorFactors.length" class="slot-placeholder">从下方拖入分子因子</span>
+                <span v-if="!numeratorFactors.length" class="slot-placeholder">{{ activeMode.leftPlaceholder }}</span>
               </div>
             </div>
 
-            <div class="formula-operator">÷</div>
+            <div v-if="activeMode.showRight" class="formula-operator">{{ formulaOperatorLabel }}</div>
 
             <div
+              v-if="activeMode.showRight"
               class="factor-slot"
               :class="{ 'is-empty': !denominatorFactors.length }"
               data-testid="denominator-slot"
@@ -216,7 +227,7 @@
               @drop="dropFactor('denominator')"
               @mouseup="dropFactor('denominator')"
             >
-              <div class="slot-label">分母<span>拖入因子</span></div>
+              <div class="slot-label">{{ activeMode.rightLabel }}<span>{{ activeMode.rightHint }}</span></div>
               <div class="slot-content">
                 <div v-for="factor in denominatorFactors" :key="factor.code" class="selected-factor">
                   <span>{{ factor.name }}</span>
@@ -230,11 +241,20 @@
                     @click="removeFactor('denominator', factor.code)"
                   />
                 </div>
-                <span v-if="!denominatorFactors.length" class="slot-placeholder">从下方拖入分母因子</span>
+                <span v-if="!denominatorFactors.length" class="slot-placeholder">{{ activeMode.rightPlaceholder }}</span>
               </div>
             </div>
 
-            <div class="formula-operator multiplier">× <strong>100%</strong></div>
+            <div v-if="activeMode.multiplier" class="formula-operator multiplier">× <strong>{{ activeMode.multiplier }}</strong></div>
+            <div v-if="activeMode.kind === 'custom'" class="formula-settings formula-settings--operator">
+              <label>运算符</label>
+              <el-select v-model="customOperator" aria-label="选择多因子运算符">
+                <el-option label="相加（+）" value="ADD" />
+                <el-option label="相减（−）" value="SUB" />
+                <el-option label="相乘（×）" value="MUL" />
+                <el-option label="相除（÷）" value="DIV" />
+              </el-select>
+            </div>
           </div>
 
           <div class="factor-library">
@@ -297,7 +317,7 @@
                 </div>
                 <el-button type="primary" :disabled="!formulaValid" :loading="workflowLoading.capability" @click="runDrillCapabilityPreflight()">预检下钻能力</el-button>
               </div>
-              <el-alert v-if="drillCapability.status === 'idle'" title="请选择一个分子和一个分母因子后执行预检；修改因子会使已有预检结果失效。" type="info" :closable="false" show-icon />
+              <el-alert v-if="drillCapability.status === 'idle'" :title="`请按${activeMode.factorRequirement}选择因子后执行预检；修改因子会使已有预检结果失效。`" type="info" :closable="false" show-icon />
               <StatePanel v-else-if="drillCapability.status === 'loading'" type="loading" title="正在预检下钻能力" />
               <el-alert v-else-if="drillCapability.status === 'error'" :title="drillCapability.errorMessage || '下钻能力预检失败'" type="error" :closable="false" show-icon />
               <template v-else-if="drillCapability.status === 'ready'">
@@ -620,11 +640,13 @@
                 <p class="section-title__description">调用当前后端接口发布已编译并试算通过的指标版本。</p>
               </div>
             </div>
-            <StatePanel
-              :type="indicatorWorkflow.published ? 'empty' : 'permission'"
-              :title="indicatorWorkflow.published ? '指标版本已发布' : '等待发布条件'"
-              :description="publishPanelDescription"
-            />
+            <div class="publish-action-content">
+              <StatePanel
+                :type="indicatorWorkflow.published ? 'empty' : 'permission'"
+                :title="indicatorWorkflow.published ? '指标版本已发布' : '等待发布条件'"
+                :description="publishPanelDescription"
+              />
+            </div>
             <div class="business-action-bar publish-actions">
               <div>
                 <span>后端写入接口</span>
@@ -693,9 +715,6 @@ import {
 } from '@/idmp/api/adapters/indicator'
 import { fetchFactorVersions } from '@/idmp/api/modules/factors'
 import { createCalcBatch, fetchAsyncTask, fetchCalcBatch } from '@/idmp/api/modules/calculation'
-import {
-  createMortalityFormulaPayload
-} from '@/idmp/api/modules/mortality'
 import {
   editorPolicyRows,
   editorSceneRows
@@ -1054,17 +1073,19 @@ function syncCategorySelection(path = form.categoryPath) {
 }
 
 const formulaModes = [
-  { name: '简单比率型', description: '简单比率型：分子 ÷ 分母 × 常数，适用于最基本的百分比指标' },
-  { name: '加法合成型', description: '加法合成型：多个同量纲因子相加，适用于总量类指标' },
-  { name: '复合比率型', description: '复合比率型：多个子比率按权重合成，适用于综合评价指标' },
-  { name: '多因子计算型', description: '多因子计算型：通过多个因子和运算符构成自定义计算表达式' },
-  { name: '统计量型', description: '统计量型：计算平均数、中位数、分位数等统计量' },
-  { name: '比值型', description: '比值型：两个独立统计量直接相除，不自动转换为百分比' }
+  { name: '简单比率型', kind: 'ratio', description: '一个分子 ÷ 一个分母 × 100%，适用于最基本的百分比指标', leftLabel: '分子', leftHint: '拖入一个因子', leftPlaceholder: '从下方拖入分子因子', rightLabel: '分母', rightHint: '拖入一个因子', rightPlaceholder: '从下方拖入分母因子', showRight: true, multiplier: '100%', factorRequirement: '一个分子和一个分母' },
+  { name: '加法合成型', kind: 'add', description: '多个同量纲因子相加，适用于总量类指标', leftLabel: '参与合成的因子', leftHint: '可拖入多个因子', leftPlaceholder: '从下方拖入一个或多个因子', showRight: false, multiplier: '', factorRequirement: '至少一个参与合成的因子' },
+  { name: '复合比率型', kind: 'ratio', description: '多个因子分别汇总后相除，并按百分比展示，适用于综合比率指标', leftLabel: '分子因子', leftHint: '可拖入多个因子', leftPlaceholder: '从下方拖入一个或多个分子因子', rightLabel: '分母因子', rightHint: '可拖入多个因子', rightPlaceholder: '从下方拖入一个或多个分母因子', showRight: true, multiplier: '100%', factorRequirement: '至少一个分子和一个分母因子' },
+  { name: '多因子计算型', kind: 'custom', description: '选择两组因子及运算符，构成可计算的自定义表达式', leftLabel: '左侧因子', leftHint: '可拖入多个因子', leftPlaceholder: '从下方拖入左侧因子', rightLabel: '右侧因子', rightHint: '可拖入多个因子', rightPlaceholder: '从下方拖入右侧因子', showRight: true, multiplier: '', factorRequirement: '左、右两侧各至少一个因子' },
+  { name: '统计量型', kind: 'statistic', description: '选择一个或多个因子，并指定平均数、中位数或分位数等统计方法', leftLabel: '统计对象', leftHint: '可拖入多个因子', leftPlaceholder: '从下方拖入一个或多个统计对象', showRight: false, multiplier: '', factorRequirement: '至少一个统计对象' },
+  { name: '比值型', kind: 'ratio', description: '分子 ÷ 分母，不自动转换为百分比', leftLabel: '分子', leftHint: '拖入一个因子', leftPlaceholder: '从下方拖入分子因子', rightLabel: '分母', rightHint: '拖入一个因子', rightPlaceholder: '从下方拖入分母因子', showRight: true, multiplier: '', factorRequirement: '一个分子和一个分母' }
 ]
 const formulaMode = ref('简单比率型')
 const activeMode = computed(() => formulaModes.find(item => item.name === formulaMode.value))
 const numeratorFactors = ref([])
 const denominatorFactors = ref([])
+const customOperator = ref('ADD')
+const statisticOperator = ref('AVG')
 const draggedFactor = ref()
 const factorSearch = ref('')
 const factorCategory = ref('')
@@ -1085,11 +1106,19 @@ const availableFactors = computed(() => factorLibraryRows.value.filter(item => {
   return !selectedFactorCodes.value.has(item.code) && matchesSearch && matchesCategory
 }))
 
-const formulaValid = computed(() => numeratorFactors.value.length > 0 && denominatorFactors.value.length > 0)
+const formulaValid = computed(() => {
+  if (activeMode.value.kind === 'add' || activeMode.value.kind === 'statistic') return numeratorFactors.value.length > 0
+  return numeratorFactors.value.length > 0 && denominatorFactors.value.length > 0
+})
+const formulaOperatorLabel = computed(() => {
+  if (activeMode.value.kind === 'custom') return ({ ADD: '+', SUB: '−', MUL: '×', DIV: '÷' })[customOperator.value]
+  return '÷'
+})
 const formulaPreview = computed(() => {
-  const numerator = numeratorFactors.value.map(item => item.name).join(' + ') || '请拖入分子因子'
-  const denominator = denominatorFactors.value.map(item => item.name).join(' + ') || '请拖入分母因子'
-  return `${numerator} ÷ ${denominator} × 100%`
+  const left = numeratorFactors.value.map(item => item.name).join(' + ') || activeMode.value.leftPlaceholder
+  if (!activeMode.value.showRight) return activeMode.value.kind === 'statistic' ? `${statisticOperator.value}（${left}）` : left
+  const right = denominatorFactors.value.map(item => item.name).join(' + ') || activeMode.value.rightPlaceholder
+  return `${left} ${formulaOperatorLabel.value} ${right}${activeMode.value.multiplier ? ` × ${activeMode.value.multiplier}` : ''}`
 })
 const indicatorTrialButtonLabel = computed(() => {
   if (workflowLoading.trial || workflowLoading.result) return '正在试算并读取结果'
@@ -1439,7 +1468,29 @@ function extractFormula(payload) {
 }
 
 function hydrateFormulaFactors(formula) {
-  const refs = collectFactorRefs(formula?.root || formula)
+  const root = formula?.root || formula
+  const refs = collectFactorRefs(root)
+  const operator = String(root?.operator || '').toUpperCase()
+  const displayFormat = String(formula?.display?.format || '').toUpperCase()
+  if (root?.nodeType === 'STATISTIC') {
+    formulaMode.value = '统计量型'
+    statisticOperator.value = root.operator || 'AVG'
+    numeratorFactors.value = refs.map(id => findFactorByVersionId(id) || createFormulaFactorPlaceholder('统计对象', id))
+    denominatorFactors.value = []
+    return
+  }
+  if (operator === 'ADD') {
+    formulaMode.value = '加法合成型'
+    numeratorFactors.value = refs.map(id => findFactorByVersionId(id) || createFormulaFactorPlaceholder('参与合成的因子', id))
+    denominatorFactors.value = []
+    return
+  }
+  if (['SUB', 'MUL'].includes(operator)) {
+    formulaMode.value = '多因子计算型'
+    customOperator.value = operator
+  } else if (operator === 'DIV') {
+    formulaMode.value = displayFormat === 'PERCENT' ? '简单比率型' : '比值型'
+  }
   if (refs[0]) deathFactorVersionId.value = toOpaqueId(refs[0])
   if (refs[1]) dischargeFactorVersionId.value = toOpaqueId(refs[1])
   applySelectedFactorReferences()
@@ -1729,8 +1780,9 @@ async function saveIndicatorFormulaOnly() {
 }
 
 function validateFormulaAndDrillSelection(formula) {
-  if (numeratorFactors.value.length !== 1) return '简单比率型必须选择一个分子因子'
-  if (denominatorFactors.value.length !== 1) return '简单比率型必须选择一个分母因子'
+  if (!formulaValid.value) return `请按${activeMode.value.factorRequirement}选择因子`
+  if (['简单比率型', '比值型'].includes(formulaMode.value) && numeratorFactors.value.length !== 1) return `${formulaMode.value}必须选择一个分子因子`
+  if (['简单比率型', '比值型'].includes(formulaMode.value) && denominatorFactors.value.length !== 1) return `${formulaMode.value}必须选择一个分母因子`
   if (drillCapability.status !== 'ready' || drillCapability.formulaSignature !== formulaSignature(formula)) {
     return '请先对当前公式执行下钻能力预检'
   }
@@ -2109,19 +2161,28 @@ function isOptimisticLockError(error) {
 }
 
 function createIndicatorFormulaPayload(resourceVersion) {
-  const numeratorVersionId = numeratorFactors.value[0]?.versionId
-  const denominatorVersionId = denominatorFactors.value[0]?.versionId
-  if (!numeratorVersionId || !denominatorVersionId) {
-    throw new Error('请先选择已发布的分子、分母因子')
+  if (!formulaValid.value) throw new Error(`请按${activeMode.value.factorRequirement}选择已发布因子`)
+  const factorRef = (factor, index) => ({ nodeId: `factor_${index}_${factor.versionId}`, nodeType: 'FACTOR_REF', factorVersionId: String(factor.versionId) })
+  const combine = (factors, operator, prefix) => factors.map((factor, index) => factorRef(factor, `${prefix}_${index}`)).reduce((left, right, index) => index ? ({ nodeId: `${prefix}_${operator.toLowerCase()}_${index}`, nodeType: 'BINARY', operator, left, right }) : left, null)
+  const left = combine(numeratorFactors.value, 'ADD', 'left')
+  let root
+  if (activeMode.value.kind === 'add') root = left
+  else if (activeMode.value.kind === 'statistic') root = { nodeId: 'statistic_root', nodeType: 'STATISTIC', operator: statisticOperator.value, children: numeratorFactors.value.map((factor, index) => factorRef(factor, `stat_${index}`)) }
+  else {
+    const right = combine(denominatorFactors.value, 'ADD', 'right')
+    const operator = activeMode.value.kind === 'custom' ? customOperator.value : 'DIV'
+    root = { nodeId: 'formula_root', nodeType: 'BINARY', operator, left, right, ...(operator === 'DIV' ? { zeroDenominatorPolicy: 'RETURN_NULL' } : {}) }
   }
-  deathFactorVersionId.value = toOpaqueId(numeratorVersionId)
-  dischargeFactorVersionId.value = toOpaqueId(denominatorVersionId)
-
-  return createMortalityFormulaPayload({
-    deathFactorVersionId: deathFactorVersionId.value,
-    dischargeFactorVersionId: dischargeFactorVersionId.value,
-    resourceVersion
-  })
+  const percent = activeMode.value.multiplier === '100%'
+  return {
+    resourceVersion,
+    formula: {
+      schemaVersion: '1.0',
+      astType: 'INDICATOR_FORMULA',
+      root,
+      display: { format: percent ? 'PERCENT' : 'DECIMAL', multiplier: percent ? '100' : '1', scale: 2, roundingMode: 'HALF_UP' }
+    }
+  }
 }
 
 function createIndicatorMetadataPayload() {
@@ -2463,12 +2524,39 @@ onMounted(async () => {
 
 .publish-layout {
   display: grid;
-  grid-template-columns: minmax(560px, 1.35fr) minmax(320px, 0.65fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
   gap: 16px;
 }
 
 .publish-gates {
   padding: 18px;
+}
+
+.publish-action-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 18px;
+}
+
+.publish-action-content {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  align-items: center;
+}
+
+.publish-action-content :deep(.state-panel) {
+  width: 100%;
+}
+
+.publish-actions {
+  align-items: flex-end;
+}
+
+.publish-actions small {
+  overflow-wrap: anywhere;
 }
 
 .publish-gates ul {
@@ -2821,6 +2909,16 @@ onMounted(async () => {
   border: 1px solid var(--idmp-border-soft);
   border-radius: 8px;
   background: var(--idmp-field);
+}
+
+.formula-settings--top {
+  margin: 0 0 16px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.formula-settings--operator {
+  margin-top: 16px;
 }
 
 .factor-slot {
