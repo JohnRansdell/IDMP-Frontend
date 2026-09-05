@@ -114,6 +114,12 @@ const routes = [
         meta: { title: '指标映射', breadcrumb: ['首页', '指标映射管理'] }
       },
       {
+        path: 'mapping/:id',
+        name: 'IndicatorMappingDetail',
+        component: () => import('@/idmp/views/IndicatorMappingDetail.vue'),
+        meta: { title: '映射详情', activeMenu: '/mapping', breadcrumb: ['首页', '指标映射管理', '映射详情'] }
+      },
+      {
         path: 'analysis',
         name: 'IndicatorAnalysis',
         component: () => import('@/idmp/views/IndicatorAnalysis.vue'),

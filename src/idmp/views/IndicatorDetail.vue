@@ -136,6 +136,19 @@
           </dl>
           <pre v-if="selectedVersion?.formula" class="json-preview">{{ formatJson(selectedVersion.formula) }}</pre>
         </article>
+        <article v-if="selectedVersion" class="surface-card policy-card">
+          <div class="section-title compact"><div><h2>政策依据</h2><p class="section-title__description">仅能绑定已发布的指标版本和政策文件版本。</p></div></div>
+          <StatePanel v-if="policyReferenceLoading" type="loading" title="正在读取政策引用" />
+          <el-table v-else :data="policyReferences" size="small" table-layout="fixed" empty-text="暂无有效政策引用">
+            <el-table-column label="政策文件" min-width="170"><template #default="{ row }">{{ row.policyFileName || row.policyFileCode || row.policyFileVersionId }}</template></el-table-column>
+            <el-table-column prop="relationRole" label="角色" width="100" />
+            <el-table-column label="操作" width="66"><template #default="{ row }"><el-button link type="danger" @click="invalidatePolicy(row)">失效</el-button></template></el-table-column>
+          </el-table>
+          <div v-if="isPublishedVersion" class="policy-reference-form"><el-input v-model.trim="policyReferenceForm.policyFileVersionId" placeholder="已发布政策版本 ID" /><el-select v-model="policyReferenceForm.relationRole"><el-option v-for="item in POLICY_REFERENCE_ROLES" :key="item.value" :label="item.label" :value="item.value" /></el-select><el-button type="primary" :loading="policyReferenceSaving" @click="addPolicyReference">添加</el-button></div>
+          <el-input v-if="isPublishedVersion" v-model="policyReferenceForm.citationLocation" class="policy-reference-input" placeholder="政策出处（可选）" />
+          <el-input v-if="isPublishedVersion" v-model="policyReferenceForm.citationText" class="policy-reference-input" type="textarea" :rows="2" placeholder="政策原文（可选）" />
+          <div class="version-mapping-links"><div class="section-title compact"><div><h3>有效指标映射</h3><p class="section-title__description">反查当前指标版本作为源侧或目标侧的已发布有效映射。</p></div></div><StatePanel v-if="mappingReferenceLoading" type="loading" title="正在读取有效映射" /><el-table v-else :data="mappingReferences" size="small" empty-text="暂无有效映射"><el-table-column prop="code" label="映射编码" min-width="150" /><el-table-column prop="mappingType" label="关系" width="110" /><el-table-column prop="comparability" label="可比性" width="120" /></el-table></div>
+        </article>
         <StatePanel
           type="unavailable"
           title="规则、场景与发布门禁待接入"
@@ -149,6 +162,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { InfoFilled } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
@@ -163,6 +177,8 @@ import {
 } from '@/idmp/api/modules/indicators'
 import { indicatorRows } from '@/idmp/data/demo'
 import { getStatusLabel } from '@/idmp/design/status'
+import { createPolicyReference, fetchMappingsByIndicatorVersion, fetchPolicyReferences, invalidatePolicyReference } from '@/idmp/api/modules/mappings'
+import { POLICY_REFERENCE_ROLES } from '@/idmp/api/adapters/mapping'
 
 const route = useRoute()
 const router = useRouter()
@@ -173,6 +189,12 @@ const selectedVersion = ref(null)
 const scenarioRows = ref([])
 const scenarioLoading = ref(false)
 const scenarioError = ref('')
+const policyReferences = ref([])
+const policyReferenceLoading = ref(false)
+const policyReferenceSaving = ref(false)
+const mappingReferences = ref([])
+const mappingReferenceLoading = ref(false)
+const policyReferenceForm = reactive({ policyFileVersionId: '', citationLocation: '', citationText: '', relationRole: 'SOURCE' })
 const detail = reactive({
   id: '',
   code: '',
@@ -189,6 +211,8 @@ const detail = reactive({
 
 const indicatorName = computed(() => detail.name || detail.code || routeIndicatorKey.value || '待加载')
 const indicatorStatus = computed(() => detail.status || 'UNKNOWN')
+const selectedVersionId = computed(() => resolveIndicatorVersionId(selectedVersion.value))
+const isPublishedVersion = computed(() => String(selectedVersion.value?.publicationStatus || selectedVersion.value?.status || '').toUpperCase() === 'PUBLISHED')
 
 function hydrateDetail(item) {
   Object.assign(detail, {
@@ -307,6 +331,54 @@ async function selectVersion(version) {
     detail.status = selectedVersion.value?.status || detail.status
   } catch {
     selectedVersion.value = version
+  }
+  void loadPolicyReferences(selectedVersionId.value)
+  void loadMappingReferences(selectedVersionId.value)
+}
+
+async function loadPolicyReferences(versionId) {
+  if (!versionId) return
+  policyReferenceLoading.value = true
+  try {
+    policyReferences.value = await fetchPolicyReferences(versionId)
+  } catch (error) {
+    policyReferences.value = []
+    ElMessage.warning(error?.message || '政策引用读取失败')
+  } finally { policyReferenceLoading.value = false }
+}
+
+async function addPolicyReference() {
+  if (!selectedVersionId.value || !policyReferenceForm.policyFileVersionId) return ElMessage.warning('请填写已发布政策版本 ID')
+  policyReferenceSaving.value = true
+  try {
+    await createPolicyReference(selectedVersionId.value, {
+      ...policyReferenceForm,
+      policyFileVersionId: String(policyReferenceForm.policyFileVersionId)
+    })
+    Object.assign(policyReferenceForm, { policyFileVersionId: '', citationLocation: '', citationText: '', relationRole: 'SOURCE' })
+    await loadPolicyReferences(selectedVersionId.value)
+    ElMessage.success('政策引用已添加')
+  } catch (error) { ElMessage.error(error?.message || '添加政策引用失败') } finally { policyReferenceSaving.value = false }
+}
+
+async function loadMappingReferences(versionId) {
+  if (!versionId) return
+  mappingReferenceLoading.value = true
+  try {
+    mappingReferences.value = await fetchMappingsByIndicatorVersion(versionId)
+  } catch {
+    mappingReferences.value = []
+  } finally { mappingReferenceLoading.value = false }
+}
+
+async function invalidatePolicy(reference) {
+  try {
+    await ElMessageBox.confirm('确认使该政策引用失效？', '失效政策引用', { type: 'warning' })
+    await invalidatePolicyReference(reference.id, reference.resourceVersion)
+    await loadPolicyReferences(selectedVersionId.value)
+    ElMessage.success('政策引用已失效')
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(error?.message || '失效政策引用失败')
   }
 }
 
@@ -443,6 +515,10 @@ onMounted(loadIndicatorDetail)
   padding: 16px;
 }
 
+.policy-card { padding: 16px; }
+.policy-reference-form { display: grid; grid-template-columns: minmax(0, 1fr) 128px auto; gap: 8px; margin: 12px 0 8px; }
+.policy-reference-input { margin-bottom: 8px; }
+
 .section-title.compact {
   margin-bottom: 12px;
 
@@ -537,5 +613,9 @@ onMounted(loadIndicatorDetail)
   .detail-layout {
     grid-template-columns: 1fr;
   }
+}
+
+@media (max-width: 520px) {
+  .policy-reference-form { grid-template-columns: 1fr; }
 }
 </style>

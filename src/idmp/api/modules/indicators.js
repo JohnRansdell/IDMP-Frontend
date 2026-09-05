@@ -130,12 +130,22 @@ export function fetchIndicatorAnalysis(indicatorId, params = {}) {
   ))
 }
 
+export function fetchIndicatorScenarioComparison(indicatorId, params = {}) {
+  return requestJson(withQuery(
+    `/analysis/indicators/${encodeURIComponent(indicatorId)}/scenario-comparison`,
+    normalizeIndicatorAnalysisParams(params)
+  ))
+}
+
 function withQuery(path, params = {}) {
   const query = new URLSearchParams()
   Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') {
-      query.set(key, value)
+    if (value === undefined || value === null || value === '') return
+    if (Array.isArray(value)) {
+      value.filter(item => item !== undefined && item !== null && item !== '').forEach(item => query.append(key, String(item)))
+      return
     }
+    query.set(key, String(value))
   })
   const queryText = query.toString()
   return queryText ? `${path}?${queryText}` : path

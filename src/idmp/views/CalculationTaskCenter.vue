@@ -92,6 +92,28 @@
                 <el-option label="重算" value="RECALC" />
               </el-select>
             </el-form-item>
+            <el-form-item v-if="createForm.ownerType === 'INDICATOR' && ['FULL', 'RECALC'].includes(createForm.batchType)" label="场景版本（可选）">
+              <el-select
+                v-model="createForm.scenarioVersionId"
+                class="scene-version-select"
+                filterable
+                clearable
+                allow-create
+                default-first-option
+                :loading="sceneOptionsLoading"
+                placeholder="选择关联场景；也可输入已发布场景版本 ID"
+                @visible-change="handleScenarioSelectVisible"
+              >
+                <el-option
+                  v-for="scene in sceneOptions"
+                  :key="scene.id"
+                  :label="scene.label"
+                  :value="scene.id"
+                />
+              </el-select>
+              <el-button link type="primary" :loading="sceneOptionsLoading" @click="loadSceneOptions">加载关联场景</el-button>
+              <small class="form-help">选择后将以该场景的覆盖规则创建正式计算；留空则创建非场景计算。</small>
+            </el-form-item>
             <el-form-item label="开始时间">
               <el-input v-model.trim="createForm.periodStart" class="mono-input" />
             </el-form-item>
@@ -306,7 +328,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
@@ -321,6 +343,7 @@ import {
   fetchCalcBatch,
   retryCalcNode
 } from '@/idmp/api/modules/calculation'
+import { fetchIndicatorScenarios, fetchIndicatorVersion } from '@/idmp/api/modules/indicators'
 
 const route = useRoute()
 const queryForm = reactive({
@@ -329,11 +352,12 @@ const queryForm = reactive({
 })
 
 const createForm = reactive({
-  ownerType: 'INDICATOR',
-  ownerVersionId: '',
-  batchType: 'TRIAL',
-  periodStart: '2000-01-01T00:00:00',
-  periodEnd: '2030-01-01T00:00:00'
+  ownerType: String(route.query.ownerType || 'INDICATOR'),
+  ownerVersionId: String(route.query.ownerVersionId || ''),
+  batchType: String(route.query.batchType || 'TRIAL'),
+  scenarioVersionId: String(route.query.scenarioVersionId || ''),
+  periodStart: String(route.query.periodStart || '2000-01-01T00:00:00'),
+  periodEnd: String(route.query.periodEnd || '2030-01-01T00:00:00')
 })
 
 const OWNER_TYPE_LABELS = { INDICATOR: '指标版本', FACTOR: '因子版本' }
@@ -353,6 +377,8 @@ const batchLoading = ref(false)
 const createLoading = ref(false)
 const cancelLoading = ref(false)
 const retryingNodeId = ref('')
+const sceneOptions = ref([])
+const sceneOptionsLoading = ref(false)
 
 const batchStatus = computed(() => String(batchDetail.value?.status || '').toUpperCase())
 const canCancelBatch = computed(() => {
@@ -384,6 +410,44 @@ const flatNodes = computed(() => {
        nodeId: toOpaqueId(node.nodeId)
     }))
   )
+})
+
+function normalizeScenarioOptions(payload) {
+  const records = Array.isArray(payload) ? payload : payload?.records || payload?.items || payload?.list || []
+  return records.map((item) => {
+    const id = toOpaqueId(item.scenarioVersionId || item.versionId || item.id)
+    const name = item.scenarioName || item.name || item.scenarioCode || '未命名场景'
+    const period = item.configuredPeriodType || item.defaultPeriodType || ''
+    return { id, label: `${name}${period ? ` · ${period}` : ''}` }
+  }).filter((item) => item.id)
+}
+
+async function loadSceneOptions() {
+  if (createForm.ownerType !== 'INDICATOR' || !createForm.ownerVersionId) {
+    ElMessage.warning('请先填写指标版本 ID，再加载关联场景')
+    return
+  }
+  sceneOptionsLoading.value = true
+  try {
+    const version = await fetchIndicatorVersion(createForm.ownerVersionId)
+    const indicatorId = toOpaqueId(version?.indicatorId || version?.indicator?.id)
+    if (!indicatorId) throw new Error('后端未返回该指标版本所属的指标 ID')
+    sceneOptions.value = normalizeScenarioOptions(await fetchIndicatorScenarios(indicatorId, { page: 1, size: 200 }))
+    if (!sceneOptions.value.length) ElMessage.info('当前指标版本暂无已关联场景')
+  } catch (error) {
+    sceneOptions.value = []
+    ElMessage.warning(error?.message || '关联场景加载失败；仍可手工输入场景版本 ID')
+  } finally {
+    sceneOptionsLoading.value = false
+  }
+}
+
+function handleScenarioSelectVisible(visible) {
+  if (visible && !sceneOptions.value.length && !sceneOptionsLoading.value) loadSceneOptions()
+}
+
+watch(() => createForm.ownerVersionId, () => {
+  sceneOptions.value = []
 })
 
 async function loadTask() {
@@ -468,6 +532,9 @@ async function createBatch() {
         ownerType: createForm.ownerType,
         ownerVersionId: String(createForm.ownerVersionId),
         batchType: createForm.batchType,
+        ...(createForm.ownerType === 'INDICATOR' && ['FULL', 'RECALC'].includes(createForm.batchType) && createForm.scenarioVersionId
+          ? { scenarioVersionId: String(createForm.scenarioVersionId) }
+          : {}),
         periodStart: createForm.periodStart,
         periodEnd: createForm.periodEnd
       },
@@ -702,6 +769,14 @@ function stateTypeForError(message) {
 .create-card :deep(.el-input),
 .create-card :deep(.el-select) {
   width: 100%;
+}
+
+.form-help {
+  display: block;
+  margin-top: 6px;
+  color: var(--idmp-text-helper);
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .detail-list {

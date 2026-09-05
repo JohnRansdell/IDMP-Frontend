@@ -94,24 +94,30 @@
     </section>
 
     <section ref="sceneComparisonRef" class="surface-card scene-comparison" aria-label="不同场景计算值对比">
-      <div class="scene-comparison__label">
-        <span>不同场景对比</span>
-        <small>同一指标在不同场景下的计算口径可能存在差异</small>
+      <div class="scene-comparison__head">
+        <div class="scene-comparison__label"><span>不同场景对比</span><small>并列展示各场景的原始统计周期，不跨场景重算或强制聚合。</small></div>
+        <div class="scene-comparison__controls">
+          <el-select v-model="scenarioComparisonSelectedIds" multiple collapse-tags collapse-tags-tooltip clearable filterable placeholder="全部关联场景" :disabled="!scenarioComparisonTarget || !scenarioComparisonOptions.length">
+            <el-option v-for="scene in scenarioComparisonOptions" :key="scene.value" :label="scene.label" :value="scene.value" />
+          </el-select>
+          <el-date-picker v-model="scenarioComparisonPeriodRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始日期" end-placeholder="结束日期" range-separator="至" />
+          <el-button size="small" type="primary" :loading="scenarioComparisonLoading" :disabled="!scenarioComparisonTarget" @click="applyScenarioComparisonFilters">应用筛选</el-button>
+          <el-button size="small" :loading="scenarioComparisonLoading" :disabled="!scenarioComparisonTarget" @click="loadScenarioComparison">刷新对比</el-button>
+        </div>
       </div>
-      <div class="scene-tags">
-        <button
-          v-for="scene in currentProfile.sceneComparisons"
-          :key="scene.name"
-          type="button"
-          class="scene-tag"
-          :class="{ 'is-current': scene.current }"
-          :aria-pressed="scene.current ? 'true' : 'false'"
-          @click="showSceneValue(scene)"
-        >
-          <span>{{ scene.name }}</span>
-          <strong>{{ scene.value }}</strong>
-          <em>{{ scene.difference || '当前场景' }}</em>
-        </button>
+      <StatePanel v-if="!scenarioComparisonTarget" type="unavailable" title="请选择已发布指标版本后查看场景对比" description="场景对比仅适用于已发布指标版本关联的已发布场景。" />
+      <StatePanel v-else-if="scenarioComparisonLoading" type="loading" title="正在读取场景正式结果" />
+      <StatePanel v-else-if="scenarioComparisonError" type="error" title="场景对比加载失败" :description="scenarioComparisonError" />
+      <StatePanel v-else-if="scenarioComparisonLoaded && !scenarioComparisonScenarios.length" type="empty" title="暂无已发布场景结果" description="请确认场景已发布、已关联当前指标版本，并已完成场景化正式计算。" />
+      <div v-if="scenarioComparisonScenarios.length" class="scenario-result-grid">
+        <article v-for="scene in scenarioComparisonScenarios" :key="sceneKey(scene)" class="scenario-result-card">
+          <div class="scenario-result-card__head"><div><strong>{{ scene.scenarioName || scene.name || scene.scenarioCode || '未命名场景' }}</strong><small class="mono-data">{{ scene.scenarioCode || scene.scenarioVersionId || '-' }}</small></div><StatusBadge :status="scene.resultAvailability" /></div>
+          <div v-if="String(scene.resultAvailability).toUpperCase() === 'NO_ACTIVE_RESULT'" class="scenario-result-card__empty"><span>尚未生成已激活的正式结果。</span><small>场景周期和覆盖规则已保留，可直接发起正式计算。</small><el-button type="primary" plain @click="openScenarioCalculation(scene)">创建场景计算</el-button></div>
+          <template v-else>
+            <div class="scenario-result-card__latest"><strong>{{ scenePointValue(latestScenePoint(scene)) }}</strong><small>数据范围：{{ formatPeriodLabel(latestScenePoint(scene)?.periodStart, latestScenePoint(scene)?.periodEnd) }}</small></div>
+            <p v-if="scenePointNotice(latestScenePoint(scene))" class="scenario-result-card__notice">{{ scenePointNotice(latestScenePoint(scene)) }}</p>
+          </template>
+        </article>
       </div>
     </section>
 
@@ -299,9 +305,10 @@ import IdmpChart from '@/idmp/components/IdmpChart.vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import ResultAvailabilityPanel from '@/idmp/components/ResultAvailabilityPanel.vue'
+import StatePanel from '@/idmp/components/StatePanel.vue'
 import DrillExplorer from '@/idmp/features/analysis/DrillExplorer.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
-import { fetchIndicatorAnalysis, fetchIndicatorAvailablePeriod, fetchIndicators, fetchIndicatorVersion, fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
+import { fetchIndicatorAnalysis, fetchIndicatorAvailablePeriod, fetchIndicatorScenarioComparison, fetchIndicators, fetchIndicatorVersion, fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
 import { deriveDrillPathResultIds } from '@/idmp/api/adapters/drill'
 import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
 import { fetchMortalityReadonlyChain, mortalityChainConfig } from '@/idmp/api/modules/mortality'
@@ -333,6 +340,14 @@ const selectedIndicatorCode = ref(String(route.query.indicator || DEFAULT_ANALYS
 const backendIndicators = ref([])
 const indicatorOptionsLoading = ref(false)
 const sceneComparisonRef = ref()
+const scenarioComparison = ref(null)
+const scenarioComparisonLoading = ref(false)
+const scenarioComparisonError = ref('')
+const scenarioComparisonLoaded = ref(false)
+let scenarioComparisonSequence = 0
+const scenarioComparisonSelectedIds = ref([])
+const scenarioComparisonPeriodRange = ref([])
+const scenarioComparisonOptions = ref([])
 const selectedDrillDepartment = ref('')
 const drillStartLevel = ref('HOSPITAL')
 const drillParentKeys = ref({})
@@ -563,6 +578,17 @@ const currentIndicatorVersionId = computed(() => String(
   selectedBackendIndicator.value?.currentPublishedVersionId || selectedBackendIndicator.value?.publishedVersionId ||
   selectedBackendIndicator.value?.currentVersionId || ''
 ))
+const scenarioComparisonTarget = computed(() => {
+  const indicator = selectedBackendIndicator.value
+  const indicatorId = indicator?.id || indicator?.indicatorId
+  const indicatorVersionId = currentIndicatorVersionId.value
+  return indicatorId && indicatorVersionId
+    ? { indicatorId: String(indicatorId), indicatorVersionId: String(indicatorVersionId) }
+    : null
+})
+const scenarioComparisonScenarios = computed(() => Array.isArray(scenarioComparison.value?.scenarios)
+  ? scenarioComparison.value.scenarios
+  : [])
 
 const trendOption = computed(() => ({
   animationDuration: 450,
@@ -720,8 +746,101 @@ const scrollToSceneComparison = () => {
   })
 }
 
-const showSceneValue = (scene) => {
-  ElMessage.info(`${scene.name}为本地演示场景值：${scene.value}，尚未接入场景结果接口。`)
+function applyScenarioComparisonFilters() {
+  loadScenarioComparison()
+}
+
+async function loadScenarioComparison() {
+  const target = scenarioComparisonTarget.value
+  const sequence = ++scenarioComparisonSequence
+  scenarioComparison.value = null
+  scenarioComparisonError.value = ''
+  scenarioComparisonLoaded.value = false
+  if (!target) return
+  scenarioComparisonLoading.value = true
+  try {
+    const result = await fetchIndicatorScenarioComparison(target.indicatorId, {
+      indicatorVersionId: target.indicatorVersionId,
+      ...(scenarioComparisonSelectedIds.value.length ? { scenarioVersionIds: scenarioComparisonSelectedIds.value } : {}),
+      ...(scenarioComparisonPeriodRange.value.length === 2
+        ? { periodStart: scenarioComparisonPeriodRange.value[0], periodEnd: scenarioComparisonPeriodRange.value[1] }
+        : {})
+    })
+    if (sequence !== scenarioComparisonSequence) return
+    scenarioComparison.value = result
+    mergeScenarioComparisonOptions(result?.scenarios)
+    scenarioComparisonLoaded.value = true
+  } catch (error) {
+    if (sequence !== scenarioComparisonSequence) return
+    scenarioComparisonError.value = error?.message || '无法读取场景正式结果'
+  } finally {
+    if (sequence === scenarioComparisonSequence) scenarioComparisonLoading.value = false
+  }
+}
+
+function sceneKey(scene) {
+  return String(scene?.scenarioVersionId || scene?.scenarioCode || scene?.scenarioName || scene?.name || '')
+}
+
+function mergeScenarioComparisonOptions(scenes) {
+  const current = new Map(scenarioComparisonOptions.value.map((scene) => [String(scene.value), scene]))
+  ;(Array.isArray(scenes) ? scenes : []).forEach((scene) => {
+    const value = scene?.scenarioVersionId || scene?.id
+    if (!value) return
+    const name = scene.scenarioName || scene.name || scene.scenarioCode || String(value)
+    current.set(String(value), { value: String(value), label: name })
+  })
+  scenarioComparisonOptions.value = [...current.values()]
+}
+
+function latestScenePoint(scene) {
+  const points = Array.isArray(scene?.points) ? scene.points : []
+  return points.reduce((latest, point) => {
+    if (!latest) return point
+    return String(point?.periodEnd || point?.periodStart || '') > String(latest?.periodEnd || latest?.periodStart || '')
+      ? point
+      : latest
+  }, null)
+}
+
+function scenePointValue(point) {
+  if (isUsableDisplayValue(point?.displayValue)) return point.displayValue
+  if (isUsableRawValue(point?.value)) return formatMetricValue(point.value, currentProfile.value.unit)
+  return '—'
+}
+
+function scenePointNotice(point) {
+  if (!point) return ''
+  const outcome = String(point.outcomeStatus || '').toUpperCase()
+  const quality = String(point.qualityStatus || '').toUpperCase()
+  const flags = Array.isArray(point.qualityFlags) ? point.qualityFlags.filter(Boolean) : []
+  if (flags.length) return `质量提示：${flags.join('、')}`
+  if (outcome && outcome !== 'CALCULATED') return `结果状态：${displayStatus(outcome)}`
+  if (quality && quality !== 'PASSED') return `质量状态：${displayStatus(quality)}`
+  return ''
+}
+
+function openScenarioCalculation(scene) {
+  const point = latestScenePoint(scene)
+  const selectedRange = scenarioComparisonPeriodRange.value.length === 2 ? scenarioComparisonPeriodRange.value : reportPeriodRange.value
+  const periodStart = point?.periodStart || selectedRange?.[0]
+  const periodEnd = point?.periodEnd || selectedRange?.[1]
+  router.push({
+    path: '/calc',
+    query: {
+      ownerType: 'INDICATOR',
+      ownerVersionId: currentIndicatorVersionId.value,
+      batchType: 'FULL',
+      scenarioVersionId: String(scene?.scenarioVersionId || scene?.id || ''),
+      ...(periodStart ? { periodStart: toCalculationDateTime(periodStart) } : {}),
+      ...(periodEnd ? { periodEnd: toCalculationDateTime(periodEnd) } : {})
+    }
+  })
+}
+
+function toCalculationDateTime(value) {
+  const text = String(value || '')
+  return text.includes('T') ? text : `${text}T00:00:00`
 }
 
 const openDepartmentDrill = (row) => {
@@ -885,6 +1004,7 @@ async function loadBackendAnalysisIndicators() {
     )
     if (selectedBackendIndicator.value) {
       await refreshMortalityAnalysis()
+      void loadScenarioComparison()
     } else if (backendIndicators.value.length) {
       const firstOption = createBackendAnalysisOptions(backendIndicators.value, localAnalysisOptions.value)[0]
       if (firstOption?.code) {
@@ -1169,14 +1289,19 @@ async function loadAvailablePeriod(versionId, refreshSequence) {
 onMounted(() => {
   loadBackendAnalysisIndicators()
   refreshMortalityAnalysis()
+  loadScenarioComparison()
 })
 
 watch(indicatorCode, () => {
   selectedIndicatorCode.value = indicatorCode.value
   analysisPeriodRange.value = initialAnalysisPeriodRange()
   reportPeriodRange.value = initialReportPeriodRange()
+  scenarioComparisonSelectedIds.value = []
+  scenarioComparisonPeriodRange.value = []
+  scenarioComparisonOptions.value = []
   period.value = '月度'
   refreshMortalityAnalysis()
+  loadScenarioComparison()
 })
 
 function initialAnalysisPeriodRange() {
@@ -1465,17 +1590,21 @@ function formatRange(range) {
 .metric-summary-grid.is-5 .metric-summary-card:nth-child(-n + 2) { grid-column: span 3; }
 
 .scene-comparison {
-  display: flex;
   min-height: 80px;
-  align-items: center;
-  gap: 22px;
   margin-bottom: 16px;
   padding: 13px 16px;
 }
 
+.scene-comparison__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
 .scene-comparison__label {
   display: flex;
-  flex: 0 0 178px;
   flex-direction: column;
   gap: 3px;
 
@@ -1491,6 +1620,97 @@ function formatRange(range) {
     line-height: 18px;
   }
 }
+
+.scene-comparison__controls {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.scene-comparison__controls :deep(.el-select) { width: 220px; }
+.scene-comparison__controls :deep(.el-date-editor) { width: 246px; }
+
+.scenario-result-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.scenario-result-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--idmp-border-subtle);
+  border-radius: var(--idmp-radius-md);
+}
+
+.scenario-result-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid var(--idmp-border-soft);
+  background: var(--idmp-layer-02);
+}
+
+.scenario-result-card__head > div { display: grid; min-width: 0; gap: 4px; }
+.scenario-result-card__head strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scenario-result-card__head small { color: var(--idmp-text-helper); }
+
+.scenario-result-card__latest {
+  display: grid;
+  gap: 5px;
+  padding: 18px 14px 14px;
+}
+
+.scenario-result-card__latest > strong {
+  color: var(--idmp-text-primary);
+  font-size: 28px;
+  line-height: 36px;
+}
+
+.scenario-result-card__latest > small { color: var(--idmp-text-secondary); }
+
+.scenario-result-card__notice {
+  margin: 0 14px 12px;
+  padding: 8px 10px;
+  border-radius: var(--idmp-radius-sm);
+  background: var(--idmp-warning-subtle, var(--idmp-layer-02));
+  color: var(--idmp-text-secondary);
+  font-size: 12px;
+}
+
+.scenario-result-card__actions { padding: 0 14px 12px; }
+.scene-period-collapse { border-top: 1px solid var(--idmp-border-soft); }
+.scene-period-collapse :deep(.el-collapse-item__header) { height: 36px; color: var(--idmp-interactive); font-size: 12px; }
+.scene-period-collapse :deep(.el-collapse-item__wrap) { border-bottom: 0; }
+.scene-period-collapse :deep(.el-collapse-item__content) { padding-bottom: 0; }
+
+.scene-period-list { display: grid; gap: 6px; padding: 0 0 10px; }
+.scene-period-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px dashed var(--idmp-border-soft);
+  color: var(--idmp-text-secondary);
+}
+.scene-period-item:first-child { border-top: 0; }
+.scene-period-item.is-latest { color: var(--idmp-text-primary); }
+.scene-period-item strong { color: var(--idmp-text-primary); }
+.scene-period-item small { grid-column: 1 / -1; color: var(--idmp-text-helper); font-size: 12px; }
+
+.scenario-result-card__empty {
+  display: grid;
+  gap: 7px;
+  padding: 18px 14px;
+  color: var(--idmp-text-secondary);
+}
+.scenario-result-card__empty small { color: var(--idmp-text-helper); }
+.scenario-result-card__empty .el-button { justify-self: start; margin-top: 4px; }
 
 .scene-tags {
   display: flex;
@@ -1913,11 +2133,9 @@ function formatRange(range) {
   }
 
   .scene-comparison {
-    gap: 14px;
   }
 
   .scene-comparison__label {
-    flex-basis: 158px;
   }
 
   .scene-tag {
@@ -1961,6 +2179,8 @@ function formatRange(range) {
 }
 
 @media (max-width: 720px) {
+  .scene-comparison__head { align-items: flex-start; flex-direction: column; }
+  .scenario-result-grid { grid-template-columns: 1fr; }
   .report-context :deep(.el-date-editor) {
     width: 100%;
   }
