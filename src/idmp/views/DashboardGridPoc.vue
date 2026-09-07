@@ -10,18 +10,20 @@
       <button type="button" @click="saveLayout">保存布局</button>
       <button type="button" @click="restoreLayout">恢复布局</button>
       <button type="button" @click="resetLayout">重置</button>
+      <button type="button" @click="addKpi">新增 KPI</button>
     </div>
     <p class="grid-poc-mode">当前模式：{{ floatMode ? '自由网格（float=true），允许组件保留更自由的纵向网格位置。' : '紧凑布局（float=false），组件会自动向上补齐空白区域。' }}</p>
     <section ref="gridElement" class="grid-stack" aria-label="GridStack 测试画布">
       <div v-for="widget in widgets" :key="widget.id" class="grid-stack-item" :gs-id="widget.id" :gs-x="widget.x" :gs-y="widget.y" :gs-w="widget.w" :gs-h="widget.h" :data-widget-id="widget.id">
         <div class="grid-stack-item-content" :class="`widget-${widget.id}`">
-          <template v-if="widget.id === 'a'">
+          <template v-if="widget.id === 'a' || widget.kind === 'kpi'">
             <span class="kpi-label">{{ widget.title }}</span>
             <strong class="kpi-value">{{ widget.value }} <small>{{ widget.unit }}</small></strong>
             <span class="kpi-change">环比 {{ widget.change }}</span>
           </template>
           <IdmpChart v-else-if="widget.id === 'b'" :option="trendOption" height="100%" fit-container aria-label="平均住院日趋势" />
           <template v-else>{{ widget.title }}</template>
+          <button class="widget-delete" type="button" @pointerdown.stop @mousedown.stop @touchstart.stop @click.stop="removeWidget(widget.id)">删除</button>
         </div>
       </div>
     </section>
@@ -47,12 +49,14 @@ const engineText = ref('点击“读取当前布局”查看')
 const domText = ref('点击“读取当前布局”查看')
 const savedText = ref('尚未保存布局')
 const floatMode = ref(false)
-const widgets = [
+const widgets = ref([
   { id: 'a', title: '平均住院日', value: '7.2', unit: '天', change: '↓ 3.2%', x: 0, y: 0, w: 12, h: 4 },
   { id: 'b', title: '平均住院日趋势', x: 12, y: 0, w: 12, h: 6 },
   { id: 'c', title: 'C', x: 0, y: 6, w: 12, h: 4 },
   { id: 'd', title: 'D', x: 12, y: 6, w: 12, h: 4 }
-]
+])
+const registeredWidgetIds = new Set()
+let nextKpiNumber = 1
 const trendOption = {
   tooltip: { trigger: 'axis' },
   xAxis: { type: 'category', boundaryGap: false, data: ['1月', '2月', '3月', '4月', '5月', '6月'] },
@@ -84,11 +88,31 @@ function saveLayout() {
   savedText.value = JSON.stringify(payload, null, 2)
 }
 
+async function addKpi() {
+  if (!grid.value) return
+  const id = `poc-kpi-${nextKpiNumber++}`
+  widgets.value.push({ id, kind: 'kpi', title: '新增 KPI', value: '6.8', unit: '天', change: '↓ 1.4%', x: 0, y: 0, w: 6, h: 4 })
+  await nextTick()
+  const element = [...gridElement.value.querySelectorAll('.grid-stack-item')].find((item) => item.dataset.widgetId === id)
+  if (element && !registeredWidgetIds.has(id)) {
+    grid.value.makeWidget(element, { id, w: 6, h: 4, autoPosition: true })
+    registeredWidgetIds.add(id)
+  }
+}
+
+function removeWidget(widgetId) {
+  if (!grid.value) return
+  const element = [...gridElement.value.querySelectorAll('.grid-stack-item')].find((item) => item.dataset.widgetId === widgetId)
+  if (element) grid.value.removeWidget(element, false)
+  registeredWidgetIds.delete(widgetId)
+  widgets.value = widgets.value.filter((widget) => widget.id !== widgetId)
+}
+
 function restoreLayout() {
   if (!grid.value) return
   try {
     const payload = JSON.parse(localStorage.getItem('idmp:gridstack-isolated-poc:v2') || 'null')
-    if (!payload || !Array.isArray(payload.widgets) || payload.widgets.length !== 4) return
+    if (!payload || !Array.isArray(payload.widgets)) return
     const valid = payload.widgets.every((item) => item && typeof item.id === 'string' && ['x', 'y', 'w', 'h'].every((key) => Number.isInteger(item[key])))
     if (!valid) return
     if (typeof payload.float === 'boolean') {
@@ -118,6 +142,7 @@ function resetLayout() {
 onMounted(async () => {
   await nextTick()
   grid.value = GridStack.init({ column: 24, cellHeight: 60, margin: 8, float: false, animate: true, staticGrid: false, resizable: { handles: 'se' } }, gridElement.value)
+  widgets.value.forEach((widget) => registeredWidgetIds.add(widget.id))
   savedText.value = readSavedLayout()
   if (import.meta.env.DEV) {
     grid.value.on('dragstop', (_event, element) => console.debug('[GridPOC dragstop]', element?.gridstackNode && serializeNode(element.gridstackNode)))
@@ -143,6 +168,7 @@ onBeforeUnmount(() => grid.value?.destroy(false))
 .kpi-value { color: #101828; font-size: 38px; line-height: 1.15; }
 .kpi-value small { font-size: 16px; font-weight: 500; }
 .kpi-change { color: #28745a; font-size: 14px; font-weight: 500; }
+.widget-delete { position: absolute; top: 8px; right: 8px; z-index: 2; padding: 4px 8px; border: 1px solid #d0d5dd; border-radius: 4px; background: #fff; color: #b42318; cursor: pointer; font-size: 12px; }
 .widget-b { display: block; padding: 12px; color: #8b4b16; }
 .widget-b :deep(.idmp-chart-frame) { height: 100%; }
 .widget-c { color: #28745a; } .widget-d { color: #704a99; }
