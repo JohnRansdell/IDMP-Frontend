@@ -22,7 +22,7 @@
           <el-button :icon="Close" @click="cancelDashboardEdit">取消</el-button>
           <el-button type="primary" :icon="Check" @click="saveDashboardLayout">保存布局</el-button>
         </template>
-        <el-button v-else type="primary" :icon="Edit" @click="startDashboardEdit">编辑看板</el-button>
+        <el-button v-if="!isEditing" type="primary" :icon="Edit" @click="startDashboardEdit">编辑看板</el-button>
         <el-button v-if="dashboardStatus === 'unpublished'" @click="loadDashboard">重新加载</el-button>
       </template>
     </PageHeader>
@@ -103,7 +103,7 @@
       </div>
     </section>
 
-    <div class="dashboard-board-scroll">
+    <div v-if="!isEditing" class="dashboard-board-scroll">
       <section
         ref="boardRef"
         class="editable-dashboard"
@@ -314,6 +314,31 @@
       </div>
       </section>
     </div>
+    <DashboardCanvas
+      v-else
+      ref="designerCanvasRef"
+      class="dashboard-designer-canvas"
+      :widgets="designerWidgets"
+      :editable="true"
+      :columns="24"
+      :float="false"
+      aria-label="GridStack 指标看板设计器"
+      @widget-remove="deleteDesignerWidget"
+      @widget-configure="activeWidgetId = $event"
+    >
+      <template #default="{ widget }">
+        <article v-if="widget.type === 'primary' || widget.type === 'kpi'" class="surface-card dashboard-designer-kpi">
+          <span class="dashboard-designer-kpi__label">{{ getWidgetKpi(widget).title }}</span>
+          <strong>{{ getWidgetKpi(widget).value }}</strong>
+          <span>{{ getWidgetKpi(widget).change }}</span>
+        </article>
+        <div v-else-if="widget.type === 'chart'" class="dashboard-designer-chart">
+          <h3>{{ getWidgetTitle(widget) }}</h3>
+          <IdmpChart :option="getWidgetChartOption(widget)" height="100%" fit-container :aria-label="getWidgetChartAriaLabel(widget)" />
+        </div>
+        <div v-else class="dashboard-designer-placeholder">{{ getWidgetTitle(widget) }}</div>
+      </template>
+    </DashboardCanvas>
     </template>
   </div>
 </template>
@@ -339,6 +364,7 @@ import {
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
+import DashboardCanvas from '@/idmp/features/dashboard/components/DashboardCanvas.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
 import { fetchDashboardBootstrap } from '@/idmp/api/modules/analysisDashboard'
 import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
@@ -355,6 +381,14 @@ import {
   resizeHandles,
   widgetTypeOptions
 } from '@/idmp/features/dashboard/constants'
+import {
+  getDashboardSchemaStorageKey,
+  normalizeDashboardSchema,
+  validateDashboardSchema,
+  getDefaultGridLayout,
+  mergeWidgetMetadataAndLayout
+} from '@/idmp/features/dashboard/schema'
+import { legacyPixelLayoutToGrid } from '@/idmp/features/dashboard/gridLayout'
 import {
   changeWidgetVisualization,
   cloneLayout,
@@ -384,6 +418,7 @@ const departmentOptions = [{ label: '全院', value: '' }]
 const period = ref('2025-12')
 const department = ref('')
 const boardRef = ref()
+const designerCanvasRef = ref()
 const boardWidth = ref(0)
 const isEditing = ref(false)
 const activeWidgetId = ref('')
@@ -394,6 +429,7 @@ const dashboardStatus = ref('loading')
 const dashboardLoadMessage = ref('')
 const dashboardLayout = ref(createDefaultLayout())
 const editSnapshot = ref([])
+const designerWidgets = ref([])
 const dashboardDefinition = ref(null)
 const dashboardQueryResult = ref(null)
 let dashboardAbortController
@@ -720,6 +756,10 @@ function getNextWidgetPosition() {
 }
 
 function addDashboardWidget() {
+  if (isEditing.value) {
+    addDesignerWidget()
+    return
+  }
   const source = selectedDataSource.value
   if (!source) return
   const position = getNextWidgetPosition()
@@ -755,10 +795,35 @@ function addDashboardWidget() {
   activeWidgetId.value = id
 }
 
+async function addDesignerWidget() {
+  const source = selectedDataSource.value
+  if (!source) return
+  const type = addWidgetType.value
+  const id = `dashboard-widget-${Date.now()}`
+  const metadata = type === 'kpi'
+    ? { id, type: 'kpi', sourceCode: source.code, sourceName: source.name, visualType: 'kpi', config: {}, layout: getDefaultGridLayout('kpi') }
+    : { id, type: 'chart', chartKind: type, title: getVisualizationTitle(source.name, type), sourceCode: source.code, sourceName: source.name, visualType: type, config: {}, layout: getDefaultGridLayout('chart') }
+  designerWidgets.value.push(metadata)
+  await nextTick()
+  await designerCanvasRef.value?.registerWidget(id, { ...metadata.layout, autoPosition: true })
+  activeWidgetId.value = id
+}
+
 function deleteActiveWidget() {
+  if (isEditing.value) {
+    deleteDesignerWidget(activeWidgetId.value)
+    return
+  }
   if (!activeWidgetId.value) return
   dashboardLayout.value = dashboardLayout.value.filter((widget) => widget.id !== activeWidgetId.value)
   activeWidgetId.value = ''
+}
+
+function deleteDesignerWidget(widgetId) {
+  if (!widgetId) return
+  designerCanvasRef.value?.unregisterWidget(widgetId)
+  designerWidgets.value = designerWidgets.value.filter((widget) => widget.id !== widgetId)
+  if (activeWidgetId.value === widgetId) activeWidgetId.value = ''
 }
 
 function updateWidget(id, partial) {
@@ -883,11 +948,23 @@ function onResizePointerDown(event, widget, handle) {
 }
 
 function startDashboardEdit() {
-  editSnapshot.value = cloneLayout(dashboardLayout.value)
+  try {
+    designerWidgets.value = loadDesignerWidgets()
+  } catch {
+    designerWidgets.value = createDesignerWidgets(createDefaultLayout())
+  }
+  activeWidgetId.value = ''
   isEditing.value = true
+  nextTick(() => designerCanvasRef.value?.applyLayout(designerWidgets.value.map((widget) => ({ id: widget.id, ...widget.layout }))))
 }
 
 function cancelDashboardEdit() {
+  if (isEditing.value) {
+    designerWidgets.value = []
+    activeWidgetId.value = ''
+    isEditing.value = false
+    return
+  }
   dashboardLayout.value = normalizeLayout(
     cloneLayout(editSnapshot.value.length ? editSnapshot.value : createDefaultLayout()),
     getDashboardIndicatorSource
@@ -898,6 +975,23 @@ function cancelDashboardEdit() {
 }
 
 function saveDashboardLayout() {
+  if (isEditing.value) {
+    const layout = designerCanvasRef.value?.getLayout() || []
+    const schema = normalizeDashboardSchema({
+      version: 1,
+      id: DASHBOARD_CODE,
+      name: '医疗质量指标总览',
+      layout: { engine: 'gridstack', columns: 24, float: false },
+      widgets: mergeWidgetMetadataAndLayout(designerWidgets.value, layout)
+    })
+    const validation = validateDashboardSchema(schema)
+    if (!validation.valid) return
+    localStorage.setItem(getDashboardSchemaStorageKey(DASHBOARD_CODE), JSON.stringify(schema))
+    designerWidgets.value = []
+    activeWidgetId.value = ''
+    isEditing.value = false
+    return
+  }
   dashboardLayout.value = normalizeLayout(
     dashboardLayout.value,
     getDashboardIndicatorSource
@@ -909,8 +1003,45 @@ function saveDashboardLayout() {
 }
 
 function resetDashboardLayout() {
+  if (isEditing.value) {
+    designerWidgets.value = createDesignerWidgets(createDefaultLayout())
+    nextTick(() => designerCanvasRef.value?.applyLayout(designerWidgets.value.map((widget) => ({ id: widget.id, ...widget.layout }))))
+    activeWidgetId.value = ''
+    return
+  }
   dashboardLayout.value = createDefaultLayout()
   activeWidgetId.value = ''
+}
+
+function loadDesignerWidgets() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(getDashboardSchemaStorageKey(DASHBOARD_CODE)) || 'null')
+    if (saved) {
+      const normalized = normalizeDashboardSchema(saved)
+      if (validateDashboardSchema(normalized).valid && normalized.widgets.length) return normalized.widgets
+    }
+  } catch {
+    // Fall through to the legacy pixel layout migration.
+  }
+
+  const legacy = readLegacyDashboardLayout()
+  const sourceLayout = legacy.length ? legacy : dashboardLayout.value
+  const gridLayout = legacyPixelLayoutToGrid(sourceLayout, { designWidth: DASHBOARD_DESIGN_WIDTH, columns: 24, cellHeight: 60 })
+  return mergeWidgetMetadataAndLayout(sourceLayout, gridLayout)
+}
+
+function createDesignerWidgets(layout) {
+  const gridLayout = legacyPixelLayoutToGrid(layout, { designWidth: DASHBOARD_DESIGN_WIDTH, columns: 24, cellHeight: 60 })
+  return mergeWidgetMetadataAndLayout(layout, gridLayout)
+}
+
+function readLegacyDashboardLayout() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DASHBOARD_LAYOUT_STORAGE_KEY) || 'null')
+    return Array.isArray(saved) ? normalizeLayout(saved, getDashboardIndicatorSource) : []
+  } catch {
+    return []
+  }
 }
 
 function loadDashboardLayout() {
@@ -1102,6 +1233,53 @@ onBeforeUnmount(() => {
 <style scoped lang="scss">
 .dashboard-filter {
   width: 122px;
+}
+
+.dashboard-designer-canvas {
+  min-height: 932px;
+  margin-top: 16px;
+  background: #f8fafc;
+}
+
+.dashboard-designer-kpi,
+.dashboard-designer-chart,
+.dashboard-designer-placeholder {
+  height: 100%;
+  min-height: 100%;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.dashboard-designer-kpi {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+
+.dashboard-designer-kpi strong {
+  color: var(--idmp-text-primary);
+  font-size: 32px;
+}
+
+.dashboard-designer-chart {
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-designer-chart h3 {
+  margin: 0 0 8px;
+}
+
+.dashboard-designer-chart :deep(.idmp-chart-frame) {
+  flex: 1;
+  min-height: 0;
+}
+
+.dashboard-designer-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .dashboard-editor-panel {
