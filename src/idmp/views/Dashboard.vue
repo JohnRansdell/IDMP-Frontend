@@ -215,7 +215,17 @@
               </p>
             </div>
           </div>
+          <DashboardDrillPie
+            v-if="widget.chartKind === 'pie' && getWidgetPieTargets(widget).length"
+            :targets="getWidgetPieTargets(widget)"
+            :source="getWidgetPieSource(widget)"
+            :title="getWidgetTitle(widget)"
+            :numerator-label="getWidgetPieMeasure(widget).label"
+            :numerator-unit="getWidgetPieMeasure(widget).unit"
+            :disabled="isEditing"
+          />
           <IdmpChart
+            v-else
             :option="getWidgetChartOption(widget)"
             :empty="isChartEmpty(widget)"
             height="100%"
@@ -337,6 +347,7 @@ import {
   WarningFilled
 } from '@element-plus/icons-vue'
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
+import DashboardDrillPie from '@/idmp/features/dashboard/DashboardDrillPie.vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
@@ -587,6 +598,7 @@ function getWidgetTitle(widget) {
 }
 
 function getWidgetDescription(widget) {
+  if (widget.chartKind === 'pie' && getWidgetPieTargets(widget).length) return '按分子值展示完整分布，点击组织在当前图内下钻'
   if (widget.preset === 'trend') return '按当前筛选条件读取已发布看板的月度数据'
   if (widget.preset === 'rate') {
     return widgetHasDrillTargets(widget)
@@ -680,6 +692,26 @@ function getWidgetTableRows(widget) {
 
 function widgetHasDrillTargets(widget) {
   return getWidgetTableRows(widget).some((row) => row.drillTarget)
+}
+
+function getWidgetPieSource(widget) {
+  return getWidgetSource(widget)?.origin === 'backend' ? 'live' : dashboardDrillSource()
+}
+
+function getWidgetPieTargets(widget) {
+  if (widget.preset === 'rate') return departmentRanking.value.map((row) => row.drillTarget).filter(Boolean)
+  return (getWidgetSource(widget)?.pieData || [])
+    .map((row) => normalizeDashboardDrillTarget(row.drillTarget, getWidgetPieSource(widget)))
+    .filter(Boolean)
+}
+
+function getWidgetPieMeasure(widget) {
+  const source = widget.preset === 'rate'
+    ? getDashboardIndicatorSource(departmentRanking.value[0]?.drillTarget?.indicatorCode)
+    : getWidgetSource(widget)
+  return getWidgetPieSource(widget) === 'mock'
+    ? { label: source?.numeratorLabel || '分子值', unit: source?.numeratorUnit || '' }
+    : { label: '分子值', unit: '' }
 }
 
 function dashboardDrillSource() {

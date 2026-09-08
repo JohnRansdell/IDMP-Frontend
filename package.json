@@ -10,7 +10,7 @@
     "dev": "vite",
     "build:prod": "vite build",
     "preview": "vite preview",
-    "test": "node --test test/meta-adapter.test.js test/cascade.test.js test/drill-adapter.test.js test/indicator-adapter.test.js test/scenario-adapter.test.js test/mapping-adapter.test.js test/warning-adapter.test.js test/status.test.js test/result-availability.test.js test/trial-period-recommendation.test.js test/dashboard-visualization.test.js"
+    "test": "node --test test/meta-adapter.test.js test/cascade.test.js test/drill-adapter.test.js test/indicator-adapter.test.js test/scenario-adapter.test.js test/mapping-adapter.test.js test/warning-adapter.test.js test/status.test.js test/result-availability.test.js test/trial-period-recommendation.test.js test/dashboard-visualization.test.js test/dashboard-pie-drill.test.js"
   },
   "dependencies": {
     "@element-plus/icons-vue": "2.3.2",

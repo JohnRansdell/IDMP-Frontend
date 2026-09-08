@@ -31,6 +31,11 @@ const DRILL_LEVEL_RANKS = Object.freeze({
   })
 })
 
+export function normalizeOrganizationDrillLevel(value) {
+  const level = typeof value === 'string' ? value.trim().toUpperCase() : ''
+  return { DEPARTMENT: 'OUT_DEPT', DOCTOR: 'ATTENDING_DOCTOR' }[level] || level
+}
+
 export function limitDrillNextLevels(nextLevels = [], pathCode = '', maxLevel = '') {
   const levels = Array.isArray(nextLevels) ? nextLevels : []
   const ranks = DRILL_LEVEL_RANKS[pathCode] || {}
@@ -153,21 +158,37 @@ function normalizeRecord(item = {}) {
   return {
     ...item,
     levelCode: item.levelCode || item.level || '',
-    dimensionKey: toOpaqueId(item.dimensionKey ?? item.key),
+    dimensionKey: toOpaqueId(item.dimensionKey ?? item.dimKey ?? item.key),
     dimensionName: item.dimensionName || item.dimensionLabel || item.name || item.displayValue || '-',
     dimensionLabel: item.dimensionLabel || item.dimensionName || item.name || item.displayValue || '-',
     displayValue: item.displayValue ?? item.indicatorValue ?? item.value ?? null,
+    indicatorValue: item.indicatorValue ?? item.value ?? null,
+    numerator: item.numerator ?? item.numeratorValue ?? null,
+    denominator: item.denominator ?? item.denominatorValue ?? null,
+    unit: item.unit ?? item.indicatorUnit ?? '',
     nextLevel: item.nextLevel || ''
   }
 }
 
 function normalizePageInfo(value = {}) {
+  const pageNum = value.pageNum ?? value.page
+  const pageSize = value.pageSize ?? value.size
+  const totalPages = value.totalPages ?? value.pages
   return {
-    pageNum: Number(value.pageNum || value.page || 1),
-    pageSize: Number(value.pageSize || value.size || 20),
+    pageNum: Number(pageNum || 1),
+    pageSize: Number(pageSize || 20),
     total: Number(value.total || 0),
-    totalPages: Number(value.totalPages || value.pages || 0)
+    totalPages: Number(totalPages || 0),
+    hasPageNum: isPageNumber(pageNum, 1),
+    hasPageSize: isPageNumber(pageSize, 1),
+    hasTotal: isPageNumber(value.total, 0),
+    hasTotalPages: isPageNumber(totalPages, 0)
   }
+}
+
+function isPageNumber(value, minimum) {
+  return (typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')) &&
+    Number.isSafeInteger(Number(value)) && Number(value) >= minimum
 }
 
 function toOpaqueId(value) {

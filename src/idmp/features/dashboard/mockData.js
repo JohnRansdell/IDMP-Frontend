@@ -1,31 +1,24 @@
-import { dashboardTrend, departmentRanking } from '@/idmp/data/demo'
+import { dashboardTrend } from '../../data/demo.js'
+import { createMockDrillResult, MOCK_SURGERY_DRILL_CONTEXT } from '../analysis/drillData.js'
 
-const MOCK_DEPARTMENT_CODES = [
-  'DEPT_CARDIO',
-  'DEPT_NEURO',
-  'DEPT_ORTHO',
-  'DEPT_GENERAL',
-  'DEPT_UROLOGY',
-  'DEPT_THORACIC'
-]
+const departmentResult = createMockDrillResult(MOCK_SURGERY_DRILL_CONTEXT.resultId, {
+  currentLevel: 'OUT_DEPT',
+  parentKeys: { HOSPITAL_CODE: 'HOSPITAL_MAIN' }
+})
 
-export const mockDashboardDepartmentRanking = departmentRanking.map((row, index) => ({
-  deptCode: MOCK_DEPARTMENT_CODES[index],
-  deptName: row.department,
-  value: Number.parseFloat(row.value),
+export const mockDashboardDepartmentRanking = departmentResult.records.map((row) => ({
+  deptCode: row.dimensionKey,
+  deptName: row.dimensionLabel,
+  value: Number.parseFloat(row.indicatorValue),
+  numerator: row.numerator,
+  denominator: row.denominator,
   drillTarget: {
-    resultId: 'MOCK-RESULT-SURGERY-COMPLICATION',
-    snapshotId: 'MOCK-SNAPSHOT-20260811',
-    indicatorId: 'MOCK-INDICATOR-SURGERY-COMPLICATION',
-    indicatorCode: 'SURGERY_COMPLICATION',
-    indicatorName: '手术患者并发症发生率',
-    indicatorVersionId: 'MOCK-VERSION-SURGERY-COMPLICATION',
+    ...MOCK_SURGERY_DRILL_CONTEXT,
     currentLevel: 'MEDICAL_GROUP',
     parentKeys: {
       HOSPITAL_CODE: 'HOSPITAL_MAIN',
-      OUT_DEPT_CODE: MOCK_DEPARTMENT_CODES[index]
-    },
-    period: '2024年度'
+      OUT_DEPT_CODE: row.dimensionKey
+    }
   }
 }))
 
@@ -58,9 +51,9 @@ export const mockDashboardDefinition = {
       type: 'PIE',
       dataQueryCode: 'departmentRanking',
       config: {
-        indicatorId: 'MOCK-INDICATOR-SURGERY-COMPLICATION',
-        indicatorCode: 'SURGERY_COMPLICATION',
-        indicatorVersionId: 'MOCK-VERSION-SURGERY-COMPLICATION',
+        indicatorId: MOCK_SURGERY_DRILL_CONTEXT.indicatorId,
+        indicatorCode: MOCK_SURGERY_DRILL_CONTEXT.indicatorCode,
+        indicatorVersionId: MOCK_SURGERY_DRILL_CONTEXT.indicatorVersionId,
         drillPathCode: 'ORGANIZATION'
       }
     }
@@ -131,18 +124,23 @@ export const mockIndicatorDataSources = [
     name: '手术患者并发症发生率',
     category: '质量安全',
     unit: '%',
-    currentValue: 2.3,
+    numeratorLabel: '发生例数',
+    numeratorUnit: '例',
+    currentValue: Number.parseFloat(departmentResult.summary.indicatorValue),
     change: '↑ 0.5%',
     target: '目标：≤3%',
     status: 'warning',
     trendData: [1.8, 1.7, 1.9, 2.0, 1.8, 2.1, 2.0, 2.2, 2.1, 2.3, 2.2, 2.3],
-    departmentData: departmentRanking.map((row) => ({ name: row.department, value: Number.parseFloat(row.value) })),
-    pieData: [
-      { name: 'Ⅰ级', value: 41 },
-      { name: 'Ⅱ级', value: 34 },
-      { name: 'Ⅲ级', value: 18 },
-      { name: 'Ⅳ级', value: 7 }
-    ]
+    departmentData: mockDashboardDepartmentRanking.map((row) => ({ name: row.deptName, value: row.value })),
+    pieData: mockDashboardDepartmentRanking.map((row) => ({
+      name: row.deptName,
+      value: row.numerator,
+      numerator: row.numerator,
+      denominator: row.denominator,
+      indicatorValue: `${row.value}%`,
+      unit: '%',
+      drillTarget: row.drillTarget
+    }))
   },
   {
     code: 'ANTIBIOTIC_DDDS',
