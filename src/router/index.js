@@ -236,10 +236,11 @@ const idmpPermissionMetadata = {
 routes[0].children.forEach((route) => {
   if (idmpPermissionMetadata[route.name]) route.meta = { ...route.meta, permissions: idmpPermissionMetadata[route.name] }
 })
-routes.splice(1, 0, { path: '/login', name: 'Login', component: () => import('@/idmp/views/Login.vue'), meta: { title: '登录' } })
+// 当前部署不启用统一登录入口；兼容旧书签并直接返回工作台。
+routes.splice(1, 0, { path: '/login', redirect: '/dashboard' })
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes,
   scrollBehavior() {
     return { top: 0 }

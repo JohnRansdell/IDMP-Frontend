@@ -116,6 +116,7 @@
           <template v-else>
             <div class="scenario-result-card__latest"><strong>{{ scenePointValue(latestScenePoint(scene)) }}</strong><small>数据范围：{{ formatPeriodLabel(latestScenePoint(scene)?.periodStart, latestScenePoint(scene)?.periodEnd) }}</small></div>
             <p v-if="scenePointNotice(latestScenePoint(scene))" class="scenario-result-card__notice">{{ scenePointNotice(latestScenePoint(scene)) }}</p>
+            <el-table :data="scene.points || []" size="small" class="scenario-point-table" empty-text="暂无正式结果点"><el-table-column label="周期" min-width="190"><template #default="{ row }">{{ formatPeriodLabel(row.periodStart, row.periodEnd) }}</template></el-table-column><el-table-column label="结果" width="110"><template #default="{ row }">{{ scenePointValue(row) }}</template></el-table-column><el-table-column label="状态" width="104"><template #default="{ row }"><StatusBadge :status="row.outcomeStatus || row.qualityStatus" /></template></el-table-column><el-table-column label="操作" width="72"><template #default="{ row }"><el-button v-if="row.resultId" link type="primary" @click="openScenarioPointDrill(row)">下钻</el-button></template></el-table-column></el-table>
           </template>
         </article>
       </div>
@@ -308,7 +309,7 @@ import ResultAvailabilityPanel from '@/idmp/components/ResultAvailabilityPanel.v
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import DrillExplorer from '@/idmp/features/analysis/DrillExplorer.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
-import { fetchIndicatorAnalysis, fetchIndicatorAvailablePeriod, fetchIndicatorScenarioComparison, fetchIndicators, fetchIndicatorVersion, fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
+import { fetchIndicatorAnalysis, fetchIndicatorAvailablePeriod, fetchIndicatorScenarioComparison, fetchIndicatorScenarios, fetchIndicators, fetchIndicatorVersion, fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
 import { deriveDrillPathResultIds } from '@/idmp/api/adapters/drill'
 import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
 import { fetchMortalityReadonlyChain, mortalityChainConfig } from '@/idmp/api/modules/mortality'
@@ -348,6 +349,7 @@ let scenarioComparisonSequence = 0
 const scenarioComparisonSelectedIds = ref([])
 const scenarioComparisonPeriodRange = ref([])
 const scenarioComparisonOptions = ref([])
+const scenarioComparisonIdByCode = ref(new Map())
 const selectedDrillDepartment = ref('')
 const drillStartLevel = ref('HOSPITAL')
 const drillParentKeys = ref({})
@@ -769,6 +771,7 @@ async function loadScenarioComparison() {
     if (sequence !== scenarioComparisonSequence) return
     scenarioComparison.value = result
     mergeScenarioComparisonOptions(result?.scenarios)
+    void loadScenarioComparisonOptions(target)
     scenarioComparisonLoaded.value = true
   } catch (error) {
     if (sequence !== scenarioComparisonSequence) return
@@ -782,15 +785,39 @@ function sceneKey(scene) {
   return String(scene?.scenarioVersionId || scene?.scenarioCode || scene?.scenarioName || scene?.name || '')
 }
 
+async function loadScenarioComparisonOptions(target = scenarioComparisonTarget.value) {
+  if (!target?.indicatorId) return
+  try {
+    const records = normalizeList(await fetchIndicatorScenarios(target.indicatorId, { page: 1, size: 200 }))
+    const current = new Map(scenarioComparisonOptions.value.map((scene) => [String(scene.value), scene]))
+    const byCode = new Map(scenarioComparisonIdByCode.value)
+    records.forEach((scene) => {
+      const value = scene?.scenarioVersionId || scene?.versionId || scene?.id
+      if (!value) return
+      const name = scene.scenarioName || scene.name || scene.scenarioCode || String(value)
+      current.set(String(value), { value: String(value), label: name })
+      if (scene.scenarioCode) byCode.set(String(scene.scenarioCode), String(value))
+    })
+    scenarioComparisonOptions.value = [...current.values()]
+    scenarioComparisonIdByCode.value = byCode
+  } catch {
+    // 场景选项缺失不妨碍已有结果展示；没有版本 ID 时禁用补算入口，避免误发起非场景计算。
+  }
+}
+
 function mergeScenarioComparisonOptions(scenes) {
   const current = new Map(scenarioComparisonOptions.value.map((scene) => [String(scene.value), scene]))
   ;(Array.isArray(scenes) ? scenes : []).forEach((scene) => {
-    const value = scene?.scenarioVersionId || scene?.id
+    const value = resolveScenarioVersionId(scene)
     if (!value) return
     const name = scene.scenarioName || scene.name || scene.scenarioCode || String(value)
     current.set(String(value), { value: String(value), label: name })
   })
   scenarioComparisonOptions.value = [...current.values()]
+}
+
+function resolveScenarioVersionId(scene) {
+  return scene?.scenarioVersionId || scene?.id || scenarioComparisonIdByCode.value.get(String(scene?.scenarioCode || '')) || ''
 }
 
 function latestScenePoint(scene) {
@@ -820,7 +847,16 @@ function scenePointNotice(point) {
   return ''
 }
 
+function openScenarioPointDrill(point) {
+  router.push({ path: '/analysis/drill', query: { resultId: String(point.resultId), period: formatPeriodLabel(point.periodStart, point.periodEnd), source: 'live' } })
+}
+
 function openScenarioCalculation(scene) {
+  const scenarioVersionId = resolveScenarioVersionId(scene)
+  if (!scenarioVersionId) {
+    ElMessage.warning('场景对比响应未返回场景版本 ID，且无法从关联场景中匹配；为避免创建非场景计算，已阻止提交。')
+    return
+  }
   const point = latestScenePoint(scene)
   const selectedRange = scenarioComparisonPeriodRange.value.length === 2 ? scenarioComparisonPeriodRange.value : reportPeriodRange.value
   const periodStart = point?.periodStart || selectedRange?.[0]
@@ -831,7 +867,11 @@ function openScenarioCalculation(scene) {
       ownerType: 'INDICATOR',
       ownerVersionId: currentIndicatorVersionId.value,
       batchType: 'FULL',
-      scenarioVersionId: String(scene?.scenarioVersionId || scene?.id || ''),
+      scenarioVersionId: String(scenarioVersionId),
+      returnTo: '/analysis',
+      returnIndicator: indicatorCode.value,
+      returnIndicatorVersionId: currentIndicatorVersionId.value,
+      ...(scenarioComparisonSelectedIds.value.length ? { returnScenarioVersionIds: scenarioComparisonSelectedIds.value.join(',') } : {}),
       ...(periodStart ? { periodStart: toCalculationDateTime(periodStart) } : {}),
       ...(periodEnd ? { periodEnd: toCalculationDateTime(periodEnd) } : {})
     }
@@ -1299,6 +1339,7 @@ watch(indicatorCode, () => {
   scenarioComparisonSelectedIds.value = []
   scenarioComparisonPeriodRange.value = []
   scenarioComparisonOptions.value = []
+  scenarioComparisonIdByCode.value = new Map()
   period.value = '月度'
   refreshMortalityAnalysis()
   loadScenarioComparison()

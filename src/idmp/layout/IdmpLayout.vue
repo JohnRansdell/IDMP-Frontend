@@ -51,8 +51,8 @@
           </el-select>
         </div>
         <el-tooltip content="查看预警中心" placement="bottom">
-          <el-badge :value="5" class="notification-badge">
-            <el-button text circle aria-label="查看 5 条待处理预警" @click="router.push('/alerts')">
+          <el-badge :value="unreadCount || undefined" :hidden="!unreadCount" class="notification-badge">
+            <el-button text circle :aria-label="`查看 ${unreadCount} 条未读站内通知`" @click="router.push('/alerts')">
               <el-icon :size="19"><Bell /></el-icon>
             </el-button>
           </el-badge>
@@ -74,7 +74,7 @@
 </template>
 
 <script setup>
-import { computed, markRaw, ref } from 'vue'
+import { computed, markRaw, onMounted, ref } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import {
   Aim,
@@ -93,10 +93,21 @@ import {
 } from '@element-plus/icons-vue'
 import { sceneOptions } from '@/idmp/data/demo'
 import { DEFAULT_ANALYSIS_INDICATOR, getAnalysisProfile } from '@/idmp/features/analysis/indicatorProfiles'
+import { fetchUnreadNotificationCount } from '@/idmp/api/modules/warnings'
 
 const route = useRoute()
 const router = useRouter()
 const currentScene = ref(sceneOptions[0])
+const unreadCount = ref(0)
+
+async function loadUnreadCount() {
+  try {
+    const result = await fetchUnreadNotificationCount()
+    unreadCount.value = Number(result?.unreadCount || 0)
+  } catch {
+    unreadCount.value = 0
+  }
+}
 
 const navGroups = [
   {
@@ -153,4 +164,6 @@ const displayBreadcrumbs = computed(() => {
   }
   return breadcrumbs.value
 })
+
+onMounted(loadUnreadCount)
 </script>

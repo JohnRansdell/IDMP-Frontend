@@ -130,6 +130,7 @@
             :tone="createFeedback.tone"
           />
           <span>{{ createFeedback.message }}</span>
+          <el-button v-if="returnToAnalysis" link type="primary" @click="returnToScenarioComparison">返回场景对比</el-button>
         </div>
       </article>
     </section>
@@ -359,6 +360,7 @@ const createForm = reactive({
   periodStart: String(route.query.periodStart || '2000-01-01T00:00:00'),
   periodEnd: String(route.query.periodEnd || '2030-01-01T00:00:00')
 })
+const returnToAnalysis = computed(() => route.query.returnTo === '/analysis')
 
 const OWNER_TYPE_LABELS = { INDICATOR: '指标版本', FACTOR: '因子版本' }
 const BATCH_TYPE_LABELS = { TRIAL: '试算', FULL: '正式计算', RECALC: '重算' }
@@ -561,6 +563,15 @@ async function createBatch() {
   } finally {
     createLoading.value = false
   }
+}
+
+function returnToScenarioComparison() {
+  if (!returnToAnalysis.value) return
+  const query = {
+    indicator: route.query.returnIndicator || undefined,
+    indicatorVersionId: route.query.returnIndicatorVersionId || undefined
+  }
+  router.push({ path: '/analysis', query })
 }
 
 async function cancelBatch() {

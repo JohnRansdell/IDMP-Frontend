@@ -206,6 +206,30 @@ test/               Node 自动化测试与契约样例
 4. 部署前核对前端提交、后端版本、数据库迁移和配置清单。
 5. 正式环境关闭或严格标识演示降级，并完成权限、安全和审计验收。
 
+### 静态站点部署
+
+`pnpm build:prod` 后必须将**同一次构建生成的整个 `dist` 目录**上传到 Web 根目录，不能只替换 `index.html` 或单个 `assets/*.js` 文件。构建文件名含内容哈希，混用新旧文件会使入口脚本返回 404，表现为浏览器白屏。
+
+若站点不是部署在域名根目录，例如访问地址为 `https://example.com/idmp/`，构建前设置：
+
+```env
+VITE_PUBLIC_BASE=/idmp/
+VITE_API_BASE_URL=/api/v1
+```
+
+Nginx 需将前端路由回退到同一目录的 `index.html`，并代理后端接口。例如：
+
+```nginx
+location /idmp/ {
+  alias /srv/idmp/dist/;
+  try_files $uri $uri/ /idmp/index.html;
+}
+
+location /api/v1/ {
+  proxy_pass http://127.0.0.1:8081/api/v1/;
+}
+```
+
 ## 许可证
 
 本项目许可证见 [LICENSE](./LICENSE)。

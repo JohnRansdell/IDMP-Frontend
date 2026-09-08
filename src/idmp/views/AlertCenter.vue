@@ -1,381 +1,110 @@
 <template>
   <div class="idmp-page alert-center">
-    <PageHeader
-      title="预警中心"
-      status-label="演示数据"
-      status-tone="info"
-    >
-      <template #meta>
-        <span class="data-source-badge">本地静态数据</span>
-        <span>样例预警 {{ rows.length }} 条</span>
-        <span>统计口径 演示总览</span>
-      </template>
+    <div class="alert-center__canvas">
+    <PageHeader title="预警中心" status-label="真实接口" status-tone="success">
+      <template #meta><span class="data-source-badge is-live">预警规则、事件与站内通知</span></template>
+      <template #actions><el-button :icon="Refresh" :loading="loading" @click="refreshCurrent">刷新</el-button><el-button v-if="activeTab === 'rules'" type="primary" :icon="Plus" @click="openCreateRule">创建预警规则</el-button></template>
     </PageHeader>
 
-    <div class="notice-strip alert-notice" role="note">
-      <el-icon aria-hidden="true"><InfoFilled /></el-icon>
-      <span>
-        页面数据来自本地演示配置。查看操作只呈现样例摘要，标记处理只修改当前页面状态；刷新后会恢复，且不会写入后端或产生审计记录。
-      </span>
+    <el-tabs v-model="activeTab" @tab-change="refreshCurrent">
+      <el-tab-pane label="预警事件" name="events">
+        <section class="surface-card filter-card"><el-form :model="eventFilters" inline @submit.prevent="loadEvents"><el-form-item label="规则 ID"><el-input v-model.trim="eventFilters.ruleId" /></el-form-item><el-form-item label="指标版本"><el-select v-model="eventFilters.indicatorVersionId" clearable filterable allow-create><el-option v-for="item in indicatorVersions" :key="item.id" :label="indicatorLabel(item)" :value="item.id" /></el-select></el-form-item><el-form-item label="状态"><el-select v-model="eventFilters.status" clearable><el-option v-for="item in WARNING_EVENT_STATUSES" :key="item" :label="warningLabel(item)" :value="item" /></el-select></el-form-item><el-form-item label="级别"><el-select v-model="eventFilters.severity" clearable><el-option v-for="item in WARNING_SEVERITIES" :key="item" :label="warningLabel(item)" :value="item" /></el-select></el-form-item><el-form-item><el-button type="primary" native-type="submit">查询</el-button><el-button @click="resetEventFilters">重置</el-button></el-form-item></el-form></section>
+        <section class="surface-card table-card"><div class="table-heading"><div><h2>预警事件</h2><p>事件由正式结果激活后的后端 Worker 自动评估生成；查询不会触发计算。</p></div></div><StatePanel v-if="eventError" type="error" title="预警事件读取失败" :description="eventError" /><StatePanel v-else-if="!eventLoading && !events.length" type="empty" title="暂无匹配的预警事件" /><el-table v-else v-loading="eventLoading" :data="events" table-layout="fixed"><el-table-column label="级别" width="100"><template #default="{ row }"><StatusBadge :label="warningLabel(row.severity)" :tone="severityTone(row.severity)" /></template></el-table-column><el-table-column label="类型" min-width="130"><template #default="{ row }">{{ warningLabel(row.warningType) }}</template></el-table-column><el-table-column label="当前值 / 阈值" width="150"><template #default="{ row }"><strong>{{ displayValue(row.actualValue) }}</strong><small> / {{ displayValue(row.thresholdValue) }}</small></template></el-table-column><el-table-column label="比较上下文" min-width="220"><template #default="{ row }"><span>{{ comparisonSummary(row.comparisonContext) }}</span></template></el-table-column><el-table-column label="状态" width="110"><template #default="{ row }"><StatusBadge :status="row.status" :label="warningLabel(row.status)" /></template></el-table-column><el-table-column label="触发时间" min-width="170"><template #default="{ row }"><span class="mono-data">{{ row.triggerTime || '-' }}</span></template></el-table-column><el-table-column label="操作" width="220" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openEvent(row.id)">详情</el-button><el-button v-if="row.status === 'OPEN'" link type="primary" @click="acknowledgeEvent(row)">确认</el-button><el-button v-if="row.status !== 'CLOSED'" link type="danger" @click="closeEvent(row)">关闭</el-button></template></el-table-column></el-table><div class="table-footer"><span>共 {{ eventTotal }} 条</span><el-pagination v-model:current-page="eventPage" v-model:page-size="eventSize" layout="prev, pager, next, sizes" :page-sizes="[6,9,12]" :total="eventTotal" @current-change="loadEvents" @size-change="loadEvents" /></div></section>
+      </el-tab-pane>
+
+      <el-tab-pane label="预警规则" name="rules">
+        <section class="surface-card filter-card"><el-form :model="ruleFilters" inline @submit.prevent="loadRules"><el-form-item label="编码"><el-input v-model.trim="ruleFilters.code" /></el-form-item><el-form-item label="名称"><el-input v-model.trim="ruleFilters.name" /></el-form-item><el-form-item label="启用状态"><el-select v-model="ruleFilters.enableStatus" clearable><el-option label="已启用" value="ENABLED" /><el-option label="已停用" value="DISABLED" /></el-select></el-form-item><el-form-item label="发布状态"><el-select v-model="ruleFilters.publicationStatus" clearable><el-option label="草稿" value="DRAFT" /><el-option label="已发布" value="PUBLISHED" /></el-select></el-form-item><el-form-item><el-button type="primary" native-type="submit">查询</el-button><el-button @click="resetRuleFilters">重置</el-button></el-form-item></el-form></section>
+        <section class="surface-card table-card"><div class="table-heading"><div><h2>预警规则</h2><p>规则须先发布再启用；仅后续激活的、周期类型匹配的正式结果参与评估。</p></div></div><StatePanel v-if="ruleError" type="error" title="预警规则读取失败" :description="ruleError" /><StatePanel v-else-if="!ruleLoading && !rules.length" type="empty" title="暂无预警规则" description="可创建一条草稿规则，再发布并启用。" /><el-table v-else v-loading="ruleLoading" :data="rules" table-layout="fixed"><el-table-column prop="code" label="编码" min-width="180"><template #default="{ row }"><span class="mono-data">{{ row.code }}</span></template></el-table-column><el-table-column prop="name" label="名称" min-width="200" /><el-table-column label="规则类型" width="135"><template #default="{ row }">{{ warningLabel(row.version?.warningType) }}</template></el-table-column><el-table-column label="指标版本" min-width="145"><template #default="{ row }"><span class="mono-data">{{ row.version?.indicatorVersionId || '-' }}</span></template></el-table-column><el-table-column label="状态" width="130"><template #default="{ row }"><StatusBadge :status="row.enableStatus" :label="warningLabel(row.enableStatus)" /><small>{{ warningLabel(row.version?.publicationStatus) }}</small></template></el-table-column><el-table-column label="操作" width="260" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openRule(row)">详情</el-button><el-button v-if="ruleCapabilities(row).canEdit" link type="primary" @click="openEditRule(row)">编辑草稿</el-button><el-button v-if="ruleCapabilities(row).canPublish" link type="success" @click="publishRule(row)">发布</el-button><el-button v-if="ruleCapabilities(row).canEnable" link type="success" @click="toggleRule(row, true)">启用</el-button><el-button v-if="ruleCapabilities(row).canDisable" link type="warning" @click="toggleRule(row, false)">停用</el-button></template></el-table-column></el-table><div class="table-footer"><span>共 {{ ruleTotal }} 条</span><el-pagination v-model:current-page="rulePage" v-model:page-size="ruleSize" layout="prev, pager, next, sizes" :page-sizes="[10,20,50]" :total="ruleTotal" @current-change="loadRules" @size-change="loadRules" /></div></section>
+      </el-tab-pane>
+
+      <el-tab-pane label="站内通知" name="notifications">
+        <section class="surface-card table-card"><div class="table-heading"><div><h2>当前用户站内通知</h2><p>阅读通知不改变对应预警事件的确认或关闭状态。</p></div><el-button :disabled="!notifications.some(item => item.notificationStatus === 'UNREAD')" @click="readAllNotifications">全部已读</el-button></div><StatePanel v-if="notificationError" type="error" title="站内通知读取失败" :description="notificationError" /><StatePanel v-else-if="!notificationLoading && !notifications.length" type="empty" title="暂无有效站内通知" /><el-table v-else v-loading="notificationLoading" :data="notifications" table-layout="fixed"><el-table-column prop="title" label="标题" min-width="150" /><el-table-column prop="content" label="内容" min-width="360" show-overflow-tooltip /><el-table-column label="状态" width="100"><template #default="{ row }"><StatusBadge :status="row.notificationStatus" :label="row.notificationStatus === 'UNREAD' ? '未读' : '已读'" /></template></el-table-column><el-table-column prop="createdAt" label="时间" min-width="170" /><el-table-column label="操作" width="160"><template #default="{ row }"><el-button v-if="row.businessRefType === 'WARNING_EVENT'" link type="primary" @click="openEvent(row.businessRefId)">查看预警</el-button><el-button v-if="row.notificationStatus === 'UNREAD'" link type="primary" @click="readNotification(row)">标记已读</el-button></template></el-table-column></el-table></section>
+      </el-tab-pane>
+    </el-tabs>
     </div>
 
-    <section class="surface-card alert-summary" aria-labelledby="alert-summary-title">
-      <div class="alert-summary__lead">
-        <span id="alert-summary-title">预警总览</span>
-        <strong class="clinical-metric">{{ overviewTotal }}</strong>
-        <small>演示统计口径，不等同于下方 {{ rows.length }} 条样例</small>
-      </div>
-      <dl class="alert-summary__metrics">
-        <div v-for="item in alertStats" :key="item.label">
-          <dt>
-            <StatusBadge :label="item.label" :tone="summaryTone(item.tone)" />
-          </dt>
-          <dd class="clinical-metric">{{ item.value }}</dd>
-        </div>
-      </dl>
-    </section>
+    <el-dialog v-model="ruleDialogOpen" :title="editingRule ? '编辑预警规则草稿' : '创建预警规则'" width="760px" destroy-on-close><el-alert type="info" :closable="false" show-icon title="指标预警当前只支持 IN_APP 站内通知；创建后仍须发布并启用。" /><el-form label-position="top" class="rule-form"><div class="form-grid"><el-form-item label="规则编码" required><el-input v-model.trim="ruleForm.code" :disabled="Boolean(editingRule)" /></el-form-item><el-form-item label="规则名称" required><el-input v-model.trim="ruleForm.name" :disabled="Boolean(editingRule)" /></el-form-item><el-form-item label="预警类型" required><el-select v-model="ruleForm.warningType"><el-option v-for="item in WARNING_TYPES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item><el-form-item label="严重程度" required><el-select v-model="ruleForm.severity"><el-option v-for="item in WARNING_SEVERITIES" :key="item" :label="warningLabel(item)" :value="item" /></el-select></el-form-item><el-form-item label="已发布指标版本" required><el-select v-model="ruleForm.indicatorVersionId" filterable allow-create default-first-option :disabled="Boolean(editingRule)" @change="loadRuleScenarioOptions"><el-option v-for="item in indicatorVersions" :key="item.id" :label="indicatorLabel(item)" :value="item.id" /></el-select></el-form-item><el-form-item label="统计周期" required><el-select v-model="ruleForm.periodType"><el-option v-for="item in WARNING_PERIOD_TYPES" :key="item" :label="warningLabel(item)" :value="item" /></el-select></el-form-item><el-form-item label="生效开始日期"><el-date-picker v-model="ruleForm.effectiveStartDate" type="date" value-format="YYYY-MM-DD" /></el-form-item><el-form-item label="生效结束日期"><el-date-picker v-model="ruleForm.effectiveEndDate" type="date" value-format="YYYY-MM-DD" /></el-form-item></div><el-form-item label="说明"><el-input v-model="ruleForm.description" type="textarea" :rows="2" :disabled="Boolean(editingRule)" /></el-form-item><section class="rule-section"><h3>评估范围</h3><el-form-item label="场景版本范围"><el-select v-model="ruleForm.scenarioVersionIds" multiple filterable clearable :loading="scenarioOptionsLoading" placeholder="留空表示不限制场景"><el-option v-for="item in scenarioOptions" :key="item.id" :label="item.label" :value="item.id" /></el-select><el-button link type="primary" :loading="scenarioOptionsLoading" @click="loadRuleScenarioOptions">加载关联场景</el-button></el-form-item><el-checkbox v-model="ruleForm.includeNoScenario">纳入无场景正式结果</el-checkbox></section><section class="rule-section"><h3>判定条件</h3><div class="form-grid"><el-form-item label="比较符" required><el-select v-model="ruleForm.operator"><el-option v-for="item in WARNING_OPERATORS" :key="item" :label="item" :value="item" /></el-select></el-form-item><el-form-item label="阈值" required><el-input v-model.trim="ruleForm.threshold" placeholder="例如 0.01" /></el-form-item><el-form-item v-if="ruleForm.warningType !== 'THRESHOLD'" label="度量"><el-select v-model="ruleForm.measure"><el-option label="变化值（DELTA）" value="DELTA" /></el-select></el-form-item><el-form-item v-if="ruleForm.warningType === 'VOLATILITY'" label="窗口周期数"><el-input-number v-model="ruleForm.windowSize" :min="2" :precision="0" /></el-form-item><el-form-item v-if="ruleForm.warningType === 'SCENARIO_DIFFERENCE'" label="基准指标版本" required><el-select v-model="ruleForm.baselineIndicatorVersionId" filterable allow-create default-first-option><el-option v-for="item in indicatorVersions" :key="item.id" :label="indicatorLabel(item)" :value="item.id" /></el-select></el-form-item><el-form-item v-if="ruleForm.warningType === 'SCENARIO_DIFFERENCE'" label="基准场景版本" required><el-select v-model="ruleForm.baselineScenarioVersionId" filterable allow-create default-first-option><el-option v-for="item in scenarioOptions" :key="item.id" :label="item.label" :value="item.id" /></el-select></el-form-item></div></section><section class="rule-section"><h3>站内通知</h3><el-form-item label="接收用户" required><el-select v-model="ruleForm.recipientUserIds" multiple filterable :loading="usersLoading"><el-option v-for="user in users" :key="user.id" :label="userLabel(user)" :value="String(user.id)" /></el-select></el-form-item></section></el-form><template #footer><el-button @click="ruleDialogOpen = false">取消</el-button><el-button type="primary" :loading="mutating" @click="saveRule">{{ editingRule ? '保存草稿' : '创建草稿' }}</el-button></template></el-dialog>
 
-    <section class="surface-card filter-card alert-filter" aria-label="预警筛选">
-      <el-form :model="filters" @submit.prevent="applyFilters">
-        <el-form-item>
-          <el-input
-            v-model.trim="filters.keyword"
-            clearable
-            :prefix-icon="Search"
-            placeholder="指标、类型或场景"
-            aria-label="指标、类型或场景"
-            @keyup.enter="applyFilters"
-          />
-        </el-form-item>
-        <el-form-item>
-          <el-select v-model="filters.level" clearable placeholder="预警级别" aria-label="预警级别">
-            <el-option v-for="item in alertLevels" :key="item" :label="item" :value="item" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-select v-model="filters.status" clearable placeholder="处理状态" aria-label="处理状态">
-            <el-option v-for="item in alertStatuses" :key="item" :label="item" :value="item" />
-          </el-select>
-        </el-form-item>
-        <el-form-item class="alert-filter__actions">
-          <el-button type="primary" :icon="Search" native-type="submit">查询</el-button>
-          <el-button :icon="RefreshLeft" @click="resetFilters">重置</el-button>
-        </el-form-item>
-      </el-form>
-    </section>
-
-    <section class="surface-card alert-table-card" aria-labelledby="alert-table-title">
-      <div class="alert-table-heading">
-        <div>
-          <h2 id="alert-table-title">预警列表</h2>
-          <p>共 {{ filteredRows.length }} 条匹配记录；按演示预警时间倒序展示。</p>
-        </div>
-        <span class="data-source-badge">本地样例</span>
-      </div>
-
-      <StatePanel
-        v-if="!filteredRows.length"
-        type="empty"
-        title="没有匹配的预警"
-        description="请调整指标关键词、预警级别或处理状态。"
-      >
-        <template #actions>
-          <el-button @click="resetFilters">清除筛选</el-button>
-        </template>
-      </StatePanel>
-
-      <div v-else class="table-scroll alert-table-scroll">
-        <el-table :data="filteredRows" table-layout="fixed" class="alert-table">
-          <el-table-column label="预警级别" width="112">
-            <template #default="{ row }">
-              <StatusBadge :label="row.level" :tone="levelTone(row.level)" />
-            </template>
-          </el-table-column>
-          <el-table-column prop="type" label="预警类型" width="132" />
-          <el-table-column
-            prop="indicator"
-            label="指标名称"
-            min-width="220"
-            show-overflow-tooltip
-          />
-          <el-table-column prop="scene" label="所属场景" width="126" />
-          <el-table-column label="实际值" width="122">
-            <template #default="{ row }">
-              <strong class="clinical-metric">{{ row.actual }}</strong>
-            </template>
-          </el-table-column>
-          <el-table-column
-            prop="threshold"
-            label="预警阈值"
-            min-width="148"
-            show-overflow-tooltip
-          />
-          <el-table-column prop="time" label="预警时间" width="128">
-            <template #default="{ row }">
-              <span class="mono-data">{{ row.time }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="处理状态" width="116">
-            <template #default="{ row }">
-              <StatusBadge :status="statusCode(row.status)" :label="row.status" />
-            </template>
-          </el-table-column>
-          <el-table-column label="操作" width="184" fixed="right">
-            <template #default="{ row }">
-              <button class="action-link" type="button" @click="viewAlert(row)">
-                查看摘要
-              </button>
-              <button
-                class="action-link"
-                type="button"
-                :disabled="row.status === '已确认'"
-                @click="confirmHandled(row)"
-              >
-                {{ row.status === '已确认' ? '已处理' : '会话内标记' }}
-              </button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
-    </section>
+    <el-dialog v-model="eventDialogOpen" title="预警事件详情" width="820px" destroy-on-close><StatePanel v-if="eventDetailLoading" type="loading" title="正在读取预警事件" /><StatePanel v-else-if="eventDetailError" type="error" title="预警详情读取失败" :description="eventDetailError" /><template v-else-if="eventDetail"><dl class="detail-grid"><div><dt>事件 ID</dt><dd class="mono-data">{{ eventDetail.id }}</dd></div><div><dt>状态</dt><dd><StatusBadge :status="eventDetail.status" :label="warningLabel(eventDetail.status)" /></dd></div><div><dt>类型</dt><dd>{{ warningLabel(eventDetail.warningType) }}</dd></div><div><dt>当前值 / 阈值</dt><dd>{{ displayValue(eventDetail.actualValue) }} / {{ displayValue(eventDetail.thresholdValue) }}</dd></div><div><dt>指标结果 ID</dt><dd class="mono-data">{{ eventDetail.indicatorResultId || '-' }}</dd></div><div><dt>触发时间</dt><dd>{{ eventDetail.triggerTime || '-' }}</dd></div></dl><section class="rule-section"><h3>比较上下文</h3><pre>{{ formatJson(eventDetail.comparisonContext) }}</pre></section><section class="rule-section"><h3>站内投递记录</h3><StatePanel v-if="deliveriesLoading" type="loading" title="正在读取投递记录" /><el-table v-else :data="deliveries" size="small" empty-text="暂无投递记录"><el-table-column prop="channel" label="渠道" width="100" /><el-table-column prop="recipient" label="接收人" min-width="120" /><el-table-column prop="status" label="状态" width="100" /><el-table-column prop="attemptCount" label="尝试次数" width="100" /><el-table-column prop="lastError" label="最近错误" min-width="160" /></el-table></section></template><template #footer><el-button v-if="eventDetail?.indicatorResultId" @click="openResultDrill(eventDetail)">查看结果下钻</el-button><el-button @click="eventDialogOpen = false">关闭</el-button></template></el-dialog>
   </div>
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { InfoFilled, RefreshLeft, Search } from '@element-plus/icons-vue'
+import { Plus, Refresh } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
-import { alertRows, alertStats } from '@/idmp/data/demo'
+import { fetchIndicatorScenarios, fetchIndicatorVersion, fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
+import { fetchSystemUsers } from '@/idmp/api/modules/system'
+import { acknowledgeWarningEvent, closeWarningEvent, createWarningRule, disableWarningRule, enableWarningRule, fetchNotifications, fetchWarningDeliveries, fetchWarningEvent, fetchWarningRule, fetchWarningRules, fetchWarnings, markAllNotificationsRead, markNotificationRead, publishWarningRuleVersion, updateWarningRuleVersion } from '@/idmp/api/modules/warnings'
+import { WARNING_EVENT_STATUSES, WARNING_OPERATORS, WARNING_PERIOD_TYPES, WARNING_SEVERITIES, WARNING_TYPES, buildWarningRulePayload, normalizePage, validateWarningRuleForm, warningLabel, warningRuleCapabilities } from '@/idmp/api/adapters/warning'
 
-const rows = ref(alertRows.map((item) => ({ ...item })))
+const router = useRouter()
+const activeTab = ref('events')
+const loading = computed(() => eventLoading.value || ruleLoading.value || notificationLoading.value)
+const mutating = ref(false)
+const eventLoading = ref(false); const ruleLoading = ref(false); const notificationLoading = ref(false)
+const eventError = ref(''); const ruleError = ref(''); const notificationError = ref('')
+const events = ref([]); const rules = ref([]); const notifications = ref([])
+const eventTotal = ref(0); const ruleTotal = ref(0)
+const eventPage = ref(1); const eventSize = ref(9); const rulePage = ref(1); const ruleSize = ref(20)
+const indicatorVersions = ref([]); const users = ref([]); const usersLoading = ref(false); const scenarioOptions = ref([]); const scenarioOptionsLoading = ref(false)
+const eventFilters = reactive({ ruleId: '', indicatorVersionId: '', status: '', severity: '' })
+const ruleFilters = reactive({ code: '', name: '', enableStatus: '', publicationStatus: '' })
+const ruleDialogOpen = ref(false); const editingRule = ref(null)
+const eventDialogOpen = ref(false); const eventDetail = ref(null); const eventDetailLoading = ref(false); const eventDetailError = ref(''); const deliveries = ref([]); const deliveriesLoading = ref(false)
+const ruleForm = reactive(emptyRuleForm())
 
-const emptyFilters = () => ({
-  keyword: '',
-  level: '',
-  status: ''
-})
+function emptyRuleForm() { return { code: '', name: '', description: '', warningType: 'THRESHOLD', indicatorVersionId: '', periodType: 'MONTHLY', scenarioVersionIds: [], includeNoScenario: true, operator: 'GT', threshold: '', measure: 'DELTA', windowSize: 2, baselineIndicatorVersionId: '', baselineScenarioVersionId: '', recipientUserIds: [], severity: 'MEDIUM', effectiveStartDate: '', effectiveEndDate: '' } }
+function normalizeList(payload) { return Array.isArray(payload) ? payload : payload?.records || payload?.items || payload?.list || [] }
+function opaqueId(value) { return value === undefined || value === null || value === '' ? '' : String(value) }
+function indicatorLabel(item) { return `${item.indicatorName || item.name || item.indicatorCode || item.code || '未命名指标'} · ${item.id}` }
+function userLabel(user) { return `${user.nickname || user.name || user.username || `用户 ${user.id}`} · ${user.id}` }
+function displayValue(value) { return value === undefined || value === null || value === '' ? '-' : String(value) }
+function formatJson(value) { return JSON.stringify(value || {}, null, 2) }
+function severityTone(value) { return ({ CRITICAL: 'danger', HIGH: 'danger', MEDIUM: 'warning', LOW: 'info', INFO: 'neutral' })[String(value).toUpperCase()] || 'neutral' }
+function comparisonSummary(context = {}) { const bits = []; if (context.periodType) bits.push(warningLabel(context.periodType)); if (context.baselineValue !== undefined && context.baselineValue !== null) bits.push(`基线 ${context.baselineValue}`); if (context.deviationValue !== undefined && context.deviationValue !== null) bits.push(`偏差 ${context.deviationValue}`); if (context.baselineScenarioVersionId) bits.push(`基准场景 ${context.baselineScenarioVersionId}`); return bits.join(' · ') || '无比较上下文' }
+function ruleCapabilities(rule) { return warningRuleCapabilities(rule) }
 
-const filters = reactive(emptyFilters())
-const appliedFilters = ref(emptyFilters())
+async function bootstrap() { await Promise.all([loadEvents(), loadRules(), loadIndicatorVersions(), loadUsers()]) }
+async function loadIndicatorVersions() { try { indicatorVersions.value = normalizeList(await fetchIndicatorVersionList({ publicationStatus: 'PUBLISHED', page: 1, size: 200 })).map(item => ({ ...item, id: opaqueId(item.id || item.versionId || item.indicatorVersionId) })).filter(item => item.id) } catch (error) { ElMessage.warning(error?.message || '已发布指标版本加载失败；可手工输入版本 ID') } }
+async function loadUsers() { usersLoading.value = true; try { users.value = normalizeList(await fetchSystemUsers()).map(item => ({ ...item, id: opaqueId(item.id || item.userId) })).filter(item => item.id) } catch (error) { ElMessage.warning(error?.message || '用户列表加载失败；请确认系统用户读取权限') } finally { usersLoading.value = false } }
+async function loadEvents() { eventLoading.value = true; eventError.value = ''; try { const page = normalizePage(await fetchWarnings({ ...eventFilters, page: eventPage.value, size: eventSize.value })); events.value = page.records; eventTotal.value = page.total } catch (error) { events.value = []; eventTotal.value = 0; eventError.value = error?.message || '无法读取预警事件' } finally { eventLoading.value = false } }
+async function loadRules() { ruleLoading.value = true; ruleError.value = ''; try { const page = normalizePage(await fetchWarningRules({ ...ruleFilters, page: rulePage.value, size: ruleSize.value })); rules.value = page.records; ruleTotal.value = page.total } catch (error) { rules.value = []; ruleTotal.value = 0; ruleError.value = error?.message || '无法读取预警规则' } finally { ruleLoading.value = false } }
+async function loadNotifications() { notificationLoading.value = true; notificationError.value = ''; try { notifications.value = normalizePage(await fetchNotifications({ page: 1, size: 100 })).records } catch (error) { notifications.value = []; notificationError.value = error?.message || '无法读取站内通知' } finally { notificationLoading.value = false } }
+function refreshCurrent() { if (activeTab.value === 'rules') return loadRules(); if (activeTab.value === 'notifications') return loadNotifications(); return loadEvents() }
+function resetEventFilters() { Object.assign(eventFilters, { ruleId: '', indicatorVersionId: '', status: '', severity: '' }); eventPage.value = 1; loadEvents() }
+function resetRuleFilters() { Object.assign(ruleFilters, { code: '', name: '', enableStatus: '', publicationStatus: '' }); rulePage.value = 1; loadRules() }
 
-const overviewTotal = computed(() =>
-  alertStats
-    .filter((item) => item.label !== '待处理')
-    .reduce((total, item) => total + Number(item.value || 0), 0)
-)
+async function loadRuleScenarioOptions() { const versionId = opaqueId(ruleForm.indicatorVersionId); if (!versionId) { scenarioOptions.value = []; return } scenarioOptionsLoading.value = true; try { const version = await fetchIndicatorVersion(versionId); const indicatorId = opaqueId(version?.indicatorId || version?.indicator?.id); if (!indicatorId) throw new Error('后端未返回该指标版本所属指标'); scenarioOptions.value = normalizeList(await fetchIndicatorScenarios(indicatorId, { page: 1, size: 200 })).map(item => ({ id: opaqueId(item.scenarioVersionId || item.versionId || item.id), label: `${item.scenarioName || item.name || item.scenarioCode || '未命名场景'}${item.configuredPeriodType ? ` · ${item.configuredPeriodType}` : ''}` })).filter(item => item.id) } catch (error) { scenarioOptions.value = []; ElMessage.warning(error?.message || '关联场景加载失败') } finally { scenarioOptionsLoading.value = false } }
+function openCreateRule() { editingRule.value = null; Object.assign(ruleForm, emptyRuleForm()); ruleDialogOpen.value = true }
+async function openRule(rule) { try { const detail = await fetchWarningRule(rule.id); openEditRule(detail, true) } catch (error) { ElMessage.error(error?.message || '预警规则详情读取失败') } }
+function openEditRule(rule, readOnly = false) { const version = rule.version || {}; editingRule.value = readOnly ? { ...rule, readOnly: true } : rule; Object.assign(ruleForm, { ...emptyRuleForm(), code: rule.code || '', name: rule.name || '', description: rule.description || '', warningType: version.warningType || 'THRESHOLD', indicatorVersionId: opaqueId(version.indicatorVersionId), periodType: version.periodType || 'MONTHLY', scenarioVersionIds: (version.scenarioScope?.scenarioVersionIds || []).map(opaqueId), includeNoScenario: version.scopePolicy?.includeNoScenario !== false, operator: version.condition?.operator || 'GT', threshold: version.condition?.threshold ?? '', measure: version.condition?.measure || 'DELTA', windowSize: version.condition?.windowSize ?? 2, baselineIndicatorVersionId: opaqueId(version.condition?.baselineIndicatorVersionId), baselineScenarioVersionId: opaqueId(version.condition?.baselineScenarioVersionId), recipientUserIds: (version.notificationPolicy?.recipientUserIds || []).map(opaqueId), severity: version.severity || 'MEDIUM', effectiveStartDate: version.effectiveStartDate || '', effectiveEndDate: version.effectiveEndDate || '' }); ruleDialogOpen.value = true; void loadRuleScenarioOptions() }
+async function saveRule() { if (editingRule.value?.readOnly) return ElMessage.info('当前规则已发布，仅供查看；如需调整，请创建新的草稿规则'); const validation = validateWarningRuleForm(ruleForm); if (validation) return ElMessage.warning(validation); mutating.value = true; try { const payload = buildWarningRulePayload(ruleForm); if (editingRule.value) { if (!ruleCapabilities(editingRule.value).canEdit) throw new Error('当前规则不是可编辑草稿'); const versionId = opaqueId(editingRule.value.version?.id || editingRule.value.version?.versionId); const result = await updateWarningRuleVersion(versionId, { resourceVersion: editingRule.value.version?.resourceVersion ?? editingRule.value.resourceVersion, ...stripRuleIdentity(payload) }); ElMessage.success('预警规则草稿已保存'); ruleDialogOpen.value = false; await loadRules(); openEditRule(result) } else { const result = await createWarningRule(payload); ElMessage.success('预警规则草稿已创建，请继续发布并启用'); ruleDialogOpen.value = false; await loadRules(); openEditRule(result) } } catch (error) { ElMessage.error(error?.message || '预警规则保存失败') } finally { mutating.value = false } }
+function stripRuleIdentity(payload) { const { code, name, description, ...definition } = payload; return definition }
+async function publishRule(rule) { const versionId = opaqueId(rule.version?.id || rule.version?.versionId); if (!versionId) return ElMessage.error('规则未返回草稿版本 ID'); await mutateRule(() => publishWarningRuleVersion(versionId, rule.resourceVersion), '预警规则已发布') }
+async function toggleRule(rule, enable) { await mutateRule(() => enable ? enableWarningRule(rule.id, rule.resourceVersion) : disableWarningRule(rule.id, rule.resourceVersion), enable ? '预警规则已启用' : '预警规则已停用') }
+async function mutateRule(action, message) { mutating.value = true; try { await action(); ElMessage.success(message); await loadRules() } catch (error) { ElMessage.error(error?.status === 409 ? '规则已被其他操作修改，请刷新后重试' : error?.message || '规则操作失败') } finally { mutating.value = false } }
 
-const alertLevels = computed(() => [...new Set(rows.value.map((item) => item.level))])
-const alertStatuses = computed(() => [...new Set(rows.value.map((item) => item.status))])
+async function openEvent(eventId) { eventDialogOpen.value = true; eventDetail.value = null; deliveries.value = []; eventDetailError.value = ''; eventDetailLoading.value = true; try { eventDetail.value = await fetchWarningEvent(eventId); deliveriesLoading.value = true; deliveries.value = normalizePage(await fetchWarningDeliveries(eventId, { page: 1, size: 100 })).records } catch (error) { eventDetailError.value = error?.message || '无法读取预警详情' } finally { eventDetailLoading.value = false; deliveriesLoading.value = false } }
+async function acknowledgeEvent(event) { try { await ElMessageBox.confirm('确认该预警事件已被知悉？此操作不会关闭事件。', '确认预警', { type: 'warning' }); await acknowledgeWarningEvent(event.id); ElMessage.success('预警已确认'); await loadEvents(); if (eventDetail.value?.id === event.id) await openEvent(event.id) } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(error?.message || '确认预警失败') } }
+async function closeEvent(event) { try { const { value } = await ElMessageBox.prompt('请填写关闭原因编码，例如 DATA_CONFIRMED。', '关闭预警', { inputPattern: /\S+/, inputErrorMessage: '关闭原因不能为空', confirmButtonText: '关闭事件', cancelButtonText: '取消' }); await closeWarningEvent(event.id, value.trim()); ElMessage.success('预警已关闭'); await loadEvents(); if (eventDetail.value?.id === event.id) await openEvent(event.id) } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(error?.message || '关闭预警失败') } }
+function openResultDrill(event) { eventDialogOpen.value = false; router.push({ path: '/analysis/drill', query: { resultId: opaqueId(event.indicatorResultId), source: 'live' } }) }
+async function readNotification(notification) { try { await markNotificationRead(notification.id); await loadNotifications() } catch (error) { ElMessage.error(error?.message || '标记已读失败') } }
+async function readAllNotifications() { try { await markAllNotificationsRead(); ElMessage.success('当前有效通知已全部标记为已读'); await loadNotifications() } catch (error) { ElMessage.error(error?.message || '全部已读失败') } }
 
-const filteredRows = computed(() => {
-  const query = appliedFilters.value
-  const keyword = query.keyword.toLowerCase()
-
-  return rows.value.filter((row) => {
-    const matchesKeyword = !keyword || [
-      row.indicator,
-      row.type,
-      row.scene
-    ].some((value) => String(value).toLowerCase().includes(keyword))
-
-    return matchesKeyword
-      && (!query.level || row.level === query.level)
-      && (!query.status || row.status === query.status)
-  })
-})
-
-const summaryTone = (tone) => {
-  if (tone === 'danger') return 'danger'
-  if (tone === 'warning' || tone === 'pending') return 'warning'
-  return 'info'
-}
-
-const levelTone = (level) => {
-  if (level === '严重') return 'danger'
-  if (level === '警告') return 'warning'
-  return 'info'
-}
-
-const statusCode = (status) => {
-  if (status === '待处理') return 'PENDING'
-  if (status === '处理中') return 'RUNNING'
-  return 'SUCCEEDED'
-}
-
-const applyFilters = () => {
-  appliedFilters.value = { ...filters }
-}
-
-const resetFilters = () => {
-  Object.assign(filters, emptyFilters())
-  appliedFilters.value = emptyFilters()
-}
-
-const viewAlert = (row) => {
-  ElMessage.info(
-    `${row.indicator}：${row.type}，实际值 ${row.actual}，阈值 ${row.threshold}。当前为本地演示摘要。`
-  )
-}
-
-const confirmHandled = async (row) => {
-  if (row.status === '已确认') return
-
-  try {
-    await ElMessageBox.confirm(
-      `仅在当前演示会话中将“${row.indicator}”标记为已处理？`,
-      '会话内标记',
-      {
-        confirmButtonText: '标记为已处理',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-    row.status = '已确认'
-    ElMessage.info('已更新当前页面状态；刷新页面后会恢复，未写入后端。')
-  } catch {
-    // 用户取消时保持原状态。
-  }
-}
+watch(activeTab, (tab) => { if (tab === 'notifications' && !notifications.value.length) void loadNotifications() })
+watch(() => ruleForm.indicatorVersionId, () => { if (ruleDialogOpen.value) void loadRuleScenarioOptions() })
+onMounted(bootstrap)
 </script>
 
 <style scoped lang="scss">
-.alert-center {
-  min-width: 0;
-}
-
-.alert-notice,
-.alert-summary,
-.alert-filter {
-  margin-bottom: var(--idmp-space-4);
-}
-
-.alert-summary {
-  display: grid;
-  grid-template-columns: minmax(220px, 0.8fr) minmax(0, 2.2fr);
-}
-
-.alert-summary__lead {
-  display: grid;
-  align-content: center;
-  min-height: 104px;
-  padding: var(--idmp-space-4);
-  gap: var(--idmp-space-1);
-  border-right: 1px solid var(--idmp-border-subtle);
-}
-
-.alert-summary__lead > span {
-  color: var(--idmp-text-secondary);
-  font-weight: 600;
-}
-
-.alert-summary__lead strong {
-  color: var(--idmp-text-primary);
-  font-size: 28px;
-  line-height: 32px;
-}
-
-.alert-summary__lead small {
-  color: var(--idmp-text-helper);
-  line-height: 18px;
-}
-
-.alert-summary__metrics {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin: 0;
-}
-
-.alert-summary__metrics > div {
-  display: grid;
-  align-content: center;
-  min-width: 0;
-  padding: var(--idmp-space-3) var(--idmp-space-4);
-  border-right: 1px solid var(--idmp-border-soft);
-}
-
-.alert-summary__metrics > div:last-child {
-  border-right: 0;
-}
-
-.alert-summary__metrics dt {
-  min-height: 24px;
-}
-
-.alert-summary__metrics dd {
-  margin: var(--idmp-space-2) 0 0;
-  color: var(--idmp-text-primary);
-  font-size: 20px;
-  font-weight: 650;
-}
-
-.alert-filter :deep(.el-input) {
-  width: 248px;
-}
-
-.alert-filter :deep(.el-select) {
-  width: 144px;
-}
-
-.alert-filter__actions {
-  margin-left: auto !important;
-}
-
-.alert-table-card {
-  padding: 0;
-  overflow: hidden;
-}
-
-.alert-table-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--idmp-space-4);
-  gap: var(--idmp-space-4);
-  border-bottom: 1px solid var(--idmp-border-subtle);
-}
-
-.alert-table-heading h2 {
-  margin: 0;
-  color: var(--idmp-text-primary);
-  font-size: 16px;
-  line-height: 24px;
-}
-
-.alert-table-heading p {
-  margin: var(--idmp-space-1) 0 0;
-  color: var(--idmp-text-helper);
-  font-size: 12px;
-}
-
-.alert-table-scroll {
-  padding: 0 var(--idmp-space-4) var(--idmp-space-4);
-}
-
-.alert-table {
-  min-width: 1200px;
-}
-
-.action-link:disabled {
-  color: var(--idmp-text-disabled);
-  cursor: not-allowed;
-}
-
-.action-link:disabled:hover {
-  color: var(--idmp-text-disabled);
-}
-
-@media (max-width: 1280px) {
-  .alert-summary {
-    grid-template-columns: 1fr;
-  }
-
-  .alert-summary__lead {
-    min-height: 88px;
-    border-right: 0;
-    border-bottom: 1px solid var(--idmp-border-subtle);
-  }
-}
+.alert-center { height: calc(100vh - var(--idmp-topbar-height) - 56px); min-height: 0; padding-right: 8px; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-color: var(--idmp-border-strong) transparent; scrollbar-width: thin; }
+.alert-center__canvas { min-width: 1120px; padding-bottom: 8px; }
+.alert-center::-webkit-scrollbar { width: 8px; }.alert-center::-webkit-scrollbar-track { background: transparent; }.alert-center::-webkit-scrollbar-thumb { border-radius: 999px; background: var(--idmp-border-strong); }.alert-center::-webkit-scrollbar-thumb:hover { background: var(--idmp-text-helper); }
+.alert-center :deep(.el-tabs__header) { position: sticky; top: 0; z-index: 8; margin-bottom: 16px; padding-top: 4px; background: var(--idmp-background); }
+.filter-card { margin-bottom: 16px; }.table-card { min-width: 0; padding: 0; overflow: hidden; }.table-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px; border-bottom: 1px solid var(--idmp-border-subtle); }.table-heading h2, .rule-section h3 { margin: 0; font-size: 16px; }.table-heading p { margin: 5px 0 0; color: var(--idmp-text-helper); font-size: 12px; }.table-footer { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; }.el-table { padding: 0 16px; }.el-table small { display: block; color: var(--idmp-text-helper); }.rule-form { margin-top: 16px; }.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }.rule-section { margin-top: 18px; padding: 16px; border: 1px solid var(--idmp-border-subtle); border-radius: var(--idmp-radius-md); }.rule-section h3 { margin-bottom: 14px; }.rule-section pre { max-height: 240px; overflow: auto; margin: 0; padding: 12px; border-radius: var(--idmp-radius-sm); background: var(--idmp-layer-02); white-space: pre-wrap; word-break: break-word; }.rule-section :deep(.el-select) { width: 100%; }.detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }.detail-grid div { padding: 10px; border: 1px solid var(--idmp-border-subtle); border-radius: var(--idmp-radius-sm); }.detail-grid dt { color: var(--idmp-text-helper); font-size: 12px; }.detail-grid dd { margin: 6px 0 0; word-break: break-word; } @media (max-width: 760px) { .alert-center { height: auto; min-height: calc(100vh - var(--idmp-topbar-height) - 56px); padding-right: 0; }.alert-center__canvas { min-width: 920px; }.alert-center :deep(.el-tabs__header) { position: static; }.form-grid, .detail-grid { grid-template-columns: 1fr; }.table-footer, .table-heading { align-items: flex-start; flex-direction: column; } }
 </style>

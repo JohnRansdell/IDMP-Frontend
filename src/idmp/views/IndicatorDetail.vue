@@ -147,7 +147,7 @@
           <div v-if="isPublishedVersion" class="policy-reference-form"><el-input v-model.trim="policyReferenceForm.policyFileVersionId" placeholder="已发布政策版本 ID" /><el-select v-model="policyReferenceForm.relationRole"><el-option v-for="item in POLICY_REFERENCE_ROLES" :key="item.value" :label="item.label" :value="item.value" /></el-select><el-button type="primary" :loading="policyReferenceSaving" @click="addPolicyReference">添加</el-button></div>
           <el-input v-if="isPublishedVersion" v-model="policyReferenceForm.citationLocation" class="policy-reference-input" placeholder="政策出处（可选）" />
           <el-input v-if="isPublishedVersion" v-model="policyReferenceForm.citationText" class="policy-reference-input" type="textarea" :rows="2" placeholder="政策原文（可选）" />
-          <div class="version-mapping-links"><div class="section-title compact"><div><h3>有效指标映射</h3><p class="section-title__description">反查当前指标版本作为源侧或目标侧的已发布有效映射。</p></div></div><StatePanel v-if="mappingReferenceLoading" type="loading" title="正在读取有效映射" /><el-table v-else :data="mappingReferences" size="small" empty-text="暂无有效映射"><el-table-column prop="code" label="映射编码" min-width="150" /><el-table-column prop="mappingType" label="关系" width="110" /><el-table-column prop="comparability" label="可比性" width="120" /></el-table></div>
+          <div class="version-mapping-links"><div class="section-title compact"><div><h3>有效指标映射</h3><p class="section-title__description">反查当前指标版本作为源侧或目标侧的已发布有效映射。</p></div></div><StatePanel v-if="mappingReferenceLoading" type="loading" title="正在读取有效映射" /><StatePanel v-else-if="mappingReferenceError" type="error" title="有效映射读取失败" :description="mappingReferenceError" /><el-table v-else :data="mappingReferences" size="small" empty-text="暂无有效映射"><el-table-column prop="code" label="映射编码" min-width="150" /><el-table-column prop="mappingType" label="关系" width="110" /><el-table-column prop="comparability" label="可比性" width="120" /><el-table-column label="操作" width="68"><template #default="{ row }"><el-button link type="primary" @click="openMapping(row)">查看</el-button></template></el-table-column></el-table></div>
         </article>
         <StatePanel
           type="unavailable"
@@ -194,6 +194,7 @@ const policyReferenceLoading = ref(false)
 const policyReferenceSaving = ref(false)
 const mappingReferences = ref([])
 const mappingReferenceLoading = ref(false)
+const mappingReferenceError = ref('')
 const policyReferenceForm = reactive({ policyFileVersionId: '', citationLocation: '', citationText: '', relationRole: 'SOURCE' })
 const detail = reactive({
   id: '',
@@ -364,11 +365,18 @@ async function addPolicyReference() {
 async function loadMappingReferences(versionId) {
   if (!versionId) return
   mappingReferenceLoading.value = true
+  mappingReferenceError.value = ''
   try {
     mappingReferences.value = await fetchMappingsByIndicatorVersion(versionId)
-  } catch {
+  } catch (error) {
     mappingReferences.value = []
+    mappingReferenceError.value = error?.message || '无法读取有效映射'
   } finally { mappingReferenceLoading.value = false }
+}
+
+function openMapping(row) {
+  if (row?.id === undefined || row?.id === null) return
+  router.push({ name: 'IndicatorMappingDetail', params: { id: String(row.id) } })
 }
 
 async function invalidatePolicy(reference) {

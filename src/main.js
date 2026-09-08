@@ -6,7 +6,6 @@ import '@/idmp/styles/index.scss'
 
 import App from './App.vue'
 import router from './router'
-import { restoreSession } from '@/idmp/auth/session'
 
 const app = createApp(App)
 
@@ -16,11 +15,4 @@ app.use(ElementPlus, {
   size: 'default'
 })
 
-window.addEventListener('idmp:unauthorized', () => {
-  const redirect = `${window.location.pathname}${window.location.search}`
-  if (window.location.pathname !== '/login') router.push({ path: '/login', query: { redirect } })
-})
-
 app.mount('#app')
-
-void restoreSession()
