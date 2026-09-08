@@ -1,9 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { adaptDrillResult, deriveDrillPathResultIds, limitDrillNextLevels } from '../src/idmp/api/adapters/drill.js'
-import { createMockDrillResult } from '../src/idmp/features/analysis/drillData.js'
+import { adaptDrillResult, deriveDrillPathResultIds, limitDrillNextLevels, normalizeOrganizationDrillLevel } from '../src/idmp/api/adapters/drill.js'
+import { createMockDrillResult, MOCK_SURGERY_DRILL_CONTEXT } from '../src/idmp/features/analysis/drillData.js'
+import { mockDashboardDepartmentRanking, mockIndicatorDataSources } from '../src/idmp/features/dashboard/mockData.js'
 
-const dashboardResultId = 'MOCK-RESULT-SURGERY-COMPLICATION'
+const dashboardResultId = MOCK_SURGERY_DRILL_CONTEXT.resultId
 
 test('drill adapter normalizes opaque ids and paged response fields', () => {
   const result = adaptDrillResult({
@@ -49,6 +50,51 @@ test('drill adapter stops at the version configured maximum level', () => {
   assert.deepEqual(limitDrillNextLevels(['OUT_DEPT'], 'ORGANIZATION', 'OUT_DEPT'), ['OUT_DEPT'])
   assert.deepEqual(limitDrillNextLevels(['ATTENDING_DOCTOR'], 'ORGANIZATION', 'OUT_DEPT'), [])
   assert.deepEqual(limitDrillNextLevels(['ATTENDING_DOCTOR'], 'ORGANIZATION', 'ATTENDING_DOCTOR'), ['ATTENDING_DOCTOR'])
+})
+
+test('drill adapter preserves missing values and normalizes metric and level aliases', () => {
+  const result = adaptDrillResult({
+    context: { currentLevel: 'DEPARTMENT' },
+    nextLevels: ['DOCTOR'],
+    records: [
+      { dimKey: 12, numeratorValue: '7', denominatorValue: 135, value: 5.2, indicatorUnit: '%' },
+      {},
+      { numerator: '', numeratorValue: 10, denominator: 0, indicatorValue: 0 }
+    ]
+  })
+  assert.equal(result.records[0].dimensionKey, '12')
+  assert.equal(result.records[0].numerator, '7')
+  assert.equal(result.records[0].denominator, 135)
+  assert.equal(result.records[0].indicatorValue, 5.2)
+  assert.equal(result.records[0].unit, '%')
+  assert.equal(result.records[1].numerator, null)
+  assert.equal(result.records[1].denominator, null)
+  assert.equal(result.records[1].indicatorValue, null)
+  assert.equal(result.records[2].numerator, '')
+  assert.equal(result.records[2].denominator, 0)
+  assert.equal(result.records[2].indicatorValue, 0)
+  assert.equal(normalizeOrganizationDrillLevel('DEPARTMENT'), 'OUT_DEPT')
+  assert.equal(normalizeOrganizationDrillLevel('DOCTOR'), 'ATTENDING_DOCTOR')
+  assert.equal(normalizeOrganizationDrillLevel('MEDICAL_GROUP'), 'MEDICAL_GROUP')
+  assert.equal(result.context.currentLevel, 'DEPARTMENT')
+  assert.deepEqual(result.nextLevels, ['DOCTOR'])
+})
+
+test('drill pagination distinguishes explicit totals from absent or invalid metadata', () => {
+  const empty = adaptDrillResult({}).pageInfo
+  assert.equal(empty.total, 0)
+  assert.equal(empty.hasTotal, false)
+  assert.equal(empty.hasPageNum, false)
+  assert.equal(empty.hasPageSize, false)
+  assert.equal(empty.hasTotalPages, false)
+  const explicit = adaptDrillResult({ pageInfo: { page: '1', size: '200', total: '0', pages: 0 } }).pageInfo
+  assert.equal(explicit.hasTotal, true)
+  assert.equal(explicit.hasPageNum, true)
+  assert.equal(explicit.hasPageSize, true)
+  assert.equal(explicit.hasTotalPages, true)
+  for (const total of [null, '', ' ', false, -1, 1.5, Infinity, 'invalid', Number.MAX_SAFE_INTEGER + 1]) {
+    assert.equal(adaptDrillResult({ pageInfo: { total } }).pageInfo.hasTotal, false)
+  }
 })
 
 test('mock drill follows organization levels and stops before patient access', () => {
@@ -158,4 +204,74 @@ test('dashboard mock breadcrumb rollback keeps the live organization hierarchy',
   assert.equal(backToHospital.records[0].nextLevel, 'OUT_DEPT')
   assert.deepEqual(backToHospital.nextLevels, ['OUT_DEPT'])
   assert.deepEqual(backToHospital.breadcrumb, [])
+})
+
+test('dashboard mock uses one context and each child layer reconciles with its parent', () => {
+  const parentKeys = { HOSPITAL_CODE: 'HOSPITAL_MAIN' }
+  const root = createMockDrillResult(dashboardResultId, { currentLevel: 'OUT_DEPT', parentKeys })
+  assert.equal(root.summary.numerator, 79)
+  assert.equal(root.summary.denominator, 2756)
+  assert.equal(root.summary.indicatorValue, '2.9%')
+  const hospital = createMockDrillResult(dashboardResultId, { currentLevel: 'HOSPITAL' }).records[0]
+  assert.equal(hospital.numerator, root.summary.numerator)
+  assert.equal(hospital.denominator, root.summary.denominator)
+
+  function assertLayer(result, parent) {
+    for (const [key, value] of Object.entries(MOCK_SURGERY_DRILL_CONTEXT)) assert.equal(result.context[key], value)
+    for (const metric of ['numerator', 'denominator']) {
+      assert.equal(result.summary[metric], parent[metric])
+      assert.equal(result.records.reduce((sum, row) => sum + row[metric], 0), parent[metric])
+    }
+    for (const row of result.records) {
+      assert.equal(row.indicatorValue, `${(row.numerator / row.denominator * 100).toFixed(1)}%`)
+    }
+  }
+  assertLayer(root, hospital)
+  for (const department of root.records) {
+    const departmentKeys = { ...parentKeys, OUT_DEPT_CODE: department.dimensionKey }
+    const groups = createMockDrillResult(dashboardResultId, { currentLevel: 'MEDICAL_GROUP', parentKeys: departmentKeys })
+    assertLayer(groups, department)
+    for (const group of groups.records) {
+      const doctors = createMockDrillResult(dashboardResultId, {
+        currentLevel: 'ATTENDING_DOCTOR',
+        parentKeys: { ...departmentKeys, MEDICAL_GROUP_CODE: group.dimensionKey }
+      })
+      assertLayer(doctors, group)
+      assert.deepEqual(doctors.nextLevels, [])
+    }
+  }
+  for (const row of mockDashboardDepartmentRanking) {
+    for (const key of ['resultId', 'snapshotId', 'indicatorId', 'indicatorVersionId', 'period']) {
+      assert.equal(row.drillTarget[key], root.context[key])
+    }
+  }
+})
+
+test('mock pagination slices records while retaining whole-layer totals and supports cancellation', () => {
+  const query = { currentLevel: 'OUT_DEPT', parentKeys: { HOSPITAL_CODE: 'HOSPITAL_MAIN' } }
+  const whole = createMockDrillResult(dashboardResultId, query)
+  const pages = [1, 2, 3].map((pageNum) => createMockDrillResult(dashboardResultId, { ...query, pageNum, pageSize: 2 }))
+  assert.deepEqual(pages.flatMap((page) => page.records), whole.records)
+  for (const [index, page] of pages.entries()) {
+    assert.deepEqual(page.summary, whole.summary)
+    assert.deepEqual(page.pageInfo, { pageNum: index + 1, pageSize: 2, total: 6, totalPages: 3 })
+  }
+  assert.equal(createMockDrillResult(dashboardResultId, { ...query, pageSize: 300 }).pageInfo.pageSize, 200)
+  assert.deepEqual(createMockDrillResult(dashboardResultId, { ...query, pageNum: 4, pageSize: 2 }).records, [])
+  const controller = new AbortController()
+  controller.abort()
+  assert.throws(() => createMockDrillResult(dashboardResultId, query, { signal: controller.signal }), { name: 'AbortError' })
+})
+
+test('only the surgery demo adds coherent department pie drill entries', () => {
+  const surgery = mockIndicatorDataSources.find((source) => source.code === 'SURGERY_COMPLICATION')
+  assert.equal(surgery.numeratorLabel, '发生例数')
+  assert.equal(surgery.numeratorUnit, '例')
+  assert.equal(surgery.pieData.length, 6)
+  assert.equal(surgery.pieData.reduce((sum, row) => sum + row.value, 0), 79)
+  assert.ok(surgery.pieData.every((row) => row.drillTarget.resultId === dashboardResultId))
+  for (const source of mockIndicatorDataSources.filter((item) => item !== surgery)) {
+    assert.ok(source.pieData.every((row) => !row.drillTarget))
+    assert.equal(source.numeratorLabel, undefined)
+  }
 })
