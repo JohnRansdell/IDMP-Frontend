@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   buildIndicatorVersionPayload,
+  combineFormulaNodes,
   drillLevelLabel,
   drillPathLabel,
   findUnsupportedDrillFactors,
@@ -9,8 +10,44 @@ import {
   normalizeDrillConfig,
   normalizeDrillPaths,
   normalizeIndicatorAnalysisParams,
+  selectIndicatorSummaryRecord,
   validateDrillSelection
 } from '../src/idmp/api/adapters/indicator.js'
+
+test('formula node combination preserves a single factor reference', () => {
+  const factorRef = {
+    nodeId: 'factor_left_0_102027642460282572',
+    nodeType: 'FACTOR_REF',
+    factorVersionId: '102027642460282572'
+  }
+
+  assert.deepEqual(combineFormulaNodes([factorRef], 'ADD', 'left'), factorRef)
+})
+
+test('formula node combination keeps every factor reference when summing multiple factors', () => {
+  const first = { nodeId: 'first', nodeType: 'FACTOR_REF', factorVersionId: '101' }
+  const second = { nodeId: 'second', nodeType: 'FACTOR_REF', factorVersionId: '102' }
+
+  assert.deepEqual(combineFormulaNodes([first, second], 'ADD', 'left'), {
+    nodeId: 'left_add_1',
+    nodeType: 'BINARY',
+    operator: 'ADD',
+    left: first,
+    right: second
+  })
+})
+
+test('indicator trial summary selects the root grain instead of the first department row', () => {
+  const root = { levelCode: 'HOSPITAL', dimensions: { hospital_code: 'H001' }, resultValue: 0.4192, displayValue: '41.92%' }
+  const payload = { results: { records: [
+    { levelCode: 'OUT_DEPT', dimensions: { hospital_code: 'H001', out_dept_code: 'D001' }, resultValue: 0, displayValue: '0.00%' },
+    root
+  ] } }
+
+  assert.equal(selectIndicatorSummaryRecord(payload), root)
+  const globalRoot = { dimensions: {}, resultValue: 0.5, displayValue: '50.00%' }
+  assert.equal(selectIndicatorSummaryRecord({ results: { records: [payload.results.records[0], globalRoot] } }), globalRoot)
+})
 
 test('下钻路径与层级显示中文且未知码原样返回', () => {
   assert.equal(drillPathLabel('ORGANIZATION'), '组织维度')

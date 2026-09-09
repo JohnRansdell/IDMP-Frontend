@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { adaptDrillResult, deriveDrillPathResultIds, limitDrillNextLevels, normalizeOrganizationDrillLevel } from '../src/idmp/api/adapters/drill.js'
+import { adaptDrillResult, deriveDrillPathResultIds, limitDrillNextLevels, normalizeOrganizationDrillLevel, reconcileScenarioPointWithRoot } from '../src/idmp/api/adapters/drill.js'
 import { createMockDrillResult, MOCK_SURGERY_DRILL_CONTEXT } from '../src/idmp/features/analysis/drillData.js'
 import { mockDashboardDepartmentRanking, mockIndicatorDataSources } from '../src/idmp/features/dashboard/mockData.js'
 
@@ -43,6 +43,61 @@ test('drill adapter uses backend column titles and derives separate multi-path a
   assert.deepEqual(pathResultIds, {
     ORGANIZATION: 'hospital-result',
     DISEASE: 'case-result'
+  })
+})
+
+test('drill adapter reconciles a stale child summary with the returned root record', () => {
+  const result = adaptDrillResult({
+    context: { currentLevel: 'HOSPITAL' },
+    summary: { indicatorValue: 0, displayValue: '0.00%', dimensions: { hospital_code: 'H001', out_dept_code: 'D001' } },
+    records: [{ resultId: 101, levelCode: 'HOSPITAL', indicatorValue: 0.4192, displayValue: '41.92%', dimensions: { hospital_code: 'H001' } }]
+  })
+
+  assert.equal(result.summary.indicatorValue, 0.4192)
+  assert.equal(result.summary.displayValue, '41.92%')
+  assert.equal(result.records[0].resultId, '101')
+})
+
+test('multi-path analysis uses an organization-specific anchor and the overview for disease', () => {
+  const pathResultIds = deriveDrillPathResultIds({
+    overview: { resultId: 'disease-root', dimensions: { hospital_code: 'H001' } },
+    dimensionComparison: [
+      { resultId: 'department-result', dimensions: { hospital_code: 'H001', out_dept_code: 'D001' } }
+    ],
+    calculationTargets: [
+      { targetCode: 'DRILL:ORGANIZATION:HOSPITAL' },
+      { targetCode: 'DRILL:ORGANIZATION:OUT_DEPT' },
+      { targetCode: 'DRILL:DISEASE:ALL_SINGLE_DISEASE' }
+    ]
+  })
+
+  assert.deepEqual(pathResultIds, {
+    ORGANIZATION: 'department-result',
+    DISEASE: 'disease-root'
+  })
+})
+
+test('scenario comparison point is replaced by the canonical root result', () => {
+  const point = { resultId: 'department-result', value: 0, displayValue: '0.00%', qualityStatus: 'PASSED' }
+  const resolved = reconcileScenarioPointWithRoot(point, {
+    records: [{
+      resultId: 'hospital-result',
+      levelCode: 'HOSPITAL',
+      indicatorValue: 0.41924399,
+      displayValue: '41.92%',
+      qualityStatus: 'PASSED',
+      resultOutcomeStatus: 'CALCULATED',
+      resultQualityFlags: []
+    }]
+  })
+
+  assert.deepEqual(resolved, {
+    resultId: 'hospital-result',
+    value: 0.41924399,
+    displayValue: '41.92%',
+    qualityStatus: 'PASSED',
+    outcomeStatus: 'CALCULATED',
+    qualityFlags: []
   })
 })
 

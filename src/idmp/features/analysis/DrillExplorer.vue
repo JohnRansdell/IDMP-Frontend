@@ -63,7 +63,7 @@
     <div v-else class="table-scroll">
       <el-table v-loading="loading" :data="memberRecords" table-layout="fixed" class="analysis-table drill-data-table">
         <el-table-column
-          v-for="column in result.columns"
+          v-for="column in visibleColumns"
           :key="column.field"
           :prop="column.field"
           :label="column.label"
@@ -153,10 +153,15 @@ const loading = ref(false)
 const errorMessage = ref('')
 const factorTrace = ref(null)
 const factorTraceLoading = ref(false)
+const resolvedPathResultIds = ref({})
 const isFactorTraceMode = computed(() => dimension.value === 'FACTOR_TRACE')
 const statusRecord = computed(() => result.value.records.find(isStatusRecord) || null)
 const memberRecords = computed(() => result.value.records.filter((item) => !isStatusRecord(item)))
+const visibleColumns = computed(() => result.value.columns.filter((column) => (
+  String(column.field || '').toLowerCase() !== 'factorsourceprofiles'
+)))
 const activeResultId = computed(() => String(
+  resolvedPathResultIds.value[lastDrillDimension.value] ||
   props.pathResultIds?.[lastDrillDimension.value] || props.resultId || ''
 ))
 const availableNextLevels = computed(() => {
@@ -209,11 +214,27 @@ async function loadDrill() {
   try {
     result.value = await searchResultDrill(activeResultId.value, buildPayload(), { source: props.source })
     currentLevel.value = result.value.context.currentLevel || currentLevel.value
+    resolveCanonicalRootResultId()
   } catch (error) {
     errorMessage.value = error?.message || '请稍后重试。'
   } finally {
     loading.value = false
   }
+}
+
+function resolveCanonicalRootResultId() {
+  const rootLevel = lastDrillDimension.value === 'DISEASE' ? 'ALL_SINGLE_DISEASE' : 'HOSPITAL'
+  if (String(currentLevel.value).toUpperCase() !== rootLevel) return
+  const rootRecord = result.value.records.find((record) => (
+    String(record.levelCode || '').toUpperCase() === rootLevel && record.resultId
+  ))
+  const canonicalResultId = String(rootRecord?.resultId || '')
+  if (!canonicalResultId || canonicalResultId === activeResultId.value) return
+  resolvedPathResultIds.value = {
+    ...resolvedPathResultIds.value,
+    [lastDrillDimension.value]: canonicalResultId
+  }
+  if (!props.embedded) syncRouteContext()
 }
 
 function openNextLevel(row) {
@@ -302,6 +323,7 @@ watch(() => [props.startLevel, props.startParentKeys], ([level, keys]) => {
   else loadDrill()
 }, { deep: true })
 watch(() => [props.resultId, props.pathResultIds], () => {
+  resolvedPathResultIds.value = {}
   if (!pathAvailable(lastDrillDimension.value)) {
     const nextDimension = pathAvailable('ORGANIZATION') ? 'ORGANIZATION' : 'DISEASE'
     dimension.value = nextDimension

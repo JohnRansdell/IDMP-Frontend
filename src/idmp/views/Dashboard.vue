@@ -58,10 +58,11 @@
           v-model="selectedDataCode"
           class="dashboard-editor-panel__data-select"
           aria-label="指标数据"
-            :loading="dashboardLoading"
+          filterable
+          :loading="dashboardLoading || indicatorCatalogLoading"
         >
           <el-option
-            v-for="source in indicatorDataSources"
+            v-for="source in availableIndicatorSources"
             :key="source.code"
             :label="source.name"
             :value="source.code"
@@ -78,7 +79,7 @@
             :value="option.value"
           />
         </el-select>
-        <el-button :icon="Plus" :disabled="!selectedDataSource" @click="addDashboardWidget">添加组件</el-button>
+        <el-button :icon="Plus" :disabled="!selectedDataSource" :loading="addingWidget" @click="addDashboardWidget">添加组件</el-button>
       </div>
       <div class="dashboard-editor-panel__right">
         <div v-if="activeWidgetVisualizationOptions.length" class="dashboard-editor-panel__visualization">
@@ -129,10 +130,10 @@
         <article
           v-if="widget.type === 'primary'"
           class="surface-card primary-metric"
-          :class="{ 'is-clickable': !isEditing }"
-          :role="isEditing ? undefined : 'button'"
-          :tabindex="isEditing ? -1 : 0"
-          :aria-disabled="isEditing || undefined"
+          :class="{ 'is-clickable': !isEditing && canAnalyzeKpi(visibleKpis[0]) }"
+          :role="!isEditing && canAnalyzeKpi(visibleKpis[0]) ? 'button' : undefined"
+          :tabindex="!isEditing && canAnalyzeKpi(visibleKpis[0]) ? 0 : -1"
+          :aria-disabled="isEditing || !canAnalyzeKpi(visibleKpis[0]) || undefined"
           @click.stop="goPrimaryMetricAnalysis"
           @keydown.enter.prevent.stop="goPrimaryMetricAnalysis"
           @keydown.space.prevent.stop="goPrimaryMetricAnalysis"
@@ -170,7 +171,8 @@
             type="button"
             class="supporting-metric"
             :tabindex="isEditing ? -1 : 0"
-            @click.stop="goIndicatorAnalysis(item.code)"
+            :disabled="!canAnalyzeKpi(item)"
+            @click.stop="goIndicatorAnalysis(item)"
           >
             <span class="supporting-metric__name">{{ item.title }}</span>
             <strong class="clinical-metric">{{ item.value }}</strong>
@@ -181,22 +183,33 @@
 
         <article
           v-else-if="isKpiWidget(widget)"
-          class="surface-card kpi-card"
-          :class="{ 'is-clickable': !isEditing }"
-          :role="isEditing ? undefined : 'button'"
-          :tabindex="isEditing ? -1 : 0"
-          :aria-disabled="isEditing || undefined"
+          class="surface-card primary-metric kpi-card"
+          :class="{ 'is-clickable': !isEditing && canAnalyzeKpi(getWidgetKpi(widget)) }"
+          :role="!isEditing && canAnalyzeKpi(getWidgetKpi(widget)) ? 'button' : undefined"
+          :tabindex="!isEditing && canAnalyzeKpi(getWidgetKpi(widget)) ? 0 : -1"
+          :aria-disabled="isEditing || !canAnalyzeKpi(getWidgetKpi(widget)) || undefined"
           @click.stop="goWidgetAnalysis(widget)"
           @keydown.enter.prevent.stop="goWidgetAnalysis(widget)"
           @keydown.space.prevent.stop="goWidgetAnalysis(widget)"
         >
-          <div class="kpi-card__top">
-            <span>{{ getWidgetKpi(widget).title }}</span>
-            <span class="kpi-dot" :class="`is-${getWidgetKpi(widget).status}`" />
+          <div class="primary-metric__head">
+            <div>
+              <span class="primary-metric__eyebrow">{{ getWidgetSource(widget)?.category || '指标卡片' }}</span>
+              <h2>{{ getWidgetKpi(widget).title }}</h2>
+            </div>
+            <span class="status-pill" :class="`is-${getWidgetKpi(widget).status}`">
+              {{ getKpiStatusLabel(getWidgetKpi(widget)) }}
+            </span>
           </div>
-          <strong>{{ getWidgetKpi(widget).value }}</strong>
-          <div class="kpi-change" :class="`is-${getWidgetKpi(widget).status}`">{{ getWidgetKpi(widget).change }}</div>
-          <div class="kpi-target">{{ getWidgetKpi(widget).target }}</div>
+          <div class="primary-metric__value clinical-metric">{{ getWidgetKpi(widget).value }}</div>
+          <div class="primary-metric__change" :class="`is-${getWidgetKpi(widget).status}`">
+            {{ getWidgetKpi(widget).change }}
+          </div>
+          <dl class="primary-metric__meta">
+            <div><dt>指标说明</dt><dd>{{ getWidgetKpi(widget).target }}</dd></div>
+            <div><dt>当前范围</dt><dd>{{ department || '全院' }}</dd></div>
+            <div><dt>数据来源</dt><dd>{{ getWidgetSource(widget)?.originLabel || '当前结果' }}</dd></div>
+          </dl>
         </article>
 
         <article
@@ -331,6 +344,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import {
   Bell,
   Check,
@@ -353,6 +367,7 @@ import StatePanel from '@/idmp/components/StatePanel.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
 import { fetchDashboardBootstrap } from '@/idmp/api/modules/analysisDashboard'
 import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
+import { fetchIndicatorAnalysis, fetchIndicators, fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
 import { dashboardTrend, dashboardWarnings as mockDashboardWarnings } from '@/idmp/data/demo'
 import { mockDashboardDepartmentRanking, mockIndicatorDataSources } from '@/idmp/features/dashboard/mockData'
 import { applyMortalityReadonlyChain } from '@/idmp/features/dashboard/mortalityAdapter'
@@ -379,8 +394,10 @@ import {
 } from '@/idmp/features/dashboard/layout'
 import {
   buildDashboardDrillRouteQuery,
+  applyIndicatorAnalysisToSource,
   createDashboardChartOption,
   createKpiData,
+  createPublishedIndicatorSources,
   getVisualizationTitle,
   normalizeDashboardDrillTarget,
   resolveDashboardChartDrillTarget
@@ -401,6 +418,9 @@ const activeWidgetId = ref('')
 const selectedDataCode = ref('')
 const addWidgetType = ref('kpi')
 const indicatorDataSources = ref(cloneDashboardSources(mockIndicatorDataSources))
+const catalogIndicatorSources = ref([])
+const indicatorCatalogLoading = ref(false)
+const addingWidget = ref(false)
 const dashboardStatus = ref('loading')
 const dashboardLoadMessage = ref('')
 const dashboardLayout = ref(createDefaultLayout())
@@ -409,6 +429,7 @@ const dashboardDefinition = ref(null)
 const dashboardQueryResult = ref(null)
 let dashboardAbortController
 let boardResizeObserver
+const indicatorHydrationRequests = new Map()
 
 const dashboardLoading = computed(() => dashboardStatus.value === 'loading')
 const dashboardQueryLabel = computed(() => {
@@ -424,8 +445,13 @@ const departmentRanking = computed(() => {
     : []
 })
 
+const availableIndicatorSources = computed(() => {
+  const sources = [...indicatorDataSources.value, ...catalogIndicatorSources.value]
+  return [...new Map(sources.map((source) => [source.code, source])).values()]
+})
+
 const selectedDataSource = computed(() =>
-  indicatorDataSources.value.find((source) => source.code === selectedDataCode.value)
+  availableIndicatorSources.value.find((source) => source.code === selectedDataCode.value)
 )
 
 const dashboardSourceLabel = computed(() => ({
@@ -558,7 +584,7 @@ function getWidgetKpi(widget) {
 }
 
 function getDashboardIndicatorSource(code) {
-  return indicatorDataSources.value.find((source) => source.code === code)
+  return availableIndicatorSources.value.find((source) => source.code === code)
 }
 
 function getWidgetSource(widget) {
@@ -566,20 +592,14 @@ function getWidgetSource(widget) {
   return getDashboardIndicatorSource(widget.sourceCode)
 }
 
-function getWidgetIndicatorCode(widget) {
-  if (widget.sourceCode) return widget.sourceCode
-  if (typeof widget.kpiIndex === 'number') return visibleKpis.value[widget.kpiIndex]?.code || ''
-  return widget.data?.code || ''
-}
-
 function goWidgetAnalysis(widget) {
   if (isEditing.value) return
-  goIndicatorAnalysis(getWidgetIndicatorCode(widget))
+  goIndicatorAnalysis(getWidgetKpi(widget))
 }
 
 function goPrimaryMetricAnalysis() {
   if (isEditing.value) return
-  goIndicatorAnalysis(visibleKpis.value[0]?.code)
+  goIndicatorAnalysis(visibleKpis.value[0])
 }
 
 function getWidgetTitle(widget) {
@@ -751,9 +771,17 @@ function getNextWidgetPosition() {
   return { x: 0, y: maxBottom + 16 }
 }
 
-function addDashboardWidget() {
-  const source = selectedDataSource.value
+async function addDashboardWidget() {
+  let source = selectedDataSource.value
   if (!source) return
+  addingWidget.value = true
+  try {
+    source = await hydrateIndicatorSource(source)
+  } catch (error) {
+    ElMessage.warning(error?.message || '指标正式结果暂不可用，已按指标绑定添加空组件')
+  } finally {
+    addingWidget.value = false
+  }
   const position = getNextWidgetPosition()
   const id = `dashboard-widget-${Date.now()}`
   const type = addWidgetType.value
@@ -770,8 +798,8 @@ function addDashboardWidget() {
     dashboardLayout.value.push(constrainWidget({
       ...baseWidget,
       type: 'kpi',
-      w: 240,
-      h: 158
+      w: 360,
+      h: 262
     }))
   } else {
     dashboardLayout.value.push(constrainWidget({
@@ -1014,23 +1042,82 @@ function createDashboardSources(result = {}) {
     outpatientNum: '门诊人次'
   }
   return Object.entries(labels)
-    .filter(([key]) => Number.isFinite(Number(summary[key])))
-    .map(([key, name]) => ({
-      code: `dashboard-summary-${key}`,
-      name,
-      category: '质量看板汇总',
-      unit: '',
-      currentValue: formatNumber(summary[key]),
-      change: '当前查询结果',
-      target: '来源：已发布看板',
-      status: 'success',
-      origin: 'backend',
-      originLabel: '正式结果',
-      trendData,
-      trendLabels: trendTableRows.value.map((item) => item.period),
-      departmentData,
-      pieData: departmentData
-    }))
+    .filter(([key]) => Number.isFinite(Number(summary[key]?.value ?? summary[key])))
+    .map(([key, fallbackName]) => {
+      const card = summary[key]
+      const rawValue = card?.value ?? card
+      const analysisIndicatorId = String(card?.indicatorId || '')
+      const analysisIndicatorCode = String(card?.indicatorCode || '')
+      const analysisIndicatorVersionId = String(card?.indicatorVersionId || '')
+      return {
+        code: analysisIndicatorId || analysisIndicatorCode || `dashboard-summary-${key}`,
+        analysisIndicatorId,
+        analysisIndicatorVersionId,
+        analysisEnabled: Boolean(analysisIndicatorId || analysisIndicatorCode),
+        name: card?.indicatorName || card?.name || fallbackName,
+        category: '质量看板汇总',
+        unit: '',
+        currentValue: formatNumber(rawValue),
+        change: '当前查询结果',
+        target: '来源：已发布看板',
+        status: 'success',
+        origin: 'backend',
+        originLabel: '正式结果',
+        trendData,
+        trendLabels: trendTableRows.value.map((item) => item.period),
+        departmentData,
+        pieData: departmentData
+      }
+    })
+}
+
+async function loadIndicatorCatalog() {
+  indicatorCatalogLoading.value = true
+  try {
+    const [indicators, publishedVersions] = await Promise.all([
+      fetchIndicators({ page: 1, size: 200 }),
+      fetchIndicatorVersionList({ publicationStatus: 'PUBLISHED', page: 1, size: 200 })
+    ])
+    catalogIndicatorSources.value = createPublishedIndicatorSources(
+      normalizeList(indicators),
+      normalizeList(publishedVersions)
+    )
+    if (!selectedDataSource.value) {
+      selectedDataCode.value = availableIndicatorSources.value[0]?.code || ''
+    }
+    const boundCodes = new Set(dashboardLayout.value.map((widget) => widget.sourceCode).filter(Boolean))
+    await Promise.allSettled(
+      catalogIndicatorSources.value
+        .filter((source) => boundCodes.has(source.code))
+        .map(hydrateIndicatorSource)
+    )
+  } catch {
+    catalogIndicatorSources.value = []
+  } finally {
+    indicatorCatalogLoading.value = false
+  }
+}
+
+async function hydrateIndicatorSource(source) {
+  if (source?.origin !== 'indicator-catalog' || source.analysisLoaded) return source
+  if (indicatorHydrationRequests.has(source.code)) return indicatorHydrationRequests.get(source.code)
+
+  const request = fetchIndicatorAnalysis(source.analysisIndicatorId, {
+    indicatorVersionId: source.analysisIndicatorVersionId,
+    granularity: 'MONTHLY'
+  }).then((payload) => {
+    const hydrated = {
+      ...applyIndicatorAnalysisToSource(source, payload),
+      analysisLoaded: true
+    }
+    catalogIndicatorSources.value = catalogIndicatorSources.value.map((item) =>
+      item.code === hydrated.code ? hydrated : item
+    )
+    return hydrated
+  }).finally(() => indicatorHydrationRequests.delete(source.code))
+
+  indicatorHydrationRequests.set(source.code, request)
+  return request
 }
 
 function applyDemoDashboard() {
@@ -1108,11 +1195,35 @@ const goAlerts = () => {
   if (isEditing.value) return
   router.push('/alerts')
 }
-const goIndicatorAnalysis = (indicatorCode) => {
-  if (isEditing.value || !indicatorCode) return
+function canAnalyzeKpi(kpi) {
+  return Boolean(kpi?.analysisEnabled && (kpi.analysisIndicatorId || kpi.code))
+}
+
+function getKpiStatusLabel(kpi) {
+  if (kpi?.status === 'danger') return '超出目标'
+  if (kpi?.status === 'warning') return '需要关注'
+  if (kpi?.status === 'info') return '暂无结果'
+  return '结果正常'
+}
+
+function normalizeList(payload) {
+  if (Array.isArray(payload)) return payload
+  if (Array.isArray(payload?.records)) return payload.records
+  if (Array.isArray(payload?.list)) return payload.list
+  if (Array.isArray(payload?.items)) return payload.items
+  return []
+}
+
+const goIndicatorAnalysis = (kpi) => {
+  if (isEditing.value || !canAnalyzeKpi(kpi)) return
+  const indicator = kpi.analysisIndicatorId || kpi.code
   router.push({
     path: '/analysis',
-    query: { indicator: indicatorCode }
+    query: {
+      indicator,
+      indicatorName: kpi.title,
+      ...(kpi.analysisIndicatorVersionId ? { indicatorVersionId: kpi.analysisIndicatorVersionId } : {})
+    }
   })
 }
 
@@ -1123,6 +1234,7 @@ watch([period, department], () => {
 onMounted(() => {
   loadDashboardLayout()
   loadDashboard()
+  loadIndicatorCatalog()
 })
 
 onBeforeUnmount(() => {
@@ -1340,66 +1452,6 @@ onBeforeUnmount(() => {
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.kpi-card {
-  min-height: 158px;
-  padding: 16px;
-}
-
-.kpi-card.is-clickable {
-  cursor: pointer;
-  transition: border-color 110ms ease;
-
-  &:hover {
-    border-color: var(--idmp-interactive);
-  }
-}
-
-.kpi-card__top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  min-height: 40px;
-  gap: 8px;
-  color: var(--idmp-text-helper);
-  font-size: 13px;
-  line-height: 20px;
-}
-
-.kpi-dot {
-  flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
-  margin-top: 3px;
-  border-radius: 50%;
-  background: var(--idmp-support-success);
-
-  &.is-danger { background: var(--idmp-support-danger); }
-  &.is-warning { background: var(--idmp-support-warning); }
-}
-
-.kpi-card strong {
-  display: block;
-  margin: 7px 0 4px;
-  color: var(--idmp-text-primary);
-  font-size: 27px;
-  font-weight: 650;
-  line-height: 34px;
-}
-
-.kpi-change {
-  color: var(--idmp-support-danger);
-  font-size: 12px;
-
-  &.is-success { color: var(--idmp-support-success); }
-  &.is-warning { color: var(--idmp-support-warning); }
-}
-
-.kpi-target {
-  margin-top: 4px;
-  color: var(--idmp-text-disabled);
-  font-size: 12px;
 }
 
 .chart-card {
@@ -1669,14 +1721,4 @@ onBeforeUnmount(() => {
   left: 0;
 }
 
-@media (max-width: 1420px) {
-  .kpi-card {
-    padding-right: 13px;
-    padding-left: 13px;
-  }
-
-  .kpi-card strong {
-    font-size: 24px;
-  }
-}
 </style>

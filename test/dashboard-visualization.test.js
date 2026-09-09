@@ -7,11 +7,102 @@ import {
   normalizeLayout
 } from '../src/idmp/features/dashboard/layout.js'
 import {
+  applyIndicatorAnalysisToSource,
   buildDashboardDrillRouteQuery,
   createDashboardChartOption,
+  createKpiData,
+  createPublishedIndicatorSources,
   normalizeDashboardDrillTarget,
   resolveDashboardChartDrillTarget
 } from '../src/idmp/features/dashboard/visualization.js'
+
+test('published indicators become selectable dashboard sources with stable bindings', () => {
+  const sources = createPublishedIndicatorSources([
+    { id: '1001', code: 'MORTALITY', name: '住院死亡率', unit: '%', categoryName: '医疗质量' },
+    { id: '1002', code: 'COST', name: '次均费用', unit: '元' }
+  ], [
+    { id: '2001', indicatorId: '1001', publicationStatus: 'PUBLISHED' },
+    { id: '2002', indicatorId: '1002', publicationStatus: 'PUBLISHED' },
+    { id: 'old-2001', indicatorId: '1001', publicationStatus: 'PUBLISHED' }
+  ])
+
+  assert.equal(sources.length, 2)
+  assert.deepEqual(sources[0], {
+    code: 'catalog-indicator-1001',
+    name: '住院死亡率',
+    category: '医疗质量',
+    unit: '%',
+    currentValue: null,
+    change: '暂无同比数据',
+    target: '来源：已发布指标',
+    status: 'info',
+    origin: 'indicator-catalog',
+    originLabel: '已发布指标',
+    analysisIndicatorId: '1001',
+    analysisIndicatorVersionId: '2001',
+    analysisEnabled: true,
+    trendData: [],
+    trendLabels: [],
+    departmentData: [],
+    pieData: []
+  })
+})
+
+test('formal indicator analysis hydrates the bound dashboard source without mock values', () => {
+  const source = createPublishedIndicatorSources(
+    [{ id: '1001', name: '住院死亡率', unit: '%' }],
+    [{ id: '2001', indicatorId: '1001' }]
+  )[0]
+  const hydrated = applyIndicatorAnalysisToSource(source, {
+    dataAvailable: true,
+    granularity: 'MONTHLY',
+    overview: { value: 0.0125 },
+    trend: [
+      { periodStart: '2026-01-01', value: 0.01 },
+      { periodStart: '2026-02-01', value: 0.0125 }
+    ],
+    dimensionComparison: [
+      { dimensions: { hospital_code: 'H001' }, value: 0.0125 },
+      { dimensions: { out_dept_code: 'D001', out_dept_name: '心外科' }, value: 0.02 }
+    ]
+  })
+
+  assert.equal(hydrated.currentValue, '1.25%')
+  assert.deepEqual(hydrated.trendLabels, ['2026-01', '2026-02'])
+  assert.deepEqual(hydrated.trendData, [1, 1.25])
+  assert.deepEqual(hydrated.departmentData, [{ name: '心外科', value: 2 }])
+  assert.deepEqual(hydrated.pieData, [{ name: '心外科', value: 2 }])
+  assert.equal(hydrated.status, 'success')
+
+  const empty = applyIndicatorAnalysisToSource(source, { dataAvailable: false })
+  assert.equal(empty.currentValue, null)
+  assert.equal(empty.change, '暂无正式结果')
+  assert.deepEqual(empty.trendData, [])
+})
+
+test('dashboard KPI preserves its analysis identity and explicit disabled state', () => {
+  assert.deepEqual(createKpiData({
+    code: 'SUMMARY-1',
+    indicatorId: '1001',
+    indicatorVersionId: '2001',
+    analysisEnabled: false,
+    name: '汇总指标',
+    currentValue: 12,
+    change: '-',
+    target: '-',
+    status: 'success'
+  }), {
+    code: 'SUMMARY-1',
+    analysisIndicatorId: '1001',
+    analysisIndicatorVersionId: '2001',
+    analysisEnabled: false,
+    title: '汇总指标',
+    value: '12',
+    change: '-',
+    target: '-',
+    status: 'success'
+  })
+})
 
 const createDrillTarget = (overrides = {}) => ({
   resultId: 9001,
@@ -144,8 +235,8 @@ test('layout JSON roundtrip removes legacy data snapshots', () => {
     visualType: 'kpi',
     x: 1,
     y: 2,
-    w: 220,
-    h: 158
+    w: 300,
+    h: 246
   }])
   assert.deepEqual(normalizeLayout(JSON.parse(JSON.stringify(loaded))), loaded)
 })

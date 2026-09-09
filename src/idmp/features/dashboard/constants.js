@@ -11,7 +11,7 @@ export const DEFAULT_DASHBOARD_HEIGHT = 932
 export const DASHBOARD_CODE = 'quality-overview'
 
 export const WIDGET_CONSTRAINTS = Object.freeze({
-  kpi: Object.freeze({ minW: 220, minH: 158 }),
+  kpi: Object.freeze({ minW: 300, minH: 246 }),
   primary: Object.freeze({ minW: 300, minH: 246 }),
   supporting: Object.freeze({ minW: 560, minH: 262 }),
   chart: Object.freeze({ minW: 360, minH: 336 }),

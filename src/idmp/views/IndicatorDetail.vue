@@ -113,13 +113,13 @@
             >
               <strong>V{{ version.versionNo || '-' }}</strong>
               <span>{{ version.status ? getStatusLabel(version.status) : '-' }}</span>
-              <small class="mono-data">{{ resolveIndicatorVersionId(version) }}</small>
+              <small class="mono-data version-id-text" :title="resolveIndicatorVersionId(version)">{{ resolveIndicatorVersionId(version) }}</small>
             </button>
           </div>
           <dl v-if="selectedVersion" class="version-grid">
-            <div>
+            <div class="version-grid__wide">
               <dt>版本 ID</dt>
-              <dd class="mono-data">{{ selectedVersion.id }}</dd>
+              <dd class="mono-data version-id-text" :title="selectedVersionId">{{ selectedVersionId || '-' }}</dd>
             </div>
             <div>
               <dt>编译产物</dt>
@@ -574,6 +574,17 @@ onMounted(loadIndicatorDetail)
   }
 }
 
+.version-id-text {
+  display: block;
+  max-width: 100%;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  user-select: all;
+}
+
 .version-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -601,6 +612,16 @@ onMounted(loadIndicatorDetail)
     color: var(--idmp-text-primary);
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .version-grid__wide {
+    grid-column: 1 / -1;
+  }
+
+  .version-id-text {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
   }
 }
 

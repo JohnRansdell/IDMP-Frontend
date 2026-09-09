@@ -29,6 +29,37 @@ const DRILL_LEVEL_LABELS = {
 export const drillPathLabel = value => DRILL_PATH_LABELS[String(value || '').toUpperCase()] || value || '-'
 export const drillLevelLabel = value => DRILL_LEVEL_LABELS[String(value || '').toUpperCase()] || value || '-'
 
+export function combineFormulaNodes(nodes = [], operator = 'ADD', prefix = 'formula') {
+  if (!Array.isArray(nodes) || !nodes.length) return null
+  return nodes.slice(1).reduce((left, right, index) => ({
+    nodeId: `${prefix}_${String(operator).toLowerCase()}_${index + 1}`,
+    nodeType: 'BINARY',
+    operator,
+    left,
+    right
+  }), nodes[0])
+}
+
+export function selectIndicatorSummaryRecord(payload = {}) {
+  const records = payload?.results?.records || payload?.records || []
+  if (!Array.isArray(records) || !records.length) return null
+
+  return records.reduce((selected, record) => (
+    indicatorResultGrainRank(record) < indicatorResultGrainRank(selected) ? record : selected
+  ), records[0])
+}
+
+function indicatorResultGrainRank(record = {}) {
+  const level = String(record?.levelCode || record?.level || '').toUpperCase()
+  if (level === 'HOSPITAL' || level === 'ALL_SINGLE_DISEASE') return 0
+  const dimensions = record?.dimensions || record?.dimensionValues
+  if (!dimensions || typeof dimensions !== 'object' || Array.isArray(dimensions)) return Number.MAX_SAFE_INTEGER
+  return Object.keys(dimensions).filter((key) => {
+    const value = dimensions[key]
+    return value !== undefined && value !== null && value !== ''
+  }).length
+}
+
 export function normalizeIndicatorAnalysisParams(params = {}) {
   const normalized = { ...params }
   if (normalized.periodStart) normalized.periodStart = toApiDate(normalized.periodStart)

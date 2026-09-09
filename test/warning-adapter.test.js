@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildWarningRulePayload, normalizePage, validateWarningRuleForm, warningRuleCapabilities } from '../src/idmp/api/adapters/warning.js'
+import { buildWarningRulePayload, normalizePage, validateWarningRuleForm, warningLabel, warningRuleCapabilities } from '../src/idmp/api/adapters/warning.js'
 
 const validRule = () => ({
   code: 'MORTALITY_HIGH', name: '住院死亡率过高', description: '', warningType: 'THRESHOLD',
@@ -8,6 +8,15 @@ const validRule = () => ({
   includeNoScenario: true, operator: 'GT', threshold: '0.01', measure: 'DELTA', windowSize: 2,
   baselineIndicatorVersionId: '', baselineScenarioVersionId: '', recipientUserIds: ['1'],
   severity: 'HIGH', effectiveStartDate: '', effectiveEndDate: ''
+})
+
+test('warning comparison operators use Chinese business labels', () => {
+  assert.equal(warningLabel('GT'), '大于（>）')
+  assert.equal(warningLabel('GTE'), '大于等于（≥）')
+  assert.equal(warningLabel('LT'), '小于（<）')
+  assert.equal(warningLabel('LTE'), '小于等于（≤）')
+  assert.equal(warningLabel('EQ'), '等于（=）')
+  assert.equal(warningLabel('NE'), '不等于（≠）')
 })
 
 test('warning adapter preserves opaque IDs and only sends the IN_APP policy', () => {

@@ -92,7 +92,6 @@ import {
   TrendCharts
 } from '@element-plus/icons-vue'
 import { sceneOptions } from '@/idmp/data/demo'
-import { DEFAULT_ANALYSIS_INDICATOR, getAnalysisProfile } from '@/idmp/features/analysis/indicatorProfiles'
 import { fetchUnreadNotificationCount } from '@/idmp/api/modules/warnings'
 
 const route = useRoute()
@@ -159,8 +158,8 @@ const activePath = computed(() => route.meta.activeMenu || route.path)
 const breadcrumbs = computed(() => route.meta.breadcrumb || ['首页'])
 const displayBreadcrumbs = computed(() => {
   if (route.name === 'IndicatorAnalysis') {
-    const indicatorCode = String(route.query.indicator || DEFAULT_ANALYSIS_INDICATOR)
-    return ['首页', '指标分析', getAnalysisProfile(indicatorCode).name]
+    const indicatorName = String(route.query.indicatorName || route.query.indicator || '请选择指标')
+    return ['首页', '指标分析', indicatorName]
   }
   return breadcrumbs.value
 })

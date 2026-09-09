@@ -44,14 +44,33 @@ export function limitDrillNextLevels(nextLevels = [], pathCode = '', maxLevel = 
   return levels.filter((level) => ranks[level] && ranks[level] <= maxRank)
 }
 
+export function reconcileScenarioPointWithRoot(point = {}, drillResult = {}, rootLevel = 'HOSPITAL') {
+  const expectedLevel = String(rootLevel || '').toUpperCase()
+  const rootRecord = (Array.isArray(drillResult.records) ? drillResult.records : []).find((record) => (
+    String(record?.levelCode || '').toUpperCase() === expectedLevel && record?.resultId
+  ))
+  if (!rootRecord) return point
+  return {
+    ...point,
+    resultId: rootRecord.resultId,
+    value: rootRecord.indicatorValue ?? rootRecord.value ?? point.value,
+    displayValue: rootRecord.displayValue ?? point.displayValue,
+    qualityStatus: rootRecord.qualityStatus ?? point.qualityStatus,
+    outcomeStatus: rootRecord.resultOutcomeStatus ?? rootRecord.outcomeStatus ?? point.outcomeStatus,
+    qualityFlags: rootRecord.resultQualityFlags ?? rootRecord.qualityFlags ?? point.qualityFlags
+  }
+}
+
 export function adaptDrillResult(payload = {}) {
   const data = payload?.data || payload || {}
+  const context = normalizeContext(data.context)
+  const records = Array.isArray(data.records) ? data.records.map(normalizeRecord) : []
   return {
-    context: normalizeContext(data.context),
+    context,
     breadcrumb: Array.isArray(data.breadcrumb) ? data.breadcrumb.map(normalizeBreadcrumb) : [],
-    summary: normalizeSummary(data.summary),
+    summary: reconcileRootSummary(normalizeSummary(data.summary), records, context.currentLevel),
     columns: Array.isArray(data.columns) ? data.columns.map(normalizeColumn) : [],
-    records: Array.isArray(data.records) ? data.records.map(normalizeRecord) : [],
+    records,
     nextLevels: Array.isArray(data.nextLevels) ? data.nextLevels : [],
     pageInfo: normalizePageInfo(data.pageInfo),
     lineageAvailable: Boolean(data.lineageAvailable),
@@ -59,6 +78,14 @@ export function adaptDrillResult(payload = {}) {
     permissions: data.permissions || {},
     dataSource: data.dataSource || 'live'
   }
+}
+
+function reconcileRootSummary(summary, records, currentLevel) {
+  const level = String(currentLevel || '').toUpperCase()
+  if (!['HOSPITAL', 'ALL_SINGLE_DISEASE'].includes(level)) return summary
+  const rootRecord = records.find((record) => String(record.levelCode || '').toUpperCase() === level)
+  if (!rootRecord) return summary
+  return normalizeSummary({ ...summary, ...rootRecord })
 }
 
 function normalizeContext(value = {}) {
@@ -107,6 +134,11 @@ export function deriveDrillPathResultIds(analysis = {}) {
     .filter((item) => item?.resultId)
   const selected = {}
   const scores = { ORGANIZATION: Number.POSITIVE_INFINITY, DISEASE: -1 }
+  const targetCodes = (Array.isArray(analysis.calculationTargets) ? analysis.calculationTargets : [])
+    .map((target) => String(target?.targetCode || '').toUpperCase())
+  const hasOrganizationTarget = targetCodes.some((code) => code.startsWith('DRILL:ORGANIZATION:'))
+  const hasDiseaseTarget = targetCodes.some((code) => code.startsWith('DRILL:DISEASE:'))
+  let organizationSpecificCandidate = null
 
   candidates.forEach((item) => {
     const dimensions = normalizeDimensionKeys(item.dimensions)
@@ -117,6 +149,9 @@ export function deriveDrillPathResultIds(analysis = {}) {
       scores.ORGANIZATION = organizationScore
       selected.ORGANIZATION = toOpaqueId(item.resultId)
     }
+    if (organizationScore >= 20 && (!organizationSpecificCandidate || organizationScore < organizationSpecificCandidate.score)) {
+      organizationSpecificCandidate = { score: organizationScore, resultId: toOpaqueId(item.resultId) }
+    }
     if (diseaseScore > scores.DISEASE) {
       scores.DISEASE = diseaseScore
       selected.DISEASE = toOpaqueId(item.resultId)
@@ -125,6 +160,15 @@ export function deriveDrillPathResultIds(analysis = {}) {
 
   if (!Number.isFinite(scores.ORGANIZATION)) delete selected.ORGANIZATION
   if (scores.DISEASE <= 0) delete selected.DISEASE
+  // 当同一批次同时计算组织与病种路径时，全院维度结果可能被最后激活的病种
+  // 快照占用。科室结果则必然属于组织快照，可先用它进入组织路径，再由根层
+  // 响应解析出真正的全院 resultId。
+  if (hasOrganizationTarget && hasDiseaseTarget && organizationSpecificCandidate) {
+    selected.ORGANIZATION = organizationSpecificCandidate.resultId
+  }
+  if (hasDiseaseTarget && !selected.DISEASE) {
+    selected.DISEASE = toOpaqueId(analysis.overview?.resultId || analysis.resultContext?.resultId)
+  }
   if (!selected.ORGANIZATION && !selected.DISEASE && analysis.overview?.resultId) {
     selected.ORGANIZATION = toOpaqueId(analysis.overview.resultId)
   }
@@ -157,6 +201,7 @@ function hasAnyKey(keys, candidates) {
 function normalizeRecord(item = {}) {
   return {
     ...item,
+    resultId: toOpaqueId(item.resultId),
     levelCode: item.levelCode || item.level || '',
     dimensionKey: toOpaqueId(item.dimensionKey ?? item.dimKey ?? item.key),
     dimensionName: item.dimensionName || item.dimensionLabel || item.name || item.displayValue || '-',

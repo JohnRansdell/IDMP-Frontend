@@ -70,6 +70,27 @@ export function mappingCapabilities(detail = {}) {
   }
 }
 
+export function mappingActionCompleted(detail = {}, action = '') {
+  const mapping = detail.mapping || detail || {}
+  const status = String(mapping.reviewStatus || '').toUpperCase()
+  const publicationStatus = String(mapping.publicationStatus || '').toUpperCase()
+  if (action === 'submit') return status === 'PENDING_REVIEW'
+  if (action === 'approve') return status === 'APPROVED' && publicationStatus === 'PUBLISHED'
+  if (action === 'reject') return status === 'REJECTED'
+  if (action === 'invalidate') return status === 'INVALIDATED'
+  return false
+}
+
+export function mappingActionAllowed(detail = {}, action = '') {
+  const capabilities = mappingCapabilities(detail)
+  return ({
+    submit: capabilities.canSubmit,
+    approve: capabilities.canApprove,
+    reject: capabilities.canReject,
+    invalidate: capabilities.canInvalidate
+  })[action] === true
+}
+
 export function toOpaqueId(value) {
   return value === undefined || value === null || value === '' ? '' : String(value)
 }

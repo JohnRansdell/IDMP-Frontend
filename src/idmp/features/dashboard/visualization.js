@@ -85,11 +85,85 @@ export function formatIndicatorValue(source) {
 export function createKpiData(source) {
   return {
     code: source.code,
+    analysisIndicatorId: source.analysisIndicatorId || source.indicatorId || '',
+    analysisIndicatorVersionId: source.analysisIndicatorVersionId || source.indicatorVersionId || '',
+    analysisEnabled: source.analysisEnabled !== false,
     title: source.name,
     value: formatIndicatorValue(source),
     change: source.change,
     target: source.target,
     status: source.status
+  }
+}
+
+export function createPublishedIndicatorSources(indicators = [], publishedVersions = []) {
+  const directory = Array.isArray(indicators) ? indicators : []
+  const versions = Array.isArray(publishedVersions) ? publishedVersions : []
+  const indicatorsById = new Map(directory.map((item) => [toSourceString(item?.id || item?.indicatorId), item]))
+  const indicatorsByCode = new Map(directory.map((item) => [toSourceString(item?.code), item]))
+  const seenIndicators = new Set()
+
+  return versions.map((version) => {
+    const nestedIndicator = version?.indicator || {}
+    const versionIndicatorId = toSourceString(version?.indicatorId || nestedIndicator.id)
+    const versionIndicatorCode = toSourceString(version?.indicatorCode || version?.code || nestedIndicator.code)
+    const indicator = indicatorsById.get(versionIndicatorId) || indicatorsByCode.get(versionIndicatorCode) || nestedIndicator
+    const indicatorId = toSourceString(indicator?.id || indicator?.indicatorId || versionIndicatorId)
+    const indicatorCode = toSourceString(indicator?.code || versionIndicatorCode)
+    const versionId = toSourceString(version?.id || version?.versionId || version?.indicatorVersionId)
+    const identity = indicatorId || indicatorCode
+    if (!identity || !versionId || seenIndicators.has(identity)) return null
+    seenIndicators.add(identity)
+
+    return {
+      code: `catalog-indicator-${identity}`,
+      name: indicator?.name || version?.indicatorName || version?.name || indicatorCode || '未命名指标',
+      category: indicator?.categoryName || indicator?.category || nestedIndicator.categoryName || nestedIndicator.category || '指标目录',
+      unit: indicator?.unit || indicator?.displayUnit || nestedIndicator.unit || nestedIndicator.displayUnit || version?.unit || version?.displayUnit || '',
+      currentValue: null,
+      change: '暂无同比数据',
+      target: '来源：已发布指标',
+      status: 'info',
+      origin: 'indicator-catalog',
+      originLabel: '已发布指标',
+      analysisIndicatorId: indicatorId || indicatorCode,
+      analysisIndicatorVersionId: versionId,
+      analysisEnabled: true,
+      trendData: [],
+      trendLabels: [],
+      departmentData: [],
+      pieData: []
+    }
+  }).filter(Boolean)
+}
+
+export function applyIndicatorAnalysisToSource(source, payload = {}) {
+  if (!source) return source
+  const comparisons = Array.isArray(payload?.dimensionComparison) ? payload.dimensionComparison : []
+  const overview = comparisons.find(isHospitalOverview) || payload?.overview || null
+  const unit = source.unit || payload?.unit || payload?.displayUnit || overview?.unit || overview?.displayUnit || ''
+  const hasData = Boolean(payload?.dataAvailable && overview)
+  const trend = payload?.dataAvailable && Array.isArray(payload?.trend) ? payload.trend : []
+  const departmentData = comparisons
+    .filter((item) => item?.dimensions?.out_dept_code || item?.dimensions?.out_dept_id)
+    .map((item) => ({
+      name: item.dimensions?.out_dept_name || item.dimensions?.out_dept_code || item.dimensions?.out_dept_id,
+      value: normalizeAnalysisNumber(item?.value, unit)
+    }))
+    .filter((item) => item.name && item.value !== null)
+
+  return {
+    ...source,
+    unit,
+    currentValue: hasData ? resolveAnalysisDisplayValue(overview, unit) : null,
+    change: hasData ? '当前正式结果' : '暂无正式结果',
+    status: hasData ? 'success' : 'info',
+    origin: 'indicator-catalog',
+    originLabel: '已发布指标',
+    trendLabels: trend.map((item) => formatAnalysisPeriod(item, payload?.granularity)),
+    trendData: trend.map((item) => normalizeAnalysisNumber(item?.value, unit)),
+    departmentData,
+    pieData: departmentData.map((item) => ({ ...item }))
   }
 }
 
@@ -202,4 +276,41 @@ function toDrillString(value) {
   return typeof value === 'string' || typeof value === 'number'
     ? String(value).trim()
     : ''
+}
+
+function toSourceString(value) {
+  return value === undefined || value === null ? '' : String(value).trim()
+}
+
+function isHospitalOverview(item) {
+  const dimensions = item?.dimensions || {}
+  return Boolean(dimensions.hospital_code || dimensions.hospital_id) &&
+    !dimensions.out_dept_code && !dimensions.out_dept_id &&
+    !dimensions.department_code && !dimensions.department_id
+}
+
+function resolveAnalysisDisplayValue(item, unit) {
+  if (item?.displayValue !== undefined && item?.displayValue !== null && item.displayValue !== '') {
+    return item.displayValue
+  }
+  const value = normalizeAnalysisNumber(item?.value, unit)
+  if (value === null) return null
+  return unit === '%' ? `${value.toFixed(2)}%` : value
+}
+
+function normalizeAnalysisNumber(value, unit) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return null
+  return unit === '%' ? Number((number * 100).toFixed(2)) : number
+}
+
+function formatAnalysisPeriod(item, granularity) {
+  const start = toSourceString(item?.periodStart).slice(0, 10)
+  const normalizedGranularity = toSourceString(granularity).toUpperCase()
+  if (normalizedGranularity === 'MONTHLY') return start.slice(0, 7)
+  if (normalizedGranularity === 'YEARLY') return start.slice(0, 4)
+  if (normalizedGranularity === 'QUARTERLY' && start) {
+    return `${start.slice(0, 4)}-Q${Math.ceil(Number(start.slice(5, 7)) / 3)}`
+  }
+  return start || toSourceString(item?.periodEnd).slice(0, 10)
 }

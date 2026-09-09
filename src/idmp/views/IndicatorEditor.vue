@@ -707,10 +707,12 @@ import {
 } from '@/idmp/api/modules/indicators'
 import {
   buildIndicatorVersionPayload,
+  combineFormulaNodes,
   drillLevelLabel,
   drillPathLabel,
   normalizeDrillCapabilities,
   normalizeDrillPaths,
+  selectIndicatorSummaryRecord,
   validateDrillSelection
 } from '@/idmp/api/adapters/indicator'
 import { fetchFactorVersions } from '@/idmp/api/modules/factors'
@@ -2036,7 +2038,9 @@ async function loadIndicatorTrialResultOnly() {
     }
     const resultSet = await fetchIndicatorTrialResults(indicatorWorkflow.versionId, indicatorWorkflow.batchId)
     indicatorWorkflow.trialAvailability = resolveResultAvailability({ ...resultSet, batchStatus })
-    const record = resultSet.results?.records?.[0]
+    // 试算可能同时返回全院、科室和病种等多个粒度。页面顶部必须展示
+    // 根粒度汇总，不能把接口数组中的第一条科室结果误当成指标总值。
+    const record = selectIndicatorSummaryRecord(resultSet)
     indicatorWorkflow.displayValue = record?.displayValue ?? (indicatorWorkflow.trialAvailability.status === 'CALCULATION_ERROR' ? '计算失败' : '-')
     indicatorWorkflow.resultValue = record?.resultValue ?? ''
     recordWorkflowSuccess(`试算结论：${getStatusLabel(indicatorWorkflow.trialAvailability.status)}`)
@@ -2163,7 +2167,11 @@ function isOptimisticLockError(error) {
 function createIndicatorFormulaPayload(resourceVersion) {
   if (!formulaValid.value) throw new Error(`请按${activeMode.value.factorRequirement}选择已发布因子`)
   const factorRef = (factor, index) => ({ nodeId: `factor_${index}_${factor.versionId}`, nodeType: 'FACTOR_REF', factorVersionId: String(factor.versionId) })
-  const combine = (factors, operator, prefix) => factors.map((factor, index) => factorRef(factor, `${prefix}_${index}`)).reduce((left, right, index) => index ? ({ nodeId: `${prefix}_${operator.toLowerCase()}_${index}`, nodeType: 'BINARY', operator, left, right }) : left, null)
+  const combine = (factors, operator, prefix) => combineFormulaNodes(
+    factors.map((factor, index) => factorRef(factor, `${prefix}_${index}`)),
+    operator,
+    prefix
+  )
   const left = combine(numeratorFactors.value, 'ADD', 'left')
   let root
   if (activeMode.value.kind === 'add') root = left

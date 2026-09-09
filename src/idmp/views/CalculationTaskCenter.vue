@@ -115,10 +115,26 @@
               <small class="form-help">选择后将以该场景的覆盖规则创建正式计算；留空则创建非场景计算。</small>
             </el-form-item>
             <el-form-item label="开始时间">
-              <el-input v-model.trim="createForm.periodStart" class="mono-input" />
+              <el-date-picker
+                v-model="createForm.periodStart"
+                type="datetime"
+                value-format="YYYY-MM-DDTHH:mm:ss"
+                format="YYYY-MM-DD HH:mm:ss"
+                placeholder="选择开始时间"
+                :editable="false"
+                :disabled-date="disableStartDate"
+              />
             </el-form-item>
             <el-form-item label="结束时间">
-              <el-input v-model.trim="createForm.periodEnd" class="mono-input" />
+              <el-date-picker
+                v-model="createForm.periodEnd"
+                type="datetime"
+                value-format="YYYY-MM-DDTHH:mm:ss"
+                format="YYYY-MM-DD HH:mm:ss"
+                placeholder="选择结束时间"
+                :editable="false"
+                :disabled-date="disableEndDate"
+              />
             </el-form-item>
           </div>
           <el-button type="primary" :loading="createLoading" @click="createBatch">确认并创建批次</el-button>
@@ -330,7 +346,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
@@ -347,6 +363,7 @@ import {
 import { fetchIndicatorScenarios, fetchIndicatorVersion } from '@/idmp/api/modules/indicators'
 
 const route = useRoute()
+const router = useRouter()
 const queryForm = reactive({
   taskId: '101996817981379215',
   batchId: String(route.query.batchId || '101996817981379215')
@@ -361,6 +378,22 @@ const createForm = reactive({
   periodEnd: String(route.query.periodEnd || '2030-01-01T00:00:00')
 })
 const returnToAnalysis = computed(() => route.query.returnTo === '/analysis')
+
+function disableStartDate(date) {
+  if (!createForm.periodEnd) return false
+  return startOfDay(date) > startOfDay(createForm.periodEnd)
+}
+
+function disableEndDate(date) {
+  if (!createForm.periodStart) return false
+  return startOfDay(date) < startOfDay(createForm.periodStart)
+}
+
+function startOfDay(value) {
+  const date = value instanceof Date ? new Date(value) : new Date(String(value || ''))
+  date.setHours(0, 0, 0, 0)
+  return date.getTime()
+}
 
 const OWNER_TYPE_LABELS = { INDICATOR: '指标版本', FACTOR: '因子版本' }
 const BATCH_TYPE_LABELS = { TRIAL: '试算', FULL: '正式计算', RECALC: '重算' }
@@ -506,6 +539,10 @@ async function createBatch() {
     ElMessage.warning('请输入完整的计算时间范围')
     return
   }
+  if (new Date(createForm.periodStart).getTime() >= new Date(createForm.periodEnd).getTime()) {
+    ElMessage.warning('结束时间必须晚于开始时间')
+    return
+  }
 
   try {
     await ElMessageBox.confirm(
@@ -567,9 +604,17 @@ async function createBatch() {
 
 function returnToScenarioComparison() {
   if (!returnToAnalysis.value) return
+  const returnScenarioVersionIds = String(route.query.returnScenarioVersionIds || createForm.scenarioVersionId || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
   const query = {
     indicator: route.query.returnIndicator || undefined,
-    indicatorVersionId: route.query.returnIndicatorVersionId || undefined
+    indicatorVersionId: route.query.returnIndicatorVersionId || undefined,
+    periodStart: createForm.periodStart || undefined,
+    periodEnd: createForm.periodEnd || undefined,
+    scenarioVersionIds: returnScenarioVersionIds.length ? returnScenarioVersionIds : undefined,
+    focus: 'scenario-comparison'
   }
   router.push({ path: '/analysis', query })
 }
@@ -778,7 +823,8 @@ function stateTypeForError(message) {
 
 .query-card :deep(.el-input),
 .create-card :deep(.el-input),
-.create-card :deep(.el-select) {
+.create-card :deep(.el-select),
+.create-card :deep(.el-date-editor) {
   width: 100%;
 }
 
