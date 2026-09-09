@@ -15,6 +15,11 @@ export function applyMortalityReadonlyChain(dataSources, chain) {
   const displayValue = indicatorRecord.displayValue || formatPercent(resultValue)
 
   Object.assign(source, {
+    // 卡片展示的是只读链路返回的真实指标，跳转时也必须使用同一指标身份。
+    // 否则会继续使用演示数据源的 code，分析页无法选中对应的已发布指标。
+    analysisIndicatorId: String(chain.config?.indicatorId || indicatorRecord.indicatorId || ''),
+    analysisIndicatorVersionId: String(chain.config?.indicatorVersionId || indicatorRecord.indicatorVersionId || ''),
+    analysisEnabled: Boolean(chain.config?.indicatorId || indicatorRecord.indicatorId),
     currentValue: displayValue,
     unit: '',
     rawValue: Number.isFinite(resultValue) ? resultValue : source.rawValue,

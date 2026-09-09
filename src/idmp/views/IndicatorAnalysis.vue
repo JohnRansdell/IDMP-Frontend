@@ -66,7 +66,7 @@
             size="default"
           />
         </div>
-        <el-button type="primary" :loading="mortalityChainLoading" @click="applyReportPeriod">查看报告</el-button>
+        <el-button type="primary" :loading="mortalityChainLoading" @click="applyReportPeriod">查询</el-button>
         <el-button @click="showDataDiagnostics = true">数据说明</el-button>
       </div>
     </section>
