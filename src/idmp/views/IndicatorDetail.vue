@@ -11,7 +11,7 @@
       </template>
       <template #actions>
         <el-button @click="router.push('/indicator')">返回指标目录</el-button>
-        <el-button type="primary" plain @click="router.push(`/indicator/edit/${detail.code || routeIndicatorKey}`)">
+        <el-button type="primary" plain @click="openIndicatorEditor">
           编辑指标
         </el-button>
       </template>
@@ -214,6 +214,17 @@ const indicatorName = computed(() => detail.name || detail.code || routeIndicato
 const indicatorStatus = computed(() => detail.status || 'UNKNOWN')
 const selectedVersionId = computed(() => resolveIndicatorVersionId(selectedVersion.value))
 const isPublishedVersion = computed(() => String(selectedVersion.value?.publicationStatus || selectedVersion.value?.status || '').toUpperCase() === 'PUBLISHED')
+
+function openIndicatorEditor() {
+  // 编辑页的详情、版本读取接口以主键为准。编码只是展示/业务检索字段，
+  // 不能作为路由主键，否则编辑页还要依赖列表接口二次反查。
+  const indicatorId = detail.id || (/^\d+$/.test(routeIndicatorKey.value) ? routeIndicatorKey.value : '')
+  if (!indicatorId) {
+    loadError.value = '未获取到指标 ID，暂时无法进入编辑页；请刷新详情后重试。'
+    return
+  }
+  router.push({ name: 'IndicatorEditor', params: { id: indicatorId } })
+}
 
 function hydrateDetail(item) {
   Object.assign(detail, {
