@@ -1,4 +1,5 @@
 import { requestJson } from '@/idmp/api/request'
+import { serializeWarningRulePayload } from '@/idmp/api/adapters/warning'
 
 export function fetchWarningRules(params = {}) {
   return requestJson(withQuery('/analysis/warning-rules', params))
@@ -9,12 +10,12 @@ export function fetchWarningRule(ruleId) {
 }
 
 export function createWarningRule(payload) {
-  return requestJson('/analysis/warning-rules', { method: 'POST', body: JSON.stringify(payload) })
+  return requestJson('/analysis/warning-rules', { method: 'POST', body: serializeWarningRulePayload(payload) })
 }
 
 export function updateWarningRuleVersion(versionId, payload) {
   return requestJson(`/analysis/warning-rule-versions/${encodeURIComponent(versionId)}`, {
-    method: 'PATCH', body: JSON.stringify(payload)
+    method: 'PATCH', body: serializeWarningRulePayload(payload)
   })
 }
 

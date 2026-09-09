@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildWarningRulePayload, normalizePage, validateWarningRuleForm, warningLabel, warningRuleCapabilities } from '../src/idmp/api/adapters/warning.js'
+import { buildWarningRulePayload, normalizePage, normalizeWarningRule, serializeWarningRulePayload, validateWarningRuleForm, warningLabel, warningRuleCapabilities } from '../src/idmp/api/adapters/warning.js'
 
 const validRule = () => ({
   code: 'MORTALITY_HIGH', name: '住院死亡率过高', description: '', warningType: 'THRESHOLD',
@@ -26,6 +26,18 @@ test('warning adapter preserves opaque IDs and only sends the IN_APP policy', ()
   assert.deepEqual(payload.scenarioScope, {})
 })
 
+test('warning request serializes large IDs as exact JSON integers', () => {
+  const rule = validRule()
+  rule.scenarioVersionIds = ['102027642460314531']
+  rule.recipientUserIds = ['1', '9007199254740993']
+  const json = serializeWarningRulePayload(buildWarningRulePayload(rule))
+
+  assert.match(json, /"indicatorVersionId":102027642460303757/)
+  assert.match(json, /"scenarioVersionIds":\[102027642460314531\]/)
+  assert.match(json, /"recipientUserIds":\[1,9007199254740993\]/)
+  assert.doesNotMatch(json, /"102027642460314531"/)
+})
+
 test('scenario difference requires an explicit published baseline scenario', () => {
   const rule = validRule()
   rule.warningType = 'SCENARIO_DIFFERENCE'
@@ -39,6 +51,20 @@ test('warning capabilities distinguish draft publishing and published enablement
   assert.equal(warningRuleCapabilities({ version: { id: '1', publicationStatus: 'DRAFT' } }).canPublish, true)
   assert.equal(warningRuleCapabilities({ enableStatus: 'DISABLED', version: { publicationStatus: 'PUBLISHED' } }).canEnable, true)
   assert.equal(warningRuleCapabilities({ enableStatus: 'ENABLED', version: { publicationStatus: 'PUBLISHED' } }).canDisable, true)
+})
+
+test('warning rule normalization exposes actions for summary response variants', () => {
+  const draft = normalizeWarningRule({ id: '10', enableStatus: 'DISABLED', draftVersionId: '11' })
+  assert.equal(draft.version.id, '11')
+  assert.equal(draft.version.publicationStatus, 'DRAFT')
+  assert.equal(warningRuleCapabilities(draft).canPublish, true)
+
+  const published = normalizeWarningRule({ id: '10', enableStatus: 'DISABLED', currentPublishedVersionId: '12' })
+  assert.equal(published.version.publicationStatus, 'PUBLISHED')
+  assert.equal(warningRuleCapabilities(published).canEnable, true)
+
+  const actionResponse = normalizeWarningRule({ id: '10', enableStatus: 'ENABLED', resourceVersion: 3 })
+  assert.equal(Object.hasOwn(actionResponse.version, 'publicationStatus'), false)
 })
 
 test('warning page response normalizes current server pagination shape', () => {

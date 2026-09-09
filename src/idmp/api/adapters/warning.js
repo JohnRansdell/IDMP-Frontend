@@ -33,10 +33,28 @@ export function normalizePage(payload = {}) {
   }
 }
 
+export function normalizeWarningRule(rule = {}) {
+  const sourceVersion = rule.version || rule.currentVersion || rule.draftVersion || rule.publishedVersion || {}
+  const fallbackVersionId = rule.draftVersionId || rule.currentVersionId || rule.currentPublishedVersionId
+  const fallbackPublication = rule.draftVersionId
+    ? 'DRAFT'
+    : (rule.currentPublishedVersionId ? 'PUBLISHED' : rule.publicationStatus)
+  const version = { ...sourceVersion }
+  const versionId = sourceVersion.id || sourceVersion.versionId || fallbackVersionId
+  const publicationStatus = sourceVersion.publicationStatus || fallbackPublication
+  if (versionId) version.id = versionId
+  if (publicationStatus) version.publicationStatus = publicationStatus
+  return {
+    ...rule,
+    version
+  }
+}
+
 export function warningRuleCapabilities(rule = {}) {
-  const version = rule.version || {}
+  const normalized = normalizeWarningRule(rule)
+  const version = normalized.version
   const publication = String(version.publicationStatus || rule.publicationStatus || '').toUpperCase()
-  const enabled = String(rule.enableStatus || '').toUpperCase() === 'ENABLED'
+  const enabled = String(normalized.enableStatus || '').toUpperCase() === 'ENABLED'
   return {
     canEdit: publication === 'DRAFT' && Boolean(version.id || version.versionId),
     canPublish: publication === 'DRAFT' && Boolean(version.id || version.versionId),
@@ -74,6 +92,39 @@ export function buildWarningRulePayload(form) {
     effectiveStartDate: form.effectiveStartDate || null,
     effectiveEndDate: form.effectiveEndDate || null
   }
+}
+
+export function serializeWarningRulePayload(payload = {}) {
+  const marked = {
+    ...payload,
+    indicatorVersionId: markJsonInteger(payload.indicatorVersionId),
+    scenarioScope: payload.scenarioScope?.scenarioVersionIds
+      ? {
+          ...payload.scenarioScope,
+          scenarioVersionIds: payload.scenarioScope.scenarioVersionIds.map(markJsonInteger)
+        }
+      : (payload.scenarioScope || {}),
+    condition: {
+      ...(payload.condition || {}),
+      ...(payload.condition?.baselineIndicatorVersionId
+        ? { baselineIndicatorVersionId: markJsonInteger(payload.condition.baselineIndicatorVersionId) }
+        : {}),
+      ...(payload.condition?.baselineScenarioVersionId
+        ? { baselineScenarioVersionId: markJsonInteger(payload.condition.baselineScenarioVersionId) }
+        : {})
+    },
+    notificationPolicy: {
+      ...(payload.notificationPolicy || {}),
+      recipientUserIds: (payload.notificationPolicy?.recipientUserIds || []).map(markJsonInteger)
+    }
+  }
+  return JSON.stringify(marked).replace(/"__IDMP_JSON_INTEGER__(\d+)"/g, '$1')
+}
+
+function markJsonInteger(value) {
+  const id = opaquePositiveId(value)
+  if (!id) throw new Error('预警规则包含无效的正整数 ID')
+  return `__IDMP_JSON_INTEGER__${id}`
 }
 
 export function validateWarningRuleForm(form) {
