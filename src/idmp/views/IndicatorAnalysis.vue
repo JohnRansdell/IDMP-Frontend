@@ -55,15 +55,16 @@
       </div>
       <div class="report-context__controls">
         <div class="date-range-fields report-period-picker" aria-label="报告期范围">
-        <el-date-picker
-          v-model="reportPeriodStart"
-          type="date"
-          value-format="YYYY-MM-DD"
-          placeholder="开始日期"
-          size="default"
-        />
-        <span>至</span>
-        <el-date-picker v-model="reportPeriodEnd" type="date" value-format="YYYY-MM-DD" placeholder="结束日期" size="default" />
+          <el-date-picker
+            v-model="reportPeriodRange"
+            type="daterange"
+            unlink-panels
+            value-format="YYYY-MM-DD"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            size="default"
+          />
         </div>
         <el-button type="primary" :loading="mortalityChainLoading" @click="applyReportPeriod">查看报告</el-button>
         <el-button @click="showDataDiagnostics = true">数据说明</el-button>
@@ -101,7 +102,7 @@
           <el-select v-model="scenarioComparisonSelectedIds" multiple collapse-tags collapse-tags-tooltip clearable filterable placeholder="全部关联场景" :disabled="!scenarioComparisonTarget || !scenarioComparisonOptions.length">
             <el-option v-for="scene in scenarioComparisonOptions" :key="scene.value" :label="scene.label" :value="scene.value" />
           </el-select>
-          <div class="date-range-fields" aria-label="场景对比时间范围"><el-date-picker v-model="scenarioComparisonPeriodStart" type="date" value-format="YYYY-MM-DD" placeholder="开始日期" /><span>至</span><el-date-picker v-model="scenarioComparisonPeriodEnd" type="date" value-format="YYYY-MM-DD" placeholder="结束日期" /></div>
+          <div class="date-range-fields" aria-label="场景对比时间范围"><el-date-picker v-model="scenarioComparisonPeriodRange" type="daterange" unlink-panels value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" /></div>
           <el-button size="small" type="primary" :loading="scenarioComparisonLoading" :disabled="!scenarioComparisonTarget" @click="applyScenarioComparisonFilters">应用筛选</el-button>
           <el-button size="small" :loading="scenarioComparisonLoading" :disabled="!scenarioComparisonTarget" @click="loadScenarioComparison">刷新对比</el-button>
         </div>
@@ -173,7 +174,7 @@
               <p>{{ hasPeerTrend ? '展示本院实际值与同级医院均值的周期变化' : '展示本院实际值的周期变化；同级医院基准数据暂未接入' }}</p>
             </div>
             <div class="trend-controls">
-              <div class="date-range-fields trend-period-picker" aria-label="趋势时间范围"><el-date-picker v-model="trendPeriodStart" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="开始日期" size="small" /><span>至</span><el-date-picker v-model="trendPeriodEnd" type="date" format="YYYY-MM-DD" value-format="YYYY-MM-DD" placeholder="结束日期" size="small" /></div>
+              <div class="date-range-fields trend-period-picker" aria-label="趋势时间范围"><el-date-picker v-model="trendPeriodDraft" type="daterange" unlink-panels format="YYYY-MM-DD" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" size="small" /></div>
               <el-button size="small" type="primary" @click="applyTrendConditions">应用</el-button>
               <el-button size="small" :disabled="!trendPeriodDraft.some(Boolean) && !analysisPeriodRange.some(Boolean)" @click="clearTrendPeriod">全部时间</el-button>
               <el-radio-group v-model="period" size="small" aria-label="趋势统计粒度" @change="applyTrendGranularity">
@@ -367,12 +368,6 @@ const drillParentKeys = ref({})
 const analysisPeriodRange = ref(initialAnalysisPeriodRange())
 const reportPeriodRange = ref(initialReportPeriodRange())
 const trendPeriodDraft = ref([...analysisPeriodRange.value])
-const reportPeriodStart = rangeEndpoint(reportPeriodRange, 0)
-const reportPeriodEnd = rangeEndpoint(reportPeriodRange, 1)
-const scenarioComparisonPeriodStart = rangeEndpoint(scenarioComparisonPeriodRange, 0)
-const scenarioComparisonPeriodEnd = rangeEndpoint(scenarioComparisonPeriodRange, 1)
-const trendPeriodStart = rangeEndpoint(trendPeriodDraft, 0)
-const trendPeriodEnd = rangeEndpoint(trendPeriodDraft, 1)
 const showDataDiagnostics = ref(false)
 
 const indicatorCode = computed(() => String(route.query.indicator || ''))
@@ -1447,17 +1442,6 @@ function initialScenarioVersionIds() {
   return values.map((item) => String(item).trim()).filter(Boolean)
 }
 
-function rangeEndpoint(rangeRef, index) {
-  return computed({
-    get: () => rangeRef.value?.[index] || '',
-    set: (value) => {
-      const next = [rangeRef.value?.[0] || '', rangeRef.value?.[1] || '']
-      next[index] = value || ''
-      rangeRef.value = next.some(Boolean) ? next : []
-    }
-  })
-}
-
 function isCompleteDateRange(range) {
   return Array.isArray(range) && Boolean(range[0] && range[1])
 }
@@ -1468,8 +1452,8 @@ function validateOptionalDateRange(range, label) {
     ElMessage.warning(`请选择完整的${label}范围`)
     return false
   }
-  if (String(range[0]) >= String(range[1])) {
-    ElMessage.warning(`${label}的开始日期必须早于结束日期`)
+  if (String(range[0]) > String(range[1])) {
+    ElMessage.warning(`${label}的开始日期不能晚于结束日期`)
     return false
   }
   return true
@@ -1587,7 +1571,7 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
 }
 
 .date-range-fields :deep(.el-date-editor) {
-  width: 142px;
+  width: 310px;
 }
 
 .analysis-state-notice {
@@ -1811,7 +1795,7 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
 }
 
 .scene-comparison__controls :deep(.el-select) { width: 220px; }
-.scene-comparison__controls .date-range-fields :deep(.el-date-editor) { width: 138px; }
+.scene-comparison__controls .date-range-fields :deep(.el-date-editor) { width: 310px; }
 
 .scenario-result-grid {
   display: grid;
@@ -2379,8 +2363,8 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
   }
 
   .date-range-fields :deep(.el-date-editor) {
-    width: auto;
-    flex: 1 1 130px;
+    width: 100%;
+    flex: 1 1 100%;
   }
 
   .metric-summary-grid {

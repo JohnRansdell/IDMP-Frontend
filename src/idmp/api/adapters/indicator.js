@@ -49,6 +49,140 @@ export function selectIndicatorSummaryRecord(payload = {}) {
   ), records[0])
 }
 
+export function normalizeIndicatorTrialResults(payload = {}) {
+  const data = payload?.data || payload || {}
+  const responseTargets = Array.isArray(data.targets) ? data.targets : []
+  const targets = responseTargets.length
+    ? responseTargets.map(normalizeIndicatorTrialTarget).filter(Boolean)
+    : createLegacyIndicatorTrialTargets(data)
+
+  return {
+    batchId: toOpaqueId(data.batchId),
+    batchCode: String(data.batchCode || ''),
+    batchStatus: String(data.batchStatus || data.status || '').toUpperCase(),
+    indicatorVersionId: toOpaqueId(data.indicatorVersionId),
+    qualityStatus: String(data.qualityStatus || '').toUpperCase(),
+    outcomeStatus: String(data.resultOutcomeStatus || data.outcomeStatus || '').toUpperCase(),
+    periodStart: String(data.periodStart || ''),
+    periodEnd: String(data.periodEnd || ''),
+    factorDataProfiles: Array.isArray(data.factorDataProfiles) ? data.factorDataProfiles.map((item) => ({ ...item })) : [],
+    targets
+  }
+}
+
+export function selectDefaultIndicatorTrialTarget(targets = []) {
+  const list = Array.isArray(targets) ? targets : []
+  return list.find((target) => target.pathCode === 'TIME' && target.levelCode === 'MONTH')
+    || [...list].sort((left, right) => right.grain.length - left.grain.length)[0]
+    || null
+}
+
+export function formatIndicatorTrialPeriod(record = {}, target = {}) {
+  const dimensions = record?.dimensions || record?.dimensionValues || {}
+  const year = presentDimension(dimensions, 'time_year', 'TIME_YEAR')
+  const quarter = presentDimension(dimensions, 'time_quarter', 'TIME_QUARTER')
+  const month = presentDimension(dimensions, 'time_month', 'TIME_MONTH')
+  const level = String(target?.levelCode || '').toUpperCase()
+  if (level === 'MONTH' && year !== '' && month !== '') return `${year}-${String(month).padStart(2, '0')}`
+  if (level === 'QUARTER' && year !== '' && quarter !== '') return `${year} Q${quarter}`
+  if (level === 'YEAR' && year !== '') return String(year)
+  const entries = Object.entries(dimensions).filter(([, value]) => value !== undefined && value !== null && value !== '')
+  return entries.length ? entries.map(([key, value]) => `${key}=${value}`).join('，') : '总体'
+}
+
+function normalizeIndicatorTrialTarget(target, index) {
+  if (!target || typeof target !== 'object') return null
+  const results = target.results || {}
+  const records = Array.isArray(results.records) ? results.records.map(normalizeIndicatorTrialRecord) : []
+  const pathCode = String(target.drillPathCode || target.pathCode || '').toUpperCase()
+  const levelCode = String(target.drillLevelCode || target.levelCode || '').toUpperCase()
+  const targetId = toOpaqueId(target.targetId || target.id)
+  const targetCode = String(target.targetCode || '')
+  return {
+    key: targetId || targetCode || `${pathCode}:${levelCode}:${index}`,
+    targetId,
+    targetCode,
+    pathCode,
+    levelCode,
+    grain: Array.isArray(target.grain) ? target.grain.map(String) : [],
+    status: String(target.targetStatus || target.status || '').toUpperCase(),
+    resultSetId: toOpaqueId(target.resultSetId),
+    resultSetStatus: String(target.resultSetStatus || '').toUpperCase(),
+    qualityStatus: String(target.qualityStatus || '').toUpperCase(),
+    outcomeStatus: String(target.resultOutcomeStatus || target.outcomeStatus || '').toUpperCase(),
+    qualityFlags: Array.isArray(target.resultQualityFlags) ? [...target.resultQualityFlags] : [],
+    errorMessage: target.errorMessage || null,
+    factorDataProfiles: Array.isArray(target.factorDataProfiles) ? target.factorDataProfiles.map((item) => ({ ...item })) : [],
+    periodStart: String(target.periodStart || ''),
+    periodEnd: String(target.periodEnd || ''),
+    records,
+    total: toCount(results.total, records.length),
+    pageNum: toPositiveInteger(results.pageNum, 1),
+    pageSize: toPositiveInteger(results.pageSize, records.length || 100),
+    pages: toPositiveInteger(results.pages, records.length ? 1 : 0)
+  }
+}
+
+function normalizeIndicatorTrialRecord(record = {}) {
+  return {
+    ...record,
+    resultId: toOpaqueId(record.resultId || record.id),
+    dimensions: record.dimensions && typeof record.dimensions === 'object' && !Array.isArray(record.dimensions)
+      ? { ...record.dimensions }
+      : {},
+    resultValue: record.resultValue ?? null,
+    displayValue: record.displayValue ?? null,
+    numeratorValue: record.numeratorValue ?? null,
+    denominatorValue: record.denominatorValue ?? null,
+    resultUnitCode: record.resultUnitCode ?? null,
+    qualityStatus: String(record.qualityStatus || '').toUpperCase(),
+    outcomeStatus: String(record.outcomeStatus || '').toUpperCase(),
+    qualityFlags: Array.isArray(record.qualityFlags) ? [...record.qualityFlags] : []
+  }
+}
+
+function createLegacyIndicatorTrialTargets(data) {
+  const results = data.results || {}
+  if (!Array.isArray(results.records)) return []
+  return [normalizeIndicatorTrialTarget({
+    targetId: data.targetId,
+    targetCode: data.targetCode || 'LEGACY',
+    targetStatus: data.targetStatus,
+    resultSetId: data.resultSetId,
+    resultSetStatus: data.resultSetStatus,
+    qualityStatus: data.qualityStatus,
+    resultOutcomeStatus: data.resultOutcomeStatus,
+    resultQualityFlags: data.resultQualityFlags,
+    errorMessage: data.errorMessage,
+    factorDataProfiles: data.factorDataProfiles,
+    periodStart: data.periodStart,
+    periodEnd: data.periodEnd,
+    results
+  }, 0)].filter(Boolean)
+}
+
+function presentDimension(dimensions, ...keys) {
+  for (const key of keys) {
+    const value = dimensions?.[key]
+    if (value !== undefined && value !== null && value !== '') return value
+  }
+  return ''
+}
+
+function toOpaqueId(value) {
+  return value === undefined || value === null || value === '' ? '' : String(value)
+}
+
+function toCount(value, fallback) {
+  const number = Number(value)
+  return Number.isFinite(number) && number >= 0 ? number : fallback
+}
+
+function toPositiveInteger(value, fallback) {
+  const number = Number(value)
+  return Number.isInteger(number) && number >= 0 ? number : fallback
+}
+
 function indicatorResultGrainRank(record = {}) {
   const level = String(record?.levelCode || record?.level || '').toUpperCase()
   if (level === 'HOSPITAL' || level === 'ALL_SINGLE_DISEASE') return 0

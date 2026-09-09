@@ -15,7 +15,7 @@
           <el-form-item label="场景类型"><el-select v-model="form.type" disabled><el-option v-for="item in SCENARIO_TYPES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
           <el-form-item label="主管部门"><el-input v-model.trim="form.governingOrgName" :disabled="!editable" /></el-form-item>
           <el-form-item label="默认统计周期"><el-select v-model="form.defaultPeriodType" :disabled="!editable"><el-option v-for="item in PERIOD_TYPES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
-          <el-form-item label="生效日期"><el-date-picker v-model="form.effectiveRange" type="daterange" value-format="YYYY-MM-DD" :disabled="!editable" /></el-form-item>
+          <el-form-item label="生效日期"><el-date-picker v-model="form.effectiveRange" type="daterange" unlink-panels value-format="YYYY-MM-DD" :disabled="!editable" /></el-form-item>
           <el-form-item label="场景说明"><el-input v-model="form.description" type="textarea" :rows="4" :disabled="!editable" /></el-form-item>
           <el-form-item label="默认排除规则"><el-input v-model="form.defaultExclusionDisplayText" placeholder="规则说明" :disabled="!editable" /><el-input v-model="form.defaultExclusionDslText" type="textarea" :rows="5" class="json-input" :disabled="!editable" /></el-form-item>
         </el-form>

@@ -31,9 +31,13 @@ export function resolveResultAvailability(payload = {}) {
   const outcomeStatus = normalizeStatus(
     availability.outcomeStatus || target.resultOutcomeStatus || data.resultOutcomeStatus || data.outcomeStatus
   )
+  const hasResultRecords = Boolean(
+    (Array.isArray(data.results?.records) && data.results.records.length) ||
+    (Array.isArray(data.targets) && data.targets.some((item) => Array.isArray(item?.results?.records) && item.results.records.length))
+  )
   let status = normalizeStatus(availability.status)
   if (!status) {
-    if (data.dataAvailable) status = 'ACTIVE_RESULT'
+    if (data.dataAvailable || (hasResultRecords && outcomeStatus === 'CALCULATED')) status = 'ACTIVE_RESULT'
     else if (executionStatus === 'FAILED' || outcomeStatus === 'CALCULATION_ERROR') status = 'CALCULATION_ERROR'
     else if (outcomeStatus === 'NOT_CALCULABLE') status = 'NOT_CALCULABLE'
     else if (executionStatus === 'RUNNING' || executionStatus === 'QUEUED') status = 'CALCULATION_IN_PROGRESS'

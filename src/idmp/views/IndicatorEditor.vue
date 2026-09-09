@@ -340,6 +340,7 @@
               <el-date-picker
                 v-model="indicatorTrialPeriod"
                 type="datetimerange"
+                unlink-panels
                 value-format="YYYY-MM-DDTHH:mm:ss"
                 start-placeholder="开始时间"
                 end-placeholder="结束时间"
@@ -382,11 +383,34 @@
                 生成正式结果并去指标分析
               </el-button>
             </div>
-            <div v-if="indicatorWorkflow.displayValue" class="workflow-result">
-              <span>试算结果</span>
-              <strong>{{ indicatorWorkflow.displayValue }}</strong>
-              <small>批次 {{ indicatorWorkflow.batchId }}</small>
-            </div>
+            <section v-if="indicatorTrialResultsLoaded" class="workflow-trial-results" aria-label="指标试算多粒度结果">
+              <div class="workflow-trial-results__head">
+                <div>
+                  <strong>试算结果</strong>
+                  <small>批次 {{ indicatorWorkflow.batchId }} · 共 {{ indicatorTrialResultCount }} 条</small>
+                </div>
+                <el-radio-group v-if="indicatorTrialTargets.length > 1" v-model="selectedIndicatorTrialTargetKey" size="small" aria-label="试算结果时间粒度">
+                  <el-radio-button v-for="target in indicatorTrialTargets" :key="target.key" :value="target.key">
+                    {{ indicatorTrialTargetLabel(target) }}（{{ target.total }}）
+                  </el-radio-button>
+                </el-radio-group>
+              </div>
+              <StatePanel v-if="!selectedIndicatorTrialTarget || !indicatorTrialRows.length" type="empty" title="当前粒度暂无试算结果" description="后端已完成试算，但该目标没有返回结果记录。" />
+              <template v-else>
+                <el-table :data="indicatorTrialRows" size="small" border table-layout="fixed" class="indicator-trial-result-table">
+                  <el-table-column label="时间" min-width="140"><template #default="{ row }"><span class="mono-data">{{ formatIndicatorTrialPeriod(row, selectedIndicatorTrialTarget) }}</span></template></el-table-column>
+                  <el-table-column label="指标结果" min-width="130"><template #default="{ row }"><strong>{{ indicatorTrialResultValue(row) }}</strong></template></el-table-column>
+                  <el-table-column v-if="indicatorTrialHasNumerator" label="分子" min-width="110"><template #default="{ row }">{{ row.numeratorValue ?? '-' }}</template></el-table-column>
+                  <el-table-column v-if="indicatorTrialHasDenominator" label="分母" min-width="110"><template #default="{ row }">{{ row.denominatorValue ?? '-' }}</template></el-table-column>
+                  <el-table-column label="质量状态" width="120"><template #default="{ row }">{{ getStatusLabel(row.qualityStatus || selectedIndicatorTrialTarget.qualityStatus || '-') }}</template></el-table-column>
+                  <el-table-column label="结果状态" width="120"><template #default="{ row }">{{ getStatusLabel(row.outcomeStatus || selectedIndicatorTrialTarget.outcomeStatus || '-') }}</template></el-table-column>
+                </el-table>
+                <div class="workflow-trial-results__footer">
+                  <span>{{ selectedIndicatorTrialTarget.periodStart || indicatorTrialResultSet.periodStart || '-' }} 至 {{ selectedIndicatorTrialTarget.periodEnd || indicatorTrialResultSet.periodEnd || '-' }}</span>
+                  <span>第 {{ selectedIndicatorTrialTarget.pageNum }} / {{ selectedIndicatorTrialTarget.pages || 1 }} 页，每页 {{ selectedIndicatorTrialTarget.pageSize }} 条</span>
+                </div>
+              </template>
+            </section>
             <ResultAvailabilityPanel
               v-if="indicatorWorkflow.trialAvailability"
               :availability="indicatorWorkflow.trialAvailability"
@@ -712,7 +736,9 @@ import {
   drillPathLabel,
   normalizeDrillCapabilities,
   normalizeDrillPaths,
-  selectIndicatorSummaryRecord,
+  formatIndicatorTrialPeriod,
+  normalizeIndicatorTrialResults,
+  selectDefaultIndicatorTrialTarget,
   validateDrillSelection
 } from '@/idmp/api/adapters/indicator'
 import { fetchFactorVersions } from '@/idmp/api/modules/factors'
@@ -758,6 +784,10 @@ const indicatorWorkflow = reactive({
   trialAvailability: null
 })
 const indicatorTrialPeriod = ref(initialIndicatorTrialPeriod())
+const indicatorTrialResultSet = ref({ targets: [] })
+const indicatorTrialTargets = ref([])
+const selectedIndicatorTrialTargetKey = ref('')
+const indicatorTrialResultsLoaded = ref(false)
 const selectedDrillPaths = ref([])
 const drillCapability = reactive({
   status: 'idle',
@@ -805,6 +835,22 @@ const selectedFormulaFactors = computed(() => [
 const missingPeriodFactors = computed(() =>
   selectedFormulaFactors.value.filter((factor) => factor?.dsl && !hasPeriodPredicate(factor.dsl))
 )
+const selectedIndicatorTrialTarget = computed(() =>
+  indicatorTrialTargets.value.find((target) => target.key === selectedIndicatorTrialTargetKey.value) || null
+)
+const indicatorTrialRows = computed(() => selectedIndicatorTrialTarget.value?.records || [])
+const indicatorTrialResultCount = computed(() =>
+  indicatorTrialTargets.value.reduce((total, target) => total + Number(target.total || 0), 0)
+)
+const hasIndicatorTrialResults = computed(() =>
+  indicatorTrialTargets.value.some((target) => target.records.length > 0)
+)
+const indicatorTrialHasNumerator = computed(() =>
+  indicatorTrialRows.value.some((row) => row.numeratorValue !== null && row.numeratorValue !== undefined)
+)
+const indicatorTrialHasDenominator = computed(() =>
+  indicatorTrialRows.value.some((row) => row.denominatorValue !== null && row.denominatorValue !== undefined)
+)
 const canPublishIndicatorVersion = computed(() =>
   Boolean(
     indicatorWorkflow.versionId &&
@@ -822,7 +868,7 @@ const publishPanelDescription = computed(() => {
     return `依赖因子缺少统计周期范围过滤：${missingPeriodFactors.value.map((item) => item.versionId || item.code).join('、')}。请重新创建并发布带统计周期过滤的因子，再回到公式中选择新因子版本。`
   }
   if (!indicatorWorkflow.compiled) return '发布按钮已开放；若公式尚未编译通过，后端发布接口会返回具体原因。'
-  if (!indicatorWorkflow.displayValue) return '发布按钮已开放；建议先试算并查看结果，最终是否允许发布以后端校验为准。'
+  if (!hasIndicatorTrialResults.value) return '发布按钮已开放；建议先试算并查看结果，最终是否允许发布以后端校验为准。'
   return '发布接口已就绪，点击按钮会写入后端发布状态。'
 })
 
@@ -848,12 +894,12 @@ const workflowSteps = computed(() => [
   {
     key: 'trial',
     label: '试算与质量',
-    description: indicatorWorkflow.displayValue
+    description: hasIndicatorTrialResults.value
       ? `已读取批次 ${indicatorWorkflow.batchId} 的结果`
       : indicatorWorkflow.batchId
         ? `试算批次 ${indicatorWorkflow.batchId} 已提交`
         : '编译通过后发起异步试算',
-    state: indicatorWorkflow.displayValue ? 'complete' : indicatorWorkflow.batchId ? 'current' : 'pending'
+    state: hasIndicatorTrialResults.value ? 'complete' : indicatorWorkflow.batchId ? 'current' : 'pending'
   },
   {
     key: 'publish',
@@ -878,11 +924,11 @@ const publishGates = computed(() => [
   },
   {
     label: '试算结果与配置一致性',
-    description: indicatorWorkflow.displayValue
+    description: hasIndicatorTrialResults.value
       ? '已读取试算结果，但当前接口未返回配置 Hash'
       : '尚未取得可核验的试算结果',
-    state: indicatorWorkflow.displayValue ? 'warning' : 'pending',
-    stateLabel: indicatorWorkflow.displayValue ? '需核验 Hash' : '待完成'
+    state: hasIndicatorTrialResults.value ? 'warning' : 'pending',
+    stateLabel: hasIndicatorTrialResults.value ? '需核验 Hash' : '待完成'
   },
   {
     label: '质量、政策、下钻与隐私',
@@ -973,7 +1019,7 @@ const editorTitle = computed(() => {
 })
 
 const editorStatus = computed(() => {
-  if (indicatorWorkflow.displayValue) return 'TRIAL_READY'
+  if (hasIndicatorTrialResults.value) return 'TRIAL_READY'
   if (indicatorWorkflow.batchId) return 'TRIAL_SUBMITTED'
   if (indicatorWorkflow.compiled) return 'COMPILED'
   if (indicatorWorkflow.formulaSaved) return 'FORMULA_SAVED'
@@ -1124,7 +1170,7 @@ const formulaPreview = computed(() => {
 })
 const indicatorTrialButtonLabel = computed(() => {
   if (workflowLoading.trial || workflowLoading.result) return '正在试算并读取结果'
-  if (indicatorWorkflow.displayValue) return '重新试算并查看结果'
+  if (hasIndicatorTrialResults.value) return '重新试算并查看结果'
   if (indicatorWorkflow.batchId) return '继续查询并查看结果'
   return '试算并查看结果'
 })
@@ -1438,6 +1484,7 @@ function hydrateIndicatorSummary(item) {
     formalBatchId: '',
     formalIdempotencyKey: ''
   })
+  resetIndicatorTrialResultCollection()
 }
 
 function hydrateIndicatorVersion(version) {
@@ -1458,6 +1505,7 @@ function hydrateIndicatorVersion(version) {
     formalBatchId: '',
     formalIdempotencyKey: ''
   })
+  resetIndicatorTrialResultCollection()
 
   const formula = extractFormula(version)
   resetDrillCapability()
@@ -1603,6 +1651,7 @@ function resetIndicatorWorkflowAfterBasic(indicatorId, versionId = '', resourceV
     formalBatchId: '',
     formalIdempotencyKey: ''
   })
+  resetIndicatorTrialResultCollection()
 }
 
 async function saveIndicatorBasicInfo() {
@@ -1715,6 +1764,7 @@ async function createIndicatorDraftVersion() {
       formalBatchId: '',
       formalIdempotencyKey: ''
     })
+    resetIndicatorTrialResultCollection()
     hydrateFormulaFactors(extractFormula(version))
     activeTab.value = 'formula'
     ElMessage.success('指标版本已创建，可以配置公式')
@@ -1823,6 +1873,7 @@ async function createFirstIndicatorVersionWithFormula(formula) {
     formalBatchId: '',
     formalIdempotencyKey: ''
   })
+  resetIndicatorTrialResultCollection()
   selectedDrillPaths.value = normalizeDrillPaths(version)
   recordWorkflowSuccess(`首个指标版本及公式已保存：${versionId}`)
 }
@@ -1878,6 +1929,7 @@ async function trialIndicatorOnly() {
   }
 
   workflowLoading.trial = true
+  resetIndicatorTrialResultCollection()
   try {
     const trialPayload = {
       periodStart: indicatorTrialPeriod.value[0],
@@ -1919,7 +1971,7 @@ async function trialIndicatorAndLoadResult() {
     return
   }
 
-  if (indicatorWorkflow.batchId && !indicatorWorkflow.displayValue) {
+  if (indicatorWorkflow.batchId && !indicatorTrialResultsLoaded.value) {
     await loadIndicatorTrialResultOnly()
     return
   }
@@ -1931,11 +1983,30 @@ async function trialIndicatorAndLoadResult() {
 function resetIndicatorTrialAfterPeriodChange() {
   indicatorWorkflow.taskId = ''
   indicatorWorkflow.batchId = ''
+  indicatorWorkflow.formalBatchId = ''
+  indicatorWorkflow.formalIdempotencyKey = ''
+  resetIndicatorTrialResultCollection()
+}
+
+function resetIndicatorTrialResultCollection() {
+  indicatorTrialResultSet.value = { targets: [] }
+  indicatorTrialTargets.value = []
+  selectedIndicatorTrialTargetKey.value = ''
+  indicatorTrialResultsLoaded.value = false
   indicatorWorkflow.displayValue = ''
   indicatorWorkflow.resultValue = ''
   indicatorWorkflow.trialAvailability = null
-  indicatorWorkflow.formalBatchId = ''
-  indicatorWorkflow.formalIdempotencyKey = ''
+}
+
+function indicatorTrialTargetLabel(target) {
+  if (target.pathCode === 'TIME') return drillLevelLabel(target.levelCode)
+  const path = drillPathLabel(target.pathCode)
+  const level = drillLevelLabel(target.levelCode)
+  return path === '-' ? level : `${path} · ${level}`
+}
+
+function indicatorTrialResultValue(row) {
+  return row?.displayValue ?? row?.resultValue ?? '-'
 }
 
 function openIndicatorAnalysis() {
@@ -2038,15 +2109,20 @@ async function loadIndicatorTrialResultOnly() {
     }
     const resultSet = await fetchIndicatorTrialResults(indicatorWorkflow.versionId, indicatorWorkflow.batchId)
     indicatorWorkflow.trialAvailability = resolveResultAvailability({ ...resultSet, batchStatus })
-    // 试算可能同时返回全院、科室和病种等多个粒度。页面顶部必须展示
-    // 根粒度汇总，不能把接口数组中的第一条科室结果误当成指标总值。
-    const record = selectIndicatorSummaryRecord(resultSet)
-    indicatorWorkflow.displayValue = record?.displayValue ?? (indicatorWorkflow.trialAvailability.status === 'CALCULATION_ERROR' ? '计算失败' : '-')
-    indicatorWorkflow.resultValue = record?.resultValue ?? ''
+    const normalized = normalizeIndicatorTrialResults(resultSet)
+    indicatorTrialResultSet.value = normalized
+    indicatorTrialTargets.value = normalized.targets
+    const defaultTarget = selectDefaultIndicatorTrialTarget(normalized.targets)
+    selectedIndicatorTrialTargetKey.value = defaultTarget?.key || ''
+    indicatorTrialResultsLoaded.value = true
+    const compatibilityRecord = defaultTarget?.records?.[defaultTarget.records.length - 1]
+    indicatorWorkflow.displayValue = compatibilityRecord?.displayValue ?? ''
+    indicatorWorkflow.resultValue = compatibilityRecord?.resultValue ?? ''
     recordWorkflowSuccess(`试算结论：${getStatusLabel(indicatorWorkflow.trialAvailability.status)}`)
     if (indicatorWorkflow.trialAvailability.status === 'CALCULATION_ERROR') ElMessage.warning('试算失败，已展示源数据画像与错误详情')
     else ElMessage.success('试算结果已读取')
   } catch (error) {
+    indicatorTrialResultsLoaded.value = false
     recordWorkflowError(error)
     ElMessage.error(error?.message || '试算结果读取失败')
   } finally {
@@ -2122,8 +2198,7 @@ async function persistIndicatorFormula() {
   indicatorWorkflow.resourceVersion = resolveResourceVersion(savedFormula, indicatorWorkflow.resourceVersion)
   indicatorWorkflow.formulaSaved = true
   indicatorWorkflow.compiled = false
-  indicatorWorkflow.displayValue = ''
-  indicatorWorkflow.trialAvailability = null
+  resetIndicatorTrialResultCollection()
   recordWorkflowSuccess('保存公式成功')
 }
 
@@ -2141,9 +2216,9 @@ async function ensureIndicatorPublishPrerequisites() {
     await trialIndicatorOnly()
     if (!indicatorWorkflow.batchId) return false
   }
-  if (!indicatorWorkflow.displayValue) {
+  if (!hasIndicatorTrialResults.value) {
     await loadIndicatorTrialResultOnly()
-    if (!indicatorWorkflow.displayValue) return false
+    if (!hasIndicatorTrialResults.value) return false
   }
   return true
 }
@@ -2726,27 +2801,53 @@ onMounted(async () => {
   margin-top: 12px;
 }
 
-.workflow-result {
+.workflow-trial-results {
+  margin: 0 16px 16px;
+  padding: 14px;
+  border: 1px solid var(--idmp-border-subtle);
+  border-radius: 8px;
+  background: var(--idmp-layer-01);
+}
+
+.workflow-trial-results__head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px 10px;
-  margin: 0 16px 16px;
-  padding: 10px 12px;
-  border: 1px solid var(--idmp-border-subtle);
-  border-radius: 6px;
-  background: var(--idmp-interactive-subtle);
+  margin-bottom: 12px;
+  gap: 10px 16px;
 
-  span,
+  > div:first-child {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  strong {
+    color: var(--idmp-text-primary);
+    font-size: 15px;
+  }
+
   small {
     color: var(--idmp-text-helper);
     font-size: 12px;
   }
+}
 
-  strong {
-    color: var(--idmp-interactive);
-    font-size: 18px;
-  }
+.indicator-trial-result-table strong {
+  color: var(--idmp-interactive);
+  font-size: 14px;
+}
+
+.workflow-trial-results__footer {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  gap: 8px 16px;
+  color: var(--idmp-text-helper);
+  font-size: 12px;
 }
 
 .workflow-debug {
