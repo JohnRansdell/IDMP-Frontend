@@ -83,3 +83,19 @@ test('continuous range validation enforces range order, scale and bounds', () =>
   assert.deepEqual(validateFilterNode(predicate('20.00', '20.00'), [], [field]), ['连续范围的开始值必须小于结束值'])
   assert.deepEqual(validateFilterNode(predicate('-1.00', '20.00'), [], [field]), ['开始值不能小于 0.00'])
 })
+
+test('factor dsl serializes governed joins and qualified field references', () => {
+  const dsl = buildFactorDsl({
+    domainCode: 'VISIT', semanticTableCode: 'VISIT_TABLE', sourceAlias: 'base',
+    joins: [{ relationId: '91', fromAlias: 'base', sourceAlias: 'dept', extra: 'ignored' }],
+    aggregation: 'COUNT_DISTINCT', fieldCode: 'base.VISIT_ID', groupBy: ['dept.DEPT_NAME'],
+    filters: { nodeType: 'AND', children: [{ nodeType: 'PREDICATE', fieldCode: 'dept.DEPT_TYPE', operator: 'IN_VALUE_SET', itemCodes: ['CLINICAL'] }] },
+    fields: [{ code: 'dept.DEPT_TYPE', valueSetVersionId: '7' }]
+  })
+
+  assert.deepEqual(dsl.primaryDomain, { domainCode: 'VISIT', semanticTableCode: 'VISIT_TABLE', sourceAlias: 'base' })
+  assert.deepEqual(dsl.joins, [{ relationId: '91', fromAlias: 'base', sourceAlias: 'dept' }])
+  assert.deepEqual(dsl.aggregation, { function: 'COUNT_DISTINCT', fieldRef: { sourceAlias: 'base', fieldCode: 'VISIT_ID' } })
+  assert.deepEqual(dsl.groupBy, [{ sourceAlias: 'dept', fieldCode: 'DEPT_NAME' }])
+  assert.deepEqual(dsl.filters.children[0].fieldRef, { sourceAlias: 'dept', fieldCode: 'DEPT_TYPE' })
+})

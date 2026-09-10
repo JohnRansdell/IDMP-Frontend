@@ -16,7 +16,8 @@ export function serializeFilterNode(node, fields = []) {
   if (!node) return { nodeType: 'TRUE' }
   if (node.nodeType === 'TRUE') return { nodeType: 'TRUE' }
   if (node.nodeType === 'PREDICATE') {
-    const result = { nodeType: 'PREDICATE', fieldCode: node.fieldCode, operator: node.operator }
+    const reference = serializeFieldReference(node.fieldCode)
+    const result = { nodeType: 'PREDICATE', ...(typeof reference === 'string' ? { fieldCode: reference } : { fieldRef: reference }), operator: node.operator }
     const field = fields.find((item) => item.code === node.fieldCode)
     if (node.parameter) result.parameter = node.parameter
     if (node.operator === 'IN_VALUE_SET') {
@@ -38,20 +39,31 @@ export function serializeFilterNode(node, fields = []) {
   }
 }
 
-export function buildFactorDsl({ domainCode, semanticTableCode, aggregation, fieldCode, groupBy = [], filters, fields = [] }) {
+
+export function buildFactorDsl({ domainCode, semanticTableCode, sourceAlias = 'base', joins = [], aggregation, fieldCode, groupBy = [], filters, fields = [] }) {
+  const fieldReference = serializeFieldReference(fieldCode)
   const aggregationNode = aggregation === 'COUNT'
-    ? { function: 'COUNT', ...(fieldCode ? { fieldCode } : {}) }
-    : { function: aggregation, fieldCode }
+    ? { function: 'COUNT', ...(fieldCode ? (typeof fieldReference === 'string' ? { fieldCode: fieldReference } : { fieldRef: fieldReference }) : {}) }
+    : { function: aggregation, ...(typeof fieldReference === 'string' ? { fieldCode: fieldReference } : { fieldRef: fieldReference }) }
   return {
     schemaVersion: '1.0',
     dslType: 'FACTOR',
-    primaryDomain: { domainCode, ...(semanticTableCode ? { semanticTableCode } : {}) },
+    primaryDomain: { domainCode, ...(semanticTableCode ? { semanticTableCode } : {}), ...(joins.length ? { sourceAlias } : {}) },
+    ...(joins.length ? { joins: joins.map(({ relationId, fromAlias, sourceAlias: joinedAlias }) => ({ relationId: String(relationId), fromAlias, sourceAlias: joinedAlias })) } : {}),
     filters: serializeFilterNode(filters, fields),
     aggregation: aggregationNode,
-    groupBy,
+    groupBy: groupBy.map(serializeFieldReference),
     parameters: collectParameters(filters),
     output: { valueType: 'DECIMAL', semanticKind: 'MEASURE', dimension: aggregationNode.function, nullable: false }
   }
+}
+
+export function serializeFieldReference(value) {
+  if (value && typeof value === 'object') return value
+  const text = String(value || '').trim()
+  const separator = text.indexOf('.')
+  if (separator < 0) return text
+  return { sourceAlias: text.slice(0, separator), fieldCode: text.slice(separator + 1) }
 }
 
 export function collectParameters(node, result = []) {
