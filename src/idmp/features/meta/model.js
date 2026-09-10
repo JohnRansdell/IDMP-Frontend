@@ -101,6 +101,7 @@ export function normalizeDataDomain(item = {}) {
 export function normalizeSemanticTable(item = {}) {
   return {
     id: toOpaqueId(item.id),
+    viewMappingId: toOpaqueId(item.viewMappingId ?? item.id),
     domainId: toOpaqueId(item.domainId),
     code: item.code || item.semanticTableCode || '',
     name: item.name || item.semanticTableName || '',

@@ -7,7 +7,9 @@ import { validateSemanticFieldCode, SEMANTIC_DATA_TYPES } from '../src/idmp/util
 test('API adapters preserve BIGINT ids as opaque strings', () => {
   const id = '9223372036854775807'
   assert.equal(adaptDataDomainList([{ id, code: 'D', name: 'Domain' }])[0].id, id)
-  assert.equal(typeof adaptSemanticTableList([{ id, code: 'T' }])[0].id, 'string')
+  const table = adaptSemanticTableList([{ id, code: 'T' }])[0]
+  assert.equal(typeof table.id, 'string')
+  assert.equal(table.viewMappingId, id)
 })
 
 test('semantic field adapter exposes stable fields and validates code/type', () => {

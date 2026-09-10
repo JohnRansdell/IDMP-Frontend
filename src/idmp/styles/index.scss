@@ -388,6 +388,44 @@ a {
   margin: 0 auto;
 }
 
+@media (max-width: 700px) {
+  .idmp-shell {
+    --idmp-sidebar-width: 56px;
+  }
+
+  .idmp-brand {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .idmp-brand__copy,
+  .idmp-nav__group-label,
+  .idmp-nav__item span,
+  .idmp-breadcrumb,
+  .idmp-context,
+  .idmp-user__copy {
+    display: none;
+  }
+
+  .idmp-nav__group + .idmp-nav__group {
+    margin-top: 8px;
+  }
+
+  .idmp-nav__item {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .idmp-topbar {
+    justify-content: flex-end;
+    padding: 0 10px;
+  }
+
+  .idmp-main {
+    padding: calc(var(--idmp-topbar-height) + 16px) 12px 24px;
+  }
+}
+
 .page-heading {
   display: flex;
   align-items: flex-start;

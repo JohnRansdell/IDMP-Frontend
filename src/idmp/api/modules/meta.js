@@ -63,6 +63,10 @@ export function fetchSemanticTableFields(domainId, tableCode) {
   return requestJson(`/meta/data-domains/${domainId}/semantic-tables/${tableCode}/semantic-fields`)
 }
 
+export function fetchSemanticTableRelations(viewMappingId, params = {}) {
+  return requestJson(withQuery('/meta/semantic-table-relations', { viewMappingId, ...params }))
+}
+
 export function fetchSemanticFields(domainId) {
   // 兼容扁平视图：多表数据域的正式字段选择必须使用表级接口。
   return requestJson(`/meta/data-domains/${domainId}/semantic-fields`)
