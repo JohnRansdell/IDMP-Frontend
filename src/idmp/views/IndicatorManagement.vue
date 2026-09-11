@@ -12,15 +12,7 @@
       <template #actions>
         <el-button type="primary" :icon="Plus" @click="openEditor('new')">新增指标</el-button>
         <el-button @click="router.push('/indicator/recycle-bin')">回收站</el-button>
-        <el-tooltip content="当前后端尚未提供指标导入接口">
-          <span
-            class="disabled-tooltip-trigger"
-            tabindex="0"
-            aria-label="批量导入不可用：当前后端尚未提供指标导入接口"
-          >
-            <el-button :icon="Upload" disabled>批量导入</el-button>
-          </span>
-        </el-tooltip>
+        <el-button :icon="Upload" @click="router.push('/indicator/import/sql')">SQL 导入</el-button>
         <el-tooltip content="大导出任务接口尚未接入">
           <span
             class="disabled-tooltip-trigger"

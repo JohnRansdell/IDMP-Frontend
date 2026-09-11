@@ -30,6 +30,16 @@ const routes = [
         }
       },
       {
+        path: 'indicator/import/sql',
+        name: 'SqlIndicatorImport',
+        component: () => import('@/idmp/views/SqlIndicatorImport.vue'),
+        meta: {
+          title: 'SQL 导入指标',
+          activeMenu: '/indicator',
+          breadcrumb: ['首页', '指标管理', 'SQL 导入']
+        }
+      },
+      {
         path: 'indicator/view/:id',
         name: 'IndicatorDetail',
         component: () => import('@/idmp/views/IndicatorDetail.vue'),
