@@ -5,7 +5,7 @@ import {
 } from './constants.js'
 
 const VALID_WIDGET_TYPES = new Set(Object.keys(WIDGET_CONSTRAINTS))
-const INDICATOR_VISUALIZATION_TYPES = ['kpi', 'bar', 'line', 'pie']
+const INDICATOR_VISUALIZATION_TYPES = ['kpi', 'bar', 'line', 'pie', 'table', 'gauge', 'radar', 'funnel', 'scatter', 'heatmap']
 
 export function createDefaultLayout() {
   const summaryWidth = DASHBOARD_DESIGN_WIDTH - DASHBOARD_LAYOUT_GAP

@@ -10,7 +10,8 @@
     "dev": "vite",
     "build:prod": "vite build",
     "preview": "vite preview",
-    "test": "node --test test/meta-adapter.test.js test/cascade.test.js test/drill-adapter.test.js test/indicator-adapter.test.js test/scenario-adapter.test.js test/status.test.js test/result-availability.test.js test/trial-period-recommendation.test.js test/dashboard-visualization.test.js test/dashboard-schema.test.js test/dashboard-grid-layout.test.js"
+    "test:e2e:dashboard": "node test/dashboard-golden-path.e2e.js",
+    "test": "node --test test/meta-adapter.test.js test/cascade.test.js test/drill-adapter.test.js test/indicator-adapter.test.js test/scenario-adapter.test.js test/status.test.js test/result-availability.test.js test/trial-period-recommendation.test.js test/dashboard-visualization.test.js test/dashboard-schema.test.js test/dashboard-grid-layout.test.js test/dashboard-persistence.test.js test/dashboard-binding.test.js test/dashboard-filter.test.js test/dashboard-interaction.test.js test/dashboard-layout-operations.test.js test/dashboard-layout-templates.test.js test/dashboard-responsive-layout.test.js test/dashboard-precise-layout.test.js test/dashboard-widget-boundary.component.test.js"
   },
   "dependencies": {
     "@element-plus/icons-vue": "2.3.2",
@@ -22,6 +23,9 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "5.2.4",
+    "@vue/compiler-sfc": "3.5.26",
+    "@vue/test-utils": "2.4.6",
+    "jsdom": "26.1.0",
     "sass-embedded": "1.97.2",
     "vite": "6.4.1"
   }

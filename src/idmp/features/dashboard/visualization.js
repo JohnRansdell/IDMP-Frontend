@@ -97,6 +97,12 @@ export function getVisualizationTitle(sourceName, visualType) {
   if (visualType === 'bar') return `${sourceName}科室对比`
   if (visualType === 'line') return `${sourceName}趋势`
   if (visualType === 'pie') return `${sourceName}构成`
+  if (visualType === 'table') return `${sourceName}数据明细`
+  if (visualType === 'gauge') return `${sourceName}仪表盘`
+  if (visualType === 'radar') return `${sourceName}雷达分析`
+  if (visualType === 'funnel') return `${sourceName}漏斗分析`
+  if (visualType === 'scatter') return `${sourceName}散点分析`
+  if (visualType === 'heatmap') return `${sourceName}热力分析`
   return sourceName
 }
 
