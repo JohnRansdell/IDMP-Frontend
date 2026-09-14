@@ -8,6 +8,6 @@ test('precise layout accepts integer-normalized valid grid geometry and rejects 
   assert.equal(validatePreciseLayout([{ ...widgets[0], config: { locked: true } }], 'kpi', { x: 0, y: 4, w: 6, h: 3 }).ok, false)
 })
 test('percentage conversion is deterministic and persists only grid units', () => {
-  assert.deepEqual([100, 50, 25, 33].map(percentageToGridWidth), [24, 12, 6, 8])
+  assert.deepEqual([100, 50, 25, 33].map((percent) => percentageToGridWidth(percent)), [24, 12, 6, 8])
   assert.equal(gridWidthToPercentage(6), 25)
 })
