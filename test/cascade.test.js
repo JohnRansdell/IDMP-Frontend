@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildFactorDsl, getAggregationLabel, validateFilterNode } from '../src/idmp/utils/dslBuilder.js'
+import { buildFactorDsl, getAggregationLabel, hasUnsupportedFactorDslExpressions, validateFilterNode } from '../src/idmp/utils/dslBuilder.js'
 
 test('聚合方式显示中文且未知码原样返回', () => {
   assert.equal(getAggregationLabel('COUNT_DISTINCT'), '去重计数')
@@ -98,4 +98,30 @@ test('factor dsl serializes governed joins and qualified field references', () =
   assert.deepEqual(dsl.aggregation, { function: 'COUNT_DISTINCT', fieldRef: { sourceAlias: 'base', fieldCode: 'VISIT_ID' } })
   assert.deepEqual(dsl.groupBy, [{ sourceAlias: 'dept', fieldCode: 'DEPT_NAME' }])
   assert.deepEqual(dsl.filters.children[0].fieldRef, { sourceAlias: 'dept', fieldCode: 'DEPT_TYPE' })
+})
+
+test('advanced server-side predicate expressions are never silently flattened on save', () => {
+  const filters = {
+    nodeType: 'PREDICATE',
+    operator: 'GTE',
+    left: { expressionType: 'FIELD', fieldRef: { sourceAlias: 'transfer', fieldCode: 'IN_DEPT_DATE' } },
+    right: { expressionType: 'FIELD', fieldRef: { sourceAlias: 'admission', fieldCode: 'IN_DATE' } }
+  }
+  assert.equal(hasUnsupportedFactorDslExpressions({ filters }), true)
+  assert.throws(() => buildFactorDsl({
+    domainCode: 'JOIN_TRANSFER',
+    semanticTableCode: 'TRANSFER',
+    aggregation: 'COUNT',
+    groupBy: [],
+    filters
+  }), /无法无损保存/)
+})
+
+test('existing missing-row policy is preserved when the visual editor saves a factor', () => {
+  const dsl = buildFactorDsl({
+    domainCode: 'VISIT', semanticTableCode: 'VISIT_TABLE', aggregation: 'COUNT',
+    filters: { nodeType: 'TRUE' }, missingRowPolicy: 'KEEP_NULL'
+  })
+  assert.equal(hasUnsupportedFactorDslExpressions({ missingRowPolicy: 'KEEP_NULL' }), false)
+  assert.equal(dsl.missingRowPolicy, 'KEEP_NULL')
 })

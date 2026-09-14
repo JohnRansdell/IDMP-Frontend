@@ -695,7 +695,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Box,
   CircleCheckFilled,
@@ -712,6 +712,7 @@ import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import ResultAvailabilityPanel from '@/idmp/components/ResultAvailabilityPanel.vue'
 import { API_BASE_URL } from '@/idmp/api/request'
+import { resourceConflictEditorPath, resolveResourceConflict } from '@/idmp/api/adapters/resourceConflict'
 import {
   compileIndicatorFormula,
   createIndicator,
@@ -1704,10 +1705,27 @@ async function saveIndicatorBasicInfo() {
     ElMessage.success('指标基本信息已保存到后端')
     return true
   } catch (error) {
-    ElMessage.error(error?.message || '指标基本信息保存失败')
+    await handleIndicatorSaveError(error)
     return false
   } finally {
     workflowLoading.basic = false
+  }
+}
+
+async function handleIndicatorSaveError(error) {
+  const conflict = resolveResourceConflict(error)
+  if (!conflict) {
+    ElMessage.error(error?.message || '指标基本信息保存失败')
+    return
+  }
+  const action = await ElMessageBox.confirm(
+    `已存在同名指标：${conflict.resource.name}（${conflict.resource.code}）。未创建新指标。`,
+    '指标名称冲突',
+    { type: 'warning', confirmButtonText: '打开已有指标', cancelButtonText: '返回修改', distinguishCancelAndClose: true }
+  ).catch(() => 'cancel')
+  if (action === 'confirm') {
+    const path = resourceConflictEditorPath(conflict)
+    if (path) router.push(path)
   }
 }
 

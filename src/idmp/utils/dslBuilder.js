@@ -16,6 +16,9 @@ export function serializeFilterNode(node, fields = []) {
   if (!node) return { nodeType: 'TRUE' }
   if (node.nodeType === 'TRUE') return { nodeType: 'TRUE' }
   if (node.nodeType === 'PREDICATE') {
+    if (node.left || node.right || node.expressionType) {
+      throw new Error('当前因子包含高级表达式，简化编辑器无法无损保存；请使用高级表达式编辑器或 DSL API 修改。')
+    }
     const reference = serializeFieldReference(node.fieldCode)
     const result = { nodeType: 'PREDICATE', ...(typeof reference === 'string' ? { fieldCode: reference } : { fieldRef: reference }), operator: node.operator }
     const field = fields.find((item) => item.code === node.fieldCode)
@@ -40,7 +43,7 @@ export function serializeFilterNode(node, fields = []) {
 }
 
 
-export function buildFactorDsl({ domainCode, semanticTableCode, sourceAlias = 'base', joins = [], aggregation, fieldCode, groupBy = [], filters, fields = [] }) {
+export function buildFactorDsl({ domainCode, semanticTableCode, sourceAlias = 'base', joins = [], aggregation, fieldCode, groupBy = [], filters, fields = [], missingRowPolicy = null }) {
   const fieldReference = serializeFieldReference(fieldCode)
   const aggregationNode = aggregation === 'COUNT'
     ? { function: 'COUNT', ...(fieldCode ? (typeof fieldReference === 'string' ? { fieldCode: fieldReference } : { fieldRef: fieldReference }) : {}) }
@@ -54,8 +57,21 @@ export function buildFactorDsl({ domainCode, semanticTableCode, sourceAlias = 'b
     aggregation: aggregationNode,
     groupBy: groupBy.map(serializeFieldReference),
     parameters: collectParameters(filters),
+    ...(missingRowPolicy ? { missingRowPolicy: String(missingRowPolicy) } : {}),
     output: { valueType: 'DECIMAL', semanticKind: 'MEASURE', dimension: aggregationNode.function, nullable: false }
   }
+}
+
+// The visual editor currently models field/value predicates. Do not let an
+// edit of a server DSL containing richer expressions silently erase it.
+export function hasUnsupportedFactorDslExpressions(dsl = {}) {
+  return containsTypedExpression(dsl?.filters)
+}
+
+function containsTypedExpression(node) {
+  if (!node || typeof node !== 'object') return false
+  if (node.nodeType === 'PREDICATE' && (node.left || node.right || node.expressionType)) return true
+  return containsTypedExpression(node.child) || (node.children || []).some(containsTypedExpression)
 }
 
 export function serializeFieldReference(value) {

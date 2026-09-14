@@ -122,7 +122,7 @@
               <el-input v-model="indicator.code" maxlength="64" placeholder="例如 TRANSFER_RATE_48H" @input="indicator.code = normalizeCode(indicator.code)" />
             </el-form-item>
             <el-form-item label="指标名称" prop="name">
-              <el-input v-model.trim="indicator.name" maxlength="128" placeholder="请输入指标名称" />
+              <el-input v-model.trim="indicator.name" maxlength="200" placeholder="请输入指标名称" />
             </el-form-item>
             <el-form-item label="业务分类">
               <el-input v-model.trim="indicator.category" maxlength="64" placeholder="例如 医疗质量" />
@@ -182,17 +182,35 @@
           <strong>创建 {{ factorMetadata.length }} 个因子和 1 个指标</strong>
           <span>因子将自动编译并发布，指标公式将自动编译，时间下钻默认到日。</span>
         </div>
-        <el-button type="primary" :icon="CircleCheck" :loading="createLoading" @click="createResources">
+        <el-button type="primary" :icon="CircleCheck" :loading="createLoading" :disabled="hasRunningImport" @click="createResources">
           确认创建
         </el-button>
       </div>
     </template>
 
-    <section v-if="createdResult" class="surface-card success-section">
-      <el-result icon="success" title="SQL 导入完成" :sub-title="`指标版本 ${createdResult.indicatorVersionId} 已通过编译`">
+    <section v-if="importTask" class="surface-card success-section">
+      <div class="section-heading">
+        <div><h2>导入任务</h2><span>{{ importTask.step || '等待服务端分配检查点' }}</span></div>
+        <el-tag :type="taskTagType" effect="plain">{{ importTask.status }}</el-tag>
+      </div>
+      <el-alert v-if="importTask.error" type="error" :closable="false" show-icon :title="importTask.error" />
+      <el-alert v-if="taskStatusError" type="warning" :closable="false" show-icon :title="taskStatusError" class="task-status-error">
+        <template #default><el-button link type="primary" :loading="taskActionLoading" @click="refreshImportTask">重新查询任务状态</el-button></template>
+      </el-alert>
+      <el-table v-if="importTask.resources.length" :data="importTask.resources" size="small" class="task-resources">
+        <el-table-column prop="key" label="资源" min-width="150" />
+        <el-table-column prop="type" label="类型" width="110" />
+        <el-table-column label="状态" min-width="200"><template #default="{ row }"><span>{{ resourceStatus(row) }}</span></template></el-table-column>
+        <el-table-column label="诊断" min-width="240"><template #default="{ row }"><span v-if="!row.diagnostics?.length">—</span><div v-else class="resource-diagnostics"><span v-for="item in row.diagnostics" :key="`${item.code}-${item.message}`">{{ item.code ? `[${item.code}] ` : '' }}{{ item.message || item }}</span></div></template></el-table-column>
+      </el-table>
+      <div v-if="importTask.status === 'FAILED' || importTask.status === 'CLEANUP_FAILED'" class="task-actions">
+        <el-button :loading="taskActionLoading" type="primary" @click="retryImport">重试任务</el-button>
+        <el-button :loading="taskActionLoading" type="danger" plain @click="abandonImport">放弃并清理</el-button>
+      </div>
+      <el-result v-if="importTask.status === 'SUCCEEDED'" icon="success" title="SQL 导入已完成" sub-title="因子已发布；指标已校验，仍需在指标编辑页显式发布。">
         <template #extra>
           <el-button @click="router.push('/indicator')">返回指标目录</el-button>
-          <el-button type="primary" @click="openCreatedIndicator">打开指标</el-button>
+          <el-button type="primary" :disabled="!importTask.result?.indicatorId" @click="openCreatedIndicator">打开指标并发布</el-button>
         </template>
       </el-result>
     </section>
@@ -200,20 +218,28 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, CircleCheck, CircleCheckFilled, DocumentChecked, Refresh, WarningFilled } from '@element-plus/icons-vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import PageHeader from '@/idmp/components/PageHeader.vue'
-import { buildSqlIndicatorImportPayload, mergeSqlFactorMetadata, normalizeSqlImportPreview } from '@/idmp/api/adapters/sqlImport'
-import { createSqlIndicatorImport, previewSqlIndicatorImport } from '@/idmp/api/modules/sqlImports'
+import { buildSqlIndicatorImportPayload, isSqlImportTerminal, mergeSqlFactorMetadata, normalizeSqlImportPreview, normalizeSqlImportTask, shouldPollSqlImport } from '@/idmp/api/adapters/sqlImport'
+import { resourceConflictEditorPath, resolveResourceConflict } from '@/idmp/api/adapters/resourceConflict'
+import { abandonSqlIndicatorImport, createSqlIndicatorImport, fetchSqlIndicatorImport, previewSqlIndicatorImport, retrySqlIndicatorImport } from '@/idmp/api/modules/sqlImports'
 
 const router = useRouter()
+const route = useRoute()
 const sql = ref('')
 const preview = ref(null)
 const previewLoading = ref(false)
 const createLoading = ref(false)
-const createdResult = ref(null)
+const importTask = ref(null)
+const taskActionLoading = ref(false)
+const taskStatusError = ref('')
+let taskPollTimer = null
+let taskRequestSequence = 0
+let submissionFingerprint = ''
+let submissionIdempotencyKey = ''
 const indicatorFormRef = ref()
 const activePreviewTab = ref('formula')
 const tableMappings = reactive({})
@@ -233,19 +259,21 @@ const indicatorRules = {
 const sqlLineCount = computed(() => sql.value ? sql.value.split(/\r?\n/).length : 0)
 const requiresMapping = computed(() => preview.value?.tables.some(table => table.candidates.length > 1 && !table.selectedViewMappingId))
 const allMappingsSelected = computed(() => preview.value?.tables.every(table => table.candidates.length === 0 || tableMappings[table.physicalTable]))
+const taskTagType = computed(() => ({ SUCCEEDED: 'success', FAILED: 'danger', CLEANUP_FAILED: 'danger', ABANDONED: 'info', ABANDONED_WITH_RETAINED: 'warning' })[importTask.value?.status] || 'warning')
+const hasRunningImport = computed(() => Boolean(importTask.value?.importId) && !isSqlImportTerminal(importTask.value))
 
 watch(sql, () => {
   if (preview.value) {
     preview.value = null
     factorMetadata.value = []
-    createdResult.value = null
+    clearImportTask()
   }
 })
 
 async function runPreview() {
   if (!sql.value.trim()) return
   previewLoading.value = true
-  createdResult.value = null
+  clearImportTask()
   try {
     const result = normalizeSqlImportPreview(await previewSqlIndicatorImport({
       sql: sql.value,
@@ -267,20 +295,23 @@ async function runPreview() {
 }
 
 async function createResources() {
+  if (hasRunningImport.value) return
   const validIndicator = await indicatorFormRef.value?.validate().catch(() => false)
   if (!validIndicator || !validateFactors()) return
   createLoading.value = true
   try {
-    createdResult.value = await createSqlIndicatorImport(buildSqlIndicatorImportPayload({
+    const payload = buildSqlIndicatorImportPayload({
       sql: sql.value,
       tableMappings,
       indicator,
       factors: factorMetadata.value
-    }))
-    ElMessage.success('因子和指标创建完成')
+    })
+    const task = await createSqlIndicatorImport(payload, idempotencyKeyForPayload(payload))
+    acceptImportTask(task)
+    ElMessage.success('SQL 导入任务已创建，正在后台处理')
     globalThis.scrollTo?.({ top: document.body.scrollHeight, behavior: 'smooth' })
   } catch (error) {
-    ElMessage.error(error.message || '创建失败')
+    await handleImportError(error, '创建失败')
   } finally {
     createLoading.value = false
   }
@@ -328,8 +359,129 @@ function formatJson(value) {
 }
 
 function openCreatedIndicator() {
-  router.push(`/indicator/edit/${encodeURIComponent(createdResult.value.indicatorId)}`)
+  const indicatorId = importTask.value?.result?.indicatorId
+  if (indicatorId) router.push(`/indicator/edit/${encodeURIComponent(indicatorId)}`)
 }
+
+function createIdempotencyKey(prefix) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`
+}
+
+function idempotencyKeyForPayload(payload) {
+  const fingerprint = JSON.stringify(payload)
+  if (fingerprint !== submissionFingerprint) {
+    submissionFingerprint = fingerprint
+    submissionIdempotencyKey = createIdempotencyKey('sql-import')
+  }
+  return submissionIdempotencyKey
+}
+
+function resourceStatus(resource) {
+  if (resource.retainedReason) return `保留：${resource.retainedReason}`
+  if (resource.cleanup) return `清理：${resource.cleanup}`
+  if (resource.published) return '已发布'
+  if (resource.compiled) return '已编译'
+  return resource.trial?.status || '处理中'
+}
+
+function acceptImportTask(payload) {
+  const task = normalizeSqlImportTask(payload)
+  importTask.value = task
+  taskStatusError.value = ''
+  if (task.importId) router.replace({ query: { ...route.query, importId: task.importId } })
+  if (shouldPollSqlImport(task)) scheduleTaskPolling()
+}
+
+function clearImportTask() {
+  stopTaskPolling()
+  importTask.value = null
+  taskStatusError.value = ''
+  submissionFingerprint = ''
+  submissionIdempotencyKey = ''
+  if (route.query.importId) {
+    const query = { ...route.query }
+    delete query.importId
+    void router.replace({ query })
+  }
+}
+
+function scheduleTaskPolling() {
+  stopTaskPolling()
+  if (!shouldPollSqlImport(importTask.value) || !importTask.value?.importId) return
+  taskPollTimer = globalThis.setTimeout(refreshImportTask, 1500)
+}
+
+function stopTaskPolling() {
+  if (taskPollTimer) globalThis.clearTimeout(taskPollTimer)
+  taskPollTimer = null
+  taskRequestSequence += 1
+}
+
+async function refreshImportTask() {
+  const importId = importTask.value?.importId
+  if (!importId) return
+  const requestId = ++taskRequestSequence
+  try {
+    const task = await fetchSqlIndicatorImport(importId)
+    if (requestId !== taskRequestSequence) return
+    importTask.value = normalizeSqlImportTask(task)
+    taskStatusError.value = ''
+    if (shouldPollSqlImport(importTask.value)) scheduleTaskPolling()
+  } catch (error) {
+    if (requestId !== taskRequestSequence) return
+    taskStatusError.value = error.message || '导入任务状态读取失败；任务可能仍在服务端继续执行。'
+  }
+}
+
+async function retryImport() {
+  if (!importTask.value?.importId) return
+  taskActionLoading.value = true
+  try {
+    acceptImportTask(await retrySqlIndicatorImport(importTask.value.importId, createIdempotencyKey('sql-import-retry')))
+  } catch (error) {
+    await handleImportError(error, '任务重试失败')
+  } finally {
+    taskActionLoading.value = false
+  }
+}
+
+async function abandonImport() {
+  if (!importTask.value?.importId) return
+  try {
+    await ElMessageBox.confirm('放弃后服务端将尝试取消任务并清理本次创建的半成品资源。', '确认放弃 SQL 导入', { type: 'warning', confirmButtonText: '放弃并清理', cancelButtonText: '取消' })
+  } catch { return }
+  taskActionLoading.value = true
+  try {
+    acceptImportTask(await abandonSqlIndicatorImport(importTask.value.importId, '用户在前端放弃该 SQL 导入任务', createIdempotencyKey('sql-import-abandon')))
+  } catch (error) {
+    await handleImportError(error, '放弃任务失败')
+  } finally {
+    taskActionLoading.value = false
+  }
+}
+
+async function handleImportError(error, fallback) {
+  const conflict = resolveResourceConflict(error)
+  if (!conflict) {
+    ElMessage.error(error.message || fallback)
+    return
+  }
+  const action = await ElMessageBox.confirm(`已存在同名${conflict.type === 'factor' ? '因子' : '指标'}：${conflict.resource.name}（${conflict.resource.code}）。SQL 导入未创建任务，请修改名称后重新提交。`, '名称冲突', { type: 'warning', confirmButtonText: '打开已有资源', cancelButtonText: '返回修改', distinguishCancelAndClose: true }).catch(() => 'cancel')
+  if (action === 'confirm') {
+    const path = resourceConflictEditorPath(conflict)
+    if (path) router.push(path)
+  }
+}
+
+onMounted(() => {
+  const importId = String(route.query.importId || '')
+  if (importId) {
+    importTask.value = { importId, status: 'RUNNING', step: '恢复导入任务', resources: [], result: null }
+    void refreshImportTask()
+  }
+})
+
+onBeforeUnmount(stopTaskPolling)
 </script>
 
 <style scoped lang="scss">
@@ -344,6 +496,18 @@ function openCreatedIndicator() {
 .success-section {
   margin-bottom: 16px;
   padding: 18px;
+}
+
+.task-status-error {
+  margin: 12px 0;
+}
+
+.resource-diagnostics {
+  display: grid;
+  gap: 4px;
+  color: #8a4b08;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .section-heading {

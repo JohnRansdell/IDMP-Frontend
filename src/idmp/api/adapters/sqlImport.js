@@ -70,7 +70,51 @@ export function buildSqlIndicatorImportPayload({ sql, tableMappings, indicator, 
       key: String(item.key || '').trim(),
       code: String(item.code || '').trim(),
       name: String(item.name || '').trim(),
-      description: String(item.description || '').trim() || null
+      description: String(item.description || '').trim() || null,
+      ...(item.missingRowPolicy ? { missingRowPolicy: item.missingRowPolicy } : {})
     }))
   }
+}
+
+export const SQL_IMPORT_RUNNING_STATUSES = new Set(['RUNNING', 'ABANDONING'])
+export const SQL_IMPORT_TERMINAL_STATUSES = new Set([
+  'SUCCEEDED', 'FAILED', 'CLEANUP_FAILED', 'ABANDONED', 'ABANDONED_WITH_RETAINED'
+])
+
+export function normalizeSqlImportTask(payload = {}) {
+  return {
+    importId: toOpaqueId(payload.importId),
+    status: String(payload.status || 'RUNNING').toUpperCase(),
+    step: String(payload.step || ''),
+    statusUrl: String(payload.statusUrl || ''),
+    error: payload.error == null ? null : String(payload.error),
+    resources: Array.isArray(payload.resources) ? payload.resources.map((resource) => ({
+      key: String(resource.key || ''),
+      type: String(resource.type || ''),
+      resourceId: toOpaqueId(resource.resourceId),
+      versionId: toOpaqueId(resource.versionId),
+      artifactId: toOpaqueId(resource.artifactId),
+      compiled: resource.compiled === true,
+      published: resource.published === true,
+      diagnostics: Array.isArray(resource.diagnostics) ? resource.diagnostics : [],
+      cleanup: resource.cleanup == null ? null : String(resource.cleanup),
+      retainedReason: resource.retainedReason == null ? null : String(resource.retainedReason),
+      trial: resource.trial || null
+    })) : [],
+    result: payload.result ? {
+      ...payload.result,
+      indicatorId: toOpaqueId(payload.result.indicatorId),
+      indicatorVersionId: toOpaqueId(payload.result.indicatorVersionId),
+      indicatorArtifactId: toOpaqueId(payload.result.indicatorArtifactId),
+      trialBatchId: toOpaqueId(payload.result.trialBatchId)
+    } : null
+  }
+}
+
+export function isSqlImportTerminal(task) {
+  return SQL_IMPORT_TERMINAL_STATUSES.has(String(task?.status || '').toUpperCase())
+}
+
+export function shouldPollSqlImport(task) {
+  return SQL_IMPORT_RUNNING_STATUSES.has(String(task?.status || '').toUpperCase())
 }
