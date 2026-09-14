@@ -134,7 +134,7 @@
         @keydown="onWidgetKeydown($event, widget)"
       >
         <article
-          v-else-if="isChartWidget(widget)"
+          v-if="isChartWidget(widget)"
           class="surface-card chart-card"
           :inert="isEditing"
         >
