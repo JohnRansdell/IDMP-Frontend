@@ -1,7 +1,9 @@
 <template>
   <div
+    ref="root"
     class="grid-stack-item dashboard-widget"
     :class="{ 'is-selected': selected, 'is-primary-selected': primarySelected, 'is-editable': editable, 'is-locked': widget.config?.locked === true }"
+    :data-size-tier="sizeTier"
     :gs-id="String(widget.id)"
     :gs-x="widget.layout?.x"
     :gs-y="widget.layout?.y"
@@ -24,7 +26,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { getWidgetGridConstraints } from '../gridLayout.js'
 import { normalizeWidgetSelectionId } from '../widgetCapabilities.js'
 
@@ -35,6 +37,9 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['select', 'remove', 'configure'])
+const root = ref(null)
+const sizeTier = ref('standard')
+let resizeObserver
 const constraints = computed(() => getWidgetGridConstraints(props.widget))
 function selectWidget(event) {
   if (event.target instanceof Element && event.target.closest('.ui-resizable-handle')) return
@@ -61,6 +66,17 @@ function resolveShadow(value) {
   }
   return shadows[value] || value || 'none'
 }
+function updateSizeTier(width, height) {
+  sizeTier.value = width < 150 || height < 105 ? 'micro' : width < 280 || height < 180 ? 'compact' : width > 720 || height > 420 ? 'expanded' : 'standard'
+}
+onMounted(() => {
+  const element = root.value
+  if (!element || typeof ResizeObserver === 'undefined') return
+  resizeObserver = new ResizeObserver(([entry]) => updateSizeTier(entry.contentRect.width, entry.contentRect.height))
+  resizeObserver.observe(element)
+  updateSizeTier(element.clientWidth, element.clientHeight)
+})
+onBeforeUnmount(() => resizeObserver?.disconnect())
 </script>
 
 <style scoped>

@@ -1,6 +1,6 @@
 <template>
-  <div class="idmp-shell">
-    <aside class="idmp-sidebar">
+  <div class="idmp-shell" :class="{ 'is-designer-immersive': designerImmersive }">
+    <aside v-if="!designerImmersive" class="idmp-sidebar">
       <RouterLink to="/dashboard" class="idmp-brand" aria-label="返回指标总览">
         <span class="idmp-brand__mark">
           <el-icon :size="18"><DataAnalysis /></el-icon>
@@ -34,7 +34,7 @@
       </nav>
     </aside>
 
-    <header class="idmp-topbar">
+    <header v-if="!designerImmersive" class="idmp-topbar">
       <div class="idmp-breadcrumb" aria-label="面包屑">
         <template v-for="(item, index) in displayBreadcrumbs" :key="`${item}-${index}`">
           <RouterLink v-if="index === 0" to="/dashboard">{{ item }}</RouterLink>
@@ -75,6 +75,7 @@
 
 <script setup>
 import { computed, markRaw, ref } from 'vue'
+import { designerImmersive } from './shellState.js'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import {
   Aim,

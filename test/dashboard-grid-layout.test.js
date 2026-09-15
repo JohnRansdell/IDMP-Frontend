@@ -52,18 +52,18 @@ test('legacy migration preserves content height and widget minimum grid size', (
   assert.ok(widget.h >= constraint.minH)
 })
 
-test('widget minimum sizes follow content-specific grid capabilities', () => {
-  assert.deepEqual(getWidgetGridConstraints('kpi'), { minW: 3, minH: 2 })
-  assert.deepEqual(getWidgetGridConstraints({ type: 'chart', chartKind: 'line' }), { minW: 8, minH: 6 })
-  assert.deepEqual(getWidgetGridConstraints({ type: 'chart', chartKind: 'bar' }), { minW: 7, minH: 6 })
-  assert.deepEqual(getWidgetGridConstraints({ type: 'chart', chartKind: 'pie' }), { minW: 6, minH: 6 })
-  assert.deepEqual(getWidgetGridConstraints('warnings'), { minW: 8, minH: 6 })
-  assert.deepEqual(getWidgetGridConstraints('ranking'), { minW: 8, minH: 7 })
+test('every widget permits the one-by-one grid minimum', () => {
+  assert.deepEqual(getWidgetGridConstraints('kpi'), { minW: 1, minH: 1 })
+  assert.deepEqual(getWidgetGridConstraints({ type: 'chart', chartKind: 'line' }), { minW: 1, minH: 1 })
+  assert.deepEqual(getWidgetGridConstraints({ type: 'chart', chartKind: 'bar' }), { minW: 1, minH: 1 })
+  assert.deepEqual(getWidgetGridConstraints({ type: 'chart', chartKind: 'pie' }), { minW: 1, minH: 1 })
+  assert.deepEqual(getWidgetGridConstraints('warnings'), { minW: 1, minH: 1 })
+  assert.deepEqual(getWidgetGridConstraints('ranking'), { minW: 1, minH: 1 })
 })
 
 test('a persistent widget lock converts to GridStack move and resize constraints', () => {
-  assert.deepEqual(getWidgetGridConstraints({ type: 'chart', config: { locked: true } }), { minW: 8, minH: 6, noMove: true, noResize: true })
-  assert.deepEqual(getWidgetGridConstraints({ type: 'chart', config: { locked: false } }), { minW: 8, minH: 6 })
+  assert.deepEqual(getWidgetGridConstraints({ type: 'chart', config: { locked: true } }), { minW: 1, minH: 1, noMove: true, noResize: true })
+  assert.deepEqual(getWidgetGridConstraints({ type: 'chart', config: { locked: false } }), { minW: 1, minH: 1 })
 })
 
 test('dashboard grid geometry follows the real GridStack columns, row height and margin', () => {

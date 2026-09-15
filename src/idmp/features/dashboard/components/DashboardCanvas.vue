@@ -96,6 +96,15 @@ function getLayout() {
   return grid.value ? serializeGridLayout(grid.value.save(false, false, undefined, grid.value.getColumn())) : []
 }
 function getGridGeometry() { return { ...gridGeometry } }
+function collectWidgetLayoutDiagnostic(widgetId) {
+  const id = gridWidgetId(widgetId)
+  const widget = props.widgets.find(item => gridWidgetId(item.id) === id)
+  const element = findWidgetElement(id)
+  const node = element?.gridstackNode
+  const rect = element?.getBoundingClientRect?.()
+  const contentRect = element?.querySelector('.grid-stack-item-content')?.getBoundingClientRect?.()
+  return { id, schema: widget?.layout ? { ...widget.layout } : null, node: node ? { x: node.x, y: node.y, w: node.w, h: node.h } : null, attributes: element ? { x: Number(element.getAttribute('gs-x')), y: Number(element.getAttribute('gs-y')), w: Number(element.getAttribute('gs-w')), h: Number(element.getAttribute('gs-h')) } : null, rect: rect ? { width: rect.width, height: rect.height } : null, contentRect: contentRect ? { width: contentRect.width, height: contentRect.height } : null }
+}
 function getMembershipDiagnostic() {
   const items = [...(gridElement.value?.children || [])].filter(element => element.matches('.dashboard-widget.grid-stack-item'))
   const runtime = compareDashboardGridMembership(props.widgets, grid.value?.engine.nodes || [])
@@ -146,14 +155,28 @@ function unregisterWidget(widgetId) {
   nodes.forEach(node => applySchemaOperation(() => grid.value.removeWidget(node.el, false)))
   registeredWidgetIds.delete(widgetId)
 }
-function applyLayout(layout = []) {
+async function applyLayout(layout = []) {
+  await whenMembershipSettled()
+  if (!grid.value) return []
   const items = serializeGridLayout(layout).map((item) => {
     const widget = props.widgets.find((candidate) => gridWidgetId(candidate.id) === item.id)
     return { ...item, ...getWidgetGridConstraints(widget) }
   })
-  applySchemaOperation(() => grid.value?.load(items, false))
+  applySchemaOperation(() => {
+    // load() restores the complete canonical layout. Re-applying each item through
+    // GridStack's public API makes the live node and gs-* DOM attributes converge
+    // even when an existing item keeps the same Vue element across a restore.
+    grid.value.load(items, false)
+    items.forEach((item) => {
+      const element = findWidgetElement(item.id)
+      if (element) grid.value.update(element, item)
+    })
+  })
+  await nextTick()
   synchronizeAllWidgetConstraints()
+  await nextTick()
   refreshGridGeometry()
+  return getLayout()
 }
 function setEditable(value) { grid.value?.setStatic(!value) }
 function applySchemaOperation(operation) {
@@ -192,8 +215,17 @@ function synchronizeWidgetConstraint(widgetId) {
   const element = findWidgetElement(widgetId)
   const widget = props.widgets.find((item) => gridWidgetId(item.id) === gridWidgetId(widgetId))
   if (!grid.value || !element || !widget) return
-  const constraints = getWidgetGridConstraints(widget)
-  applySchemaOperation(() => grid.value.update(element, constraints))
+  const locked = widget.config?.locked === true
+  // Explicit false values are required when a previously locked node is unlocked:
+  // GridStack retains omitted node flags from the prior update.
+  const constraints = { ...getWidgetGridConstraints(widget), noMove: locked, noResize: locked }
+  applySchemaOperation(() => {
+    grid.value.update(element, constraints)
+    // GridStack's node flags alone do not always update the live DD handlers.
+    // Update both APIs so a persisted lock immediately disables drag and resize.
+    grid.value.movable(element, !locked)
+    grid.value.resizable(element, !locked)
+  })
 }
 function synchronizeAllWidgetConstraints() {
   props.widgets.forEach((widget) => synchronizeWidgetConstraint(widget.id))
@@ -209,7 +241,7 @@ function refreshGridGeometry() {
   Object.assign(gridGeometry, getDashboardGridGeometry(columns, cellWidth, cellHeight, margin, rows))
 }
 
-defineExpose({ getLayout, getGridGeometry, getMembershipDiagnostic, whenMembershipSettled, applyLayout, registerWidget, unregisterWidget, setEditable })
+defineExpose({ getLayout, getGridGeometry, getMembershipDiagnostic, collectWidgetLayoutDiagnostic, whenMembershipSettled, applyLayout, registerWidget, unregisterWidget, setEditable })
 
 watch(() => JSON.stringify(props.widgets.map(widget => gridWidgetId(widget.id))), () => {
   // Reconcile deletions BEFORE Vue removes DOM, including bulk reset/replacement.
@@ -222,7 +254,7 @@ watch(() => JSON.stringify(props.widgets.map(widget => gridWidgetId(widget.id)))
 }, { flush: 'pre' })
 watch(() => props.widgets.map((widget) => {
   const { minW, minH } = getWidgetGridConstraints(widget)
-  return `${widget.id}:${minW}:${minH}`
+  return `${widget.id}:${minW}:${minH}:${widget.config?.locked === true}`
 }).join('|'), async () => {
   await nextTick()
   synchronizeAllWidgetConstraints()

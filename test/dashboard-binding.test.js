@@ -6,6 +6,7 @@ import { aggregateValues, compileWidgetData, validateWidgetBinding, hasDataBindi
 import { normalizeDashboardSchema, createPersistableDashboardSnapshot, updateDashboardWidget } from '../src/idmp/features/dashboard/schema.js'
 import { persistDashboardSchema, recoverDashboardSchema } from '../src/idmp/features/dashboard/persistence.js'
 import { createDashboardChartOption } from '../src/idmp/features/dashboard/visualization.js'
+import { dashboardAcceptanceRows } from '../src/idmp/features/dashboard/acceptanceData.js'
 
 const rows = [
   { month: '1月', departmentName: '内科', value: 2, numerator: 4 },
@@ -26,6 +27,16 @@ test('adapter never joins monthly rows with department snapshots or borrows summ
   assert.deepEqual(sources[0].rows, [{ value: 2 }]); assert.deepEqual(sources[1].rows, result.monthlyTrend)
   assert.equal(sources[1].fields.some(field => field.id === 'deptName'), false)
   assert.equal(createWidgetBindingDatasets(null).length, 0)
+})
+test('explicit acceptance dataset exposes clinical dimensions and independent measures', () => {
+  const source = { code: 'demo-quality', name: '质量指标', currentValue: 1, trendData: [], departmentData: [], pieData: [] }
+  const acceptance = createWidgetBindingDatasets(source, { demo: true }).find(item => item.id === 'acceptance')
+  assert.deepEqual(acceptance.rows, dashboardAcceptanceRows)
+  assert.deepEqual(['date', 'department', 'medicalGroup', 'doctor', 'disease', 'scene', 'indicatorCategory', 'indicatorValue', 'numerator', 'denominator', 'targetValue', 'yoy', 'mom'].every(id => acceptance.fields.some(field => field.id === id)), true)
+  const lineBinding = { dataset: 'acceptance', dimensions: [{ field: 'month' }, { field: 'department' }], measures: [{ field: 'indicatorValue', aggregation: 'avg', axis: 'left' }, { field: 'targetValue', aggregation: 'avg', axis: 'right' }], series: [{ field: 'disease' }], sort: [] }
+  const compiled = compileWidgetData('line', lineBinding, acceptance)
+  assert.equal(compiled.status, 'ready')
+  assert.ok(compiled.series.some(series => series.field === 'targetValue'))
 })
 test('all explicit aggregations exclude invalid numbers and preserve zero', () => {
   for (const [kind, value] of Object.entries({ sum: 6, avg: 2, max: 4, min: 0, count: 3 })) assert.equal(aggregateValues([0, '2', 4, null, undefined, NaN, Infinity, 'bad'], kind), value)

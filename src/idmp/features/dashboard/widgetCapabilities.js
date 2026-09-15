@@ -1,19 +1,8 @@
+const capability = (defaultW, defaultH) => Object.freeze({ minW: 1, minH: 1, defaultW, defaultH })
 export const WIDGET_GRID_CAPABILITIES = Object.freeze({
-  primary: Object.freeze({ minW: 7, minH: 4, defaultW: 8, defaultH: 5 }),
-  supporting: Object.freeze({ minW: 10, minH: 5, defaultW: 16, defaultH: 5 }),
-  kpi: Object.freeze({ minW: 3, minH: 2, defaultW: 6, defaultH: 3 }),
-  line: Object.freeze({ minW: 8, minH: 6, defaultW: 12, defaultH: 8 }),
-  bar: Object.freeze({ minW: 7, minH: 6, defaultW: 12, defaultH: 8 }),
-  pie: Object.freeze({ minW: 6, minH: 6, defaultW: 12, defaultH: 8 }),
-  table: Object.freeze({ minW: 8, minH: 6, defaultW: 12, defaultH: 8 }),
-  gauge: Object.freeze({ minW: 6, minH: 5, defaultW: 8, defaultH: 7 }),
-  radar: Object.freeze({ minW: 7, minH: 6, defaultW: 12, defaultH: 8 }),
-  funnel: Object.freeze({ minW: 7, minH: 6, defaultW: 12, defaultH: 8 }),
-  scatter: Object.freeze({ minW: 8, minH: 6, defaultW: 12, defaultH: 8 }),
-  heatmap: Object.freeze({ minW: 8, minH: 6, defaultW: 12, defaultH: 8 }),
-  chart: Object.freeze({ minW: 8, minH: 6, defaultW: 12, defaultH: 8 }),
-  warnings: Object.freeze({ minW: 8, minH: 6, defaultW: 12, defaultH: 7 }),
-  ranking: Object.freeze({ minW: 8, minH: 7, defaultW: 12, defaultH: 7 })
+  primary: capability(8, 5), supporting: capability(16, 5), kpi: capability(6, 3),
+  line: capability(12, 8), bar: capability(12, 8), pie: capability(12, 8), table: capability(12, 8),
+  gauge: capability(8, 7), radar: capability(12, 8), funnel: capability(12, 8), scatter: capability(12, 8), heatmap: capability(12, 8), chart: capability(12, 8), warnings: capability(12, 7), ranking: capability(12, 7)
 })
 
 export function getWidgetGridCapability(widgetOrType = 'chart') {

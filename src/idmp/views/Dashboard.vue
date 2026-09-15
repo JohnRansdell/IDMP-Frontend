@@ -1,5 +1,5 @@
 <template>
-  <div ref="presentationRef" class="idmp-page dashboard-page dashboard-v2" :class="{ 'is-presentation-mode': presentationMode === 'presentation' }">
+  <div ref="presentationRef" class="idmp-page dashboard-page dashboard-v2" :class="{ 'is-presentation-mode': presentationMode === 'presentation' }" :style="{ '--dashboard-background': dashboardBackground }">
     <PageHeader v-if="!isEditing"
       :title="dashboardSchema?.name || '医疗质量指标总览'"
     >
@@ -7,6 +7,7 @@
         <span class="data-source-badge" :class="{ 'is-live': dashboardStatus === 'ready' }">
           {{ dashboardSourceLabel }}
         </span>
+        <span v-if="dashboardStatus === 'demo'" class="data-source-badge" role="status">演示 · 验收演示数据</span>
         <span>数据期间：{{ period }}</span>
         <span>统计范围：{{ department }}</span>
       </template>
@@ -17,6 +18,9 @@
         <el-select v-model="department" class="dashboard-filter" aria-label="科室">
           <el-option v-for="option in departmentOptions" :key="option.value" :label="option.label" :value="option.value" />
         </el-select>
+        <el-select v-model="activeSceneCode" class="dashboard-filter" aria-label="场景看板" @change="switchSceneDashboard">
+          <el-option v-for="scene in LOCAL_SCENE_DASHBOARDS" :key="scene.sceneCode" :label="`${scene.name}（本地看板）`" :value="scene.sceneCode" />
+        </el-select><span class="dashboard-scene-help">切换到另一张场景看板</span>
         <template v-if="!isEditing">
           <el-button :type="presentationMode === 'standard' ? 'primary' : 'default'" @click="exitPresentation">标准模式</el-button>
           <el-button :type="presentationMode === 'presentation' ? 'primary' : 'default'" @click="enterPresentation">大屏展示</el-button>
@@ -28,6 +32,7 @@
           <el-button data-testid="dashboard-configure-widget" :disabled="!activeDesignerWidget" @click="openWidgetConfig(activeWidgetId)">配置组件</el-button>
           <el-button data-testid="dashboard-delete-widget" :icon="Delete" :disabled="!activeDesignerWidget" @click="deleteActiveWidget">删除组件</el-button>
           <span class="dashboard-save-state" :class="`is-${saveState}`">{{ saveStateLabel }}</span>
+          <el-button v-if="isDemoRuntime()" data-testid="dashboard-load-acceptance" @click="loadAcceptanceExample">加载验收示例</el-button>
           <el-button v-if="isDev" text @click="showDashboardSchemaDiagnostic">查看当前 Schema</el-button>
           <el-button :icon="Close" @click="exitDashboardEdit">退出编辑</el-button>
           <el-button data-testid="dashboard-save" type="primary" :icon="Check" @click="saveDashboardLayout">保存布局</el-button>
@@ -73,7 +78,8 @@
     <section v-if="!isEditing && useSchemaViewer" class="dashboard-schema-viewer">
       <DashboardFilterBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" @change="filterRuntimeValues = $event" />
       <DashboardCanvas
-        :key="`viewer-${viewerBreakpoint}`"
+        :key="`viewer-${dashboardSchema?.id}-${viewerBreakpoint}`"
+        ref="viewerCanvasRef"
         class="dashboard-schema-canvas"
         :widgets="viewerWidgets"
         :editable="false"
@@ -114,8 +120,10 @@
       <header class="dashboard-command">
         <button class="studio-back" aria-label="返回看板" @click="exitDashboardEdit">←</button>
         <div class="studio-title"><span>医疗质量 · DASHBOARD STUDIO</span><h1>{{ editingDashboardSchema?.name || '医疗质量指标总览' }}</h1></div>
+        <el-select v-model="activeSceneCode" size="small" class="studio-scene-switcher" aria-label="场景看板" @change="switchSceneDashboard"><el-option v-for="scene in LOCAL_SCENE_DASHBOARDS" :key="scene.sceneCode" :label="`${scene.name}（本地）`" :value="scene.sceneCode" /></el-select>
         <span class="dashboard-save-state" :class="`is-${saveState}`" role="status">{{ saveStateLabel }}</span>
         <div class="studio-command-actions">
+          <el-button v-if="isDemoRuntime()" data-testid="dashboard-load-acceptance" @click="loadAcceptanceExample">加载验收示例</el-button>
           <el-button data-testid="dashboard-preview" @click="studioPreview = true">预览</el-button>
           <el-button data-testid="dashboard-undo" :disabled="!canUndo" @click="undoDashboardEdit">撤销</el-button>
           <el-button data-testid="dashboard-redo" :disabled="!canRedo" @click="redoDashboardEdit">重做</el-button>
@@ -134,6 +142,7 @@
         <el-select v-model="selectedDataCode" aria-label="指标数据" :loading="dashboardLoading">
           <el-option v-for="source in indicatorDataSources" :key="source.code" :label="source.name" :value="source.code" />
         </el-select>
+        <p v-if="dashboardStatus === 'demo'" class="dashboard-demo-source" role="status">演示数据：仅用于设计器、测试和验收，不是医院真实业务数据。</p>
         <h3>常用组件</h3>
         <button v-for="item in filteredLibrary" :key="item.type" :data-testid="`dashboard-library-${item.type}`" class="studio-library-item" :class="{ 'is-current': addWidgetType === item.type }" @click="addWidgetType = item.type">
           <span class="studio-library-icon" aria-hidden="true">{{ item.icon }}</span><span><strong>{{ item.name }}</strong><small>{{ item.hint }}</small></span>
@@ -160,6 +169,7 @@
           <el-button :disabled="!selectedDataSource" @click="addWidgetType = 'kpi'; addDashboardWidget()">添加 KPI</el-button>
         </div>
       <DashboardCanvas
+        :key="`designer-${editingDashboardSchema?.id}`"
         ref="designerCanvasRef"
         class="dashboard-designer-canvas"
         :widgets="designerWidgets"
@@ -200,7 +210,7 @@
       <aside class="studio-inspector" aria-label="组件属性">
         <div class="studio-inspector-heading"><h2>组件属性</h2><button data-testid="dashboard-settings" @click="activeWidgetId = ''">看板设置</button><button data-testid="dashboard-configure-widget" :disabled="!activeDesignerWidget" @click="openWidgetConfig(activeWidgetId)">配置</button></div>
         <template v-if="!selectedWidgetIds.length">
-          <section class="dashboard-settings-inspector"><h3>看板设置</h3><label>名称<input :value="editingDashboardSchema?.name" @change="updateDashboardMetadata('name', $event.target.value)" /></label><label>描述<textarea :value="editingDashboardSchema?.description" @change="updateDashboardMetadata('description', $event.target.value)" /></label><label>类型<select :value="editingDashboardSchema?.dashboardType" @change="updateDashboardMetadata('dashboardType', $event.target.value)"><option value="hospital-overview">全院概览</option><option value="topic">专题看板</option><option value="scene">场景看板</option><option value="department">科室看板</option><option value="custom">自定义看板</option></select></label><label>分类<input :value="editingDashboardSchema?.category" @change="updateDashboardMetadata('category', $event.target.value)" /></label><label>范围<select :value="editingDashboardSchema?.scope" @change="updateDashboardMetadata('scope', $event.target.value)"><option value="hospital">全院</option><option value="department">科室</option><option value="personal">个人</option></select></label><h3>响应式布局</h3><label>平板<select :value="editingDashboardSchema?.responsivePolicy?.tablet" @change="updateResponsivePolicy($event.target.value)"><option value="auto-two-column">自动两列</option><option value="single-column">单列</option></select></label><label>手机<input value="单列" disabled /></label></section>
+          <section class="dashboard-settings-inspector"><h3>看板设置</h3><label>名称<input :value="editingDashboardSchema?.name" @change="updateDashboardMetadata('name', $event.target.value)" /></label><label>描述<textarea :value="editingDashboardSchema?.description" @change="updateDashboardMetadata('description', $event.target.value)" /></label><label>类型<select :value="editingDashboardSchema?.dashboardType" @change="updateDashboardMetadata('dashboardType', $event.target.value)"><option value="hospital-overview">全院概览</option><option value="topic">专题看板</option><option value="scene">场景看板</option><option value="department">科室看板</option><option value="custom">自定义看板</option></select><small>定义业务用途与入口类型，不直接改变组件数据。</small></label><label>分类<input :value="editingDashboardSchema?.category" @change="updateDashboardMetadata('category', $event.target.value)" /><small>用于看板分类和检索，不直接影响图表数据。</small></label><label>范围<select :value="editingDashboardSchema?.scope" @change="updateDashboardMetadata('scope', $event.target.value)"><option value="hospital">全院</option><option value="department">科室</option><option value="personal">个人</option></select><small>定义适用业务范围；实际权限由服务端控制。</small></label><label>背景<select :value="editingDashboardSchema?.appearance?.background?.value || '#ffffff'" @change="updateDashboardBackground($event.target.value)"><option value="#ffffff">临床白</option><option value="linear-gradient(135deg,#f7fbfa,#eef5fb)">临床浅渐变</option><option value="linear-gradient(135deg,#f9f6fc,#eef7f6)">柔和渐变</option></select><small>保存为受控颜色或 Clinical Light 渐变预设。</small></label><h3>响应式布局</h3><p>只影响查看模式的排列，不改变设计器桌面布局。</p><label>平板<select :value="editingDashboardSchema?.responsivePolicy?.tablet" @change="updateResponsivePolicy($event.target.value)"><option value="auto-two-column">自动两列</option><option value="single-column">单列</option></select></label><label>手机<input value="单列" disabled /></label></section>
           <GlobalFilterDesigner :definitions="globalFilterDefinitions" :catalog="filterCatalog" @change="updateGlobalFilters" />
         </template>
         <section v-else-if="selectedWidgetIds.length > 1" class="dashboard-multi-inspector" aria-label="多组件布局操作">
@@ -250,10 +260,15 @@
       </div>
       <footer class="studio-status"><span>{{ designerWidgets.length }} 个组件 · {{ activeDesignerWidget ? '已选中 ' + getWidgetTitle(activeDesignerWidget) : '未选中组件' }}</span><span>拖动调整位置 · 右下角调整大小</span></footer>
       <el-dialog v-model="studioPreview" title="看板预览" width="88%" destroy-on-close>
+        <div class="dashboard-preview-breakpoints" role="group" aria-label="预览断点">
+          <el-button v-for="breakpoint in ['desktop', 'tablet', 'mobile']" :key="breakpoint" size="small" :type="previewBreakpoint === breakpoint ? 'primary' : 'default'" @click="previewBreakpoint = breakpoint">{{ { desktop: '桌面', tablet: '平板', mobile: '手机' }[breakpoint] }}</el-button>
+        </div>
         <DashboardFilterBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" @change="filterRuntimeValues = $event" />
-        <DashboardCanvas v-if="studioPreview" :widgets="designerWidgets" :editable="false">
+        <div class="dashboard-preview-frame" :class="`is-${previewBreakpoint}`">
+        <DashboardCanvas v-if="studioPreview" :widgets="previewWidgets" :columns="previewColumns" :editable="false">
           <template #default="{ widget }"><WidgetRenderer :widget="widget" :primary-kpi="visibleKpis[0]" :supporting-kpis="visibleKpis.slice(1)" :warnings="dashboardWarnings" :ranking="departmentRanking" :department="department" :updated-at="dashboardQueryLabel" interactive :get-widget-kpi="getWidgetKpi" :get-title="getWidgetTitle" :get-description="getWidgetDescription" :get-icon="getWidgetIcon" :get-chart-option="getWidgetChartOption" :is-chart-empty="isChartEmpty" :get-chart-aria-label="getWidgetChartAriaLabel" :get-table-columns="getWidgetTableColumns" :get-table-rows="getWidgetTableRows" @chart-click="handleWidgetChartClick" /></template>
         </DashboardCanvas>
+        </div>
       </el-dialog>
     </div>
     </template>
@@ -305,6 +320,9 @@ import {
   DASHBOARD_LAYOUT_STORAGE_KEY,
   widgetTypeOptions
 } from '@/idmp/features/dashboard/constants'
+import { LOCAL_SCENE_DASHBOARDS, findLocalScene } from '@/idmp/features/dashboard/sceneRegistry.js'
+import { designerImmersive } from '@/idmp/layout/shellState.js'
+import { createAcceptanceExampleSchema } from '@/idmp/features/dashboard/acceptanceExample.js'
 import {
   getDashboardSchemaStorageKey,
   migrateDashboardSchema,
@@ -341,6 +359,7 @@ import {
 
 import '@/idmp/features/dashboard/dashboard-v2.css'
 const studioPreview = ref(false)
+const previewBreakpoint = ref('desktop')
 const librarySearch = ref('')
 const localLayoutTemplates = ref([])
 const layoutTemplates = computed(() => [...BUILT_IN_LAYOUT_TEMPLATES, ...localLayoutTemplates.value])
@@ -363,6 +382,10 @@ function handleStudioCommand(command) {
 }
 const router = useRouter()
 const isDev = import.meta.env.DEV
+const activeSceneCode = ref('performance')
+const loadedSceneCode = ref('performance')
+const activeScene = computed(() => findLocalScene(activeSceneCode.value) || LOCAL_SCENE_DASHBOARDS[0])
+const activeDashboardStorageKey = computed(() => getDashboardSchemaStorageKey(activeScene.value.dashboardId))
 const periodOptions = [
   { label: '全部期间', value: '' },
   { label: '2025 年 12 月', value: '2025-12' }
@@ -371,6 +394,7 @@ const departmentOptions = [{ label: '全院', value: '' }]
 const period = ref('2025-12')
 const department = ref('')
 const designerCanvasRef = ref()
+const viewerCanvasRef = ref()
 const isEditing = ref(false)
 const selectedWidgetIds = ref([])
 const primarySelectedWidgetId = ref('')
@@ -404,10 +428,13 @@ const lastSavedAt = ref('')
 const presentationMode = ref('standard')
 const presentationRef = ref()
 const dashboardSchema = ref(null)
+const dashboardBackground = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.appearance?.background?.value || '#ffffff')
 const viewerViewportWidth = ref(typeof window === 'undefined' ? 1440 : window.innerWidth)
 const viewerBreakpoint = computed(() => dashboardBreakpointForWidth(viewerViewportWidth.value))
 const viewerColumns = computed(() => responsiveColumns(viewerBreakpoint.value))
 const viewerWidgets = computed(() => deriveResponsiveLayout(dashboardSchema.value?.widgets || [], viewerBreakpoint.value, dashboardSchema.value?.responsivePolicy))
+const previewColumns = computed(() => responsiveColumns(previewBreakpoint.value))
+const previewWidgets = computed(() => deriveResponsiveLayout(designerWidgets.value, previewBreakpoint.value, editingDashboardSchema.value?.responsivePolicy))
 const dashboardRecovery = ref({ status: DASHBOARD_RECOVERY_STATUS.NO_SCHEMA, schema: null, raw: null, error: null })
 const useSchemaViewer = computed(() => Boolean(dashboardSchema.value))
 const dashboardDefinition = ref(null)
@@ -424,6 +451,9 @@ const filterRuntimeValues = ref({})
 // Interaction filters are a viewer/preview concern. They never enter schema state
 // or persistence, unlike global filter definitions and widget interaction rules.
 const interactionFilterState = ref({})
+// Widget-local drill position is deliberately runtime-only and never participates
+// in the schema/history/persistence chain.
+const drillRuntimeState = ref({})
 const filterCatalog = computed(() => dashboardFilterCatalog([...bindingDatasets.value.values()].flat()))
 const filterDatasets = computed(() => [...bindingDatasets.value.values()].flat())
 const dependentFilterOptions = computed(() => deriveDependentFilterOptions(filterDatasets.value, globalFilterDefinitions.value, filterRuntimeValues.value))
@@ -438,6 +468,7 @@ watch([globalFilterDefinitions, filterRuntimeValues, dependentFilterOptions], ()
 const currentDashboardWidgets = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.widgets || [])
 provide('dashboardFilterContext', { definitions: globalFilterDefinitions, values: filterRuntimeValues, interactions: interactionFilterState })
 provide('dashboardWidgetsContext', { widgets: currentDashboardWidgets, interactions: interactionFilterState, clearInteraction: clearInteractionFilter })
+provide('dashboardDrillContext', { states: drillRuntimeState, advance: advanceWidgetDrill, back: returnWidgetDrillTo, reset: resetWidgetDrill })
 function updateGlobalFilters(definitions) {
   if (!editingDashboardSchema.value) return
   editingDashboardSchema.value = { ...editingDashboardSchema.value, globalFilters: definitions }
@@ -858,6 +889,28 @@ function deleteActiveWidget() {
     deleteSelectedDesignerWidgets()
   }
 }
+function advanceWidgetDrill(widget, dataset, value) {
+  const hierarchy = widget.config?.interaction?.drill?.hierarchy || []
+  const current = drillRuntimeState.value[String(widget.id)]?.path || []
+  if (!hierarchy.length || current.length >= hierarchy.length - 1 || value === null || value === undefined) return
+  drillRuntimeState.value = { ...drillRuntimeState.value, [String(widget.id)]: { path: [...current, value] } }
+}
+function returnWidgetDrillTo(widgetId, breadcrumbIndex) {
+  const path = drillRuntimeState.value[String(widgetId)]?.path || []
+  drillRuntimeState.value = { ...drillRuntimeState.value, [String(widgetId)]: { path: path.slice(0, Math.max(0, breadcrumbIndex)) } }
+}
+function resetWidgetDrill(widgetId) {
+  const next = { ...drillRuntimeState.value }
+  delete next[String(widgetId)]
+  drillRuntimeState.value = next
+}
+function updateDashboardBackground(value) {
+  if (!editingDashboardSchema.value) return
+  const allowed = ['#ffffff', 'linear-gradient(135deg,#f7fbfa,#eef5fb)', 'linear-gradient(135deg,#f9f6fc,#eef7f6)']
+  const background = allowed.includes(value) ? value : '#ffffff'
+  editingDashboardSchema.value = { ...editingDashboardSchema.value, appearance: { ...editingDashboardSchema.value.appearance, background: { type: background.startsWith('linear-gradient') ? 'gradient' : 'color', value: background } } }
+  markDashboardDirty()
+}
 
 function deleteDesignerWidget(widgetId) {
   if (!widgetId) return
@@ -996,6 +1049,19 @@ function syncDesignerLayout(layout, userInitiated = false) {
   if (result.dirty) markDashboardDirty()
 }
 
+async function reconcileDesignerCanvasLayout() {
+  await nextTick()
+  const canvas = designerCanvasRef.value
+  if (!canvas) return []
+  await canvas.whenMembershipSettled()
+  const layout = await canvas.applyLayout(designerWidgets.value.map(widget => ({ id: widget.id, ...widget.layout })))
+  // GridStack is allowed to resolve an invalid/colliding target. Its settled public
+  // save() result is then the single canonical layout, without creating a new dirty
+  // action or history entry for this programmatic reconciliation.
+  syncDesignerLayout(layout, false)
+  return layout
+}
+
 function markDashboardDirty() {
   if (!isEditing.value) return
   dashboardDirty.value = true
@@ -1020,11 +1086,12 @@ function startDashboardEdit() {
   saveState.value = 'saved'
   lastSavedAt.value = ''
   isEditing.value = true
+  designerImmersive.value = true
   dashboardHistory.value = [clonePersistableValue(editingDashboardSchema.value)]
   dashboardHistoryIndex.value = 0
 }
 
-function applyDashboardHistory(index) {
+async function applyDashboardHistory(index) {
   const snapshot = dashboardHistory.value[index]
   if (!snapshot) return
   restoringDashboardHistory = true
@@ -1033,23 +1100,32 @@ function applyDashboardHistory(index) {
     dashboardHistoryIndex.value = index
     dashboardDirty.value = index !== 0
     saveState.value = dashboardDirty.value ? 'dirty' : 'saved'
+    await reconcileDesignerCanvasLayout()
   } finally { restoringDashboardHistory = false }
 }
-function undoDashboardEdit() { if (canUndo.value) applyDashboardHistory(dashboardHistoryIndex.value - 1) }
-function redoDashboardEdit() { if (canRedo.value) applyDashboardHistory(dashboardHistoryIndex.value + 1) }
+function undoDashboardEdit() { if (canUndo.value) void applyDashboardHistory(dashboardHistoryIndex.value - 1) }
+function redoDashboardEdit() { if (canRedo.value) void applyDashboardHistory(dashboardHistoryIndex.value + 1) }
 
-function exitDashboardEdit() {
-  if (!isEditing.value) return
-  if (dashboardDirty.value) {
-    ElMessage.warning('当前存在未保存修改，请先保存布局后再退出编辑')
-    return
-  }
+function finishDashboardEdit() {
   editingDashboardSchema.value = null
   dashboardHistory.value = []
   dashboardHistoryIndex.value = -1
   activeWidgetId.value = ''
   designerDrawerOpen.value = false
   isEditing.value = false
+  designerImmersive.value = false
+}
+async function exitDashboardEdit() {
+  if (!isEditing.value) return
+  if (!dashboardDirty.value) return finishDashboardEdit()
+  try {
+    await ElMessageBox.confirm('退出前可保存当前修改；选择“不保存并退出”将丢弃本次未保存内容。关闭弹窗则继续编辑。', '有未保存的看板修改', {
+      confirmButtonText: '保存并退出', cancelButtonText: '不保存并退出', distinguishCancelAndClose: true, closeOnClickModal: false
+    })
+    if (await saveDashboardSchema()) finishDashboardEdit()
+  } catch (action) {
+    if (action === 'cancel') finishDashboardEdit()
+  }
 }
 
 function saveDashboardLayout() {
@@ -1070,7 +1146,7 @@ async function saveDashboardSchema() {
     const schema = editingDashboardSchema.value
     const validation = validateDashboardSchema(schema)
     if (!validation.valid) throw new Error(validation.errors.join('；'))
-    const key = getDashboardSchemaStorageKey(DASHBOARD_CODE)
+    const key = activeDashboardStorageKey.value
     const normalizedPersisted = persistDashboardSchema(localStorage, key, schema)
     editingDashboardSchema.value = normalizedPersisted
     dashboardHistory.value = [clonePersistableValue(normalizedPersisted)]
@@ -1091,21 +1167,25 @@ async function saveDashboardSchema() {
 }
 
 function showDashboardSchemaDiagnostic() {
-  const key = getDashboardSchemaStorageKey(DASHBOARD_CODE)
-  const count = dashboardSchema.value?.widgets?.length || 0
-  ElMessage.info(`Schema: ${DASHBOARD_CODE}；组件 ${count} 个；Key: ${key}${lastSavedAt.value ? `；最近保存 ${lastSavedAt.value}` : ''}`)
+  const schema = isEditing.value ? editingDashboardSchema.value : dashboardSchema.value
+  const canvas = isEditing.value ? designerCanvasRef.value : viewerCanvasRef.value
+  const diagnostics = (schema?.widgets || []).map(widget => canvas?.collectWidgetLayoutDiagnostic?.(widget.id))
+  // Dev-only four-layer evidence for a layout issue: canonical schema, GridStack
+  // node, gs-* attributes, and rendered/content rectangles.
+  console.table(diagnostics)
+  ElMessage.info(`Schema: ${schema?.id || activeScene.value.dashboardId}；组件 ${diagnostics.length} 个；Key: ${activeDashboardStorageKey.value}${lastSavedAt.value ? `；最近保存 ${lastSavedAt.value}` : ''}`)
 }
 
-function resetDashboardLayout() {
+async function resetDashboardLayout() {
   if (!isEditing.value) return
   editingDashboardSchema.value = createEditingDashboardSchema(createDesignerWidgets(createDefaultLayout()))
-  nextTick(() => designerCanvasRef.value?.applyLayout(designerWidgets.value.map((widget) => ({ id: widget.id, ...widget.layout }))))
+  await reconcileDesignerCanvasLayout()
   activeWidgetId.value = ''
   markDashboardDirty()
 }
 
 function loadDesignerSchema() {
-  const recovery = recoverDashboardSchema(localStorage, getDashboardSchemaStorageKey(DASHBOARD_CODE))
+  const recovery = recoverDashboardSchema(localStorage, activeDashboardStorageKey.value)
   dashboardRecovery.value = recovery
   if (recovery.status === DASHBOARD_RECOVERY_STATUS.VALID_CURRENT_SCHEMA) {
     presentationMode.value = recovery.schema.presentation.defaultMode === 'presentation' ? 'presentation' : 'standard'
@@ -1119,8 +1199,8 @@ function loadDesignerSchema() {
   const sourceLayout = legacy.length ? legacy : createDefaultLayout()
   const gridLayout = legacyPixelLayoutToGrid(sourceLayout, { designWidth: DASHBOARD_DESIGN_WIDTH, columns: 24, cellHeight: 60 })
   const migrated = migrateDashboardSchema({
-    id: DASHBOARD_CODE,
-    name: '医疗质量指标总览',
+    id: activeScene.value.dashboardId,
+    name: `${activeScene.value.name}看板`,
     layout: { engine: 'gridstack', columns: 24, float: false },
     appearance: dashboardSchema.value?.appearance,
     presentation: dashboardSchema.value?.presentation,
@@ -1133,8 +1213,11 @@ function loadDesignerSchema() {
 function createEditingDashboardSchema(widgets) {
   return normalizeDashboardSchema({
     version: 1,
-    id: DASHBOARD_CODE,
-    name: '医疗质量指标总览',
+    id: activeScene.value.dashboardId,
+    name: `${activeScene.value.name}看板`,
+    dashboardType: activeScene.value.dashboardType,
+    category: '本地验收看板',
+    sceneCode: activeScene.value.sceneCode,
     layout: { engine: 'gridstack', columns: 24, float: false },
     appearance: dashboardSchema.value?.appearance,
     presentation: dashboardSchema.value?.presentation,
@@ -1157,16 +1240,20 @@ function readLegacyDashboardLayout() {
 }
 
 function loadDashboardSchema() {
-  const recovery = recoverDashboardSchema(localStorage, getDashboardSchemaStorageKey(DASHBOARD_CODE))
+  const recovery = recoverDashboardSchema(localStorage, activeDashboardStorageKey.value)
   dashboardRecovery.value = recovery
   if (recovery.status === DASHBOARD_RECOVERY_STATUS.VALID_CURRENT_SCHEMA) {
     dashboardSchema.value = recovery.schema
     presentationMode.value = recovery.schema.presentation.defaultMode === 'presentation' ? 'presentation' : 'standard'
   } else {
-    // Legacy input is migrated before it ever reaches Viewer runtime. This keeps
-    // the current Schema + GridStack renderer as the only operational path.
-    dashboardSchema.value = loadDesignerSchema()
+    // Acceptance seeds are local and idempotent: production never receives one.
+    if (isDemoRuntime()) {
+      const seed = createEditingDashboardSchema(createDesignerWidgets(createDefaultLayout()))
+      dashboardSchema.value = persistDashboardSchema(localStorage, activeDashboardStorageKey.value, seed)
+      dashboardRecovery.value = { status: DASHBOARD_RECOVERY_STATUS.VALID_CURRENT_SCHEMA, schema: dashboardSchema.value, raw: null, error: null }
+    } else dashboardSchema.value = loadDesignerSchema()
   }
+  loadedSceneCode.value = activeSceneCode.value
 }
 
 async function enterPresentation() {
@@ -1212,7 +1299,12 @@ async function loadDashboard() {
     if (controller.signal.aborted) return
     dashboardDefinition.value = null
     dashboardQueryResult.value = null
-    applyDemoDashboard()
+    if (isDemoRuntime()) applyDemoDashboard()
+    else {
+      indicatorDataSources.value = []
+      dashboardStatus.value = 'error'
+      dashboardLoadMessage.value = '正式看板数据暂不可用；生产环境不会自动使用演示数据。'
+    }
   }
 }
 
@@ -1258,9 +1350,49 @@ function applyDemoDashboard() {
   indicatorDataSources.value = cloneDashboardSources(mockIndicatorDataSources)
   selectedDataCode.value = indicatorDataSources.value[0]?.code || ''
   dashboardStatus.value = 'demo'
-  // 看板尚未发布时静默使用演示布局；数据来源由页头徽标持续标识。
+  // Only explicit non-production/demo runtimes may enter this branch.
   dashboardLoadMessage.value = ''
   void loadMortalityReadonlyChain()
+}
+async function loadAcceptanceExample() {
+  if (!isDemoRuntime()) return
+  if (designerWidgets.value.length) {
+    try { await ElMessageBox.confirm('加载验收示例将替换当前看板组件和验收配置。', '加载验收示例', { confirmButtonText: '加载示例', cancelButtonText: '取消', type: 'warning' }) } catch { return }
+  }
+  editingDashboardSchema.value = createAcceptanceExampleSchema({ id: activeScene.value.dashboardId, sceneCode: activeScene.value.sceneCode })
+  activeWidgetId.value = ''
+  await reconcileDesignerCanvasLayout()
+  markDashboardDirty()
+}
+async function switchSceneDashboard() {
+  // Scene registries are local-only. Switching reloads a distinct persisted schema
+  // and clears all viewer-only state, never treating the scene value as a row filter.
+  if (dashboardDirty.value) {
+    try {
+      await ElMessageBox.confirm('切换场景前，请选择如何处理这些修改。关闭弹窗将继续编辑。', '当前看板有未保存的修改', { confirmButtonText: '保存并切换', cancelButtonText: '不保存并切换', distinguishCancelAndClose: true, closeOnClickModal: false })
+      if (!(await saveDashboardSchema())) { activeSceneCode.value = loadedSceneCode.value; return }
+    } catch (action) {
+      if (action !== 'cancel') { activeSceneCode.value = loadedSceneCode.value; return }
+    }
+  }
+  filterRuntimeValues.value = {}
+  interactionFilterState.value = {}
+  drillRuntimeState.value = {}
+  selectedWidgetIds.value = []
+  primarySelectedWidgetId.value = ''
+  dashboardHistory.value = []
+  dashboardHistoryIndex.value = -1
+  dashboardDirty.value = false
+  loadDashboardSchema()
+  if (isEditing.value && dashboardSchema.value) {
+    editingDashboardSchema.value = clonePersistableValue(dashboardSchema.value)
+    dashboardHistory.value = [clonePersistableValue(editingDashboardSchema.value)]
+    dashboardHistoryIndex.value = 0
+    await reconcileDesignerCanvasLayout()
+  }
+}
+function isDemoRuntime() {
+  return import.meta.env.DEV || import.meta.env.MODE === 'test' || (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('dashboardDemo') === '1')
 }
 
 async function loadMortalityReadonlyChain() {
@@ -1349,6 +1481,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  designerImmersive.value = false
   dashboardAbortController?.abort()
   document.removeEventListener('fullscreenchange', syncFullscreenState)
   window.removeEventListener('beforeunload', onDashboardBeforeUnload)
@@ -1388,12 +1521,15 @@ onBeforeUnmount(() => {
 .dashboard-style-form label { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--idmp-text-secondary, #475467); font-size: 13px; }
 .dashboard-style-form input[type='number'], .dashboard-style-form select { width: 110px; padding: 5px 6px; border: 1px solid #d0d5dd; border-radius: 4px; }
 .dashboard-style-form input[type='color'] { width: 44px; height: 28px; padding: 0; border: 0; background: transparent; }
-.dashboard-page.is-presentation-mode { position: fixed; inset: 0; z-index: 3000; min-height: 100vh; overflow: auto; padding: 24px; background: #0b1220; color: #f8fafc; }
+.dashboard-page.is-presentation-mode { position: fixed; inset: 0; z-index: 3000; min-height: 100vh; overflow: auto; padding: 24px; background: var(--dashboard-background, #ffffff); color: var(--idmp-text-primary, #101828); }
 .dashboard-page.is-presentation-mode :deep(.page-heading) { display: none; }
 .dashboard-page.is-presentation-mode .dashboard-schema-viewer { margin: 0; }
 .dashboard-page.is-presentation-mode .dashboard-schema-canvas { min-height: calc(100vh - 48px); }
-.dashboard-page.is-presentation-mode :deep(.dashboard-widget__chrome) { background-color: #111c2f !important; border-color: #29476b !important; color: #f8fafc; }
-.dashboard-page.is-presentation-mode :deep(.dashboard-renderer-card) { color: #f8fafc; }
+.dashboard-demo-source { padding:8px; border:1px solid #b8e6d6; border-radius:6px; background:#effbf6; color:#087443 !important; font-size:11px !important; }
+.dashboard-preview-breakpoints { display:flex; gap:8px; margin-bottom:12px; }
+.dashboard-preview-frame { margin:auto; transition:width .2s ease; overflow:hidden; border:1px solid #d0d5dd; border-radius:8px; background:var(--dashboard-background, #fff); }
+.dashboard-preview-frame.is-desktop { width:1440px; max-width:100%; }.dashboard-preview-frame.is-tablet { width:834px; max-width:100%; }.dashboard-preview-frame.is-mobile { width:375px; max-width:100%; }
+.studio-scene-switcher { width:170px; }
 .dashboard-page:fullscreen { width: 100vw; height: 100vh; }
 
 @media (max-width: 1199px) { .dashboard-schema-canvas { min-height:560px; } }

@@ -9,7 +9,7 @@ export const GRID_COLUMNS = 24
 
 const VALID_WIDGET_TYPES = new Set(['primary', 'supporting', 'kpi', 'chart', 'warnings', 'ranking'])
 const WIDGET_METADATA_FIELDS = ['id', 'type', 'sourceCode', 'sourceName', 'kpiIndex', 'chartKind', 'visualType', 'preset', 'title', 'config']
-const ROOT_PERSISTED_FIELDS = new Set(['version', 'id', 'name', 'description', 'dashboardType', 'category', 'scope', 'responsivePolicy', 'layout', 'appearance', 'presentation', 'widgets', 'globalFilters'])
+const ROOT_PERSISTED_FIELDS = new Set(['version', 'id', 'name', 'description', 'dashboardType', 'category', 'scope', 'sceneCode', 'responsivePolicy', 'layout', 'appearance', 'presentation', 'widgets', 'globalFilters'])
 const LAYOUT_PERSISTED_FIELDS = new Set(['engine', 'columns', 'float'])
 const WIDGET_PERSISTED_FIELDS = new Set([...WIDGET_METADATA_FIELDS, 'layout'])
 const WIDGET_LAYOUT_PERSISTED_FIELDS = new Set(['x', 'y', 'w', 'h'])
@@ -117,6 +117,7 @@ export function createPersistableDashboardSnapshot(schema) {
     dashboardType: source.dashboardType,
     category: source.category,
     scope: source.scope,
+    sceneCode: source.sceneCode,
     responsivePolicy: source.responsivePolicy,
     globalFilters: source.globalFilters ?? [],
     layout: source.layout,
@@ -208,6 +209,7 @@ export function validateDashboardSchema(schema) {
   if (schema.dashboardType !== undefined && !['hospital-overview', 'topic', 'scene', 'department', 'custom'].includes(schema.dashboardType)) errors.push('dashboardType is invalid')
   if (schema.category !== undefined && typeof schema.category !== 'string') errors.push('category must be a string')
   if (schema.scope !== undefined && !['hospital', 'department', 'personal'].includes(schema.scope)) errors.push('scope is invalid')
+  if (schema.sceneCode !== undefined && typeof schema.sceneCode !== 'string') errors.push('sceneCode must be a string')
   if (schema.responsivePolicy !== undefined && (schema.responsivePolicy?.tablet !== 'auto-two-column' && schema.responsivePolicy?.tablet !== 'single-column' || schema.responsivePolicy?.mobile !== 'single-column')) errors.push('responsivePolicy is invalid')
   if (!schema.layout || typeof schema.layout !== 'object') errors.push('layout is required')
   else {
@@ -265,6 +267,7 @@ export function normalizeDashboardSchema(input = {}) {
     dashboardType: ['hospital-overview', 'topic', 'scene', 'department', 'custom'].includes(source.dashboardType) ? source.dashboardType : 'custom',
     category: typeof source.category === 'string' ? source.category : '',
     scope: ['hospital', 'department', 'personal'].includes(source.scope) ? source.scope : 'hospital',
+    sceneCode: typeof source.sceneCode === 'string' ? source.sceneCode : '',
     responsivePolicy: { tablet: source.responsivePolicy?.tablet === 'single-column' ? 'single-column' : 'auto-two-column', mobile: 'single-column' },
     globalFilters: clonePersistableValue(source.globalFilters ?? []),
     layout: { engine: GRID_LAYOUT_ENGINE, columns, float: source.layout?.float === true },

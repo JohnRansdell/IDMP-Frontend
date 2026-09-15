@@ -1,5 +1,6 @@
 // Catalogs describe available scalar columns, never a Cartesian join of snapshots.
-const labels = { month: '统计月份', period: '统计月份', departmentName: '科室', deptName: '科室', deptCode: '科室编码', category: '分类', value: '指标值', numerator: '分子值', denominator: '分母值', yoy: '同比', mom: '环比' }
+import { dashboardAcceptanceRows } from './acceptanceData.js'
+const labels = { year: '年度', quarter: '季度', month: '统计月份', date: '统计日期', department: '科室', medicalGroup: '医疗组', doctor: '医师', disease: '病种', scene: '应用场景', indicatorCategory: '指标分类', indicatorValue: '指标值', targetValue: '目标值', period: '统计月份', departmentName: '科室', deptName: '科室', deptCode: '科室编码', category: '分类', value: '指标值', numerator: '分子值', denominator: '分母值', yoy: '同比', mom: '环比' }
 export function numericValue(value) {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null
   if (typeof value !== 'string' || !/^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(value.trim())) return null
@@ -21,6 +22,11 @@ function dataset(id, label, rows, hints) { return { id, label, rows, fields: cre
 const numberHint = { dataType: 'number', semanticType: 'measure' }
 const monthHint = { dataType: 'date', semanticType: 'time', granularities: ['raw'], label: '统计月份（原始粒度）' }
 const dimensionHint = { dataType: 'string', semanticType: 'dimension' }
+const acceptanceHints = {
+  year: dimensionHint, quarter: dimensionHint, month: dimensionHint, date: { dataType: 'date', semanticType: 'time' },
+  department: dimensionHint, medicalGroup: dimensionHint, doctor: dimensionHint, disease: dimensionHint, scene: dimensionHint, indicatorCategory: dimensionHint,
+  indicatorValue: numberHint, numerator: numberHint, denominator: numberHint, targetValue: numberHint, yoy: numberHint, mom: numberHint
+}
 const records = value => Array.isArray(value) ? value.filter(row => row && typeof row === 'object' && !Array.isArray(row)) : []
 
 export function createWidgetBindingDatasets(source, { result, demo = false, months = [] } = {}) {
@@ -36,6 +42,7 @@ export function createWidgetBindingDatasets(source, { result, demo = false, mont
   }
   if (!demo || !source) return []
   return [
+    dataset('acceptance', '验收演示数据 · 组织、时间、病种、场景', dashboardAcceptanceRows, acceptanceHints),
     dataset('current', `${source.name} · 演示当前值`, [{ value: source.currentValue }], { value: { ...numberHint, unit: source.unit || '' } }),
     dataset('trend', `${source.name} · 演示月度序列`, (source.trendData || []).map((value, index) => ({ month: source.trendLabels?.[index] ?? months[index], value })), { month: monthHint, value: { ...numberHint, unit: source.unit || '' } }),
     dataset('departments', `${source.name} · 演示科室快照`, (source.departmentData || []).map(row => ({ departmentName: row.name, value: row.value })), { departmentName: dimensionHint, value: { ...numberHint, unit: source.unit || '' } }),

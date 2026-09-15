@@ -16,6 +16,10 @@
     <div class="db-kpi-card__top"><span>{{ widgetKpi.title }}</span><span class="db-kpi-dot" :class="`is-${widgetKpi.status}`" /></div><strong>{{ widgetKpi.value }}</strong><div class="db-kpi-change" :class="`is-${trendTone}`">{{ widgetKpi.change }}</div><div class="db-kpi-target">{{ widgetKpi.target }}</div>
   </article>
 
+  <article v-else-if="widget.type === 'chart' && widget.chartKind === 'table'" class="dashboard-renderer-card db-chart-card">
+    <div class="db-section-title"><div><h2><el-icon><component :is="getIcon(widget)" /></el-icon>{{ getTitle(widget) }}</h2></div></div>
+    <div class="dashboard-chart-table-wrap"><table class="dashboard-chart-table" data-testid="widget-renderer-table"><thead><tr><th v-for="column in getTableColumns(widget)" :key="column.key">{{ column.label }}</th></tr></thead><tbody><tr v-for="(row, index) in getTableRows(widget)" :key="`${widget.id}-${index}`"><td v-for="column in getTableColumns(widget)" :key="column.key">{{ row[column.key] }}</td></tr></tbody></table></div>
+  </article>
   <article v-else-if="widget.type === 'chart'" class="dashboard-renderer-card db-chart-card" :inert="!interactive && editing">
     <div class="db-section-title"><div><h2><el-icon><component :is="getIcon(widget)" /></el-icon>{{ getTitle(widget) }}</h2><p v-if="getDescription(widget)" class="db-section-title__description">{{ getDescription(widget) }}</p></div></div>
     <IdmpChart :option="themedChartOption" :empty="isChartEmpty(widget)" height="100%" fit-container :aria-label="getChartAriaLabel(widget)" :updated-at="updatedAt" @chart-click="interactive && emit('chart-click', widget, $event)">
@@ -93,5 +97,13 @@ const trendTone = computed(() => clinicalTrendTone(widgetKpi.value.status))
  .db-kpi-change, .db-primary-metric__change { display:none; }
  .db-kpi-card__top { font-size:12px; min-height:20px; }
  .db-kpi-card strong { font-size:26px; }
+}
+@container (max-width: 160px) {
+ .db-section-title,.db-kpi-card__top,.db-primary-metric__head,.db-primary-metric__change,.db-kpi-change,.db-kpi-target,.db-primary-metric__meta,.db-supporting-metrics__title,.db-warning-list time,.db-rank-bar { display:none; }
+ .db-kpi-card,.db-primary-metric { display:grid; place-items:center; padding:4px; }
+ .db-kpi-card strong,.db-primary-metric__value { margin:0; font-size:20px; line-height:1; text-align:center; }
+ .db-supporting-metric { grid-template-columns:1fr; min-height:0; padding:3px; }
+ .db-supporting-metric :not(strong),.db-warning-icon,.db-ranking-list li :not(strong):not(.rank) { display:none; }
+ .db-warning-list li,.db-ranking-list li { min-height:0; grid-template-columns:1fr; padding:2px; }
 }
 </style>
