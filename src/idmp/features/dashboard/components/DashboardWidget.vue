@@ -29,6 +29,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { getWidgetGridConstraints } from '../gridLayout.js'
 import { normalizeWidgetSelectionId } from '../widgetCapabilities.js'
+import { getDashboardWidgetSizeTier } from '../widgetSizing.js'
 
 const props = defineProps({
   widget: { type: Object, required: true },
@@ -67,14 +68,15 @@ function resolveShadow(value) {
   return shadows[value] || value || 'none'
 }
 function updateSizeTier(width, height) {
-  sizeTier.value = width < 150 || height < 105 ? 'micro' : width < 280 || height < 180 ? 'compact' : width > 720 || height > 420 ? 'expanded' : 'standard'
+  sizeTier.value = getDashboardWidgetSizeTier(width, height)
 }
 onMounted(() => {
   const element = root.value
-  if (!element || typeof ResizeObserver === 'undefined') return
+  if (!element) return
+  updateSizeTier(element.clientWidth, element.clientHeight)
+  if (typeof ResizeObserver === 'undefined') return
   resizeObserver = new ResizeObserver(([entry]) => updateSizeTier(entry.contentRect.width, entry.contentRect.height))
   resizeObserver.observe(element)
-  updateSizeTier(element.clientWidth, element.clientHeight)
 })
 onBeforeUnmount(() => resizeObserver?.disconnect())
 </script>

@@ -2,8 +2,8 @@
   --db-surface: #fff; --db-elevated: #fbfcfc; --db-canvas: #f5f7f8;
   --db-text: #25343b; --db-secondary: #5c6d75; --db-muted: #78878e;
   --db-border: #e3e9eb; --db-border-strong: #b8c7cd;
-  --db-accent: #357b78; --db-accent-soft: #edf5f3;
-  --db-success: #357b62; --db-warning: #a47735; --db-danger: #b45858;
+  --db-accent: var(--idmp-interactive, #1261a6); --db-accent-soft: var(--idmp-interactive-subtle, #e7f1f8);
+  --db-success: var(--idmp-support-success, #247a4d); --db-warning: var(--idmp-support-warning, #9a5b00); --db-danger: var(--idmp-support-danger, #b4232c);
   --db-radius-sm: 6px; --db-radius-md: 10px; --db-radius-lg: 14px;
   --db-space-xs: 4px; --db-space-sm: 8px; --db-space-md: 16px; --db-space-lg: 24px;
   --db-shadow: 0 2px 8px #25343b06; --db-toolbar: 72px;
@@ -11,10 +11,10 @@
   color: var(--db-text);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
 }
-.dashboard-v2 .dashboard-studio .el-button--primary { --el-button-bg-color: var(--db-accent); --el-button-border-color: var(--db-accent); --el-button-hover-bg-color: #438b87; --el-button-hover-border-color: #438b87; }
+.dashboard-v2 .dashboard-studio .el-button--primary { --el-button-bg-color: var(--db-accent); --el-button-border-color: var(--db-accent); --el-button-hover-bg-color: var(--idmp-interactive-hover, #0d508c); --el-button-hover-border-color: var(--idmp-interactive-hover, #0d508c); }
 .dashboard-v2 .dashboard-studio .el-button--primary.is-plain { --el-button-bg-color: var(--db-accent-soft); --el-button-text-color: var(--db-accent); }
 .dashboard-v2 .studio-library > [data-testid=dashboard-add-widget] { position: sticky; bottom: 0; z-index: 2; }
-.dashboard-v2 .dashboard-studio { position: fixed; inset: 56px 0 0; z-index: 100; display: flex; flex-direction: column; border: 1px solid var(--db-border); background: var(--db-surface); overflow: hidden; --el-color-primary: var(--db-accent); }
+.dashboard-v2 .dashboard-studio { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; border: 1px solid var(--db-border); background: var(--db-surface); overflow: hidden; --el-color-primary: var(--db-accent); }
 .dashboard-v2 .dashboard-command { min-height: var(--db-toolbar); padding: 12px 20px; display: flex; gap: 16px; align-items: center; border-bottom: 1px solid var(--db-border); }
 .dashboard-v2 .studio-back { border: 1px solid var(--db-border); border-radius: 8px; background: white; width: 32px; height: 32px; cursor: pointer; }
 .dashboard-v2 .studio-title { min-width: 0; }

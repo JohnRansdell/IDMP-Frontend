@@ -16,17 +16,9 @@ export function responsiveReadingOrder(widgets = []) {
 function kind(widget) { return widget.type === 'chart' ? widget.chartKind || 'chart' : widget.type }
 export function deriveResponsiveHeight(widget, breakpoint) {
   if (breakpoint === 'desktop') return widget.layout.h
-  const visual = kind(widget)
-  const mobile = breakpoint === 'mobile'
-  if (visual === 'kpi') return mobile ? 2 : 3
-  if (visual === 'primary') return mobile ? 5 : 5
-  if (visual === 'supporting') return mobile ? 6 : 5
-  if (visual === 'table' || visual === 'heatmap') return mobile ? 8 : 7
-  if (visual === 'warnings' || visual === 'ranking') return mobile ? 7 : 7
-  if (visual === 'gauge') return mobile ? 6 : 6
-  if (visual === 'pie' || visual === 'radar' || visual === 'funnel') return mobile ? 7 : 7
-  if (visual === 'scatter') return mobile ? 8 : 7
-  return mobile ? 7 : 7
+  const capability = getWidgetResponsivePresentationCapability(widget)
+  if (breakpoint === 'mobile') return capability.mobileMinH
+  return Math.max(3, capability.mobileMinH - 1)
 }
 
 function tabletSpan(widget) {
@@ -68,3 +60,4 @@ export function deriveResponsiveLayout(widgets = [], breakpoint = 'desktop', pol
   if (breakpoint === 'mobile') return deriveMobileLayout(widgets)
   return widgets.map(widget => ({ ...widget, layout: { ...widget.layout } }))
 }
+import { getWidgetResponsivePresentationCapability } from './widgetCapabilities.js'

@@ -37,11 +37,12 @@ function onChartClick(params) { if (drill.value.active) drillContext.advance(pro
 .binding-state strong { font-size:13px; }.binding-state p { line-height:1.6; }
 .filter-diagnostic { margin:0 0 6px; font-size:11px; color:var(--db-warning,#a47735); }
 table { width:100%; font-size:12px; border-collapse:collapse; } td,th { padding:6px; text-align:left; }
-.binding-table-wrap { overflow:auto; max-height:100%; }.binding-table-wrap th { position:sticky; top:0; background:var(--db-surface,#fff); }.binding-table-wrap td,.binding-table-wrap th { border-bottom:1px solid var(--db-border,#e3e9eb); white-space:nowrap; }
+.binding-table-wrap { max-width:100%; overflow:auto; overscroll-behavior-inline:contain; max-height:100%; }.binding-table-wrap table { width:max-content; min-width:100%; }.binding-table-wrap th { position:sticky; top:0; background:var(--db-surface,#fff); }.binding-table-wrap td,.binding-table-wrap th { border-bottom:1px solid var(--db-border,#e3e9eb); white-space:nowrap; }
 .binding-ranking { padding:0; list-style:none; overflow:auto; }.binding-ranking li { display:grid; grid-template-columns:24px 1fr auto; gap:12px; padding:10px 0; }
 .db-section-title { min-height:30px; margin-bottom:12px; }.db-section-title h2 { font-size:13px; font-weight:550; margin:0; }
-.drill-breadcrumb { display:flex; gap:4px; align-items:center; flex-wrap:wrap; font-size:10px; }.drill-breadcrumb button { border:0; padding:0; background:transparent; color:var(--db-accent,#4f8583); cursor:pointer; }
+.drill-breadcrumb { display:flex; gap:4px; align-items:center; flex-wrap:wrap; font-size:10px; }.drill-breadcrumb button { border:0; padding:0; background:transparent; color:var(--db-accent,#1261a6); cursor:pointer; }
 .db-kpi-card>strong { display:block; font-size:32px; font-weight:550; line-height:1.2; margin:12px 0 8px; overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
 @container (max-height:150px) { .db-kpi-card .db-section-title { min-height:20px; margin-bottom:6px; }.db-kpi-card>strong { font-size:28px; margin:6px 0; } }
 @container (max-height:110px) { .db-kpi-card>strong { font-size:26px; }.db-section-title h2 { font-size:12px; } }
+@container (max-width:420px) { .db-chart-card { padding:12px 10px 8px; }.db-section-title { min-height:24px; margin-bottom:6px; }.binding-ranking li { grid-template-columns:20px minmax(0,1fr) auto; gap:8px; } }
 </style>

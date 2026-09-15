@@ -382,6 +382,14 @@ a {
   overflow-x: clip;
 }
 
+/* The Designer owns the complete workspace while immersive. Hiding chrome alone
+   is not sufficient: the shell must also release the space it previously reserved. */
+.idmp-shell.is-designer-immersive .idmp-main {
+  margin-left: 0;
+  min-height: 100vh;
+  padding: 0;
+}
+
 .idmp-page {
   width: 100%;
   min-width: 0;

@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { DASHBOARD_BREAKPOINTS, dashboardBreakpointForWidth, deriveResponsiveLayout, responsiveColumns } from '../src/idmp/features/dashboard/responsiveLayout.js'
+import { getWidgetResponsivePresentationCapability } from '../src/idmp/features/dashboard/widgetCapabilities.js'
 
 const widgets = [
   { id: 'trend', type: 'chart', chartKind: 'line', layout: { x: 8, y: 3, w: 16, h: 8 } },
@@ -35,11 +36,18 @@ test('mobile reading order is desktop y then x, in one readable column', () => {
   const mobile = deriveResponsiveLayout(widgets, 'mobile')
   assert.deepEqual(mobile.map(item => item.id), ['kpi-1', 'kpi-2', 'trend', 'table', 'heatmap'])
   assert.equal(mobile.every(item => item.layout.x === 0 && item.layout.w === 1), true)
-  assert.equal(mobile.find(item => item.id === 'table').layout.h >= 8, true)
-  assert.equal(mobile.find(item => item.id === 'heatmap').layout.h >= 8, true)
+  assert.equal(mobile.find(item => item.id === 'trend').layout.h >= 8, true)
+  assert.equal(mobile.find(item => item.id === 'table').layout.h >= 9, true)
+  assert.equal(mobile.find(item => item.id === 'heatmap').layout.h >= 9, true)
 })
 
 test('empty and single KPI dashboards remain valid', () => {
   assert.deepEqual(deriveResponsiveLayout([], 'mobile'), [])
-  assert.deepEqual(deriveResponsiveLayout([{ id: 'one', type: 'kpi', layout: { x: 12, y: 4, w: 6, h: 3 } }], 'mobile')[0].layout, { x: 0, y: 0, w: 1, h: 2 })
+  assert.deepEqual(deriveResponsiveLayout([{ id: 'one', type: 'kpi', layout: { x: 12, y: 4, w: 6, h: 3 } }], 'mobile')[0].layout, { x: 0, y: 0, w: 1, h: 3 })
+})
+
+test('mobile presentation capability is viewer-only and keeps chart/table content readable', () => {
+  assert.equal(getWidgetResponsivePresentationCapability({ type: 'chart', chartKind: 'line' }).mobileMinH, 8)
+  assert.equal(getWidgetResponsivePresentationCapability({ type: 'chart', chartKind: 'gauge' }).compact, 'square-chart')
+  assert.equal(getWidgetResponsivePresentationCapability({ type: 'chart', chartKind: 'table' }).compact, 'horizontal-scroll')
 })
