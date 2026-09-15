@@ -26,3 +26,19 @@ test('acceptance fields are visible and department changes effective data and de
   const respiratory = queryWidgetDatasetWithRuntime(dataset, kpi, { definitions: schema.globalFilters, values: { department: ['呼吸内科'], disease: [] } })
   assert.ok(respiratory.rows.length < all.rows.length)
 })
+
+test('acceptance cross filter changes KPI, line and table effective rows then clears without changing schema', () => {
+  const source = { code: 'demo-quality', name: '演示', currentValue: 1, trendData: [], departmentData: [], pieData: [] }
+  const dataset = createWidgetBindingDatasets(source, { demo: true }).find(item => item.id === 'acceptance')
+  const baselineSchema = JSON.stringify(schema)
+  const interactions = { 'interaction-acceptance-bar': { id: 'interaction-acceptance-bar', sourceWidgetId: 'acceptance-bar', field: 'department', value: '呼吸内科', targetWidgetIds: ['acceptance-kpi', 'acceptance-line', 'acceptance-table'] } }
+  for (const id of ['acceptance-kpi', 'acceptance-line', 'acceptance-table']) {
+    const widget = schema.widgets.find(item => item.id === id)
+    const baseline = queryWidgetDatasetWithRuntime(dataset, widget, { definitions: schema.globalFilters, values: { department: [], disease: [] }, interactions: {} })
+    const filtered = queryWidgetDatasetWithRuntime(dataset, widget, { definitions: schema.globalFilters, values: { department: [], disease: [] }, interactions })
+    const restored = queryWidgetDatasetWithRuntime(dataset, widget, { definitions: schema.globalFilters, values: { department: [], disease: [] }, interactions: {} })
+    assert.ok(filtered.rows.length < baseline.rows.length, `${id} must receive the runtime interaction filter`)
+    assert.deepEqual(restored.rows, baseline.rows)
+  }
+  assert.equal(JSON.stringify(schema), baselineSchema, 'runtime interaction state never mutates the persisted schema')
+})

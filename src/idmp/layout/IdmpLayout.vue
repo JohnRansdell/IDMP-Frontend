@@ -45,9 +45,9 @@
 
       <div class="idmp-topbar__right">
         <div class="idmp-context">
-          <span class="scene-label">全局场景</span>
-          <el-select v-model="currentScene" class="scene-select" aria-label="全局场景">
-            <el-option v-for="scene in sceneOptions" :key="scene" :label="scene" :value="scene" />
+          <span class="scene-label">{{ isDashboardRoute ? '场景看板' : '全局场景' }}</span>
+          <el-select v-model="currentScene" class="scene-select" :aria-label="isDashboardRoute ? '场景看板' : '全局场景'">
+            <el-option v-for="scene in currentSceneOptions" :key="scene.value" :label="scene.label" :value="scene.value" />
           </el-select>
         </div>
         <el-tooltip content="查看预警中心" placement="bottom">
@@ -75,7 +75,7 @@
 
 <script setup>
 import { computed, markRaw, ref } from 'vue'
-import { designerImmersive } from './shellState.js'
+import { dashboardSceneCode, designerImmersive } from './shellState.js'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import {
   Aim,
@@ -94,10 +94,19 @@ import {
 } from '@element-plus/icons-vue'
 import { sceneOptions } from '@/idmp/data/demo'
 import { DEFAULT_ANALYSIS_INDICATOR, getAnalysisProfile } from '@/idmp/features/analysis/indicatorProfiles'
+import { LOCAL_SCENE_DASHBOARDS, findLocalScene } from '@/idmp/features/dashboard/sceneRegistry.js'
 
 const route = useRoute()
 const router = useRouter()
-const currentScene = ref(sceneOptions[0])
+const globalScene = ref(sceneOptions[0])
+const isDashboardRoute = computed(() => route.name === 'Dashboard')
+const currentSceneOptions = computed(() => isDashboardRoute.value
+  ? LOCAL_SCENE_DASHBOARDS.map(scene => ({ label: `${scene.name}（本地看板）`, value: scene.sceneCode }))
+  : sceneOptions.map(scene => ({ label: scene, value: scene })))
+const currentScene = computed({
+  get: () => isDashboardRoute.value ? (findLocalScene(dashboardSceneCode.value)?.sceneCode || LOCAL_SCENE_DASHBOARDS[0].sceneCode) : globalScene.value,
+  set: (value) => { if (isDashboardRoute.value) dashboardSceneCode.value = value; else globalScene.value = value }
+})
 
 const navGroups = [
   {

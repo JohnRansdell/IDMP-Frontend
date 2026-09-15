@@ -18,9 +18,6 @@
         <el-select v-model="department" class="dashboard-filter" aria-label="科室">
           <el-option v-for="option in departmentOptions" :key="option.value" :label="option.label" :value="option.value" />
         </el-select>
-        <el-select v-model="activeSceneCode" class="dashboard-filter" aria-label="场景看板" @change="switchSceneDashboard">
-          <el-option v-for="scene in LOCAL_SCENE_DASHBOARDS" :key="scene.sceneCode" :label="`${scene.name}（本地看板）`" :value="scene.sceneCode" />
-        </el-select><span class="dashboard-scene-help">切换到另一张场景看板</span>
         <template v-if="!isEditing">
           <el-button :type="presentationMode === 'standard' ? 'primary' : 'default'" @click="exitPresentation">标准模式</el-button>
           <el-button :type="presentationMode === 'presentation' ? 'primary' : 'default'" @click="enterPresentation">大屏展示</el-button>
@@ -77,6 +74,10 @@
     <template v-else-if="dashboardStatus === 'ready' || dashboardStatus === 'demo'">
     <section v-if="!isEditing && useSchemaViewer" class="dashboard-schema-viewer">
       <DashboardFilterBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" @change="filterRuntimeValues = $event" />
+      <section v-if="activeInteractionFilters.length" class="dashboard-interaction-summary" aria-label="联动筛选">
+        <span v-for="interaction in activeInteractionFilters" :key="interaction.id">联动：{{ interaction.label }} = {{ interaction.value }}</span>
+        <el-button size="small" text @click="clearAllInteractionFilters">清除联动</el-button>
+      </section>
       <DashboardCanvas
         :key="`viewer-${dashboardSchema?.id}-${viewerBreakpoint}`"
         ref="viewerCanvasRef"
@@ -120,7 +121,7 @@
       <header class="dashboard-command">
         <button class="studio-back" aria-label="返回看板" @click="exitDashboardEdit">←</button>
         <div class="studio-title"><span>医疗质量 · DASHBOARD STUDIO</span><h1>{{ editingDashboardSchema?.name || '医疗质量指标总览' }}</h1></div>
-        <el-select v-model="activeSceneCode" size="small" class="studio-scene-switcher" aria-label="场景看板" @change="switchSceneDashboard"><el-option v-for="scene in LOCAL_SCENE_DASHBOARDS" :key="scene.sceneCode" :label="`${scene.name}（本地）`" :value="scene.sceneCode" /></el-select>
+        <el-select v-model="activeSceneCode" size="small" class="studio-scene-switcher" aria-label="场景看板"><el-option v-for="scene in LOCAL_SCENE_DASHBOARDS" :key="scene.sceneCode" :label="`${scene.name}（本地）`" :value="scene.sceneCode" /></el-select>
         <span class="dashboard-save-state" :class="`is-${saveState}`" role="status">{{ saveStateLabel }}</span>
         <div class="studio-command-actions">
           <el-button v-if="isDemoRuntime()" data-testid="dashboard-load-acceptance" @click="loadAcceptanceExample">加载验收示例</el-button>
@@ -264,6 +265,10 @@
           <el-button v-for="breakpoint in ['desktop', 'tablet', 'mobile']" :key="breakpoint" size="small" :type="previewBreakpoint === breakpoint ? 'primary' : 'default'" @click="previewBreakpoint = breakpoint">{{ { desktop: '桌面', tablet: '平板', mobile: '手机' }[breakpoint] }}</el-button>
         </div>
         <DashboardFilterBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" @change="filterRuntimeValues = $event" />
+        <section v-if="activeInteractionFilters.length" class="dashboard-interaction-summary" aria-label="联动筛选">
+          <span v-for="interaction in activeInteractionFilters" :key="interaction.id">联动：{{ interaction.label }} = {{ interaction.value }}</span>
+          <el-button size="small" text @click="clearAllInteractionFilters">清除联动</el-button>
+        </section>
         <div class="dashboard-preview-frame" :class="`is-${previewBreakpoint}`">
         <DashboardCanvas v-if="studioPreview" :widgets="previewWidgets" :columns="previewColumns" :editable="false">
           <template #default="{ widget }"><WidgetRenderer :widget="widget" :primary-kpi="visibleKpis[0]" :supporting-kpis="visibleKpis.slice(1)" :warnings="dashboardWarnings" :ranking="departmentRanking" :department="department" :updated-at="dashboardQueryLabel" interactive :get-widget-kpi="getWidgetKpi" :get-title="getWidgetTitle" :get-description="getWidgetDescription" :get-icon="getWidgetIcon" :get-chart-option="getWidgetChartOption" :is-chart-empty="isChartEmpty" :get-chart-aria-label="getWidgetChartAriaLabel" :get-table-columns="getWidgetTableColumns" :get-table-rows="getWidgetTableRows" @chart-click="handleWidgetChartClick" /></template>
@@ -320,8 +325,8 @@ import {
   DASHBOARD_LAYOUT_STORAGE_KEY,
   widgetTypeOptions
 } from '@/idmp/features/dashboard/constants'
-import { LOCAL_SCENE_DASHBOARDS, findLocalScene } from '@/idmp/features/dashboard/sceneRegistry.js'
-import { designerImmersive } from '@/idmp/layout/shellState.js'
+import { LOCAL_SCENE_DASHBOARDS, findLocalScene, shouldConfirmDashboardSceneSwitch } from '@/idmp/features/dashboard/sceneRegistry.js'
+import { dashboardSceneCode, designerImmersive } from '@/idmp/layout/shellState.js'
 import { createAcceptanceExampleSchema } from '@/idmp/features/dashboard/acceptanceExample.js'
 import {
   getDashboardSchemaStorageKey,
@@ -382,7 +387,7 @@ function handleStudioCommand(command) {
 }
 const router = useRouter()
 const isDev = import.meta.env.DEV
-const activeSceneCode = ref('performance')
+const activeSceneCode = dashboardSceneCode
 const loadedSceneCode = ref('performance')
 const activeScene = computed(() => findLocalScene(activeSceneCode.value) || LOCAL_SCENE_DASHBOARDS[0])
 const activeDashboardStorageKey = computed(() => getDashboardSchemaStorageKey(activeScene.value.dashboardId))
@@ -451,6 +456,10 @@ const filterRuntimeValues = ref({})
 // Interaction filters are a viewer/preview concern. They never enter schema state
 // or persistence, unlike global filter definitions and widget interaction rules.
 const interactionFilterState = ref({})
+const activeInteractionFilters = computed(() => Object.values(interactionFilterState.value).map((interaction) => ({
+  ...interaction,
+  label: filterCatalog.value.find(field => field.id === interaction.field)?.label || interaction.field
+})))
 // Widget-local drill position is deliberately runtime-only and never participates
 // in the schema/history/persistence chain.
 const drillRuntimeState = ref({})
@@ -465,6 +474,9 @@ watch([globalFilterDefinitions, filterRuntimeValues, dependentFilterOptions], ()
   const normalized = normalizeDependentFilterValues(globalFilterDefinitions.value, filterRuntimeValues.value, dependentFilterOptions.value)
   if (JSON.stringify(normalized) !== JSON.stringify(filterRuntimeValues.value)) filterRuntimeValues.value = normalized
 }, { deep: true })
+watch(activeSceneCode, (nextSceneCode) => {
+  if (nextSceneCode !== loadedSceneCode.value) void switchSceneDashboard()
+})
 const currentDashboardWidgets = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.widgets || [])
 provide('dashboardFilterContext', { definitions: globalFilterDefinitions, values: filterRuntimeValues, interactions: interactionFilterState })
 provide('dashboardWidgetsContext', { widgets: currentDashboardWidgets, interactions: interactionFilterState, clearInteraction: clearInteractionFilter })
@@ -889,6 +901,7 @@ function deleteActiveWidget() {
     deleteSelectedDesignerWidgets()
   }
 }
+function clearAllInteractionFilters() { interactionFilterState.value = {} }
 function advanceWidgetDrill(widget, dataset, value) {
   const hierarchy = widget.config?.interaction?.drill?.hierarchy || []
   const current = drillRuntimeState.value[String(widget.id)]?.path || []
@@ -1113,6 +1126,8 @@ function finishDashboardEdit() {
   activeWidgetId.value = ''
   designerDrawerOpen.value = false
   isEditing.value = false
+  dashboardDirty.value = false
+  saveState.value = 'saved'
   designerImmersive.value = false
 }
 async function exitDashboardEdit() {
@@ -1367,7 +1382,7 @@ async function loadAcceptanceExample() {
 async function switchSceneDashboard() {
   // Scene registries are local-only. Switching reloads a distinct persisted schema
   // and clears all viewer-only state, never treating the scene value as a row filter.
-  if (dashboardDirty.value) {
+  if (shouldConfirmDashboardSceneSwitch({ isEditing: isEditing.value, dirty: dashboardDirty.value })) {
     try {
       await ElMessageBox.confirm('切换场景前，请选择如何处理这些修改。关闭弹窗将继续编辑。', '当前看板有未保存的修改', { confirmButtonText: '保存并切换', cancelButtonText: '不保存并切换', distinguishCancelAndClose: true, closeOnClickModal: false })
       if (!(await saveDashboardSchema())) { activeSceneCode.value = loadedSceneCode.value; return }
@@ -1526,6 +1541,8 @@ onBeforeUnmount(() => {
 .dashboard-page.is-presentation-mode .dashboard-schema-viewer { margin: 0; }
 .dashboard-page.is-presentation-mode .dashboard-schema-canvas { min-height: calc(100vh - 48px); }
 .dashboard-demo-source { padding:8px; border:1px solid #b8e6d6; border-radius:6px; background:#effbf6; color:#087443 !important; font-size:11px !important; }
+.dashboard-interaction-summary { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:8px 0; padding:7px 10px; border:1px solid var(--idmp-interactive-subtle,#e7f1f8); border-radius:6px; background:var(--idmp-interactive-subtle,#e7f1f8); color:var(--idmp-interactive,#1261a6); font-size:12px; }
+.dashboard-interaction-summary span { padding-right:8px; border-right:1px solid color-mix(in srgb, var(--idmp-interactive,#1261a6) 18%, transparent); }
 .dashboard-preview-breakpoints { display:flex; gap:8px; margin-bottom:12px; }
 .dashboard-preview-frame { margin:auto; transition:width .2s ease; overflow:hidden; border:1px solid #d0d5dd; border-radius:8px; background:var(--dashboard-background, #fff); }
 .dashboard-preview-frame.is-desktop { width:1440px; max-width:100%; }.dashboard-preview-frame.is-tablet { width:834px; max-width:100%; }.dashboard-preview-frame.is-mobile { width:375px; max-width:100%; }

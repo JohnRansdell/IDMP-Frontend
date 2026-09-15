@@ -7,3 +7,4 @@ export const LOCAL_SCENE_DASHBOARDS = Object.freeze([
 ])
 export function findLocalScene(sceneCode) { return LOCAL_SCENE_DASHBOARDS.find(item => item.sceneCode === sceneCode) || null }
 export function isLocalSceneDashboardId(id) { return LOCAL_SCENE_DASHBOARDS.some(item => item.dashboardId === id) }
+export function shouldConfirmDashboardSceneSwitch({ isEditing = false, dirty = false } = {}) { return isEditing === true && dirty === true }
