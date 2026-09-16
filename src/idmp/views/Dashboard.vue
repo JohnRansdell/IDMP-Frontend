@@ -7,7 +7,7 @@
         <span class="data-source-badge" :class="{ 'is-live': dashboardStatus === 'ready' }">
           {{ dashboardSourceLabel }}
         </span>
-        <span v-if="dashboardStatus === 'demo'" class="data-source-badge" role="status">演示 · 验收演示数据</span>
+        <span v-if="dashboardStatus === 'demo'" class="data-source-badge" role="status">演示数据</span>
         <span>数据期间：{{ period }}</span>
         <span>统计范围：{{ department }}</span>
       </template>
@@ -29,7 +29,6 @@
           <el-button data-testid="dashboard-configure-widget" :disabled="!activeDesignerWidget" @click="openWidgetConfig(activeWidgetId)">配置组件</el-button>
           <el-button data-testid="dashboard-delete-widget" :icon="Delete" :disabled="!activeDesignerWidget" @click="deleteActiveWidget">删除组件</el-button>
           <span class="dashboard-save-state" :class="`is-${saveState}`">{{ saveStateLabel }}</span>
-          <el-button v-if="isDemoRuntime()" data-testid="dashboard-load-acceptance" @click="loadAcceptanceExample">加载验收示例</el-button>
           <el-button v-if="isDev" text @click="showDashboardSchemaDiagnostic">查看当前 Schema</el-button>
           <el-button :icon="Close" @click="exitDashboardEdit">退出编辑</el-button>
           <el-button data-testid="dashboard-save" type="primary" :icon="Check" @click="saveDashboardLayout">保存布局</el-button>
@@ -124,7 +123,6 @@
         <el-select v-model="activeSceneCode" size="small" class="studio-scene-switcher" aria-label="场景看板"><el-option v-for="scene in LOCAL_SCENE_DASHBOARDS" :key="scene.sceneCode" :label="`${scene.name}（本地）`" :value="scene.sceneCode" /></el-select>
         <span class="dashboard-save-state" :class="`is-${saveState}`" role="status">{{ saveStateLabel }}</span>
         <div class="studio-command-actions">
-          <el-button v-if="isDemoRuntime()" data-testid="dashboard-load-acceptance" @click="loadAcceptanceExample">加载验收示例</el-button>
           <el-button data-testid="dashboard-preview" @click="studioPreview = true">预览</el-button>
           <el-button data-testid="dashboard-undo" :disabled="!canUndo" @click="undoDashboardEdit">撤销</el-button>
           <el-button data-testid="dashboard-redo" :disabled="!canRedo" @click="redoDashboardEdit">重做</el-button>
@@ -143,7 +141,7 @@
         <el-select v-model="selectedDataCode" aria-label="指标数据" :loading="dashboardLoading">
           <el-option v-for="source in indicatorDataSources" :key="source.code" :label="source.name" :value="source.code" />
         </el-select>
-        <p v-if="dashboardStatus === 'demo'" class="dashboard-demo-source" role="status">演示数据：仅用于设计器、测试和验收，不是医院真实业务数据。</p>
+        <p v-if="dashboardStatus === 'demo'" class="dashboard-demo-source" role="status">演示数据：用于本地场景预览，不是医院真实业务数据。</p>
         <h3>常用组件</h3>
         <button v-for="item in filteredLibrary" :key="item.type" :data-testid="`dashboard-library-${item.type}`" class="studio-library-item" :class="{ 'is-current': addWidgetType === item.type }" @click="addWidgetType = item.type">
           <span class="studio-library-icon" aria-hidden="true">{{ item.icon }}</span><span><strong>{{ item.name }}</strong><small>{{ item.hint }}</small></span>
@@ -327,7 +325,7 @@ import {
 } from '@/idmp/features/dashboard/constants'
 import { LOCAL_SCENE_DASHBOARDS, findLocalScene, shouldConfirmDashboardSceneSwitch } from '@/idmp/features/dashboard/sceneRegistry.js'
 import { dashboardSceneCode, designerImmersive } from '@/idmp/layout/shellState.js'
-import { createAcceptanceExampleSchema } from '@/idmp/features/dashboard/acceptanceExample.js'
+import { createQualitySafetyShowcaseSchema } from '@/idmp/features/dashboard/acceptanceExample.js'
 import {
   getDashboardSchemaStorageKey,
   migrateDashboardSchema,
@@ -1231,7 +1229,7 @@ function createEditingDashboardSchema(widgets) {
     id: activeScene.value.dashboardId,
     name: `${activeScene.value.name}看板`,
     dashboardType: activeScene.value.dashboardType,
-    category: '本地验收看板',
+    category: '本地场景看板',
     sceneCode: activeScene.value.sceneCode,
     layout: { engine: 'gridstack', columns: 24, float: false },
     appearance: dashboardSchema.value?.appearance,
@@ -1261,9 +1259,11 @@ function loadDashboardSchema() {
     dashboardSchema.value = recovery.schema
     presentationMode.value = recovery.schema.presentation.defaultMode === 'presentation' ? 'presentation' : 'standard'
   } else {
-    // Acceptance seeds are local and idempotent: production never receives one.
+    // Demo seeds are local and idempotent: production never receives demo rows.
     if (isDemoRuntime()) {
-      const seed = createEditingDashboardSchema(createDesignerWidgets(createDefaultLayout()))
+      const seed = activeScene.value.sceneCode === 'quality-safety'
+        ? createQualitySafetyShowcaseSchema({ id: activeScene.value.dashboardId, sceneCode: activeScene.value.sceneCode })
+        : createEditingDashboardSchema(createDesignerWidgets(createDefaultLayout()))
       dashboardSchema.value = persistDashboardSchema(localStorage, activeDashboardStorageKey.value, seed)
       dashboardRecovery.value = { status: DASHBOARD_RECOVERY_STATUS.VALID_CURRENT_SCHEMA, schema: dashboardSchema.value, raw: null, error: null }
     } else dashboardSchema.value = loadDesignerSchema()
@@ -1368,16 +1368,6 @@ function applyDemoDashboard() {
   // Only explicit non-production/demo runtimes may enter this branch.
   dashboardLoadMessage.value = ''
   void loadMortalityReadonlyChain()
-}
-async function loadAcceptanceExample() {
-  if (!isDemoRuntime()) return
-  if (designerWidgets.value.length) {
-    try { await ElMessageBox.confirm('加载验收示例将替换当前看板组件和验收配置。', '加载验收示例', { confirmButtonText: '加载示例', cancelButtonText: '取消', type: 'warning' }) } catch { return }
-  }
-  editingDashboardSchema.value = createAcceptanceExampleSchema({ id: activeScene.value.dashboardId, sceneCode: activeScene.value.sceneCode })
-  activeWidgetId.value = ''
-  await reconcileDesignerCanvasLayout()
-  markDashboardDirty()
 }
 async function switchSceneDashboard() {
   // Scene registries are local-only. Switching reloads a distinct persisted schema

@@ -42,7 +42,7 @@ export function createWidgetBindingDatasets(source, { result, demo = false, mont
   }
   if (!demo || !source) return []
   return [
-    dataset('acceptance', '验收演示数据 · 组织、时间、病种、场景', dashboardAcceptanceRows, acceptanceHints),
+    dataset('acceptance', '质量安全演示数据 · 组织、时间、病种、场景', dashboardAcceptanceRows, acceptanceHints),
     dataset('current', `${source.name} · 演示当前值`, [{ value: source.currentValue }], { value: { ...numberHint, unit: source.unit || '' } }),
     dataset('trend', `${source.name} · 演示月度序列`, (source.trendData || []).map((value, index) => ({ month: source.trendLabels?.[index] ?? months[index], value })), { month: monthHint, value: { ...numberHint, unit: source.unit || '' } }),
     dataset('departments', `${source.name} · 演示科室快照`, (source.departmentData || []).map(row => ({ departmentName: row.name, value: row.value })), { departmentName: dimensionHint, value: { ...numberHint, unit: source.unit || '' } }),

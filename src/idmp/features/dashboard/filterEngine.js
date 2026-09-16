@@ -75,10 +75,12 @@ export function validateWidgetQuery(query) {
 export function validateWidgetInteraction(interaction) {
   if (interaction === undefined) return []
   if (!record(interaction)) return ['config.interaction 必须是对象']
-  if (Object.keys(interaction).some(key => !['clickFilter'].includes(key))) return ['interaction 包含未知属性']
+  if (Object.keys(interaction).some(key => !['clickAction', 'clickFilter', 'drill'].includes(key))) return ['interaction 包含未知属性']
+  if (interaction.clickAction !== undefined && !['none', 'cross-filter', 'drill'].includes(interaction.clickAction)) return ['点击行为无效']
   const click = interaction.clickFilter
-  if (click === undefined) return []
-  if (!record(click) || Object.keys(click).some(key => !['enabled', 'field', 'targetWidgetIds'].includes(key)) || typeof click.enabled !== 'boolean' || typeof click.field !== 'string' || !click.field.trim() || !Array.isArray(click.targetWidgetIds) || click.targetWidgetIds.some(id => typeof id !== 'string' || !id.trim()) || new Set(click.targetWidgetIds).size !== click.targetWidgetIds.length) return ['点击筛选配置无效']
+  if (click !== undefined && (!record(click) || Object.keys(click).some(key => !['enabled', 'field', 'targetWidgetIds'].includes(key)) || typeof click.enabled !== 'boolean' || typeof click.field !== 'string' || !click.field.trim() || !Array.isArray(click.targetWidgetIds) || click.targetWidgetIds.some(id => typeof id !== 'string' || !id.trim()) || new Set(click.targetWidgetIds).size !== click.targetWidgetIds.length)) return ['点击筛选配置无效']
+  const drill = interaction.drill
+  if (drill !== undefined && (!record(drill) || Object.keys(drill).some(key => key !== 'hierarchy') || !Array.isArray(drill.hierarchy) || drill.hierarchy.length < 2 || drill.hierarchy.length > 3 || drill.hierarchy.some(field => typeof field !== 'string' || !field.trim()) || new Set(drill.hierarchy).size !== drill.hierarchy.length)) return ['下钻配置无效']
   return []
 }
 export function applyFilters(rows, conditions, fields) {

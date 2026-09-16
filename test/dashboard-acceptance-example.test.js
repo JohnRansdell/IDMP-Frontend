@@ -1,17 +1,39 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createAcceptanceExampleSchema } from '../src/idmp/features/dashboard/acceptanceExample.js'
+import { createAcceptanceExampleSchema, createQualitySafetyShowcaseSchema } from '../src/idmp/features/dashboard/acceptanceExample.js'
 import { createWidgetBindingDatasets } from '../src/idmp/features/dashboard/fieldCatalog.js'
 import { deriveDependentFilterOptions, queryWidgetDatasetWithRuntime } from '../src/idmp/features/dashboard/queryAdapter.js'
+import { DASHBOARD_RECOVERY_STATUS, persistDashboardSchema, recoverDashboardSchema } from '../src/idmp/features/dashboard/persistence.js'
 
-const schema = createAcceptanceExampleSchema({ id: 'acceptance-test', sceneCode: 'performance' })
+const schema = createAcceptanceExampleSchema({ id: 'acceptance-test', sceneCode: 'quality-safety' })
+function memoryStorage() { const values = new Map(); return { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) } }
 test('acceptance example is a valid five-widget current schema with filters and interactions', () => {
   assert.equal(schema.widgets.length, 5); assert.equal(schema.globalFilters.length, 2)
   const byTitle = Object.fromEntries(schema.widgets.map(item => [item.title, item]))
-  assert.equal(byTitle['全院指标值'].type, 'kpi')
-  assert.deepEqual(byTitle['科室指标对比'].config.interaction.clickFilter.targetWidgetIds, ['acceptance-kpi', 'acceptance-line', 'acceptance-table'])
-  assert.deepEqual(byTitle['组织层级下钻'].config.interaction.drill.hierarchy, ['department', 'medicalGroup', 'doctor'])
+  assert.equal(schema.name, '质量安全综合看板')
+  assert.equal(byTitle['质量安全综合指标'].type, 'kpi')
+  assert.deepEqual(byTitle['科室质量指标对比'].config.interaction.clickFilter.targetWidgetIds, ['acceptance-kpi', 'acceptance-line', 'acceptance-table'])
+  assert.deepEqual(byTitle['科室质量层级分析'].config.interaction.drill.hierarchy, ['department', 'medicalGroup', 'doctor'])
   assert.deepEqual(schema.globalFilters.find(item => item.id === 'disease').dependsOn, ['department'])
+})
+
+test('quality safety showcase retains the acceptance fixture structure without creating another scene', () => {
+  const showcase = createQualitySafetyShowcaseSchema({ id: 'quality-overview-quality-safety', sceneCode: 'quality-safety' })
+  assert.equal(showcase.id, 'quality-overview-quality-safety')
+  assert.equal(showcase.sceneCode, 'quality-safety')
+  assert.equal(showcase.widgets.length, 5)
+  assert.equal(showcase.globalFilters.length, 2)
+})
+
+test('a saved quality safety dashboard remains the recovered scene schema rather than being replaced by its demo seed', () => {
+  const storage = memoryStorage()
+  const key = 'dashboard:quality-overview-quality-safety'
+  const saved = createQualitySafetyShowcaseSchema({ id: 'quality-overview-quality-safety', sceneCode: 'quality-safety' })
+  saved.name = '已保存的质量安全布局'
+  persistDashboardSchema(storage, key, saved)
+  const recovered = recoverDashboardSchema(storage, key)
+  assert.equal(recovered.status, DASHBOARD_RECOVERY_STATUS.VALID_CURRENT_SCHEMA)
+  assert.equal(recovered.schema.name, '已保存的质量安全布局')
 })
 test('acceptance fields are visible and department changes effective data and dependent diseases', () => {
   const source = { code: 'demo-quality', name: '演示', currentValue: 1, trendData: [], departmentData: [], pieData: [] }
