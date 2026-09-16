@@ -1,5 +1,6 @@
 <template>
   <section v-if="capability" class="binding-inspector" aria-label="字段绑定">
+    <p v-if="!datasets.length" data-testid="binding-dataset-unavailable">当前数据源未提供可绑定的行级数据；可继续使用预设展示，但不能配置字段绑定或全局筛选兼容性。</p>
     <h3>数据源</h3>
     <select aria-label="绑定数据源" data-testid="binding-dataset" :value="datasetId" @change="changeDataset($event.target.value)"><option v-for="item in datasets" :key="item.id" :value="item.id">{{ item.label }}</option></select>
     <p v-if="!hasDataBinding(widget)">当前为预设展示。首次添加字段后启用字段绑定。</p>
@@ -45,7 +46,10 @@ const emit = defineEmits(['change', 'query-change'])
 const globalContext = inject('dashboardFilterContext', { definitions: { value: [] } })
 const search = ref(''), target = ref('measures'), pendingDataset = ref('')
 const capability = computed(() => BINDING_CAPABILITIES[bindingKind(props.widget)])
-const datasetId = computed(() => props.widget.config?.dataBinding?.dataset || pendingDataset.value || (props.widget.type === 'kpi' || props.widget.chartKind === 'gauge' ? 'current' : props.widget.chartKind === 'line' || props.widget.preset === 'trend' ? 'trend' : 'departments'))
+const datasetId = computed(() => {
+  const preferred = props.widget.type === 'kpi' || props.widget.chartKind === 'gauge' ? 'current' : props.widget.chartKind === 'line' || props.widget.preset === 'trend' ? 'trend' : 'departments'
+  return props.widget.config?.dataBinding?.dataset || pendingDataset.value || (props.datasets.some(item => item.id === preferred) ? preferred : props.datasets[0]?.id || preferred)
+})
 const rawBinding = computed(() => hasDataBinding(props.widget) ? props.widget.config.dataBinding : emptyBinding(datasetId.value))
 // A malformed saved binding remains diagnosable, but must not crash the editor.
 // This is a UI projection only; it never silently rewrites persistence.

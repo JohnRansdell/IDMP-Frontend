@@ -7,6 +7,8 @@ import { normalizeDashboardSchema, createPersistableDashboardSnapshot, updateDas
 import { persistDashboardSchema, recoverDashboardSchema } from '../src/idmp/features/dashboard/persistence.js'
 import { createDashboardChartOption } from '../src/idmp/features/dashboard/visualization.js'
 import { dashboardAcceptanceRows } from '../src/idmp/features/dashboard/acceptanceData.js'
+import { applyIndicatorAnalysisToSource, createPublishedIndicatorSources } from '../src/idmp/features/dashboard/visualization.js'
+import { resolveCompatibleGlobalFilterWidgetIds } from '../src/idmp/features/dashboard/globalFilterCompatibility.js'
 
 const rows = [
   { month: '1月', departmentName: '内科', value: 2, numerator: 4 },
@@ -27,6 +29,30 @@ test('adapter never joins monthly rows with department snapshots or borrows summ
   assert.deepEqual(sources[0].rows, [{ value: 2 }]); assert.deepEqual(sources[1].rows, result.monthlyTrend)
   assert.equal(sources[1].fields.some(field => field.id === 'deptName'), false)
   assert.equal(createWidgetBindingDatasets(null).length, 0)
+})
+test('published indicator binding uses only hydrated analysis rows and exposes only real filter fields', () => {
+  const catalogSource = createPublishedIndicatorSources(
+    [{ id: 'indicator-1', code: 'MORTALITY', name: 'Mortality', unit: '%' }],
+    [{ id: 'version-1', indicatorId: 'indicator-1' }]
+  )[0]
+  assert.deepEqual(createWidgetBindingDatasets(catalogSource, { result: { monthlyTrend: [{ month: '2026-01', value: 99 }] } }), [])
+
+  const hydrated = applyIndicatorAnalysisToSource(catalogSource, {
+    dataAvailable: true,
+    dimensionComparison: [
+      { dimensions: { out_dept_code: 'RESP', out_dept_name: 'Respiratory' }, value: 0.12 }
+    ]
+  })
+  const dataset = createWidgetBindingDatasets(hydrated).find(item => item.id === 'analysis')
+  assert.deepEqual(dataset.rows, [{ out_dept_code: 'RESP', out_dept_name: 'Respiratory', value: 12 }])
+  assert.equal(compileWidgetData('bar', {
+    dataset: 'analysis', dimensions: [{ field: 'out_dept_name' }], measures: [{ field: 'value', aggregation: 'avg' }], series: [], sort: []
+  }, dataset).status, 'ready')
+
+  const widget = { id: 'published-bar', type: 'chart', chartKind: 'bar', config: { dataBinding: { dataset: 'analysis', dimensions: [{ field: 'out_dept_name' }], measures: [{ field: 'value', aggregation: 'avg' }], series: [], sort: [] } } }
+  const getDatasets = () => [dataset]
+  assert.deepEqual(resolveCompatibleGlobalFilterWidgetIds({ id: 'department', field: 'out_dept_name', dataType: 'string' }, [widget], getDatasets), ['published-bar'])
+  assert.deepEqual(resolveCompatibleGlobalFilterWidgetIds({ id: 'disease', field: 'disease', dataType: 'string' }, [widget], getDatasets), [])
 })
 test('explicit acceptance dataset exposes clinical dimensions and independent measures', () => {
   const source = { code: 'demo-quality', name: '质量指标', currentValue: 1, trendData: [], departmentData: [], pieData: [] }

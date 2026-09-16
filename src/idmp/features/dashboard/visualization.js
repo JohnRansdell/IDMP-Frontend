@@ -151,6 +151,13 @@ export function applyIndicatorAnalysisToSource(source, payload = {}) {
       value: normalizeAnalysisNumber(item?.value, unit)
     }))
     .filter((item) => item.name && item.value !== null)
+  const bindingRows = payload?.dataAvailable
+    ? comparisons.map((item) => ({
+      ...Object.fromEntries(Object.entries(isRecord(item?.dimensions) ? item.dimensions : {})
+        .filter(([, value]) => ['string', 'number', 'boolean'].includes(typeof value))),
+      value: normalizeAnalysisNumber(item?.value, unit)
+    })).filter((row) => row.value !== null)
+    : []
 
   return {
     ...source,
@@ -163,7 +170,8 @@ export function applyIndicatorAnalysisToSource(source, payload = {}) {
     trendLabels: trend.map((item) => formatAnalysisPeriod(item, payload?.granularity)),
     trendData: trend.map((item) => normalizeAnalysisNumber(item?.value, unit)),
     departmentData,
-    pieData: departmentData.map((item) => ({ ...item }))
+    pieData: departmentData.map((item) => ({ ...item })),
+    bindingRows
   }
 }
 

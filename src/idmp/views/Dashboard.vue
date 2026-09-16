@@ -316,6 +316,7 @@ import { dashboardFilterCatalog, deriveDependentFilterOptions, normalizeDependen
 import { provide } from 'vue'
 import { compareDashboardGridMembership } from '@/idmp/features/dashboard/gridMembership.js'
 import { createWidgetBindingDatasets } from '@/idmp/features/dashboard/fieldCatalog.js'
+import { buildIndicatorAnalysisRouteQuery } from '@/idmp/features/dashboard/analysisNavigation.js'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
 import { fetchDashboardBootstrap } from '@/idmp/api/modules/analysisDashboard'
 import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
@@ -458,7 +459,7 @@ const useSchemaViewer = computed(() => Boolean(dashboardSchema.value))
 const dashboardDefinition = ref(null)
 const dashboardQueryResult = ref(null)
 // Only data dependencies invalidate this catalog; selection/hover does not aggregate rows.
-const bindingDatasets = computed(() => new Map(indicatorDataSources.value.map(source => [source.code, createWidgetBindingDatasets(source, { result: dashboardQueryResult.value, demo: dashboardStatus.value === 'demo', months: dashboardTrend.months })])))
+const bindingDatasets = computed(() => new Map(availableIndicatorSources.value.map(source => [source.code, createWidgetBindingDatasets(source, { result: dashboardQueryResult.value, demo: dashboardStatus.value === 'demo', months: dashboardTrend.months })])))
 function getBindingDatasets(widget) {
   const source = getWidgetSource(widget) || (!widget.sourceCode ? indicatorDataSources.value[0] : null)
   return bindingDatasets.value.get(source?.code) || []
@@ -1596,15 +1597,11 @@ const goAlerts = () => {
 const goIndicatorAnalysis = (indicator) => {
   if (isEditing.value) return
   const source = typeof indicator === 'object' && indicator ? indicator : getDashboardIndicatorSource(indicator)
-  const indicatorCode = String(source?.indicatorCode || source?.code || indicator || '')
-  if (!indicatorCode || source?.analysisEnabled === false) return
+  const query = buildIndicatorAnalysisRouteQuery(source || { code: indicator })
+  if (!query || source?.analysisEnabled === false) return
   router.push({
     path: '/analysis',
-    query: {
-      indicator: indicatorCode,
-      ...(source?.indicatorName || source?.title || source?.name ? { indicatorName: source.indicatorName || source.title || source.name } : {}),
-      ...(source?.indicatorVersionId || source?.analysisIndicatorVersionId ? { indicatorVersionId: source.indicatorVersionId || source.analysisIndicatorVersionId } : {})
-    }
+    query
   })
 }
 

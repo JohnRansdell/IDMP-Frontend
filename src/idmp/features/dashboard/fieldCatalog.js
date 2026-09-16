@@ -30,6 +30,12 @@ const acceptanceHints = {
 const records = value => Array.isArray(value) ? value.filter(row => row && typeof row === 'object' && !Array.isArray(row)) : []
 
 export function createWidgetBindingDatasets(source, { result, demo = false, months = [] } = {}) {
+  if (source?.origin === 'indicator-catalog') {
+    const rows = records(source.bindingRows)
+    return rows.length
+      ? [dataset('analysis', `${source.name || 'Published indicator'} analysis dimensions`, rows, { value: { ...numberHint, unit: source.unit || '' } })]
+      : []
+  }
   if (!demo && result) {
     // Do not reuse createDashboardSources' common trend for each summary metric.
     const summaryKey = source?.code?.replace(/^dashboard-summary-/, '')
