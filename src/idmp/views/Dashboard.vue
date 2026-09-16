@@ -1371,7 +1371,7 @@ async function loadDashboard() {
     indicatorDataSources.value = createDashboardSources(queryResult)
     selectedDataCode.value = indicatorDataSources.value[0]?.code || ''
     dashboardStatus.value = indicatorDataSources.value.length ? 'ready' : 'empty'
-  } catch {
+  } catch (error) {
     if (controller.signal.aborted) return
     dashboardDefinition.value = null
     dashboardQueryResult.value = null
@@ -1379,9 +1379,17 @@ async function loadDashboard() {
     else {
       indicatorDataSources.value = []
       dashboardStatus.value = 'error'
-      dashboardLoadMessage.value = '正式看板数据暂不可用；生产环境不会自动使用演示数据。'
+      dashboardLoadMessage.value = formatDashboardLoadError(error)
     }
   }
+}
+
+function formatDashboardLoadError(error) {
+  const path = String(error?.path || `/analysis/dashboards/${DASHBOARD_CODE}`)
+  const status = Number(error?.status)
+  const statusLabel = Number.isFinite(status) && status > 0 ? `（HTTP ${status}）` : ''
+  const message = String(error?.message || '').trim()
+  return `正式看板请求失败：${path}${statusLabel}${message ? `。${message}` : '。生产环境不会自动使用演示数据。'}`
 }
 
 function buildDashboardQuery() {
