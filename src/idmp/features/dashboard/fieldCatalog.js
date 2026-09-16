@@ -38,8 +38,10 @@ export function createWidgetBindingDatasets(source, { result, demo = false, mont
   }
   if (!demo && result) {
     // Do not reuse createDashboardSources' common trend for each summary metric.
-    const summaryKey = source?.code?.replace(/^dashboard-summary-/, '')
-    const current = summaryKey && Object.hasOwn(result.summaryCards || {}, summaryKey) ? [{ value: result.summaryCards[summaryKey] }] : []
+    const summaryKey = source?.dashboardSummaryKey || source?.code?.replace(/^dashboard-summary-/, '')
+    const card = result.summaryCards?.[summaryKey]
+    const rawValue = card?.value ?? card
+    const current = summaryKey && Object.hasOwn(result.summaryCards || {}, summaryKey) ? [{ value: rawValue }] : []
     return [
       dataset('current', `${source?.name || '指标'} · 当前汇总`, current, { value: { ...numberHint, label: source?.name || '指标值' } }),
       dataset('trend', '看板月度结果 · 不等同于选中汇总指标', records(result.monthlyTrend), { [records(result.monthlyTrend).some(row => Object.hasOwn(row, 'month')) ? 'month' : 'period']: monthHint, value: numberHint }),

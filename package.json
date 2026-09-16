@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "packageManager": "pnpm@11.17.0",
-  "description": "IDMP frontend demo",
+  "description": "IDMP 指标管理平台高保真前端演示",
   "license": "MIT",
   "type": "module",
   "scripts": {

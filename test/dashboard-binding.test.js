@@ -30,6 +30,24 @@ test('adapter never joins monthly rows with department snapshots or borrows summ
   assert.equal(sources[1].fields.some(field => field.id === 'deptName'), false)
   assert.equal(createWidgetBindingDatasets(null).length, 0)
 })
+test('production summary source uses its explicit card key while preserving its indicator identity', () => {
+  const source = {
+    code: 'DEATH_COUNT', indicatorId: '1001', indicatorCode: 'DEATH_COUNT',
+    dashboardSummaryKey: 'deathNum', name: '死亡人数'
+  }
+  const datasets = createWidgetBindingDatasets(source, {
+    result: { summaryCards: { deathNum: { value: 12, indicatorId: '1001', indicatorCode: 'DEATH_COUNT' } } }
+  })
+  const current = datasets.find(item => item.id === 'current')
+  assert.deepEqual(current.rows, [{ value: 12 }])
+  assert.equal(current.fields.find(field => field.id === 'value').dataType, 'number')
+  assert.equal(current.fields.find(field => field.id === 'value').semanticType, 'measure')
+  const compiled = compileWidgetData('kpi', {
+    dataset: 'current', dimensions: [], measures: [{ field: 'value', aggregation: 'sum' }], series: [], sort: []
+  }, current)
+  assert.equal(compiled.status, 'ready')
+  assert.equal(compiled.value, 12)
+})
 test('published indicator binding uses only hydrated analysis rows and exposes only real filter fields', () => {
   const catalogSource = createPublishedIndicatorSources(
     [{ id: 'indicator-1', code: 'MORTALITY', name: 'Mortality', unit: '%' }],

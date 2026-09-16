@@ -1420,7 +1420,9 @@ function createDashboardSources(result = {}) {
       const indicatorCode = String(card?.indicatorCode || '')
       const indicatorVersionId = String(card?.indicatorVersionId || '')
       return {
+      // `code` identifies the real indicator; the backend card location is independent.
       code: indicatorCode || indicatorId || `dashboard-summary-${key}`,
+      dashboardSummaryKey: key,
       indicatorId,
       indicatorCode,
       indicatorName: String(card?.indicatorName || card?.name || fallbackName),
