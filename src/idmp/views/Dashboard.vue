@@ -208,10 +208,10 @@
         </div>
       </main>
       <aside class="studio-inspector" aria-label="组件属性">
-        <div class="studio-inspector-heading"><h2>组件属性</h2><button data-testid="dashboard-settings" @click="activeWidgetId = ''">看板设置</button><button data-testid="dashboard-configure-widget" :disabled="!activeDesignerWidget" @click="openWidgetConfig(activeWidgetId)">配置</button></div>
+        <div class="studio-inspector-heading"><h2>组件属性</h2><button data-testid="dashboard-settings" @click="showDashboardSettings">看板设置</button><button data-testid="dashboard-configure-widget" :disabled="!activeDesignerWidget" @click="openWidgetConfig(activeWidgetId)">配置</button></div>
         <template v-if="!selectedWidgetIds.length">
           <section class="dashboard-settings-inspector"><h3>看板设置</h3><label>名称<input :value="editingDashboardSchema?.name" @change="updateDashboardMetadata('name', $event.target.value)" /></label><label>描述<textarea :value="editingDashboardSchema?.description" @change="updateDashboardMetadata('description', $event.target.value)" /></label><label>类型<select :value="editingDashboardSchema?.dashboardType" @change="updateDashboardMetadata('dashboardType', $event.target.value)"><option value="hospital-overview">全院概览</option><option value="topic">专题看板</option><option value="scene">场景看板</option><option value="department">科室看板</option><option value="custom">自定义看板</option></select><small>定义业务用途与入口类型，不直接改变组件数据。</small></label><label>分类<input :value="editingDashboardSchema?.category" @change="updateDashboardMetadata('category', $event.target.value)" /><small>用于看板分类和检索，不直接影响图表数据。</small></label><label>范围<select :value="editingDashboardSchema?.scope" @change="updateDashboardMetadata('scope', $event.target.value)"><option value="hospital">全院</option><option value="department">科室</option><option value="personal">个人</option></select><small>定义适用业务范围；实际权限由服务端控制。</small></label><label>背景<select :value="editingDashboardSchema?.appearance?.background?.value || '#ffffff'" @change="updateDashboardBackground($event.target.value)"><option value="#ffffff">临床白</option><option value="linear-gradient(135deg,#f7fbfa,#eef5fb)">临床浅渐变</option><option value="linear-gradient(135deg,#f9f6fc,#eef7f6)">柔和渐变</option></select><small>保存为受控颜色或 Clinical Light 渐变预设。</small></label><h3>响应式布局</h3><p>只影响查看模式的排列，不改变设计器桌面布局。</p><label>平板<select :value="editingDashboardSchema?.responsivePolicy?.tablet" @change="updateResponsivePolicy($event.target.value)"><option value="auto-two-column">自动两列</option><option value="single-column">单列</option></select></label><label>手机<input value="单列" disabled /></label></section>
-          <GlobalFilterDesigner :definitions="globalFilterDefinitions" :catalog="filterCatalog" @change="updateGlobalFilters" />
+          <section class="dashboard-settings-inspector dashboard-global-filter-settings" data-testid="dashboard-global-filter-settings"><h3>全局筛选（{{ globalFilterDefinitions.length }}）</h3><GlobalFilterDesigner :definitions="globalFilterDefinitions" :catalog="filterCatalog" :widgets="designerWidgets" :compatible-widget-ids-by-filter="compatibleWidgetIdsByGlobalFilter" @change="updateGlobalFilters" @delete="deleteGlobalFilter" @scope-change="updateGlobalFilterScope" /></section>
         </template>
         <section v-else-if="selectedWidgetIds.length > 1" class="dashboard-multi-inspector" aria-label="多组件布局操作">
           <h3>已选择 {{ selectedWidgetIds.length }} 个组件</h3><p>布局操作以 24 列逻辑网格计算。</p>
@@ -328,6 +328,8 @@ import { LOCAL_SCENE_DASHBOARDS, findLocalScene, shouldConfirmDashboardSceneSwit
 import { dashboardSceneCode, designerImmersive } from '@/idmp/layout/shellState.js'
 import { createQualitySafetyDemoSchema } from '@/idmp/features/dashboard/acceptanceExample.js'
 import { canRestoreQualitySafetyDemo as canRestoreQualitySafetyDemoEntry, createQualitySafetyDemoRestoreResult } from '@/idmp/features/dashboard/qualitySafetyDemoRestore.js'
+import { applyGlobalFilterScope, removeGlobalFilter } from '@/idmp/features/dashboard/globalFilterDesignerModel.js'
+import { resolveCompatibleGlobalFilterWidgetIds } from '@/idmp/features/dashboard/globalFilterCompatibility.js'
 import {
   getDashboardSchemaStorageKey,
   migrateDashboardSchema,
@@ -453,6 +455,7 @@ function getBindingDatasets(widget) {
 }
 provide('dashboardBindingDatasets', getBindingDatasets)
 const globalFilterDefinitions = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.globalFilters || [])
+const compatibleWidgetIdsByGlobalFilter = computed(() => Object.fromEntries(globalFilterDefinitions.value.map(definition => [definition.id, resolveCompatibleGlobalFilterWidgetIds(definition, designerWidgets.value, getBindingDatasets)])))
 const filterRuntimeValues = ref({})
 // Interaction filters are a viewer/preview concern. They never enter schema state
 // or persistence, unlike global filter definitions and widget interaction rules.
@@ -484,8 +487,33 @@ provide('dashboardWidgetsContext', { widgets: currentDashboardWidgets, interacti
 provide('dashboardDrillContext', { states: drillRuntimeState, advance: advanceWidgetDrill, back: returnWidgetDrillTo, reset: resetWidgetDrill })
 function updateGlobalFilters(definitions) {
   if (!editingDashboardSchema.value) return
-  editingDashboardSchema.value = { ...editingDashboardSchema.value, globalFilters: definitions }
-  markDashboardDirty()
+  void runDashboardHistoryTransaction(() => {
+    editingDashboardSchema.value = { ...editingDashboardSchema.value, globalFilters: definitions }
+    markDashboardDirty()
+  })
+}
+function showDashboardSettings() {
+  const cleared = clearWidgetSelection()
+  selectedWidgetIds.value = cleared.ids
+  primarySelectedWidgetId.value = cleared.primaryId
+  activeWidgetId.value = ''
+}
+function updateGlobalFilterScope({ filterId, targetWidgetIds }) {
+  if (!editingDashboardSchema.value || !filterId) return
+  void runDashboardHistoryTransaction(() => {
+    const definition = editingDashboardSchema.value.globalFilters.find(item => item.id === filterId)
+    const compatibleWidgetIds = resolveCompatibleGlobalFilterWidgetIds(definition, editingDashboardSchema.value.widgets, getBindingDatasets)
+    editingDashboardSchema.value = { ...editingDashboardSchema.value, widgets: applyGlobalFilterScope(editingDashboardSchema.value.widgets, filterId, targetWidgetIds, compatibleWidgetIds) }
+    markDashboardDirty()
+  })
+}
+function deleteGlobalFilter(filterId) {
+  if (!editingDashboardSchema.value || !filterId) return
+  void runDashboardHistoryTransaction(() => {
+    const next = removeGlobalFilter(editingDashboardSchema.value.globalFilters, editingDashboardSchema.value.widgets, filterId)
+    editingDashboardSchema.value = { ...editingDashboardSchema.value, globalFilters: next.definitions, widgets: next.widgets }
+    markDashboardDirty()
+  })
 }
 function updateDashboardMetadata(field, value) {
   if (!editingDashboardSchema.value) return
