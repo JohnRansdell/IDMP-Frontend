@@ -17,6 +17,7 @@ export function createAcceptanceExampleSchema({ id = 'quality-overview', sceneCo
   ] })
 }
 
-// Kept as a small public alias so production code names the business scene while
-// existing fixture-oriented tests can retain their stable acceptance identifiers.
-export function createQualitySafetyShowcaseSchema(options = {}) { return createAcceptanceExampleSchema(options) }
+// Business-facing aliases retain the stable acceptance fixture identifiers used
+// by automated tests without exposing those identifiers in product UI.
+export function createQualitySafetyDemoSchema(options = {}) { return createAcceptanceExampleSchema(options) }
+export function createQualitySafetyShowcaseSchema(options = {}) { return createQualitySafetyDemoSchema(options) }

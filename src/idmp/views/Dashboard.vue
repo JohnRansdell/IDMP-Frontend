@@ -123,6 +123,7 @@
         <el-select v-model="activeSceneCode" size="small" class="studio-scene-switcher" aria-label="场景看板"><el-option v-for="scene in LOCAL_SCENE_DASHBOARDS" :key="scene.sceneCode" :label="`${scene.name}（本地）`" :value="scene.sceneCode" /></el-select>
         <span class="dashboard-save-state" :class="`is-${saveState}`" role="status">{{ saveStateLabel }}</span>
         <div class="studio-command-actions">
+          <el-button v-if="canRestoreQualitySafetyDemo" data-testid="dashboard-restore-quality-safety-demo" @click="restoreQualitySafetyDemoLayout">恢复演示布局</el-button>
           <el-button data-testid="dashboard-preview" @click="studioPreview = true">预览</el-button>
           <el-button data-testid="dashboard-undo" :disabled="!canUndo" @click="undoDashboardEdit">撤销</el-button>
           <el-button data-testid="dashboard-redo" :disabled="!canRedo" @click="redoDashboardEdit">重做</el-button>
@@ -325,7 +326,8 @@ import {
 } from '@/idmp/features/dashboard/constants'
 import { LOCAL_SCENE_DASHBOARDS, findLocalScene, shouldConfirmDashboardSceneSwitch } from '@/idmp/features/dashboard/sceneRegistry.js'
 import { dashboardSceneCode, designerImmersive } from '@/idmp/layout/shellState.js'
-import { createQualitySafetyShowcaseSchema } from '@/idmp/features/dashboard/acceptanceExample.js'
+import { createQualitySafetyDemoSchema } from '@/idmp/features/dashboard/acceptanceExample.js'
+import { canRestoreQualitySafetyDemo as canRestoreQualitySafetyDemoEntry, createQualitySafetyDemoRestoreResult } from '@/idmp/features/dashboard/qualitySafetyDemoRestore.js'
 import {
   getDashboardSchemaStorageKey,
   migrateDashboardSchema,
@@ -389,6 +391,7 @@ const activeSceneCode = dashboardSceneCode
 const loadedSceneCode = ref('performance')
 const activeScene = computed(() => findLocalScene(activeSceneCode.value) || LOCAL_SCENE_DASHBOARDS[0])
 const activeDashboardStorageKey = computed(() => getDashboardSchemaStorageKey(activeScene.value.dashboardId))
+const canRestoreQualitySafetyDemo = computed(() => canRestoreQualitySafetyDemoEntry({ isEditing: isEditing.value, isDemoRuntime: isDemoRuntime(), sceneCode: activeScene.value.sceneCode }))
 const periodOptions = [
   { label: '全部期间', value: '' },
   { label: '2025 年 12 月', value: '2025-12' }
@@ -1262,7 +1265,7 @@ function loadDashboardSchema() {
     // Demo seeds are local and idempotent: production never receives demo rows.
     if (isDemoRuntime()) {
       const seed = activeScene.value.sceneCode === 'quality-safety'
-        ? createQualitySafetyShowcaseSchema({ id: activeScene.value.dashboardId, sceneCode: activeScene.value.sceneCode })
+        ? createQualitySafetyDemoSchema({ id: activeScene.value.dashboardId, sceneCode: activeScene.value.sceneCode })
         : createEditingDashboardSchema(createDesignerWidgets(createDefaultLayout()))
       dashboardSchema.value = persistDashboardSchema(localStorage, activeDashboardStorageKey.value, seed)
       dashboardRecovery.value = { status: DASHBOARD_RECOVERY_STATUS.VALID_CURRENT_SCHEMA, schema: dashboardSchema.value, raw: null, error: null }
@@ -1398,6 +1401,27 @@ async function switchSceneDashboard() {
 }
 function isDemoRuntime() {
   return import.meta.env.DEV || import.meta.env.MODE === 'test' || (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('dashboardDemo') === '1')
+}
+async function restoreQualitySafetyDemoLayout() {
+  if (!canRestoreQualitySafetyDemo.value || !editingDashboardSchema.value) return
+  try {
+    await ElMessageBox.confirm('恢复演示布局将替换当前质量安全看板的组件、布局和筛选配置。是否继续？', '恢复演示布局', {
+      confirmButtonText: '恢复演示布局', cancelButtonText: '取消', type: 'warning', closeOnClickModal: false
+    })
+  } catch { return }
+  await runDashboardHistoryTransaction(async () => {
+    const restored = createQualitySafetyDemoRestoreResult(createQualitySafetyDemoSchema({ id: activeScene.value.dashboardId, sceneCode: activeScene.value.sceneCode }))
+    editingDashboardSchema.value = restored.schema
+    const cleared = clearWidgetSelection()
+    selectedWidgetIds.value = cleared.ids
+    primarySelectedWidgetId.value = cleared.primaryId
+    activeWidgetId.value = ''
+    interactionFilterState.value = {}
+    drillRuntimeState.value = {}
+    await reconcileDesignerCanvasLayout()
+    if (restored.dirty) markDashboardDirty()
+  })
+  ElMessage.success('已恢复质量安全演示布局，请保存后生效')
 }
 
 async function loadMortalityReadonlyChain() {
