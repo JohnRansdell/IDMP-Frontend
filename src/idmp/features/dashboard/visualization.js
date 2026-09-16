@@ -171,6 +171,12 @@ export function getVisualizationTitle(sourceName, visualType) {
   if (visualType === 'bar') return `${sourceName}科室对比`
   if (visualType === 'line') return `${sourceName}趋势`
   if (visualType === 'pie') return `${sourceName}构成`
+  if (visualType === 'table') return `${sourceName}数据明细`
+  if (visualType === 'gauge') return `${sourceName}仪表盘`
+  if (visualType === 'radar') return `${sourceName}雷达分析`
+  if (visualType === 'funnel') return `${sourceName}漏斗分析`
+  if (visualType === 'scatter') return `${sourceName}散点分析`
+  if (visualType === 'heatmap') return `${sourceName}热力分析`
   return sourceName
 }
 
@@ -213,8 +219,19 @@ export function createDashboardChartOption(widget, presetOptions = {}) {
   }
   if (widget.chartKind === 'bar') return createVirtualBarOption(widget, presetOptions)
   if (widget.chartKind === 'pie') return createVirtualPieOption(widget, presetOptions)
+  if (widget.chartKind === 'gauge') return createVirtualGaugeOption(widget, presetOptions)
+  if (widget.chartKind === 'radar') return createVirtualRadarOption(widget, presetOptions)
+  if (widget.chartKind === 'funnel') return createVirtualFunnelOption(widget, presetOptions)
+  if (widget.chartKind === 'scatter') return createVirtualScatterOption(widget, presetOptions)
+  if (widget.chartKind === 'heatmap') return createVirtualHeatmapOption(widget, presetOptions)
   return createVirtualLineOption(widget, presetOptions)
 }
+
+function createVirtualGaugeOption(widget, options) { const source = getWidgetSource(widget, options); return { series: [{ type: 'gauge', data: [{ value: Number(source.currentValue) || 0, name: source.name || '指标值' }] }] } }
+function createVirtualRadarOption(widget, options) { const source = getWidgetSource(widget, options), rows = source.departmentData || []; return { radar: { indicator: rows.map(row => ({ name: row.name, max: Math.max(...rows.map(item => Number(item.value) || 0), 1) })) }, series: [{ type: 'radar', data: [{ value: rows.map(row => Number(row.value) || 0), name: source.name || '指标值' }] }] } }
+function createVirtualFunnelOption(widget, options) { const source = getWidgetSource(widget, options); return { series: [{ type: 'funnel', data: (source.pieData || source.departmentData || []).map(copyChartDataItem) }] } }
+function createVirtualScatterOption(widget, options) { const source = getWidgetSource(widget, options); return { xAxis: { type: 'value' }, yAxis: { type: 'value' }, series: [{ type: 'scatter', data: (source.trendData || []).map((value, index) => [index + 1, Number(value) || 0]) }] } }
+function createVirtualHeatmapOption(widget, options) { const source = getWidgetSource(widget, options), rows = source.departmentData || []; return { xAxis: { type: 'category', data: rows.map(row => row.name) }, yAxis: { type: 'category', data: ['指标值'] }, visualMap: { min: 0, max: Math.max(...rows.map(row => Number(row.value) || 0), 1), calculable: true }, series: [{ type: 'heatmap', data: rows.map((row, index) => [index, 0, Number(row.value) || 0]) }] } }
 
 function createVirtualBarOption(widget, presetOptions) {
   const source = getWidgetSource(widget, presetOptions)

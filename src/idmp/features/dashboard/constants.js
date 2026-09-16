@@ -25,5 +25,11 @@ export const widgetTypeOptions = [
   { label: '指标卡', value: 'kpi' },
   { label: '柱状图', value: 'bar' },
   { label: '折线图', value: 'line' },
-  { label: '饼图', value: 'pie' }
+  { label: '饼图', value: 'pie' },
+  { label: '数据表格', value: 'table' },
+  { label: '仪表盘', value: 'gauge' },
+  { label: '雷达图', value: 'radar' },
+  { label: '漏斗图', value: 'funnel' },
+  { label: '散点图', value: 'scatter' },
+  { label: '热力图', value: 'heatmap' }
 ]

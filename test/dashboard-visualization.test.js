@@ -1,5 +1,20 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { createDashboardChartTheme, clinicalTrendTone } from '../src/idmp/features/dashboard/chartTheme.js'
+
+test('Clinical Light preserves chart data and drill payloads without mutating business options', () => {
+  const formatter = () => 'clinical value'
+  const data = [{ value: 7.42, drillTarget: { resultId: 'opaque-id' } }]
+  const source = { tooltip: { formatter }, series: [{ id: 'measure', type: 'pie', data }] }
+  const themed = createDashboardChartTheme(source)
+  assert.equal(themed.series[0].data, data)
+  assert.equal(themed.series[0].id, 'measure')
+  assert.equal(themed.tooltip.formatter, formatter)
+  assert.equal(source.series[0].radius, undefined)
+  assert.deepEqual(themed.series[0].radius, ['48%', '70%'])
+  assert.equal(clinicalTrendTone('success'), 'success')
+  assert.equal(clinicalTrendTone('unknown'), 'neutral')
+})
 import {
   changeWidgetVisualization,
   getWidgetVisualizationType,
@@ -124,12 +139,12 @@ test('widget visualization conversion follows the supported matrix', () => {
   const cases = [
     {
       widget: { id: 'primary', type: 'primary', kpiIndex: 0, x: 20, y: 30, w: 500, h: 400 },
-      types: ['kpi', 'bar', 'line', 'pie'],
+      types: ['kpi', 'bar', 'line', 'pie', 'table', 'gauge', 'radar', 'funnel', 'scatter', 'heatmap'],
       current: 'kpi'
     },
     {
       widget: { id: 'user', type: 'kpi', sourceCode: 'I-1', x: 20, y: 30, w: 500, h: 400 },
-      types: ['kpi', 'bar', 'line', 'pie'],
+      types: ['kpi', 'bar', 'line', 'pie', 'table', 'gauge', 'radar', 'funnel', 'scatter', 'heatmap'],
       current: 'kpi'
     },
     {
@@ -172,7 +187,7 @@ test('widget visualization conversion follows the supported matrix', () => {
     assert.equal(getWidgetVisualizationType(fixed), '')
     assert.strictEqual(changeWidgetVisualization(fixed, 'bar'), fixed)
   })
-  assert.strictEqual(changeWidgetVisualization(cases[0].widget, 'scatter'), cases[0].widget)
+  assert.strictEqual(changeWidgetVisualization(cases[0].widget, 'map'), cases[0].widget)
 })
 
 test('visualization conversion expands cards but never shrinks them', () => {
