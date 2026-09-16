@@ -246,6 +246,14 @@ const idmpPermissionMetadata = {
 routes[0].children.forEach((route) => {
   if (idmpPermissionMetadata[route.name]) route.meta = { ...route.meta, permissions: idmpPermissionMetadata[route.name] }
 })
+if (import.meta.env.DEV) {
+  routes[0].children.push({
+    path: 'dashboard-grid-poc',
+    name: 'DashboardGridPoc',
+    component: () => import('@/idmp/views/DashboardGridPoc.vue'),
+    meta: { title: 'GridStack Dashboard PoC', breadcrumb: ['首页', 'GridStack Dashboard PoC'] }
+  })
+}
 // 当前部署不启用统一登录入口；兼容旧书签并直接返回工作台。
 routes.splice(1, 0, { path: '/login', redirect: '/dashboard' })
 

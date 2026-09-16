@@ -10,17 +10,22 @@
     "dev": "vite",
     "build:prod": "vite build",
     "preview": "vite preview",
-    "test": "node --test test/meta-adapter.test.js test/cascade.test.js test/drill-adapter.test.js test/indicator-adapter.test.js test/scenario-adapter.test.js test/mapping-adapter.test.js test/warning-adapter.test.js test/status.test.js test/result-availability.test.js test/trial-period-recommendation.test.js test/dashboard-visualization.test.js test/dashboard-pie-drill.test.js test/sql-import-adapter.test.js"
+    "test:e2e:dashboard": "node test/dashboard-golden-path.e2e.js",
+    "test": "node --test test/meta-adapter.test.js test/cascade.test.js test/drill-adapter.test.js test/dashboard-drill-down.test.js test/dashboard-acceptance-example.test.js test/dashboard-quality-safety-demo-restore.test.js test/dashboard-global-filter-designer.test.js test/dashboard-scene-runtime.test.js test/dashboard-widget-renderer.component.test.js test/dashboard-theme-and-sizing.test.js test/indicator-adapter.test.js test/scenario-adapter.test.js test/mapping-adapter.test.js test/warning-adapter.test.js test/status.test.js test/result-availability.test.js test/trial-period-recommendation.test.js test/dashboard-analysis-navigation.test.js test/dashboard-visualization.test.js test/dashboard-pie-drill.test.js test/sql-import-adapter.test.js test/dashboard-schema.test.js test/dashboard-grid-layout.test.js test/dashboard-persistence.test.js test/dashboard-binding.test.js test/dashboard-filter.test.js test/dashboard-interaction.test.js test/dashboard-layout-operations.test.js test/dashboard-layout-templates.test.js test/dashboard-responsive-layout.test.js test/dashboard-precise-layout.test.js test/dashboard-widget-boundary.component.test.js"
   },
   "dependencies": {
     "@element-plus/icons-vue": "2.3.2",
     "echarts": "5.6.0",
     "element-plus": "2.13.1",
+    "gridstack": "13.2.0",
     "vue": "3.5.26",
     "vue-router": "4.6.4"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "5.2.4",
+    "@vue/compiler-sfc": "3.5.26",
+    "@vue/test-utils": "2.4.6",
+    "jsdom": "26.1.0",
     "sass-embedded": "1.97.2",
     "vite": "6.4.1"
   }
