@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { findLocalScene, shouldConfirmDashboardSceneSwitch } from '../src/idmp/features/dashboard/sceneRegistry.js'
-import { dashboardDemoPolicy } from '../src/idmp/features/dashboard/demoPolicy.js'
+import { dashboardDemoPolicy, shouldUseDashboardDemoFallback } from '../src/idmp/features/dashboard/demoPolicy.js'
 
 test('viewer scene changes never receive a dirty-dialog guard', () => {
   assert.equal(shouldConfirmDashboardSceneSwitch({ isEditing: false, dirty: false }), false)
@@ -30,6 +30,13 @@ test('turning preview off restores production requests and no demo fallback', ()
   assert.equal(dashboardDemoPolicy({ development: true }).useDemoOnFailure, true)
   assert.equal(dashboardDemoPolicy({ test: true }).useDemoOnFailure, true)
   assert.equal(dashboardDemoPolicy({ explicit: true }).useDemoOnFailure, true)
+})
+
+test('a missing published dashboard uses the clearly-labeled demo, while other production failures remain errors', () => {
+  const production = dashboardDemoPolicy({ previewMode: '0' })
+  assert.equal(shouldUseDashboardDemoFallback({ status: 404, path: '/analysis/dashboards/quality-overview' }, production), true)
+  assert.equal(shouldUseDashboardDemoFallback({ status: 500, path: '/analysis/dashboards/quality-overview' }, production), false)
+  assert.equal(shouldUseDashboardDemoFallback({ status: 0 }, production), false)
 })
 
 test('dashboard source catalog is initialized before the eager filter watcher reads binding datasets', () => {

@@ -9,3 +9,10 @@ export function dashboardDemoPolicy({ previewMode = '', development = false, tes
     persistDefaultSchema: !preview
   }
 }
+
+// A missing published Dashboard is an expected deployment state while the
+// backend capability is being rolled out. Keep real transport/server failures
+// visible instead of turning every production error into demo data.
+export function shouldUseDashboardDemoFallback(error, policy = {}) {
+  return Boolean(policy.useDemoOnFailure) || Number(error?.status) === 404
+}

@@ -331,7 +331,7 @@ import {
   widgetTypeOptions
 } from '@/idmp/features/dashboard/constants'
 import { LOCAL_SCENE_DASHBOARDS, findLocalScene, shouldConfirmDashboardSceneSwitch } from '@/idmp/features/dashboard/sceneRegistry.js'
-import { dashboardDemoPolicy } from '@/idmp/features/dashboard/demoPolicy.js'
+import { dashboardDemoPolicy, shouldUseDashboardDemoFallback } from '@/idmp/features/dashboard/demoPolicy.js'
 import { createDashboardEditingSnapshot } from '@/idmp/features/dashboard/editSession.js'
 import { buildPublishedIndicatorAnalysisQuery, schemaPublishedIndicatorSourceCodes } from '@/idmp/features/dashboard/publishedIndicatorRuntime.js'
 import { dashboardSceneCode, designerImmersive } from '@/idmp/layout/shellState.js'
@@ -1403,7 +1403,7 @@ async function loadDashboard() {
     if (controller.signal.aborted) return
     dashboardDefinition.value = null
     dashboardQueryResult.value = null
-    if (isDemoRuntime()) applyDemoDashboard()
+    if (shouldUseDashboardDemoFallback(error, getDashboardDemoPolicy())) applyDemoDashboard()
     else {
       indicatorDataSources.value = []
       dashboardStatus.value = 'error'
