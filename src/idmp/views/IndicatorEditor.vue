@@ -323,7 +323,7 @@
               <template v-else-if="drillCapability.status === 'ready'">
                 <p class="drill-capability-coverage">本次预检覆盖因子版本：{{ drillCapability.factorVersionIds.join('、') || '-' }}</p>
                 <el-table :data="drillCapability.dimensions" size="small" border class="drill-capability-table">
-                  <el-table-column label="启用" width="76"><template #default="{ row }"><el-checkbox :model-value="isDrillPathSelected(row.pathCode)" :disabled="!row.supported" :aria-label="`启用${drillPathLabel(row.pathCode)}下钻路径`" @change="checked => toggleDrillPath(row, checked)" /></template></el-table-column>
+                  <el-table-column label="启用" width="76"><template #default="{ row }"><el-checkbox :model-value="isDrillPathSelected(row.pathCode)" :disabled="!row.supported || (isStaticIndicator && row.pathCode === 'TIME')" :aria-label="`启用${drillPathLabel(row.pathCode)}下钻路径`" @change="checked => toggleDrillPath(row, checked)" /></template></el-table-column>
                   <el-table-column label="路径" min-width="145"><template #default="{ row }">{{ drillPathLabel(row.pathCode) }}</template></el-table-column>
                   <el-table-column label="能力" min-width="120"><template #default="{ row }"><el-tag :type="row.supported ? 'success' : 'info'" size="small">{{ row.supported ? `最深到${drillLevelLabel(row.maxLevel)}` : '不支持' }}</el-tag></template></el-table-column>
                   <el-table-column label="本版本最大层级" min-width="210"><template #default="{ row }"><el-select :model-value="selectedDrillPathLevel(row.pathCode)" :disabled="!row.supported || !isDrillPathSelected(row.pathCode)" placeholder="选择层级" @update:model-value="level => setDrillPathLevel(row.pathCode, level)"><el-option v-for="level in capabilityLevels(row)" :key="level.code" :label="drillLevelOptionLabel(level)" :value="level.code" /></el-select></template></el-table-column>
@@ -332,7 +332,7 @@
                 <el-alert v-if="!selectedDrillPaths.length" title="请至少启用一条支持的下钻路径。" type="warning" :closable="false" show-icon class="drill-capability-selection-hint" />
               </template>
             </section>
-            <div class="indicator-trial-period">
+            <div v-if="!isStaticIndicator" class="indicator-trial-period">
               <div>
                 <strong>本次试算周期</strong>
                 <small>仅作为本次运行参数，按半开区间 [开始时间，结束时间) 同时传给分子和分母因子。</small>
@@ -368,7 +368,7 @@
               <el-button :disabled="!indicatorWorkflow.formulaSaved" :loading="workflowLoading.compile" @click="compileIndicatorFormulaOnly">
                 公式校验
               </el-button>
-              <el-button type="primary" :disabled="!indicatorWorkflow.compiled || !hasIndicatorTrialPeriod" :loading="workflowLoading.trial || workflowLoading.result" @click="trialIndicatorAndLoadResult">
+              <el-button type="primary" :disabled="!indicatorWorkflow.compiled || (!isStaticIndicator && !hasIndicatorTrialPeriod)" :loading="workflowLoading.trial || workflowLoading.result" @click="trialIndicatorAndLoadResult">
                 {{ indicatorTrialButtonLabel }}
               </el-button>
               <el-button
@@ -379,7 +379,7 @@
               >
                 发布指标版本
               </el-button>
-              <el-button v-if="indicatorWorkflow.published" type="primary" plain :loading="workflowLoading.formal" @click="generateFormalResultAndOpenAnalysis">
+              <el-button v-if="indicatorWorkflow.published && !isStaticIndicator" type="primary" plain :loading="workflowLoading.formal" @click="generateFormalResultAndOpenAnalysis">
                 生成正式结果并去指标分析
               </el-button>
             </div>
@@ -782,6 +782,7 @@ const indicatorWorkflow = reactive({
   publishIdempotencyKey: '',
   formalBatchId: '',
   formalIdempotencyKey: '',
+  initializationBatchId: '',
   trialAvailability: null
 })
 const indicatorTrialPeriod = ref(initialIndicatorTrialPeriod())
@@ -833,8 +834,13 @@ const selectedFormulaFactors = computed(() => [
   ...numeratorFactors.value,
   ...denominatorFactors.value
 ])
+const indicatorCalculationMode = computed(() => {
+  const modes = new Set(selectedFormulaFactors.value.map((factor) => String(factor?.calculationMode || factor?.dsl?.calculationMode || (hasPeriodPredicate(factor?.dsl) ? 'TEMPORAL' : 'STATIC')).toUpperCase()))
+  return modes.size === 1 ? [...modes][0] : ''
+})
+const isStaticIndicator = computed(() => indicatorCalculationMode.value === 'STATIC')
 const missingPeriodFactors = computed(() =>
-  selectedFormulaFactors.value.filter((factor) => factor?.dsl && !hasPeriodPredicate(factor.dsl))
+  isStaticIndicator.value ? [] : selectedFormulaFactors.value.filter((factor) => factor?.dsl && !hasPeriodPredicate(factor.dsl))
 )
 const selectedIndicatorTrialTarget = computed(() =>
   indicatorTrialTargets.value.find((target) => target.key === selectedIndicatorTrialTargetKey.value) || null
@@ -1303,6 +1309,10 @@ async function ensureFreshDrillCapability(formula) {
   return runDrillCapabilityPreflight(formula)
 }
 
+watch(isStaticIndicator, (isStatic) => {
+  if (isStatic) selectedDrillPaths.value = selectedDrillPaths.value.filter((path) => path.pathCode !== 'TIME')
+})
+
 watch(
   () => [
     ...numeratorFactors.value.map((factor) => String(factor.versionId || factor.code || '')),
@@ -1752,7 +1762,7 @@ async function createIndicatorDraftVersion() {
 
     workflowLoading.version = true
     const copyFromVersionId = indicatorWorkflow.versionId
-    const versionPayload = buildIndicatorVersionPayload({ copyFromVersionId, drillPaths: selectedDrillPaths.value })
+    const versionPayload = buildIndicatorVersionPayload({ copyFromVersionId, drillPaths: selectedDrillPaths.value, calculationMode: indicatorCalculationMode.value })
     recordWorkflowRequest({
       step: '创建指标版本',
       endpoint: `/api/v1/indicators/${indicatorWorkflow.indicatorId}/versions`,
@@ -1851,6 +1861,7 @@ async function saveIndicatorFormulaOnly() {
 
 function validateFormulaAndDrillSelection(formula) {
   if (!formulaValid.value) return `请按${activeMode.value.factorRequirement}选择因子`
+  if (!indicatorCalculationMode.value) return '同一指标不能混用静态因子和时序因子'
   if (['简单比率型', '比值型'].includes(formulaMode.value) && numeratorFactors.value.length !== 1) return `${formulaMode.value}必须选择一个分子因子`
   if (['简单比率型', '比值型'].includes(formulaMode.value) && denominatorFactors.value.length !== 1) return `${formulaMode.value}必须选择一个分母因子`
   if (drillCapability.status !== 'ready' || drillCapability.formulaSignature !== formulaSignature(formula)) {
@@ -1862,7 +1873,8 @@ function validateFormulaAndDrillSelection(formula) {
 async function createFirstIndicatorVersionWithFormula(formula) {
   const versionPayload = buildIndicatorVersionPayload({
     drillPaths: selectedDrillPaths.value,
-    formula
+    formula,
+    calculationMode: indicatorCalculationMode.value
   })
   recordWorkflowRequest({
     step: '创建首个指标版本并保存公式',
@@ -1941,7 +1953,7 @@ async function trialIndicatorOnly() {
     return
   }
 
-  if (!hasIndicatorTrialPeriod.value) {
+  if (!isStaticIndicator.value && !hasIndicatorTrialPeriod.value) {
     ElMessage.warning('请选择完整的指标试算周期')
     return
   }
@@ -1949,7 +1961,7 @@ async function trialIndicatorOnly() {
   workflowLoading.trial = true
   resetIndicatorTrialResultCollection()
   try {
-    const trialPayload = {
+    const trialPayload = isStaticIndicator.value ? {} : {
       periodStart: indicatorTrialPeriod.value[0],
       periodEnd: indicatorTrialPeriod.value[1]
     }
@@ -2030,9 +2042,10 @@ function indicatorTrialResultValue(row) {
 function openIndicatorAnalysis() {
   const query = {
     indicator: indicatorWorkflow.indicatorId,
-    indicatorVersionId: indicatorWorkflow.publishedVersionId || indicatorWorkflow.versionId
+    indicatorVersionId: indicatorWorkflow.publishedVersionId || indicatorWorkflow.versionId,
+    ...(isStaticIndicator.value ? { granularity: 'STATIC' } : {})
   }
-  if (hasIndicatorTrialPeriod.value) {
+  if (!isStaticIndicator.value && hasIndicatorTrialPeriod.value) {
     query.periodStart = indicatorTrialPeriod.value[0]
     query.periodEnd = indicatorTrialPeriod.value[1]
     rememberAnalysisPeriod(query.indicator, query.indicatorVersionId, indicatorTrialPeriod.value)
@@ -2188,10 +2201,11 @@ async function publishIndicatorVersionOnly() {
         result = await publishIndicatorVersion(indicatorWorkflow.versionId, indicatorWorkflow.publishIdempotencyKey)
       }
     }
+    indicatorWorkflow.initializationBatchId = isStaticIndicator.value ? resolveBatchId(result?.initializationBatchId || result) : ''
     indicatorWorkflow.published = true
     indicatorWorkflow.publishedVersionId = resolveIndicatorVersionId(result) || indicatorWorkflow.versionId
-    recordWorkflowSuccess(`指标版本已发布：${indicatorWorkflow.publishedVersionId}`)
-    ElMessage.success('指标版本已发布')
+    recordWorkflowSuccess(isStaticIndicator.value && indicatorWorkflow.initializationBatchId ? `静态指标版本已发布，正在初始化批次 ${indicatorWorkflow.initializationBatchId}` : `指标版本已发布：${indicatorWorkflow.publishedVersionId}`)
+    ElMessage.success(isStaticIndicator.value ? '静态指标已发布，正在执行一次全量初始化' : '指标版本已发布')
   } catch (error) {
     recordWorkflowError(error)
     ElMessage.error(error?.message || '指标版本发布失败')
@@ -2457,6 +2471,7 @@ function resolveTaskId(payload) {
 }
 
 function resolveBatchId(payload) {
+  if (typeof payload === 'string' || typeof payload === 'number' || typeof payload === 'bigint') return toOpaqueId(payload)
   return toOpaqueId(
     payload?.batchId ??
     payload?.calcBatchId ??

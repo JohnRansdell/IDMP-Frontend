@@ -1,7 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  buildSqlIndicatorImportPayload,
+  buildSqlImportCreatePayload,
+  buildSqlImportMetadataPayload,
+  buildSqlImportTrialPayload,
+  canFinalizeSqlImport,
+  canSubmitSqlImportMetadata,
+  canTrialSqlImport,
   isSqlImportTerminal,
   mergeSqlFactorMetadata,
   normalizeSqlImportPreview,
@@ -28,7 +33,7 @@ test('SQL import preview keeps opaque ids and normalizes generated drafts', () =
   assert.equal(preview.diagnostics[0].severity, 'ERROR')
 })
 
-test('SQL import payload contains selected mappings and editable metadata', () => {
+test('SQL import separates creation, metadata and trial payloads', () => {
   const factors = mergeSqlFactorMetadata(
     [{ key: 'total', code: 'CUSTOM_TOTAL', name: '自定义总数', description: '说明', missingRowPolicy: 'KEEP_NULL' }],
     [
@@ -37,19 +42,23 @@ test('SQL import payload contains selected mappings and editable metadata', () =
     ]
   )
   factors[0].missingRowPolicy = 'KEEP_NULL'
-  const payload = buildSqlIndicatorImportPayload({
+  const createPayload = buildSqlImportCreatePayload({
     sql: ' SELECT 1 ',
-    tableMappings: { patient_visit: '102027642460316628', ignored: '' },
-    indicator: { code: 'RATE_48H', name: '转科比例', category: '医疗质量', description: '' },
+    tableMappings: { patient_visit: '102027642460316628', ignored: '' }
+  })
+  const metadataPayload = buildSqlImportMetadataPayload({
+    scope: 'FACTORS_AND_INDICATOR', category: '医疗质量',
+    indicator: { code: 'RATE_48H', name: '转科比例', description: '', timeDrillEnabled: false, formula: { root: {} } },
     factors
   })
 
-  assert.deepEqual(payload.tableMappings, { patient_visit: '102027642460316628' })
-  assert.equal(payload.sql, 'SELECT 1')
-  assert.equal(payload.indicatorDescription, null)
-  assert.equal(payload.factors[0].code, 'CUSTOM_TOTAL')
-  assert.equal(payload.factors[0].missingRowPolicy, 'KEEP_NULL')
-  assert.equal(payload.factors[1].code, 'RATE')
+  assert.deepEqual(createPayload.tableMappings, { patient_visit: '102027642460316628' })
+  assert.equal(createPayload.sql, 'SELECT 1')
+  assert.equal(metadataPayload.indicatorCode, 'RATE_48H')
+  assert.equal(metadataPayload.factors[0].code, 'CUSTOM_TOTAL')
+  assert.equal(metadataPayload.factors[0].missingRowPolicy, 'KEEP_NULL')
+  assert.deepEqual(buildSqlImportTrialPayload([{ calculationMode: 'STATIC' }]), {})
+  assert.deepEqual(buildSqlImportTrialPayload([{ calculationMode: 'TEMPORAL' }], ['2026-01-01', '2026-02-01']), { periodStart: '2026-01-01', periodEnd: '2026-02-01' })
 })
 
 test('SQL import task preserves opaque IDs and only polls running states', () => {
@@ -62,6 +71,9 @@ test('SQL import task preserves opaque IDs and only polls running states', () =>
   assert.equal(task.resources[0].resourceId, '102027642460316628')
   assert.equal(shouldPollSqlImport(task), true)
   assert.equal(isSqlImportTerminal(task), false)
+  assert.equal(canSubmitSqlImportMetadata({ status: 'AWAITING_METADATA' }), true)
+  assert.equal(canTrialSqlImport({ status: 'READY_FOR_TRIAL' }), true)
+  assert.equal(canFinalizeSqlImport({ status: 'TRIAL_SUCCEEDED' }), true)
 
   const finished = normalizeSqlImportTask({
     importId: task.importId,

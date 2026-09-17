@@ -48,7 +48,7 @@
       :closable="false"
       :title="analysisErrorMessage"
     />
-    <section v-if="selectedBackendIndicator" class="surface-card report-context" aria-label="当前报告期">
+    <section v-if="selectedBackendIndicator && backendAnalysisGranularity !== 'STATIC'" class="surface-card report-context" aria-label="当前报告期">
       <div class="report-context__title">
         <span>源数据可用范围：<strong>{{ availablePeriodText || '暂未获取' }}</strong></span>
         <small>选择时间范围后，更新本期指标值、排名和下钻结果</small>
@@ -336,7 +336,7 @@ const route = useRoute()
 const router = useRouter()
 const activeTab = ref('trend')
 const period = ref('月度')
-const reportGranularity = ref('MONTHLY')
+const reportGranularity = ref(String(route.query.granularity || 'MONTHLY').toUpperCase())
 const backendAnalysis = ref(null)
 const trendBackendAnalysis = ref(null)
 const backendIndicatorVersion = ref(null)
@@ -1335,7 +1335,9 @@ async function refreshMortalityAnalysis() {
     const mortalityIndicator = isMortalityIndicator(backendIndicator)
 
     const reportParams = buildAnalysisParams(reportPeriodRange.value)
-    const trendParams = buildAnalysisParams(analysisPeriodRange.value, currentIndicatorVersionId.value, trendAnalysisGranularity.value)
+    const trendParams = backendAnalysisGranularity.value === 'STATIC'
+      ? buildAnalysisParams([], currentIndicatorVersionId.value, 'STATIC')
+      : buildAnalysisParams(analysisPeriodRange.value, currentIndicatorVersionId.value, trendAnalysisGranularity.value)
     const [analysisData, trendResult, chain] = await Promise.allSettled([
       granularity ? fetchIndicatorAnalysis(backendIndicatorId, reportParams) : Promise.resolve(null),
       fetchIndicatorAnalysis(backendIndicatorId, trendParams),

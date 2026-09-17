@@ -43,7 +43,7 @@ export function serializeFilterNode(node, fields = []) {
 }
 
 
-export function buildFactorDsl({ domainCode, semanticTableCode, sourceAlias = 'base', joins = [], aggregation, fieldCode, groupBy = [], filters, fields = [], missingRowPolicy = null }) {
+export function buildFactorDsl({ domainCode, semanticTableCode, sourceAlias = 'base', joins = [], aggregation, fieldCode, groupBy = [], filters, fields = [], missingRowPolicy = null, calculationMode = 'TEMPORAL' }) {
   const fieldReference = serializeFieldReference(fieldCode)
   const aggregationNode = aggregation === 'COUNT'
     ? { function: 'COUNT', ...(fieldCode ? (typeof fieldReference === 'string' ? { fieldCode: fieldReference } : { fieldRef: fieldReference }) : {}) }
@@ -51,6 +51,7 @@ export function buildFactorDsl({ domainCode, semanticTableCode, sourceAlias = 'b
   return {
     schemaVersion: '1.0',
     dslType: 'FACTOR',
+    calculationMode: String(calculationMode).toUpperCase(),
     primaryDomain: { domainCode, ...(semanticTableCode ? { semanticTableCode } : {}), ...(joins.length ? { sourceAlias } : {}) },
     ...(joins.length ? { joins: joins.map(({ relationId, fromAlias, sourceAlias: joinedAlias }) => ({ relationId: String(relationId), fromAlias, sourceAlias: joinedAlias })) } : {}),
     filters: serializeFilterNode(filters, fields),

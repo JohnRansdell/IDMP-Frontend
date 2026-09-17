@@ -100,6 +100,11 @@ test('factor dsl serializes governed joins and qualified field references', () =
   assert.deepEqual(dsl.filters.children[0].fieldRef, { sourceAlias: 'dept', fieldCode: 'DEPT_TYPE' })
 })
 
+test('factor dsl carries the explicit static calculation mode', () => {
+  const dsl = buildFactorDsl({ domainCode: 'D', semanticTableCode: 'T', aggregation: 'COUNT', filters: { nodeType: 'TRUE' }, calculationMode: 'STATIC' })
+  assert.equal(dsl.calculationMode, 'STATIC')
+})
+
 test('advanced server-side predicate expressions are never silently flattened on save', () => {
   const filters = {
     nodeType: 'PREDICATE',

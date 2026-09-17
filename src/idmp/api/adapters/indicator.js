@@ -237,7 +237,7 @@ export function normalizeDrillConfig(payload, fallback = defaultDrillConfig) {
   }
 }
 
-export function buildIndicatorVersionPayload({ copyFromVersionId = '', drillConfig, drillPaths, formula } = {}) {
+export function buildIndicatorVersionPayload({ copyFromVersionId = '', drillConfig, drillPaths, formula, calculationMode } = {}) {
   const normalizedPaths = Array.isArray(drillPaths)
     ? normalizeDrillPaths({ drillPaths })
     : normalizeDrillPaths({ drillConfig }, [{ ...defaultDrillConfig, ...drillConfig }])
@@ -251,6 +251,7 @@ export function buildIndicatorVersionPayload({ copyFromVersionId = '', drillConf
   return {
     ...(copyFromVersionId ? { copyFromVersionId: String(copyFromVersionId) } : {}),
     ...(formula ? { formula } : {}),
+    ...(calculationMode ? { calculationMode: String(calculationMode).toUpperCase() } : {}),
     drillPaths: normalizedPaths.map(({ pathCode, maxLevel }) => ({ pathCode, maxLevel }))
   }
 }
