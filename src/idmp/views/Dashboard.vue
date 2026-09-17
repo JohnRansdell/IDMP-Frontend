@@ -71,6 +71,7 @@
     </StatePanel>
 
     <template v-else-if="dashboardStatus === 'ready' || dashboardStatus === 'demo'">
+    <el-alert v-if="dashboardStatus === 'demo'" type="warning" :closable="false" title="当前展示演示数据，尚未接入医院正式看板数据。" />
     <section v-if="!isEditing && useSchemaViewer" class="dashboard-schema-viewer">
       <DashboardFilterBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" @change="filterRuntimeValues = $event" />
       <section v-if="activeInteractionFilters.length" class="dashboard-interaction-summary" aria-label="联动筛选">
@@ -144,7 +145,7 @@
         <el-select v-model="selectedDataCode" aria-label="指标数据" :loading="dashboardLoading || indicatorCatalogLoading">
           <el-option v-for="source in availableIndicatorSources" :key="source.code" :label="source.name" :value="source.code" />
         </el-select>
-        <p v-if="dashboardStatus === 'demo'" class="dashboard-demo-source" role="status">演示数据：用于本地场景预览，不是医院真实业务数据。</p>
+        <p v-if="dashboardStatus === 'demo'" class="dashboard-demo-source" role="status">演示数据：用于功能预览，不是医院真实业务数据。</p>
         <h3>常用组件</h3>
         <button v-for="item in filteredLibrary" :key="item.type" :data-testid="`dashboard-library-${item.type}`" class="studio-library-item" :class="{ 'is-current': addWidgetType === item.type }" @click="addWidgetType = item.type">
           <span class="studio-library-icon" aria-hidden="true">{{ item.icon }}</span><span><strong>{{ item.name }}</strong><small>{{ item.hint }}</small></span>
@@ -331,6 +332,9 @@ import {
   widgetTypeOptions
 } from '@/idmp/features/dashboard/constants'
 import { LOCAL_SCENE_DASHBOARDS, findLocalScene, shouldConfirmDashboardSceneSwitch } from '@/idmp/features/dashboard/sceneRegistry.js'
+import { dashboardDemoPolicy } from '@/idmp/features/dashboard/demoPolicy.js'
+import { createDashboardEditingSnapshot } from '@/idmp/features/dashboard/editSession.js'
+import { buildPublishedIndicatorAnalysisQuery, schemaPublishedIndicatorSourceCodes } from '@/idmp/features/dashboard/publishedIndicatorRuntime.js'
 import { dashboardSceneCode, designerImmersive } from '@/idmp/layout/shellState.js'
 import { createQualitySafetyDemoSchema } from '@/idmp/features/dashboard/acceptanceExample.js'
 import { canRestoreQualitySafetyDemo as canRestoreQualitySafetyDemoEntry, createQualitySafetyDemoRestoreResult } from '@/idmp/features/dashboard/qualitySafetyDemoRestore.js'
@@ -428,6 +432,11 @@ const selectedDataCode = ref('')
 const addWidgetType = ref('kpi')
 const indicatorDataSources = ref(cloneDashboardSources(mockIndicatorDataSources))
 const catalogIndicatorSources = ref([])
+// The eager filter watcher evaluates bindingDatasets during setup, so this source catalog must exist first.
+const availableIndicatorSources = computed(() => {
+  const sources = [...indicatorDataSources.value, ...catalogIndicatorSources.value]
+  return [...new Map(sources.map(source => [source.code, source])).values()]
+})
 const indicatorCatalogLoading = ref(false)
 const indicatorHydrationRequests = new Map()
 const dashboardStatus = ref('loading')
@@ -596,10 +605,6 @@ const departmentRanking = computed(() => {
 const selectedDataSource = computed(() =>
   availableIndicatorSources.value.find((source) => source.code === selectedDataCode.value)
 )
-const availableIndicatorSources = computed(() => {
-  const sources = [...indicatorDataSources.value, ...catalogIndicatorSources.value]
-  return [...new Map(sources.map(source => [source.code, source])).values()]
-})
 
 const dashboardSourceLabel = computed(() => ({
   loading: '正在加载正式数据',
@@ -729,7 +734,8 @@ function getWidgetKpi(widget) {
 }
 
 function getDashboardIndicatorSource(code) {
-  return availableIndicatorSources.value.find((source) => source.code === code)
+  return availableIndicatorSources.value.find((source) => source.code === code) ||
+    availableIndicatorSources.value.find((source) => source.indicatorCode === code || source.analysisIndicatorId === code)
 }
 
 function getWidgetSource(widget) {
@@ -1149,7 +1155,7 @@ function openWidgetConfig(widgetId) {
 
 function startDashboardEdit() {
   try {
-    editingDashboardSchema.value = loadDesignerSchema()
+    editingDashboardSchema.value = createDashboardEditingSnapshot(dashboardSchema.value, loadDesignerSchema)
   } catch {
     editingDashboardSchema.value = createEditingDashboardSchema(createDesignerWidgets(createDefaultLayout()))
   }
@@ -1321,12 +1327,14 @@ function loadDashboardSchema() {
     dashboardSchema.value = recovery.schema
     presentationMode.value = recovery.schema.presentation.defaultMode === 'presentation' ? 'presentation' : 'standard'
   } else {
-    // Demo seeds are local and idempotent: production never receives demo rows.
+    // Preview seeds are session-only; disabling preview never leaves a persisted demo schema behind.
     if (isDemoRuntime()) {
       const seed = activeScene.value.sceneCode === 'quality-safety'
         ? createQualitySafetyDemoSchema({ id: activeScene.value.dashboardId, sceneCode: activeScene.value.sceneCode })
         : createEditingDashboardSchema(createDesignerWidgets(createDefaultLayout()))
-      dashboardSchema.value = persistDashboardSchema(localStorage, activeDashboardStorageKey.value, seed)
+      dashboardSchema.value = getDashboardDemoPolicy().persistDefaultSchema
+        ? persistDashboardSchema(localStorage, activeDashboardStorageKey.value, seed)
+        : seed
       dashboardRecovery.value = { status: DASHBOARD_RECOVERY_STATUS.VALID_CURRENT_SCHEMA, schema: dashboardSchema.value, raw: null, error: null }
     } else dashboardSchema.value = loadDesignerSchema()
   }
@@ -1354,6 +1362,12 @@ function syncFullscreenState() {
 
 async function loadDashboard() {
   dashboardAbortController?.abort()
+  if (getDashboardDemoPolicy().skipDashboardBootstrap) {
+    dashboardDefinition.value = null
+    dashboardQueryResult.value = null
+    applyDemoDashboard()
+    return
+  }
   const controller = new AbortController()
   dashboardAbortController = controller
   dashboardStatus.value = 'loading'
@@ -1461,6 +1475,7 @@ async function loadPublishedIndicatorCatalog() {
     ])
     catalogIndicatorSources.value = createPublishedIndicatorSources(normalizeList(indicators), normalizeList(publishedVersions))
     if (!selectedDataSource.value) selectedDataCode.value = availableIndicatorSources.value[0]?.code || ''
+    await refreshSchemaPublishedIndicatorSources()
   } catch {
     // Catalog availability must not replace the current dashboard data path.
   } finally {
@@ -1469,27 +1484,36 @@ async function loadPublishedIndicatorCatalog() {
 }
 
 async function hydrateIndicatorSource(source) {
-  if (source?.origin !== 'indicator-catalog' || source.analysisLoaded) return source
-  if (indicatorHydrationRequests.has(source.code)) return indicatorHydrationRequests.get(source.code)
-  const request = fetchIndicatorAnalysis(source.analysisIndicatorId, {
-    indicatorVersionId: source.analysisIndicatorVersionId,
-    granularity: 'MONTHLY'
-  }).then((payload) => {
+  if (source?.origin !== 'indicator-catalog' || !source.analysisIndicatorId) return source
+  const query = buildPublishedIndicatorAnalysisQuery(source, period.value)
+  const queryKey = JSON.stringify(query)
+  if (source.analysisLoaded && source.analysisQueryKey === queryKey) return source
+  const requestKey = `${source.code}:${queryKey}`
+  if (indicatorHydrationRequests.has(requestKey)) return indicatorHydrationRequests.get(requestKey)
+  const request = fetchIndicatorAnalysis(source.analysisIndicatorId, query).then((payload) => {
     const hydrated = { ...applyIndicatorAnalysisToSource(source, payload), analysisLoaded: true }
+    hydrated.analysisQueryKey = queryKey
     catalogIndicatorSources.value = catalogIndicatorSources.value.map(item => item.code === hydrated.code ? hydrated : item)
     return hydrated
-  }).finally(() => indicatorHydrationRequests.delete(source.code))
-  indicatorHydrationRequests.set(source.code, request)
+  }).finally(() => indicatorHydrationRequests.delete(requestKey))
+  indicatorHydrationRequests.set(requestKey, request)
   return request
+}
+
+async function refreshSchemaPublishedIndicatorSources() {
+  const schema = isEditing.value ? editingDashboardSchema.value : dashboardSchema.value
+  const sources = schemaPublishedIndicatorSourceCodes(schema)
+    .map(code => catalogIndicatorSources.value.find(source => source.code === code))
+    .filter(Boolean)
+  await Promise.allSettled(sources.map(source => hydrateIndicatorSource(source)))
 }
 
 function applyDemoDashboard() {
   indicatorDataSources.value = cloneDashboardSources(mockIndicatorDataSources)
   selectedDataCode.value = indicatorDataSources.value[0]?.code || ''
   dashboardStatus.value = 'demo'
-  // Only explicit non-production/demo runtimes may enter this branch.
   dashboardLoadMessage.value = ''
-  void loadMortalityReadonlyChain()
+  if (!getDashboardDemoPolicy().skipDashboardBootstrap) void loadMortalityReadonlyChain()
 }
 async function switchSceneDashboard() {
   // Scene registries are local-only. Switching reloads a distinct persisted schema
@@ -1519,7 +1543,15 @@ async function switchSceneDashboard() {
   }
 }
 function isDemoRuntime() {
-  return import.meta.env.DEV || import.meta.env.MODE === 'test' || (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('dashboardDemo') === '1')
+  return getDashboardDemoPolicy().useDemoOnFailure
+}
+function getDashboardDemoPolicy() {
+  return dashboardDemoPolicy({
+    previewMode: import.meta.env.VITE_DASHBOARD_PREVIEW_MODE,
+    development: import.meta.env.DEV,
+    test: import.meta.env.MODE === 'test',
+    explicit: typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('dashboardDemo') === '1'
+  })
 }
 async function restoreQualitySafetyDemoLayout() {
   if (!canRestoreQualitySafetyDemo.value || !editingDashboardSchema.value) return
@@ -1609,6 +1641,7 @@ const goIndicatorAnalysis = (indicator) => {
 
 watch([period, department], () => {
   loadDashboard()
+  if (getDashboardDemoPolicy().loadPublishedIndicators) void refreshSchemaPublishedIndicatorSources()
 })
 
 function onDesignerGlobalKeydown(event) {
@@ -1625,7 +1658,7 @@ onMounted(() => {
   refreshLocalLayoutTemplates()
   loadDashboardSchema()
   loadDashboard()
-  void loadPublishedIndicatorCatalog()
+  if (getDashboardDemoPolicy().loadPublishedIndicators) void loadPublishedIndicatorCatalog()
   document.addEventListener('fullscreenchange', syncFullscreenState)
   window.addEventListener('beforeunload', onDashboardBeforeUnload)
   window.addEventListener('keydown', onDesignerGlobalKeydown)

@@ -53,6 +53,8 @@ test('published indicators become selectable dashboard sources with stable bindi
     status: 'info',
     origin: 'indicator-catalog',
     originLabel: '已发布指标',
+    indicatorId: '1001',
+    indicatorCode: 'MORTALITY',
     analysisIndicatorId: '1001',
     analysisIndicatorVersionId: '2001',
     analysisEnabled: true,
