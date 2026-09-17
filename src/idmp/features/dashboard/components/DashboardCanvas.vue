@@ -299,6 +299,9 @@ onBeforeUnmount(() => {
 .dashboard-canvas.is-editable {
   background-color: #f8fafc;
 }
+.dashboard-canvas.dashboard-surface {
+  background: linear-gradient(var(--dashboard-background-wash, rgba(255,255,255,0)), var(--dashboard-background-wash, rgba(255,255,255,0))), var(--dashboard-background, #f8fafc);
+}
 .dashboard-grid-guide {
   position: absolute;
   z-index: 0;

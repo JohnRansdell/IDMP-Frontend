@@ -12,8 +12,16 @@ test('acceptance example is a valid five-widget current schema with filters and 
   const byTitle = Object.fromEntries(schema.widgets.map(item => [item.title, item]))
   assert.equal(schema.name, '质量安全综合看板')
   assert.equal(byTitle['质量安全综合指标'].type, 'kpi')
-  assert.deepEqual(byTitle['科室质量指标对比'].config.interaction.clickFilter.targetWidgetIds, ['acceptance-kpi', 'acceptance-line', 'acceptance-table'])
-  assert.deepEqual(byTitle['科室质量层级分析'].config.interaction.drill.hierarchy, ['department', 'medicalGroup', 'doctor'])
+  assert.deepEqual(byTitle['科室质量指标对比 · 点击联动'].config.interaction.clickFilter.targetWidgetIds, ['acceptance-kpi', 'acceptance-line', 'acceptance-table'])
+  assert.deepEqual(byTitle['科室层级分析 · 点击下钻'].config.interaction.drill.hierarchy, ['department', 'medicalGroup', 'doctor'])
+  assert.deepEqual(schema.widgets.map(item => item.layout), [
+    { x: 0, y: 0, w: 4, h: 6 },
+    { x: 4, y: 0, w: 10, h: 6 },
+    { x: 14, y: 0, w: 10, h: 6 },
+    { x: 0, y: 6, w: 13, h: 7 },
+    { x: 13, y: 6, w: 11, h: 7 }
+  ])
+  assert.equal(schema.appearance.background.intensity, 100)
   assert.deepEqual(schema.globalFilters.find(item => item.id === 'disease').dependsOn, ['department'])
 })
 

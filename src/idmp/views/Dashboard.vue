@@ -1,5 +1,5 @@
 ﻿<template>
-  <div ref="presentationRef" class="idmp-page dashboard-page dashboard-v2" :class="{ 'is-presentation-mode': presentationMode === 'presentation' }" :style="{ '--dashboard-background': dashboardBackground }">
+  <div ref="presentationRef" class="idmp-page dashboard-page dashboard-v2" :class="{ 'is-presentation-mode': presentationMode === 'presentation' }" :style="dashboardSurfaceStyle">
     <PageHeader v-if="!isEditing"
       :title="dashboardSchema?.name || '医疗质量指标总览'"
     >
@@ -72,7 +72,7 @@
 
     <template v-else-if="dashboardStatus === 'ready' || dashboardStatus === 'demo'">
     <el-alert v-if="dashboardStatus === 'demo'" type="warning" :closable="false" title="当前展示演示数据，尚未接入医院正式看板数据。" />
-    <section v-if="!isEditing && useSchemaViewer" class="dashboard-schema-viewer">
+    <section v-if="!isEditing && useSchemaViewer" class="dashboard-schema-viewer dashboard-surface" :style="dashboardSurfaceStyle">
       <DashboardFilterBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" @change="filterRuntimeValues = $event" />
       <section v-if="activeInteractionFilters.length" class="dashboard-interaction-summary" aria-label="联动筛选">
         <span v-for="interaction in activeInteractionFilters" :key="interaction.id">联动：{{ interaction.label }} = {{ interaction.value }}</span>
@@ -81,7 +81,8 @@
       <DashboardCanvas
         :key="`viewer-${dashboardSchema?.id}-${viewerBreakpoint}`"
         ref="viewerCanvasRef"
-        class="dashboard-schema-canvas"
+        class="dashboard-schema-canvas dashboard-surface"
+        :style="dashboardSurfaceStyle"
         :widgets="viewerWidgets"
         :editable="false"
         :columns="viewerColumns"
@@ -165,7 +166,7 @@
       </aside>
       <main class="studio-workspace">
         <div class="studio-canvas-heading"><span>画布</span><span>24 列 · Clinical Light</span></div>
-        <div class="studio-canvas-scroll">
+        <div class="studio-canvas-scroll dashboard-surface" :style="dashboardSurfaceStyle">
         <DashboardFilterBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" @change="filterRuntimeValues = $event" />
         <div v-if="!designerWidgets.length" class="studio-empty">
           <span aria-hidden="true">▦</span><h2>创建你的第一个看板组件</h2><p>从左侧选择指标与组件，开始构建分析看板。</p>
@@ -174,7 +175,8 @@
       <DashboardCanvas
         :key="`designer-${editingDashboardSchema?.id}`"
         ref="designerCanvasRef"
-        class="dashboard-designer-canvas"
+        class="dashboard-designer-canvas dashboard-surface"
+        :style="dashboardSurfaceStyle"
         :widgets="designerWidgets"
         :editable="true"
         :columns="24"
@@ -215,7 +217,7 @@
       <aside class="studio-inspector" aria-label="组件属性">
         <div class="studio-inspector-heading"><h2>组件属性</h2><button data-testid="dashboard-settings" @click="showDashboardSettings">看板设置</button><button data-testid="dashboard-configure-widget" :disabled="!activeDesignerWidget" @click="openWidgetConfig(activeWidgetId)">配置</button></div>
         <template v-if="!selectedWidgetIds.length">
-          <section class="dashboard-settings-inspector"><h3>看板设置</h3><label>名称<input :value="editingDashboardSchema?.name" @change="updateDashboardMetadata('name', $event.target.value)" /></label><label>描述<textarea :value="editingDashboardSchema?.description" @change="updateDashboardMetadata('description', $event.target.value)" /></label><label>类型<select :value="editingDashboardSchema?.dashboardType" @change="updateDashboardMetadata('dashboardType', $event.target.value)"><option value="hospital-overview">全院概览</option><option value="topic">专题看板</option><option value="scene">场景看板</option><option value="department">科室看板</option><option value="custom">自定义看板</option></select><small>定义业务用途与入口类型，不直接改变组件数据。</small></label><label>分类<input :value="editingDashboardSchema?.category" @change="updateDashboardMetadata('category', $event.target.value)" /><small>用于看板分类和检索，不直接影响图表数据。</small></label><label>范围<select :value="editingDashboardSchema?.scope" @change="updateDashboardMetadata('scope', $event.target.value)"><option value="hospital">全院</option><option value="department">科室</option><option value="personal">个人</option></select><small>定义适用业务范围；实际权限由服务端控制。</small></label><label>背景<select :value="editingDashboardSchema?.appearance?.background?.value || '#ffffff'" @change="updateDashboardBackground($event.target.value)"><option value="#ffffff">临床白</option><option value="linear-gradient(135deg,#f7fbfa,#eef5fb)">临床浅渐变</option><option value="linear-gradient(135deg,#f9f6fc,#eef7f6)">柔和渐变</option></select><small>保存为受控颜色或 Clinical Light 渐变预设。</small></label><h3>响应式布局</h3><p>只影响查看模式的排列，不改变设计器桌面布局。</p><label>平板<select :value="editingDashboardSchema?.responsivePolicy?.tablet" @change="updateResponsivePolicy($event.target.value)"><option value="auto-two-column">自动两列</option><option value="single-column">单列</option></select></label><label>手机<input value="单列" disabled /></label></section>
+          <section class="dashboard-settings-inspector"><h3>看板设置</h3><label>名称<input :value="editingDashboardSchema?.name" @change="updateDashboardMetadata('name', $event.target.value)" /></label><label>描述<textarea :value="editingDashboardSchema?.description" @change="updateDashboardMetadata('description', $event.target.value)" /></label><label>类型<select :value="editingDashboardSchema?.dashboardType" @change="updateDashboardMetadata('dashboardType', $event.target.value)"><option value="hospital-overview">全院概览</option><option value="topic">专题看板</option><option value="scene">场景看板</option><option value="department">科室看板</option><option value="custom">自定义看板</option></select><small>定义业务用途与入口类型，不直接改变组件数据。</small></label><label>分类<input :value="editingDashboardSchema?.category" @change="updateDashboardMetadata('category', $event.target.value)" /><small>用于看板分类和检索，不直接影响图表数据。</small></label><label>范围<select :value="editingDashboardSchema?.scope" @change="updateDashboardMetadata('scope', $event.target.value)"><option value="hospital">全院</option><option value="department">科室</option><option value="personal">个人</option></select><small>定义适用业务范围；实际权限由服务端控制。</small></label><label>背景预设<select :value="editingDashboardSchema?.appearance?.background?.value || '#ffffff'" @change="updateDashboardBackground($event.target.value)"><option value="#ffffff">临床白</option><option value="#eaf5ff">雾蓝</option><option value="linear-gradient(135deg,#d9efff 0%,#f7fbff 52%,#e5f6ef 100%)">蓝青渐变</option><option value="linear-gradient(135deg,#0f4c81 0%,#1261a6 52%,#1f7f91 100%)">深海蓝</option><option value="linear-gradient(135deg,#e8f0ff 0%,#f7f4ff 52%,#f0fbf7 100%)">清透渐变</option></select><small>编辑画布与预览会同步显示该背景。</small></label><label>背景强度 <output>{{ dashboardBackgroundIntensity }}%</output><input type="range" min="35" max="100" step="5" :value="dashboardBackgroundIntensity" @input="updateDashboardBackgroundIntensity($event.target.value)" /></label><small>降低强度可柔化渐变；深色背景会保留浅色卡片对比度。</small></section>
           <section class="dashboard-settings-inspector dashboard-global-filter-settings" data-testid="dashboard-global-filter-settings"><h3>全局筛选（{{ globalFilterDefinitions.length }}）</h3><GlobalFilterDesigner :definitions="globalFilterDefinitions" :catalog="filterCatalog" :widgets="designerWidgets" :compatible-widget-ids-by-filter="compatibleWidgetIdsByGlobalFilter" @change="updateGlobalFilters" @delete="deleteGlobalFilter" @scope-change="updateGlobalFilterScope" /></section>
         </template>
         <section v-else-if="selectedWidgetIds.length > 1" class="dashboard-multi-inspector" aria-label="多组件布局操作">
@@ -265,16 +267,13 @@
       </div>
       <footer class="studio-status"><span>{{ designerWidgets.length }} 个组件 · {{ activeDesignerWidget ? '已选中 ' + getWidgetTitle(activeDesignerWidget) : '未选中组件' }}</span><span>拖动调整位置 · 右下角调整大小</span></footer>
       <el-dialog v-model="studioPreview" title="看板预览" width="88%" destroy-on-close>
-        <div class="dashboard-preview-breakpoints" role="group" aria-label="预览断点">
-          <el-button v-for="breakpoint in ['desktop', 'tablet', 'mobile']" :key="breakpoint" size="small" :type="previewBreakpoint === breakpoint ? 'primary' : 'default'" @click="previewBreakpoint = breakpoint">{{ { desktop: '桌面', tablet: '平板', mobile: '手机' }[breakpoint] }}</el-button>
-        </div>
         <DashboardFilterBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" @change="filterRuntimeValues = $event" />
         <section v-if="activeInteractionFilters.length" class="dashboard-interaction-summary" aria-label="联动筛选">
           <span v-for="interaction in activeInteractionFilters" :key="interaction.id">联动：{{ interaction.label }} = {{ interaction.value }}</span>
           <el-button size="small" text @click="clearAllInteractionFilters">清除联动</el-button>
         </section>
-        <div class="dashboard-preview-frame" :class="`is-${previewBreakpoint}`">
-        <DashboardCanvas v-if="studioPreview" :widgets="previewWidgets" :columns="previewColumns" :editable="false">
+        <div class="dashboard-preview-frame dashboard-surface" :style="dashboardSurfaceStyle">
+        <DashboardCanvas v-if="studioPreview" class="dashboard-surface" :style="dashboardSurfaceStyle" :widgets="previewWidgets" :columns="24" :editable="false">
           <template #default="{ widget }"><WidgetRenderer :widget="widget" :primary-kpi="visibleKpis[0]" :supporting-kpis="visibleKpis.slice(1)" :warnings="dashboardWarnings" :ranking="departmentRanking" :department="department" :updated-at="dashboardQueryLabel" interactive :get-widget-kpi="getWidgetKpi" :get-title="getWidgetTitle" :get-description="getWidgetDescription" :get-icon="getWidgetIcon" :get-chart-option="getWidgetChartOption" :is-chart-empty="isChartEmpty" :get-chart-aria-label="getWidgetChartAriaLabel" :get-table-columns="getWidgetTableColumns" :get-table-rows="getWidgetTableRows" :get-pie-drill-targets="getWidgetPieDrillTargets" :get-pie-drill-source="getWidgetPieDrillSource" @chart-click="handleWidgetChartClick" /></template>
         </DashboardCanvas>
         </div>
@@ -378,7 +377,6 @@ import {
 
 import '@/idmp/features/dashboard/dashboard-v2.css'
 const studioPreview = ref(false)
-const previewBreakpoint = ref('desktop')
 const librarySearch = ref('')
 const localLayoutTemplates = ref([])
 const layoutTemplates = computed(() => [...BUILT_IN_LAYOUT_TEMPLATES, ...localLayoutTemplates.value])
@@ -457,12 +455,22 @@ const presentationMode = ref('standard')
 const presentationRef = ref()
 const dashboardSchema = ref(null)
 const dashboardBackground = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.appearance?.background?.value || '#ffffff')
+const dashboardBackgroundIntensity = computed(() => {
+  const value = Number((isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.appearance?.background?.intensity)
+  return Number.isFinite(value) ? Math.min(100, Math.max(35, Math.round(value))) : 100
+})
+const dashboardSurfaceStyle = computed(() => ({
+  '--dashboard-background': dashboardBackground.value,
+  '--dashboard-background-wash': `rgba(255,255,255,${(1 - dashboardBackgroundIntensity.value / 100).toFixed(2)})`
+}))
 const viewerViewportWidth = ref(typeof window === 'undefined' ? 1440 : window.innerWidth)
 const viewerBreakpoint = computed(() => dashboardBreakpointForWidth(viewerViewportWidth.value))
 const viewerColumns = computed(() => responsiveColumns(viewerBreakpoint.value))
 const viewerWidgets = computed(() => deriveResponsiveLayout(dashboardSchema.value?.widgets || [], viewerBreakpoint.value, dashboardSchema.value?.responsivePolicy))
-const previewColumns = computed(() => responsiveColumns(previewBreakpoint.value))
-const previewWidgets = computed(() => deriveResponsiveLayout(designerWidgets.value, previewBreakpoint.value, editingDashboardSchema.value?.responsivePolicy))
+// The studio preview intentionally renders the same desktop geometry as GridStack.
+// Responsive derivation remains a Viewer concern and no longer creates a second
+// preview layout that can diverge from the active Designer schema.
+const previewWidgets = computed(() => designerWidgets.value)
 const dashboardRecovery = ref({ status: DASHBOARD_RECOVERY_STATUS.NO_SCHEMA, schema: null, raw: null, error: null })
 const useSchemaViewer = computed(() => Boolean(dashboardSchema.value))
 const dashboardDefinition = ref(null)
@@ -540,7 +548,6 @@ function updateDashboardMetadata(field, value) {
   editingDashboardSchema.value = { ...editingDashboardSchema.value, [field]: String(value ?? '') }
   markDashboardDirty()
 }
-function updateResponsivePolicy(tablet) { if (editingDashboardSchema.value) { editingDashboardSchema.value = { ...editingDashboardSchema.value, responsivePolicy: { tablet: tablet === 'single-column' ? 'single-column' : 'auto-two-column', mobile: 'single-column' } }; markDashboardDirty() } }
 function updateDesignerQuery(query) {
   updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, query } }))
 }
@@ -985,9 +992,15 @@ function resetWidgetDrill(widgetId) {
 }
 function updateDashboardBackground(value) {
   if (!editingDashboardSchema.value) return
-  const allowed = ['#ffffff', 'linear-gradient(135deg,#f7fbfa,#eef5fb)', 'linear-gradient(135deg,#f9f6fc,#eef7f6)']
+  const allowed = ['#ffffff', '#eaf5ff', 'linear-gradient(135deg,#d9efff 0%,#f7fbff 52%,#e5f6ef 100%)', 'linear-gradient(135deg,#0f4c81 0%,#1261a6 52%,#1f7f91 100%)', 'linear-gradient(135deg,#e8f0ff 0%,#f7f4ff 52%,#f0fbf7 100%)']
   const background = allowed.includes(value) ? value : '#ffffff'
-  editingDashboardSchema.value = { ...editingDashboardSchema.value, appearance: { ...editingDashboardSchema.value.appearance, background: { type: background.startsWith('linear-gradient') ? 'gradient' : 'color', value: background } } }
+  editingDashboardSchema.value = { ...editingDashboardSchema.value, appearance: { ...editingDashboardSchema.value.appearance, background: { ...editingDashboardSchema.value.appearance?.background, type: background.startsWith('linear-gradient') ? 'gradient' : 'color', value: background, intensity: dashboardBackgroundIntensity.value } } }
+  markDashboardDirty()
+}
+function updateDashboardBackgroundIntensity(value) {
+  if (!editingDashboardSchema.value) return
+  const intensity = Math.min(100, Math.max(35, Math.round(Number(value) || 100)))
+  editingDashboardSchema.value = { ...editingDashboardSchema.value, appearance: { ...editingDashboardSchema.value.appearance, background: { ...editingDashboardSchema.value.appearance?.background, intensity } } }
   markDashboardDirty()
 }
 
@@ -1694,7 +1707,8 @@ onBeforeUnmount(() => {
   margin-top: 16px;
 }
 
-.dashboard-schema-viewer { max-width:100%; margin-top:16px; overflow-x:hidden; }
+.dashboard-surface { background:linear-gradient(var(--dashboard-background-wash, rgba(255,255,255,0)), var(--dashboard-background-wash, rgba(255,255,255,0))), var(--dashboard-background, #ffffff); }
+.dashboard-schema-viewer { max-width:100%; margin-top:16px; overflow-x:hidden; padding:12px; border-radius:8px; }
 .dashboard-schema-canvas { min-height:680px; max-width:100%; }
 .dashboard-designer-shell { min-width: 0; }
 .dashboard-property-inspector__empty { color: var(--idmp-text-helper, #667085); font-size: 13px; }
@@ -1706,16 +1720,14 @@ onBeforeUnmount(() => {
 .dashboard-style-form label { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--idmp-text-secondary, #475467); font-size: 13px; }
 .dashboard-style-form input[type='number'], .dashboard-style-form select { width: 110px; padding: 5px 6px; border: 1px solid #d0d5dd; border-radius: 4px; }
 .dashboard-style-form input[type='color'] { width: 44px; height: 28px; padding: 0; border: 0; background: transparent; }
-.dashboard-page.is-presentation-mode { position: fixed; inset: 0; z-index: 3000; min-height: 100vh; overflow: auto; padding: 24px; background: var(--dashboard-background, #ffffff); color: var(--idmp-text-primary, #101828); }
+.dashboard-page.is-presentation-mode { position: fixed; inset: 0; z-index: 3000; min-height: 100vh; overflow: auto; padding: 24px; background:linear-gradient(var(--dashboard-background-wash, rgba(255,255,255,0)), var(--dashboard-background-wash, rgba(255,255,255,0))), var(--dashboard-background, #ffffff); color: var(--idmp-text-primary, #101828); }
 .dashboard-page.is-presentation-mode :deep(.page-heading) { display: none; }
 .dashboard-page.is-presentation-mode .dashboard-schema-viewer { margin: 0; }
 .dashboard-page.is-presentation-mode .dashboard-schema-canvas { min-height: calc(100vh - 48px); }
-.dashboard-demo-source { padding:8px; border:1px solid #b8e6d6; border-radius:6px; background:#effbf6; color:#087443 !important; font-size:11px !important; }
+.dashboard-demo-source { padding:8px; border:1px solid #b8d7f0; border-radius:6px; background:#eef6ff; color:#175ea8 !important; font-size:11px !important; line-height:1.5; }
 .dashboard-interaction-summary { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:8px 0; padding:7px 10px; border:1px solid var(--idmp-interactive-subtle,#e7f1f8); border-radius:6px; background:var(--idmp-interactive-subtle,#e7f1f8); color:var(--idmp-interactive,#1261a6); font-size:12px; }
 .dashboard-interaction-summary span { padding-right:8px; border-right:1px solid color-mix(in srgb, var(--idmp-interactive,#1261a6) 18%, transparent); }
-.dashboard-preview-breakpoints { display:flex; gap:8px; margin-bottom:12px; }
-.dashboard-preview-frame { margin:auto; transition:width .2s ease; overflow:hidden; border:1px solid #d0d5dd; border-radius:8px; background:var(--dashboard-background, #fff); }
-.dashboard-preview-frame.is-desktop { width:1440px; max-width:100%; }.dashboard-preview-frame.is-tablet { width:834px; max-width:100%; }.dashboard-preview-frame.is-mobile { width:375px; max-width:100%; }
+.dashboard-preview-frame { width:1440px; max-width:100%; margin:auto; overflow:hidden; border:1px solid #b9d9ef; border-radius:8px; }
 .studio-scene-switcher { width:170px; }
 .dashboard-page:fullscreen { width: 100vw; height: 100vh; }
 

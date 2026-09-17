@@ -14,14 +14,14 @@ const LAYOUT_PERSISTED_FIELDS = new Set(['engine', 'columns', 'float'])
 const WIDGET_PERSISTED_FIELDS = new Set([...WIDGET_METADATA_FIELDS, 'layout'])
 const WIDGET_LAYOUT_PERSISTED_FIELDS = new Set(['x', 'y', 'w', 'h'])
 const APPEARANCE_PERSISTED_FIELDS = new Set(['theme', 'background', 'cardStyle', 'gridGap'])
-const BACKGROUND_PERSISTED_FIELDS = new Set(['type', 'value'])
+const BACKGROUND_PERSISTED_FIELDS = new Set(['type', 'value', 'intensity'])
 const PRESENTATION_PERSISTED_FIELDS = new Set(['defaultMode', 'allowFullscreen', 'fit'])
 export const DEFAULT_WIDGET_STYLE = Object.freeze({
   background: '#ffffff', borderColor: '#d0d5dd', borderWidth: 1,
   borderStyle: 'solid', borderRadius: 8, shadow: 'none', padding: 0, opacity: 1
 })
 export const DEFAULT_DASHBOARD_APPEARANCE = Object.freeze({
-  theme: 'default', background: { type: 'color', value: '' }, cardStyle: 'default', gridGap: 8
+  theme: 'default', background: { type: 'color', value: '', intensity: 100 }, cardStyle: 'default', gridGap: 8
 })
 export const DEFAULT_DASHBOARD_PRESENTATION = Object.freeze({ defaultMode: 'standard', allowFullscreen: true, fit: 'viewport' })
 
@@ -274,11 +274,20 @@ export function normalizeDashboardSchema(input = {}) {
     appearance: {
       ...DEFAULT_DASHBOARD_APPEARANCE,
       ...(isPlainObject(source.appearance) ? source.appearance : {}),
-      background: { ...DEFAULT_DASHBOARD_APPEARANCE.background, ...(isPlainObject(source.appearance?.background) ? source.appearance.background : {}) }
+      background: {
+        ...DEFAULT_DASHBOARD_APPEARANCE.background,
+        ...(isPlainObject(source.appearance?.background) ? source.appearance.background : {}),
+        intensity: normalizeBackgroundIntensity(source.appearance?.background?.intensity)
+      }
     },
     presentation: { ...DEFAULT_DASHBOARD_PRESENTATION, ...(isPlainObject(source.presentation) ? source.presentation : {}) },
     widgets
   }
+}
+
+function normalizeBackgroundIntensity(value) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? Math.min(100, Math.max(35, Math.round(numeric))) : 100
 }
 
 function toInteger(value, fallback) {

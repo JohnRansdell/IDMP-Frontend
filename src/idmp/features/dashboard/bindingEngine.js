@@ -70,6 +70,15 @@ export function aggregateValues(values, aggregation) {
   if (aggregation === 'min') return valid.reduce((a, b) => Math.min(a, b))
   return null
 }
+
+// Keep aggregation values numeric for charts and filters. Formatting belongs only
+// to the visible KPI surface so binary floating-point tails never consume a card.
+export function formatDashboardMetric(value, { maximumFractionDigits = 2 } = {}) {
+  if (value === null || value === undefined || value === '') return ''
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return String(value)
+  return new Intl.NumberFormat('zh-CN', { maximumFractionDigits }).format(numeric)
+}
 const dimensionValue = value => ['string', 'boolean'].includes(typeof value) || (typeof value === 'number' && Number.isFinite(value)) ? value : null
 
 export function compileWidgetData(kind, binding, dataset) {
