@@ -126,6 +126,8 @@ export function createPublishedIndicatorSources(indicators = [], publishedVersio
       status: 'info',
       origin: 'indicator-catalog',
       originLabel: '已发布指标',
+      indicatorId,
+      indicatorCode,
       analysisIndicatorId: indicatorId || indicatorCode,
       analysisIndicatorVersionId: versionId,
       analysisEnabled: true,

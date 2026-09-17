@@ -3,18 +3,18 @@
     <div class="db-section-title"><h2>{{ title }}</h2><nav v-if="drill.active" class="drill-breadcrumb" aria-label="组件下钻路径"><button v-for="(part, index) in drill.breadcrumb" :key="`${part}-${index}`" type="button" @click="drill.back(widget.id, index)">{{ part }}</button><button type="button" @click="drill.reset(widget.id)">返回顶层</button></nav></div>
     <p v-if="dataset?.filterDiagnostics?.length" role="status" class="filter-diagnostic">{{ dataset.filterDiagnostics.join('；') }}</p>
     <div v-if="model.status !== 'ready'" class="binding-state" role="status" :data-testid="`binding-${model.status}`"><strong>{{ model.status === 'invalid' ? '请配置数据字段' : '暂无数据' }}</strong><p v-if="model.status === 'invalid'">{{ model.message }}</p></div>
-    <strong v-else-if="kind === 'kpi'" data-testid="binding-kpi-value">{{ model.value }}{{ model.unit }}</strong>
-    <ol v-else-if="kind === 'ranking'" class="binding-ranking"><li v-for="(item, index) in model.items" :key="item.name"><span>{{ index + 1 }}</span><span>{{ item.name }}</span><strong>{{ item.value }}</strong></li></ol>
-    <div v-else-if="kind === 'table'" class="binding-table-wrap"><table data-testid="binding-table"><thead><tr><th>维度</th><th v-for="series in model.series" :key="series.name">{{ series.name }}</th></tr></thead><tbody><tr v-for="(category, index) in model.categories" :key="category"><td>{{ category }}</td><td v-for="series in model.series" :key="series.name">{{ series.values[index] ?? '—' }}</td></tr></tbody></table></div>
+    <strong v-else-if="kind === 'kpi'" data-testid="binding-kpi-value">{{ displayKpiValue }}{{ model.unit }}</strong>
+    <ol v-else-if="kind === 'ranking'" class="binding-ranking"><li v-for="(item, index) in model.items" :key="item.name"><span>{{ index + 1 }}</span><span>{{ item.name }}</span><strong>{{ formatVisibleValue(item.value) }}</strong></li></ol>
+    <div v-else-if="kind === 'table'" class="binding-table-wrap"><table data-testid="binding-table"><thead><tr><th>维度</th><th v-for="series in model.series" :key="series.name">{{ series.name }}</th></tr></thead><tbody><tr v-for="(category, index) in model.categories" :key="category"><td>{{ category }}</td><td v-for="series in model.series" :key="series.name">{{ formatVisibleValue(series.values[index]) }}</td></tr></tbody></table></div>
     <IdmpChart v-else :option="option" height="100%" fit-container :aria-label="`${title}，${model.series?.length || 1} 个系列`" @chart-click="onChartClick">
-      <template #table><table><thead><tr><th>维度</th><th v-for="series in model.series" :key="series.name">{{ series.name }}</th></tr></thead><tbody><tr v-for="(category, index) in model.categories" :key="category"><td>{{ category }}</td><td v-for="series in model.series" :key="series.name">{{ series.values[index] ?? '—' }}</td></tr></tbody></table></template>
+      <template #table><table><thead><tr><th>维度</th><th v-for="series in model.series" :key="series.name">{{ series.name }}</th></tr></thead><tbody><tr v-for="(category, index) in model.categories" :key="category"><td>{{ category }}</td><td v-for="series in model.series" :key="series.name">{{ formatVisibleValue(series.values[index]) }}</td></tr></tbody></table></template>
     </IdmpChart>
   </article>
 </template>
 <script setup>
 import { computed, inject } from 'vue'
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
-import { bindingKind, compileWidgetData, bindingChartOption } from '../bindingEngine.js'
+import { bindingKind, compileWidgetData, bindingChartOption, formatDashboardMetric } from '../bindingEngine.js'
 import { createDashboardChartTheme } from '../chartTheme.js'
 import { queryWidgetDatasetWithRuntime } from '../queryAdapter.js'
 import { DRILLABLE_KINDS, effectiveDrill } from '../drillDown.js'
@@ -28,8 +28,10 @@ const sourceDataset = computed(() => queryWidgetDatasetWithRuntime(getDatasets(p
 const effective = computed(() => effectiveDrill(props.widget, sourceDataset.value, drillContext.states.value[String(props.widget.id)]))
 const dataset = computed(() => effective.value.dataset)
 const model = computed(() => compileWidgetData(kind.value, effective.value.binding, dataset.value))
+const displayKpiValue = computed(() => formatDashboardMetric(model.value?.value))
 const option = computed(() => createDashboardChartTheme(bindingChartOption(kind.value, model.value)))
 const drill = computed(() => ({ active: props.widget.config?.interaction?.clickAction === 'drill' && DRILLABLE_KINDS.has(kind.value) && effective.value.hierarchy.length > 1, breadcrumb: ['全院', ...effective.value.path], back: drillContext.back, reset: drillContext.reset }))
+function formatVisibleValue(value) { return value === null || value === undefined ? '—' : formatDashboardMetric(value) }
 function onChartClick(params) { if (drill.value.active) drillContext.advance(props.widget, sourceDataset.value, params?.name); else emit('chart-click', params) }
 </script>
 <style scoped>

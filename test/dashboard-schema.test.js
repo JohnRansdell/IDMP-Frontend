@@ -51,6 +51,19 @@ test('dashboard management metadata normalizes, persists, and remains backward c
   assert.deepEqual({ description: legacy.description, dashboardType: legacy.dashboardType, category: legacy.category, scope: legacy.scope }, { description: '', dashboardType: 'custom', category: '', scope: 'hospital' })
 })
 
+test('dashboard background intensity is bounded and persists with the appearance contract', () => {
+  const schema = normalizeDashboardSchema({
+    version: 1,
+    id: 'appearance-demo',
+    appearance: { background: { type: 'gradient', value: 'linear-gradient(135deg,#0f4c81,#1261a6)', intensity: 72 } },
+    widgets: []
+  })
+  assert.equal(schema.appearance.background.intensity, 72)
+  assert.equal(validateDashboardSchema(schema).valid, true)
+  assert.equal(normalizeDashboardSchema({ version: 1, id: 'low', appearance: { background: { intensity: 0 } }, widgets: [] }).appearance.background.intensity, 35)
+  assert.equal(normalizeDashboardSchema({ version: 1, id: 'high', appearance: { background: { intensity: 400 } }, widgets: [] }).appearance.background.intensity, 100)
+})
+
 test('runtime grid layout updates the canonical schema with integer coordinates', () => {
   const schema = normalizeDashboardSchema({ version: 1, id: 'demo', widgets: [{ id: 'kpi-1', type: 'kpi', layout: { x: 0, y: 0, w: 6, h: 4 } }] })
   const result = synchronizeDashboardGridLayout(schema, [{ id: 'kpi-1', x: 5.6, y: 2.2, w: 7.4, h: 5.8 }], true)

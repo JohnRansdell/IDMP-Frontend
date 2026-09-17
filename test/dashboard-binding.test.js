@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { reactive } from 'vue'
 import { createFieldCatalog, createWidgetBindingDatasets, numericValue } from '../src/idmp/features/dashboard/fieldCatalog.js'
-import { aggregateValues, compileWidgetData, validateWidgetBinding, hasDataBinding, bindingChartOption } from '../src/idmp/features/dashboard/bindingEngine.js'
+import { aggregateValues, compileWidgetData, validateWidgetBinding, hasDataBinding, bindingChartOption, formatDashboardMetric } from '../src/idmp/features/dashboard/bindingEngine.js'
 import { normalizeDashboardSchema, createPersistableDashboardSnapshot, updateDashboardWidget } from '../src/idmp/features/dashboard/schema.js'
 import { persistDashboardSchema, recoverDashboardSchema } from '../src/idmp/features/dashboard/persistence.js'
 import { createDashboardChartOption } from '../src/idmp/features/dashboard/visualization.js'
@@ -91,6 +91,12 @@ test('all explicit aggregations exclude invalid numbers and preserve zero', () =
 test('department grouping and aggregation produce correct values', () => {
   const config = binding(); config.dimensions = [{ field: 'departmentName' }]
   assert.deepEqual(compileWidgetData('bar', config, dataset).series[0].values, [3, 7])
+})
+
+test('KPI display formatting removes floating-point tails without changing binding values', () => {
+  assert.equal(formatDashboardMetric(6.403499999999999), '6.4')
+  assert.equal(formatDashboardMetric(12), '12')
+  assert.equal(formatDashboardMetric(null), '')
 })
 test('series splitting and multiple measures align categories with null gaps', () => {
   const config = binding(); config.series = [{ field: 'departmentName' }]; config.measures.push({ field: 'numerator', aggregation: 'sum' })
