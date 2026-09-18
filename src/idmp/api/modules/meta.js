@@ -67,6 +67,36 @@ export function fetchSemanticTableRelations(viewMappingId, params = {}) {
   return requestJson(withQuery('/meta/semantic-table-relations', { viewMappingId, ...params }))
 }
 
+export function createSemanticTableRelation(payload) {
+  return requestJson('/meta/semantic-table-relations', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function fetchSemanticTableRelation(relationId) {
+  return requestJson(`/meta/semantic-table-relations/${encodeURIComponent(relationId)}`)
+}
+
+export function updateSemanticTableRelation(relationId, payload) {
+  return requestJson(`/meta/semantic-table-relations/${encodeURIComponent(relationId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function validateSemanticTableRelation(relationId, payload = {}) {
+  return semanticTableRelationAction(relationId, 'validate', payload)
+}
+
+export function publishSemanticTableRelation(relationId, payload = {}) {
+  return semanticTableRelationAction(relationId, 'publish', payload)
+}
+
+export function disableSemanticTableRelation(relationId, payload = {}) {
+  return semanticTableRelationAction(relationId, 'disable', payload)
+}
+
 export function fetchSemanticFields(domainId) {
   // 兼容扁平视图：多表数据域的正式字段选择必须使用表级接口。
   return requestJson(`/meta/data-domains/${domainId}/semantic-fields`)
@@ -81,4 +111,11 @@ function withQuery(path, params = {}) {
   })
   const queryText = query.toString()
   return queryText ? `${path}?${queryText}` : path
+}
+
+function semanticTableRelationAction(relationId, action, payload) {
+  return requestJson(`/meta/semantic-table-relations/${encodeURIComponent(relationId)}/${action}`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
 }

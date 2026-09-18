@@ -348,6 +348,13 @@
                 @change="resetIndicatorTrialAfterPeriodChange"
               />
             </div>
+            <el-alert
+              v-if="isStaticIndicator && indicatorWorkflow.initializationBatchId"
+              :type="['SUCCEEDED', 'SUCCESS'].includes(indicatorWorkflow.initializationStatus) ? 'success' : indicatorWorkflow.initializationStatus === 'FAILED' ? 'error' : 'info'"
+              :closable="false"
+              show-icon
+              :title="`静态初始化批次 ${indicatorWorkflow.initializationBatchId}：${getStatusLabel(indicatorWorkflow.initializationStatus || 'RUNNING')}`"
+            />
             <div class="business-action-bar formula-actions">
               <div>
                 <span>公式与试算操作</span>
@@ -783,6 +790,7 @@ const indicatorWorkflow = reactive({
   formalBatchId: '',
   formalIdempotencyKey: '',
   initializationBatchId: '',
+  initializationStatus: '',
   trialAvailability: null
 })
 const indicatorTrialPeriod = ref(initialIndicatorTrialPeriod())
@@ -1380,6 +1388,7 @@ function toEditorFactor(item) {
     factorId: toOpaqueId(item.factorId),
     status: item.status,
     currentArtifactId: item.currentArtifactId,
+    calculationMode: String(item.calculationMode || item.dsl?.calculationMode || item.factorDsl?.calculationMode || '').toUpperCase(),
     dsl: item.dsl || item.factorDsl || item.definition?.dsl || null
   }
 }
@@ -1493,7 +1502,9 @@ function hydrateIndicatorSummary(item) {
     publishedVersionId: '',
     publishIdempotencyKey: '',
     formalBatchId: '',
-    formalIdempotencyKey: ''
+    formalIdempotencyKey: '',
+    initializationBatchId: '',
+    initializationStatus: ''
   })
   resetIndicatorTrialResultCollection()
 }
@@ -1514,7 +1525,9 @@ function hydrateIndicatorVersion(version) {
     published: status === 'PUBLISHED',
     publishedVersionId: status === 'PUBLISHED' ? resolveIndicatorVersionId(version) : '',
     formalBatchId: '',
-    formalIdempotencyKey: ''
+    formalIdempotencyKey: '',
+    initializationBatchId: toOpaqueId(version.initializationBatchId),
+    initializationStatus: String(version.initializationStatus || '')
   })
   resetIndicatorTrialResultCollection()
 
@@ -1660,7 +1673,9 @@ function resetIndicatorWorkflowAfterBasic(indicatorId, versionId = '', resourceV
     publishedVersionId: '',
     publishIdempotencyKey: '',
     formalBatchId: '',
-    formalIdempotencyKey: ''
+    formalIdempotencyKey: '',
+    initializationBatchId: '',
+    initializationStatus: ''
   })
   resetIndicatorTrialResultCollection()
 }
@@ -1790,7 +1805,9 @@ async function createIndicatorDraftVersion() {
       publishedVersionId: '',
       publishIdempotencyKey: '',
       formalBatchId: '',
-      formalIdempotencyKey: ''
+      formalIdempotencyKey: '',
+      initializationBatchId: '',
+      initializationStatus: ''
     })
     resetIndicatorTrialResultCollection()
     hydrateFormulaFactors(extractFormula(version))
@@ -1901,7 +1918,9 @@ async function createFirstIndicatorVersionWithFormula(formula) {
     publishedVersionId: '',
     publishIdempotencyKey: '',
     formalBatchId: '',
-    formalIdempotencyKey: ''
+    formalIdempotencyKey: '',
+    initializationBatchId: '',
+    initializationStatus: ''
   })
   resetIndicatorTrialResultCollection()
   selectedDrillPaths.value = normalizeDrillPaths(version)
@@ -2202,10 +2221,28 @@ async function publishIndicatorVersionOnly() {
       }
     }
     indicatorWorkflow.initializationBatchId = isStaticIndicator.value ? resolveBatchId(result?.initializationBatchId || result) : ''
+    indicatorWorkflow.initializationStatus = indicatorWorkflow.initializationBatchId ? 'RUNNING' : ''
     indicatorWorkflow.published = true
     indicatorWorkflow.publishedVersionId = resolveIndicatorVersionId(result) || indicatorWorkflow.versionId
     recordWorkflowSuccess(isStaticIndicator.value && indicatorWorkflow.initializationBatchId ? `静态指标版本已发布，正在初始化批次 ${indicatorWorkflow.initializationBatchId}` : `指标版本已发布：${indicatorWorkflow.publishedVersionId}`)
     ElMessage.success(isStaticIndicator.value ? '静态指标已发布，正在执行一次全量初始化' : '指标版本已发布')
+    if (isStaticIndicator.value && indicatorWorkflow.initializationBatchId) {
+      try {
+        const initialization = await pollBackendBatch(indicatorWorkflow.initializationBatchId)
+        indicatorWorkflow.initializationStatus = String(initialization?.status || initialization?.batchStatus || 'RUNNING').toUpperCase()
+        if (['SUCCEEDED', 'SUCCESS'].includes(indicatorWorkflow.initializationStatus)) {
+          recordWorkflowSuccess(`静态指标初始化完成，批次 ${indicatorWorkflow.initializationBatchId}`)
+          ElMessage.success('静态指标全量初始化已完成')
+        } else if (indicatorWorkflow.initializationStatus === 'FAILED') {
+          recordWorkflowSuccess(`静态指标已发布，但初始化批次 ${indicatorWorkflow.initializationBatchId} 执行失败；请前往计算任务中心查看节点诊断`)
+          ElMessage.warning('静态指标已发布，但全量初始化批次执行失败')
+        } else {
+          recordWorkflowSuccess(`静态指标已发布，初始化批次 ${indicatorWorkflow.initializationBatchId} 仍在执行，可前往计算任务中心继续跟踪`)
+        }
+      } catch (initializationError) {
+        recordWorkflowSuccess(`静态指标已发布，初始化批次 ${indicatorWorkflow.initializationBatchId} 暂未查询到终态：${initializationError?.message || '请稍后重试'}`)
+      }
+    }
   } catch (error) {
     recordWorkflowError(error)
     ElMessage.error(error?.message || '指标版本发布失败')

@@ -15,21 +15,25 @@ export function buildSqlImportCreatePayload({ sql, tableMappings, definitionType
 
 export function normalizeSqlImportPreview(payload = {}) {
   const preview = payload?.preview || payload || {}
+  const tableRows = normalizePreviewTableRows(preview)
   return {
     valid: preview.valid !== false,
     normalizedSql: String(preview.normalizedSql || ''),
-    tables: Array.isArray(preview.tables || preview.tableMappings) ? (preview.tables || preview.tableMappings).map((table) => ({
+    tables: tableRows.map((table) => ({
       physicalTable: String(table.physicalTable || table.tableName || ''),
-      selectedViewMappingId: toOpaqueId(table.selectedViewMappingId || table.viewMappingId),
-      candidates: Array.isArray(table.candidates) ? table.candidates.map((candidate) => ({
+      selectedViewMappingId: toOpaqueId(table.selectedViewMappingId || table.viewMappingId || table.mappingId),
+      candidates: (table.candidates || table.mappingCandidates || table.candidateMappings || table.viewMappings || []).map((candidate) => ({
         viewMappingId: toOpaqueId(candidate.viewMappingId || candidate.id), domainCode: String(candidate.domainCode || ''),
         semanticTableCode: String(candidate.semanticTableCode || candidate.tableCode || ''), defaultTimeFieldCode: String(candidate.defaultTimeFieldCode || '')
-      })) : []
-    })) : [],
+      }))
+    })),
     factors: Array.isArray(preview.factors) ? preview.factors.map((factor) => ({
       key: String(factor.key || ''), suggestedCode: String(factor.suggestedCode || factor.code || ''),
       suggestedName: String(factor.suggestedName || factor.name || ''), outputAlias: String(factor.outputAlias || ''),
-      timeFields: Array.isArray(factor.timeFields || factor.candidateTimeFields) ? (factor.timeFields || factor.candidateTimeFields).map(String) : [], dsl: factor.dsl || {}
+      timeFields: collectTimeFields({
+        ...factor,
+        timeFields: factor.timeFields || preview.timeFields?.[factor.key] || preview.candidateTimeFields?.[factor.key]
+      }), dsl: factor.dsl || {}
     })) : [],
     formula: preview.formula ? { template: preview.formula.template || preview.formula, displayText: String(preview.formula.displayText || '') } : null,
     diagnostics: Array.isArray(preview.diagnostics) ? preview.diagnostics.map((item) => ({
@@ -37,6 +41,50 @@ export function normalizeSqlImportPreview(payload = {}) {
       message: String(item.message || ''), suggestion: String(item.suggestion || '')
     })) : []
   }
+}
+
+function normalizePreviewTableRows(preview = {}) {
+  if (Array.isArray(preview.tables)) return preview.tables
+  if (Array.isArray(preview.tableMappings)) return preview.tableMappings
+  if (preview.tableMappings && typeof preview.tableMappings === 'object') {
+    return Object.entries(preview.tableMappings).map(([physicalTable, mapping]) => ({
+      physicalTable,
+      ...(typeof mapping === 'object' ? mapping : { viewMappingId: mapping })
+    }))
+  }
+  const flatCandidates = preview.mappingCandidates || preview.candidateMappings || preview.tableMappingCandidates
+  if (!Array.isArray(flatCandidates)) return []
+  const grouped = new Map()
+  flatCandidates.forEach((candidate) => {
+    const physicalTable = String(candidate.physicalTable || candidate.tableName || '')
+    if (!physicalTable) return
+    if (!grouped.has(physicalTable)) grouped.set(physicalTable, { physicalTable, candidates: [] })
+    const row = grouped.get(physicalTable)
+    if (Array.isArray(candidate.candidates)) row.candidates.push(...candidate.candidates)
+    else row.candidates.push(candidate)
+    if (candidate.selectedViewMappingId || candidate.viewMappingId && candidate.selected === true) {
+      row.selectedViewMappingId = candidate.selectedViewMappingId || candidate.viewMappingId
+    }
+  })
+  return [...grouped.values()]
+}
+
+function collectTimeFields(factor = {}) {
+  const explicit = factor.timeFields || factor.candidateTimeFields || factor.timeFieldCandidates || factor.availableTimeFields || []
+  const fields = Array.isArray(explicit) ? explicit.map((item) => String(item?.fieldName || item?.fieldCode || item)) : []
+  collectPeriodFields(factor.dsl, fields)
+  return [...new Set(fields.filter(Boolean))]
+}
+
+function collectPeriodFields(node, fields) {
+  if (!node || typeof node !== 'object') return
+  if (node.nodeType === 'PREDICATE' && node.parameter === 'period') {
+    const field = node.fieldCode || (node.fieldRef?.sourceAlias && node.fieldRef?.fieldCode ? `${node.fieldRef.sourceAlias}.${node.fieldRef.fieldCode}` : node.fieldRef?.fieldCode)
+    if (field) fields.push(String(field))
+  }
+  collectPeriodFields(node.filters, fields)
+  collectPeriodFields(node.child, fields)
+  ;(node.children || []).forEach((child) => collectPeriodFields(child, fields))
 }
 
 export function mergeSqlFactorMetadata(current = [], drafts = []) {
@@ -51,11 +99,10 @@ export function mergeSqlFactorMetadata(current = [], drafts = []) {
   })
 }
 
-export function buildSqlImportMetadataPayload({ scope, category, indicator, factors, tableMappings } = {}) {
+export function buildSqlImportMetadataPayload({ scope, category, indicator, factors } = {}) {
   const normalizedScope = scope === 'FACTORS_ONLY' ? 'FACTORS_ONLY' : 'FACTORS_AND_INDICATOR'
   const payload = {
     scope: normalizedScope, ...(String(category || '').trim() ? { category: String(category).trim() } : {}),
-    ...(Object.keys(cleanMappings(tableMappings)).length ? { tableMappings: cleanMappings(tableMappings) } : {}),
     factors: (factors || []).map((item) => {
       const calculationMode = String(item.calculationMode || 'STATIC').toUpperCase()
       return {

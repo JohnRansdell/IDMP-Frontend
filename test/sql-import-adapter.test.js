@@ -33,6 +33,30 @@ test('SQL import preview keeps opaque ids and normalizes generated drafts', () =
   assert.equal(preview.diagnostics[0].severity, 'ERROR')
 })
 
+test('SQL import preview exposes alternate mapping candidates and period fields from DSL', () => {
+  const preview = normalizeSqlImportPreview({
+    tableMappings: { patient_visit: { mappingId: 101n, mappingCandidates: [{ id: 101n, domainCode: 'INPATIENT', tableCode: 'VISIT' }] } },
+    factors: [{ key: 'admission_count', dsl: { filters: { nodeType: 'PREDICATE', fieldRef: { sourceAlias: 'v', fieldCode: 'ADMISSION_TIME' }, operator: 'BETWEEN', parameter: 'period' } } }]
+  })
+  assert.equal(preview.tables[0].selectedViewMappingId, '101')
+  assert.equal(preview.tables[0].candidates[0].semanticTableCode, 'VISIT')
+  assert.deepEqual(preview.factors[0].timeFields, ['v.ADMISSION_TIME'])
+})
+
+test('SQL import preview groups top-level mapping candidates and factor time-field maps', () => {
+  const preview = normalizeSqlImportPreview({
+    mappingCandidates: [
+      { physicalTable: 'patient_visit', viewMappingId: 101n, domainCode: 'INPATIENT', semanticTableCode: 'VISIT' },
+      { physicalTable: 'patient_visit', viewMappingId: 102n, domainCode: 'EMERGENCY', semanticTableCode: 'VISIT' }
+    ],
+    timeFields: { admission_count: ['v.ADMISSION_TIME'] },
+    factors: [{ key: 'admission_count' }]
+  })
+  assert.equal(preview.tables.length, 1)
+  assert.equal(preview.tables[0].candidates.length, 2)
+  assert.deepEqual(preview.factors[0].timeFields, ['v.ADMISSION_TIME'])
+})
+
 test('SQL import separates creation, metadata and trial payloads', () => {
   const factors = mergeSqlFactorMetadata(
     [{ key: 'total', code: 'CUSTOM_TOTAL', name: '自定义总数', description: '说明', missingRowPolicy: 'KEEP_NULL' }],
@@ -55,10 +79,12 @@ test('SQL import separates creation, metadata and trial payloads', () => {
   assert.deepEqual(createPayload.tableMappings, { patient_visit: '102027642460316628' })
   assert.equal(createPayload.sql, 'SELECT 1')
   assert.equal(metadataPayload.indicatorCode, 'RATE_48H')
+  assert.equal('tableMappings' in metadataPayload, false)
   assert.equal(metadataPayload.factors[0].code, 'CUSTOM_TOTAL')
   assert.equal(metadataPayload.factors[0].missingRowPolicy, 'KEEP_NULL')
   assert.deepEqual(buildSqlImportTrialPayload([{ calculationMode: 'STATIC' }]), {})
   assert.deepEqual(buildSqlImportTrialPayload([{ calculationMode: 'TEMPORAL' }], ['2026-01-01', '2026-02-01']), { periodStart: '2026-01-01', periodEnd: '2026-02-01' })
+  assert.deepEqual(buildSqlImportTrialPayload([{ calculationMode: 'STATIC' }, { calculationMode: 'TEMPORAL' }], ['2026-01-01', '2026-02-01']), { periodStart: '2026-01-01', periodEnd: '2026-02-01' })
 })
 
 test('SQL import task preserves opaque IDs and only polls running states', () => {

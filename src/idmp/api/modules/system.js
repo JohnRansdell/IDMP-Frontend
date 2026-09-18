@@ -29,3 +29,10 @@ export function createSystemRole(payload) {
     body: JSON.stringify(payload)
   })
 }
+
+export function setUserNotificationBinding(userId, provider, payload) {
+  return requestJson(`/system/users/${encodeURIComponent(userId)}/notification-bindings/${encodeURIComponent(provider)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  })
+}

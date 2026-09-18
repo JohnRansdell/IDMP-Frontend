@@ -75,6 +75,24 @@ export function markAllNotificationsRead() {
   return requestJson('/me/notifications/read-all', { method: 'POST', body: JSON.stringify({}) })
 }
 
+export function fetchNotificationBindings() {
+  return requestJson('/me/notification-bindings')
+}
+
+export function authorizeNotificationBinding(provider, payload = {}) {
+  return requestJson(`/me/notification-bindings/${encodeURIComponent(provider)}/authorize`, {
+    method: 'POST', body: JSON.stringify(payload)
+  })
+}
+
+export function completeNotificationOAuth(provider, params = {}) {
+  return requestJson(withQuery(`/integrations/${encodeURIComponent(provider)}/oauth/callback`, params))
+}
+
+export function deleteNotificationBinding(provider) {
+  return requestJson(`/me/notification-bindings/${encodeURIComponent(provider)}`, { method: 'DELETE' })
+}
+
 function warningRuleAction(ruleId, action, payload) {
   return requestJson(`/analysis/warning-rules/${encodeURIComponent(ruleId)}/${action}`, {
     method: 'POST', body: JSON.stringify(payload)

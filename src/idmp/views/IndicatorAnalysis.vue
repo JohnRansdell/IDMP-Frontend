@@ -1265,7 +1265,7 @@ function getBackendIndicatorKey(indicator) {
 function buildAnalysisParams(range = [], versionId = currentIndicatorVersionId.value, granularity = backendAnalysisGranularity.value) {
   const params = { granularity }
   if (versionId) params.indicatorVersionId = versionId
-  if (isCompleteDateRange(range)) {
+  if (granularity !== 'STATIC' && isCompleteDateRange(range)) {
     params.periodStart = range[0]
     params.periodEnd = range[1]
   }
@@ -1325,11 +1325,26 @@ async function refreshMortalityAnalysis() {
     mortalityChainLoading.value = false
     return
   }
-  // 可用范围与“是否已经有正式计算结果”无关。始终使用后端目录中当前指标的
-  // 已发布版本探测，避免前端固定 ID 覆盖用户实际选择的指标版本。
   const initialVersionId = currentIndicatorVersionId.value
-  void loadAvailablePeriod(initialVersionId, refreshSequence)
   try {
+    if (initialVersionId) {
+      try {
+        backendIndicatorVersion.value = await fetchIndicatorVersion(initialVersionId)
+      } catch {
+        backendIndicatorVersion.value = null
+      }
+    }
+    const calculationMode = resolveIndicatorCalculationMode(backendIndicatorVersion.value, backendIndicator)
+    if (calculationMode === 'STATIC') {
+      reportGranularity.value = 'STATIC'
+      reportPeriodRange.value = []
+      analysisPeriodRange.value = []
+      trendPeriodDraft.value = []
+    } else if (reportGranularity.value === 'STATIC') {
+      reportGranularity.value = String(route.query.granularity || 'MONTHLY').toUpperCase() === 'STATIC' ? 'MONTHLY' : String(route.query.granularity || 'MONTHLY').toUpperCase()
+    }
+    if (calculationMode !== 'STATIC') void loadAvailablePeriod(initialVersionId, refreshSequence)
+
     const granularity = backendAnalysisGranularity.value
     const backendIndicatorId = String(backendIndicator.id || backendIndicator.indicatorId)
     const mortalityIndicator = isMortalityIndicator(backendIndicator)
@@ -1358,7 +1373,7 @@ async function refreshMortalityAnalysis() {
         currentIndicatorVersionId.value
       )
       if (versionId) {
-        if (backendIndicator) {
+        if (backendIndicator && versionId !== initialVersionId) {
           try {
             backendIndicatorVersion.value = await fetchIndicatorVersion(versionId)
           } catch {
@@ -1366,7 +1381,7 @@ async function refreshMortalityAnalysis() {
           }
         }
         // 分析响应中的版本优先级更高；若它与当前已发布版本不同，再按实际版本刷新。
-        if (versionId !== initialVersionId) await loadAvailablePeriod(versionId, refreshSequence)
+        if (versionId !== initialVersionId && resolveIndicatorCalculationMode(backendIndicatorVersion.value, backendIndicator) !== 'STATIC') await loadAvailablePeriod(versionId, refreshSequence)
       }
     }
 
@@ -1385,7 +1400,7 @@ async function refreshMortalityAnalysis() {
 }
 
 async function loadAvailablePeriod(versionId, refreshSequence) {
-  if (!versionId) return null
+  if (!versionId || resolveIndicatorCalculationMode(backendIndicatorVersion.value, selectedBackendIndicator.value) === 'STATIC') return null
   try {
     const value = await fetchIndicatorAvailablePeriod(versionId)
     if (refreshSequence !== analysisRefreshSequence) return null
@@ -1396,6 +1411,12 @@ async function loadAvailablePeriod(versionId, refreshSequence) {
     if (refreshSequence === analysisRefreshSequence) availablePeriod.value = null
     return null
   }
+}
+
+function resolveIndicatorCalculationMode(version, indicator) {
+  const value = String(version?.calculationMode || version?.definition?.calculationMode || indicator?.calculationMode || '').toUpperCase()
+  if (['STATIC', 'TEMPORAL'].includes(value)) return value
+  return String(route.query.granularity || '').toUpperCase() === 'STATIC' ? 'STATIC' : ''
 }
 
 onMounted(async () => {

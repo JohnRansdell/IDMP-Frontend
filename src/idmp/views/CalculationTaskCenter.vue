@@ -361,6 +361,7 @@ import {
   retryCalcNode
 } from '@/idmp/api/modules/calculation'
 import { fetchIndicatorScenarios, fetchIndicatorVersion } from '@/idmp/api/modules/indicators'
+import { fetchFactorVersion } from '@/idmp/api/modules/factors'
 
 const route = useRoute()
 const router = useRouter()
@@ -535,6 +536,18 @@ async function createBatch() {
     ElMessage.warning('请输入对象版本 ID')
     return
   }
+  try {
+    const ownerVersion = createForm.ownerType === 'INDICATOR'
+      ? await fetchIndicatorVersion(createForm.ownerVersionId)
+      : await fetchFactorVersion(createForm.ownerVersionId)
+    if (resolveOwnerCalculationMode(ownerVersion) === 'STATIC') {
+      ElMessage.warning('静态版本不能在计算任务中心手工创建周期批次；请通过发布动作返回的初始化批次跟踪全量计算')
+      return
+    }
+  } catch (error) {
+    ElMessage.warning(error?.message || '无法确认对象版本的计算模式，已停止创建批次')
+    return
+  }
   if (!createForm.periodStart || !createForm.periodEnd) {
     ElMessage.warning('请输入完整的计算时间范围')
     return
@@ -600,6 +613,17 @@ async function createBatch() {
   } finally {
     createLoading.value = false
   }
+}
+
+function resolveOwnerCalculationMode(version = {}) {
+  const dsl = version.dsl || version.factorDsl || version.definition?.dsl || {}
+  const explicit = String(version.calculationMode || version.definition?.calculationMode || dsl.calculationMode || '').toUpperCase()
+  if (['STATIC', 'TEMPORAL'].includes(explicit)) return explicit
+  return hasPeriodParameter(dsl.filters) ? 'TEMPORAL' : ''
+}
+
+function hasPeriodParameter(node) {
+  return Boolean(node && ((node.nodeType === 'PREDICATE' && node.parameter === 'period') || (node.children || []).some(hasPeriodParameter) || hasPeriodParameter(node.child) || hasPeriodParameter(node.filters)))
 }
 
 function returnToScenarioComparison() {
