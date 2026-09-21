@@ -1,0 +1,1 @@
+import{$ as t}from"./index-D8AUvGKd.js";import{l as o,a as s}from"./session-Brd2nnaa.js";function a(){return t("/health")}const u=o;function l(){return s(!1)}function i(){return s(!0)}function f(){return t("/system/users")}function c(e){return t("/system/roles",{method:"POST",body:JSON.stringify(e)})}export{a,i as b,u as c,c as d,f,l};
