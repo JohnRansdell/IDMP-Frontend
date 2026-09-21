@@ -3,6 +3,7 @@ export const WIDGET_GRID_CAPABILITIES = Object.freeze({
   primary: capability(8, 5), supporting: capability(16, 5), kpi: capability(6, 3),
   line: capability(12, 8), bar: capability(12, 8), pie: capability(12, 8), table: capability(12, 8),
   gauge: capability(8, 7), radar: capability(12, 8), funnel: capability(12, 8), scatter: capability(12, 8), heatmap: capability(12, 8), chart: capability(12, 8), warnings: capability(12, 7), ranking: capability(12, 7)
+  , text: capability(6, 3), map: capability(12, 8)
 })
 
 // Viewer-only presentation policy. These values deliberately never enter the
@@ -23,6 +24,7 @@ export const WIDGET_RESPONSIVE_PRESENTATION_CAPABILITIES = Object.freeze({
   warnings: Object.freeze({ mobileMinH: 8, compact: 'stacked-list' }),
   ranking: Object.freeze({ mobileMinH: 8, compact: 'stacked-list' }),
   chart: Object.freeze({ mobileMinH: 8, compact: 'compact-chart' })
+  , text: Object.freeze({ mobileMinH: 3, compact: 'text' }), map: Object.freeze({ mobileMinH: 8, compact: 'compact-chart' })
 })
 
 export function getWidgetGridCapability(widgetOrType = 'chart') {

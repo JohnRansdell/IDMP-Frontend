@@ -47,7 +47,7 @@ export function validateFilterDefinitions(definitions = []) {
     seen.add(def.id)
     if (typeof def.label !== 'string' || typeof def.field !== 'string' || !def.field.trim()) errors.push('筛选器名称或字段无效')
     if (!FILTER_TYPES.includes(def.type) || !Object.hasOwn(FILTER_OPERATORS, def.dataType) || typeof def.enabled !== 'boolean') errors.push('筛选器类型无效')
-    if (Object.keys(def).some(key => !['id', 'label', 'field', 'type', 'dataType', 'enabled', 'defaultValue', 'dependsOn', 'invalidValueBehavior'].includes(key))) errors.push('筛选定义包含非持久化属性')
+    if (Object.keys(def).some(key => !['id', 'label', 'field', 'type', 'dataType', 'enabled', 'defaultValue', 'dependsOn', 'invalidValueBehavior', 'optionSourceCode'].includes(key))) errors.push('筛选定义包含非持久化属性')
     if (def.defaultValue !== null) {
       if (def.type === 'multi-select') {
         if (!Array.isArray(def.defaultValue) || def.defaultValue.some(value => normalized(value, def.dataType) === null)) errors.push('多选默认值无效')
@@ -58,6 +58,7 @@ export function validateFilterDefinitions(definitions = []) {
     if (def.type === 'date-range' && def.dataType !== 'date') errors.push('日期范围需要日期字段')
     if (def.dependsOn !== undefined && (!Array.isArray(def.dependsOn) || def.dependsOn.some(id => typeof id !== 'string' || !id.trim() || id === def.id) || new Set(def.dependsOn).size !== def.dependsOn.length)) errors.push('筛选器依赖无效')
     if (def.invalidValueBehavior !== undefined && !['clear', 'reset-default'].includes(def.invalidValueBehavior)) errors.push('失效值处理无效')
+    if (def.optionSourceCode !== undefined && (typeof def.optionSourceCode !== 'string' || !def.optionSourceCode.trim())) errors.push('候选数据来源无效')
     return errors
   })
 }

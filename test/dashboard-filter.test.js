@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { reactive } from 'vue'
 import { createFieldCatalog } from '../src/idmp/features/dashboard/fieldCatalog.js'
 import { applyFilters, initialFilterValues, validateFilterDefinitions, validateConditions } from '../src/idmp/features/dashboard/filterEngine.js'
-import { queryWidgetDataset } from '../src/idmp/features/dashboard/queryAdapter.js'
+import { deriveDependentFilterOptions, normalizeDependentFilterValues, queryWidgetDataset } from '../src/idmp/features/dashboard/queryAdapter.js'
 import { compileWidgetData } from '../src/idmp/features/dashboard/bindingEngine.js'
 import { normalizeDashboardSchema, createPersistableDashboardSnapshot, validateDashboardSchema } from '../src/idmp/features/dashboard/schema.js'
 import { persistDashboardSchema, recoverDashboardSchema } from '../src/idmp/features/dashboard/persistence.js'
@@ -68,6 +68,28 @@ test('unavailable fields are diagnosed and incompatible globals do not blank wid
 test('empty selection and disabled global filter mean no additional restriction', () => {
   assert.equal(queryWidgetDataset(dataset, widget, [def], { department: [] }).rows, rows)
   assert.equal(queryWidgetDataset(dataset, widget, [{ ...def, enabled: false }], { department: ['x'] }).rows, rows)
+})
+test('dependent options apply every selected parent before collecting child values and clear invalid values', () => {
+  const acceptanceRows = [
+    { department: '呼吸内科', scene: '质量安全', disease: '慢阻肺' }, { department: '呼吸内科', scene: '质量安全', disease: '肺炎' },
+    { department: '心内科', scene: '医院评审', disease: '冠心病' }, { department: '心内科', scene: '医院评审', disease: '心衰' },
+    { department: '普外科', scene: '绩效考核', disease: '阑尾炎' }, { department: '普外科', scene: '绩效考核', disease: '胆囊炎' }
+  ]
+  const acceptance = { id: 'acceptance', rows: acceptanceRows, fields: createFieldCatalog(acceptanceRows) }
+  // This dataset has a disease but no department. It must not leak its value
+  // while a department parent is selected.
+  const unrelated = { id: 'unrelated', rows: [{ disease: '不应出现' }], fields: createFieldCatalog([{ disease: '不应出现' }]) }
+  const definitions = [
+    { id: 'department', label: '科室', field: 'department', dataType: 'string', type: 'multi-select', defaultValue: [], enabled: true },
+    { id: 'scene', label: '场景', field: 'scene', dataType: 'string', type: 'multi-select', defaultValue: [], enabled: true },
+    { id: 'disease', label: '病种', field: 'disease', dataType: 'string', type: 'multi-select', defaultValue: [], enabled: true, dependsOn: ['department', 'scene'], invalidValueBehavior: 'clear' }
+  ]
+  const respiratory = deriveDependentFilterOptions([acceptance, unrelated], definitions, { department: ['呼吸内科'], scene: [], disease: [] })
+  assert.deepEqual(respiratory.get('disease'), ['慢阻肺', '肺炎'])
+  const cardiology = deriveDependentFilterOptions([acceptance, unrelated], definitions, { department: ['心内科'], scene: [], disease: [] })
+  assert.deepEqual(cardiology.get('disease'), ['冠心病', '心衰'])
+  const normalized = normalizeDependentFilterValues(definitions, { department: ['心内科'], scene: [], disease: ['慢阻肺'] }, cardiology)
+  assert.deepEqual(normalized.disease, [])
 })
 test('definition and condition validation rejects malformed persisted configurations', () => {
   for (const bad of [null, {}, [def, def], [{ ...def, defaultValue: {} }], [{ ...def, runtimeValue: ['内科'] }], [{ ...def, type: 'date-range' }]]) assert.ok(validateFilterDefinitions(bad).length)

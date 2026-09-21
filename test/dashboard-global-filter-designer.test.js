@@ -116,7 +116,10 @@ test('global and cross filters compose on the same raw dataset while clearing cr
 
 test('quality safety preset uses the same definition factory contract as normal designer filters', () => {
   const schema = createQualitySafetyDemoSchema({ id: 'quality-safety', sceneCode: 'quality-safety' })
-  const normalDepartment = createGlobalFilterDefinition(departmentField, [], { id: 'department' })
+  const normalDepartment = createGlobalFilterDefinition(departmentField, [], {
+    id: 'department',
+    optionSourceCode: 'UAT_QUALITY_SAFETY_Q3'
+  })
   assert.deepEqual(schema.globalFilters.find(definition => definition.id === 'department'), normalDepartment)
   assert.deepEqual(schema.globalFilters.find(definition => definition.id === 'disease').dependsOn, ['department'])
 })

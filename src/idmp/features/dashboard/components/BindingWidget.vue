@@ -3,9 +3,9 @@
     <div class="db-section-title"><h2>{{ title }}</h2><nav v-if="drill.active" class="drill-breadcrumb" aria-label="组件下钻路径"><button v-for="(part, index) in drill.breadcrumb" :key="`${part}-${index}`" type="button" @click="drill.back(widget.id, index)">{{ part }}</button><button type="button" @click="drill.reset(widget.id)">返回顶层</button></nav></div>
     <p v-if="dataset?.filterDiagnostics?.length" role="status" class="filter-diagnostic">{{ dataset.filterDiagnostics.join('；') }}</p>
     <div v-if="model.status !== 'ready'" class="binding-state" role="status" :data-testid="`binding-${model.status}`"><strong>{{ model.status === 'invalid' ? '请配置数据字段' : '暂无数据' }}</strong><p v-if="model.status === 'invalid'">{{ model.message }}</p></div>
-    <strong v-else-if="kind === 'kpi'" data-testid="binding-kpi-value">{{ displayKpiValue }}{{ model.unit }}</strong>
+    <strong v-else-if="kind === 'kpi'" data-testid="binding-kpi-value" :style="{ color: visualStyle.kpi.valueColor || undefined }">{{ displayKpiValue }}{{ model.unit }}</strong>
     <ol v-else-if="kind === 'ranking'" class="binding-ranking"><li v-for="(item, index) in model.items" :key="item.name"><span>{{ index + 1 }}</span><span>{{ item.name }}</span><strong>{{ formatVisibleValue(item.value) }}</strong></li></ol>
-    <div v-else-if="kind === 'table'" class="binding-table-wrap"><table data-testid="binding-table"><thead><tr><th>维度</th><th v-for="series in model.series" :key="series.name">{{ series.name }}</th></tr></thead><tbody><tr v-for="(category, index) in model.categories" :key="category"><td>{{ category }}</td><td v-for="series in model.series" :key="series.name">{{ formatVisibleValue(series.values[index]) }}</td></tr></tbody></table></div>
+    <div v-else-if="kind === 'table'" class="binding-table-wrap" :class="{ 'is-zebra': visualStyle.table.zebra, 'is-compact': visualStyle.table.compact }" :style="{ '--table-header-background': visualStyle.table.headerBackground }"><table data-testid="binding-table"><thead><tr><template v-if="rawTableColumns.length"><th v-for="column in rawTableColumns" :key="column.id">{{ column.label }}</th></template><template v-else><th>维度</th><th v-for="series in model.series" :key="series.name">{{ series.name }}</th></template></tr></thead><tbody><template v-if="rawTableColumns.length"><tr v-for="(row, index) in rawTableRows" :key="index"><td v-for="column in rawTableColumns" :key="column.id">{{ formatVisibleValue(row[column.id]) }}</td></tr></template><template v-else><tr v-for="(category, index) in model.categories" :key="category"><td>{{ category }}</td><td v-for="series in model.series" :key="series.name">{{ formatVisibleValue(series.values[index]) }}</td></tr></template></tbody></table></div>
     <IdmpChart v-else :option="option" height="100%" fit-container :aria-label="`${title}，${model.series?.length || 1} 个系列`" @chart-click="onChartClick">
       <template #table><table><thead><tr><th>维度</th><th v-for="series in model.series" :key="series.name">{{ series.name }}</th></tr></thead><tbody><tr v-for="(category, index) in model.categories" :key="category"><td>{{ category }}</td><td v-for="series in model.series" :key="series.name">{{ formatVisibleValue(series.values[index]) }}</td></tr></tbody></table></template>
     </IdmpChart>
@@ -16,6 +16,7 @@ import { computed, inject } from 'vue'
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
 import { bindingKind, compileWidgetData, bindingChartOption, formatDashboardMetric } from '../bindingEngine.js'
 import { createDashboardChartTheme } from '../chartTheme.js'
+import { applyWidgetVisualStyle, resolveWidgetVisualStyle } from '../visualStyle.js'
 import { queryWidgetDatasetWithRuntime } from '../queryAdapter.js'
 import { DRILLABLE_KINDS, effectiveDrill } from '../drillDown.js'
 const props = defineProps({ widget: { type: Object, required: true }, title: String })
@@ -28,8 +29,15 @@ const sourceDataset = computed(() => queryWidgetDatasetWithRuntime(getDatasets(p
 const effective = computed(() => effectiveDrill(props.widget, sourceDataset.value, drillContext.states.value[String(props.widget.id)]))
 const dataset = computed(() => effective.value.dataset)
 const model = computed(() => compileWidgetData(kind.value, effective.value.binding, dataset.value))
+const rawTableColumns = computed(() => {
+  if (kind.value !== 'table' || !Array.isArray(props.widget.config?.tableColumns)) return []
+  const fields = new Map((dataset.value?.fields || []).map(field => [field.id, field]))
+  return props.widget.config.tableColumns.map(id => fields.get(id)).filter(Boolean).map(field => ({ id: field.id, label: field.label }))
+})
+const rawTableRows = computed(() => rawTableColumns.value.length ? (dataset.value?.rows || []) : [])
 const displayKpiValue = computed(() => formatDashboardMetric(model.value?.value))
-const option = computed(() => createDashboardChartTheme(bindingChartOption(kind.value, model.value)))
+const option = computed(() => createDashboardChartTheme(applyWidgetVisualStyle(props.widget, bindingChartOption(kind.value, model.value))))
+const visualStyle = computed(() => resolveWidgetVisualStyle(props.widget))
 const drill = computed(() => ({ active: props.widget.config?.interaction?.clickAction === 'drill' && DRILLABLE_KINDS.has(kind.value) && effective.value.hierarchy.length > 1, breadcrumb: ['全院', ...effective.value.path], back: drillContext.back, reset: drillContext.reset }))
 function formatVisibleValue(value) { return value === null || value === undefined ? '—' : formatDashboardMetric(value) }
 function onChartClick(params) { if (drill.value.active) drillContext.advance(props.widget, sourceDataset.value, params?.name); else emit('chart-click', params) }
@@ -39,7 +47,7 @@ function onChartClick(params) { if (drill.value.active) drillContext.advance(pro
 .binding-state strong { font-size:13px; }.binding-state p { line-height:1.6; }
 .filter-diagnostic { margin:0 0 6px; font-size:11px; color:var(--db-warning,#a47735); }
 table { width:100%; font-size:12px; border-collapse:collapse; } td,th { padding:6px; text-align:left; }
-.binding-table-wrap { max-width:100%; overflow:auto; overscroll-behavior-inline:contain; max-height:100%; }.binding-table-wrap table { width:max-content; min-width:100%; }.binding-table-wrap th { position:sticky; top:0; background:var(--db-surface,#fff); }.binding-table-wrap td,.binding-table-wrap th { border-bottom:1px solid var(--db-border,#e3e9eb); white-space:nowrap; }
+.binding-table-wrap { max-width:100%; overflow:auto; overscroll-behavior-inline:contain; max-height:100%; }.binding-table-wrap table { width:max-content; min-width:100%; }.binding-table-wrap th { position:sticky; top:0; background:var(--table-header-background,var(--db-surface,#fff)); }.binding-table-wrap td,.binding-table-wrap th { border-bottom:1px solid var(--db-border,#e3e9eb); white-space:nowrap; }.binding-table-wrap.is-zebra tbody tr:nth-child(even) { background:color-mix(in srgb, var(--table-header-background,#f3f7f8) 35%, transparent); }.binding-table-wrap.is-compact td,.binding-table-wrap.is-compact th { padding:4px 6px; }
 .binding-ranking { padding:0; list-style:none; overflow:auto; }.binding-ranking li { display:grid; grid-template-columns:24px 1fr auto; gap:12px; padding:10px 0; }
 .db-section-title { min-height:30px; margin-bottom:12px; }.db-section-title h2 { font-size:13px; font-weight:550; margin:0; }
 .drill-breadcrumb { display:flex; gap:4px; align-items:center; flex-wrap:wrap; font-size:10px; }.drill-breadcrumb button { border:0; padding:0; background:transparent; color:var(--db-accent,#1261a6); cursor:pointer; }

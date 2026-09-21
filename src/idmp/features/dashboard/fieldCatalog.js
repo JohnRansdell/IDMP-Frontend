@@ -1,6 +1,6 @@
 // Catalogs describe available scalar columns, never a Cartesian join of snapshots.
-import { dashboardAcceptanceRows } from './acceptanceData.js'
-const labels = { year: '年度', quarter: '季度', month: '统计月份', date: '统计日期', department: '科室', medicalGroup: '医疗组', doctor: '医师', disease: '病种', scene: '应用场景', indicatorCategory: '指标分类', indicatorValue: '指标值', targetValue: '目标值', period: '统计月份', departmentName: '科室', deptName: '科室', deptCode: '科室编码', category: '分类', value: '指标值', numerator: '分子值', denominator: '分母值', yoy: '同比', mom: '环比' }
+import { dashboardAcceptanceDrillRows, dashboardAcceptanceDualAxisRows, dashboardAcceptanceMapRows, dashboardAcceptanceRows } from './acceptanceData.js'
+const labels = { year: '年度', quarter: '季度', month: '统计月份', date: '统计日期', department: '科室', medicalGroup: '医疗组', doctor: '医师', disease: '病种', scene: '应用场景', indicatorCategory: '指标分类', indicatorValue: '指标值', actualValue: '实际值', targetValue: '目标值', period: '统计月份', departmentName: '科室', deptName: '科室', deptCode: '科室编码', category: '分类', value: '指标值', numerator: '分子值', denominator: '分母值', yoy: '同比', mom: '环比' }
 export function numericValue(value) {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null
   if (typeof value !== 'string' || !/^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(value.trim())) return null
@@ -27,9 +27,19 @@ const acceptanceHints = {
   department: dimensionHint, medicalGroup: dimensionHint, doctor: dimensionHint, disease: dimensionHint, scene: dimensionHint, indicatorCategory: dimensionHint,
   indicatorValue: numberHint, numerator: numberHint, denominator: numberHint, targetValue: numberHint, yoy: numberHint, mom: numberHint
 }
+const drillHints = { department: dimensionHint, medicalGroup: dimensionHint, doctor: dimensionHint, value: numberHint }
+const mapHints = { region: dimensionHint, value: numberHint }
+const dualAxisHints = { month: { ...dimensionHint, label: '月份' }, actualValue: numberHint, targetValue: numberHint }
 const records = value => Array.isArray(value) ? value.filter(row => row && typeof row === 'object' && !Array.isArray(row)) : []
 
 export function createWidgetBindingDatasets(source, { result, demo = false, months = [] } = {}) {
+  if (source?.origin === 'acceptance') {
+    if (source.acceptanceDataset === 'acceptance') return [dataset('acceptance', '固定验收数据 · 2026 Q3 · 18 条记录', dashboardAcceptanceRows, acceptanceHints)]
+    if (source.acceptanceDataset === 'drill') return [dataset('acceptance-drill', '固定验收数据 · 组织层级下钻', dashboardAcceptanceDrillRows, drillHints)]
+    if (source.acceptanceDataset === 'map') return [dataset('acceptance-map', '固定验收数据 · 区域分布', dashboardAcceptanceMapRows, mapHints)]
+    if (source.acceptanceDataset === 'dual-axis') return [dataset('acceptance-dual-axis', '固定验收数据 · 双 Y 轴月度数据', dashboardAcceptanceDualAxisRows, dualAxisHints)]
+    return [dataset('current', `${source.name} · 固定验收值`, [{ value: source.currentValue, mom: source.mom, yoy: source.yoy }], { value: { ...numberHint, unit: source.unit || '' }, mom: numberHint, yoy: numberHint })]
+  }
   if (source?.origin === 'indicator-catalog') {
     const rows = records(source.bindingRows)
     return rows.length

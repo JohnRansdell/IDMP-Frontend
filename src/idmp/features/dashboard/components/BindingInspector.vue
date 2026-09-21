@@ -9,13 +9,15 @@
     <p>先点击配置槽，再点击字段添加。</p>
     <div class="binding-fields"><button v-for="field in filteredFields" :key="field.id" type="button" :data-testid="`binding-field-${field.id}`" :disabled="!canAdd(field)" @click="add(field)"><span>{{ icon(field) }} {{ field.label }}</span><small>{{ field.semanticType === 'measure' ? '度量' : field.semanticType === 'time' ? '时间' : '维度' }}</small></button></div>
     <h3>字段配置</h3>
+    <p v-if="isMap">Map 需要 1 个区域维度 + 1 个数值度量。</p>
     <section v-for="slot in slots" :key="slot.id" class="binding-slot" :class="{ 'is-active': target === slot.id }">
       <button type="button" class="binding-slot-heading" :data-testid="`binding-slot-${slot.id}`" :aria-pressed="target === slot.id" @click="target = slot.id">{{ slot.label }} <span>＋</span></button>
+      <p v-if="slot.id === 'measures' && dualAxisSupported" class="binding-axis-help">添加多个度量后，可分别指定左 Y 轴或右 Y 轴。</p>
       <p v-if="!binding[slot.id]?.length">点击此槽，再从上方添加字段</p>
       <div v-for="(item, index) in binding[slot.id] || []" :key="item.field" class="binding-chip" :data-testid="`binding-chip-${slot.id}-${item.field}`">
         <span>{{ item.label || item.field }}</span><button type="button" :aria-label="`移除${item.label || item.field}`" @click="remove(slot.id, index)">×</button>
         <select v-if="slot.id === 'measures'" :aria-label="`${item.label}聚合方式`" :data-testid="`binding-aggregation-${item.field}`" :value="item.aggregation" @change="patchItem(slot.id, index, { aggregation: $event.target.value })"><option v-for="(label, value) in AGGREGATIONS" :key="value" :value="value">{{ label }}</option></select>
-        <select v-if="slot.id === 'measures' && dualAxisSupported" :aria-label="`${item.label}坐标轴`" :data-testid="`binding-axis-${item.field}`" :value="item.axis || 'left'" @change="patchItem(slot.id, index, { axis: $event.target.value })"><option value="left">左轴</option><option value="right">右轴</option></select>
+        <label v-if="slot.id === 'measures' && dualAxisSupported" class="binding-axis-select">坐标轴<select :aria-label="`${item.label}坐标轴`" :data-testid="`binding-axis-${item.field}`" :value="item.axis || 'left'" @change="patchItem(slot.id, index, { axis: $event.target.value })"><option value="left">左 Y 轴</option><option value="right">右 Y 轴</option></select></label>
         <span v-if="fields.find(field => field.id === item.field)?.semanticType === 'time'" class="binding-granularity">原始时间粒度（不补造日期）</span>
       </div>
     </section>
@@ -59,7 +61,8 @@ const filterFields = computed(() => dashboardFilterCatalog(props.datasets.filter
 const filteredFields = computed(() => fields.value.filter(field => `${field.label} ${field.id}`.toLowerCase().includes(search.value.toLowerCase())))
 const validation = computed(() => validateWidgetBinding(bindingKind(props.widget), rawBinding.value, fields.value))
 const dualAxisSupported = computed(() => ['line', 'bar'].includes(bindingKind(props.widget)))
-const slots = computed(() => [{ id: 'dimensions', label: 'X 轴 / 维度' }, { id: 'measures', label: 'Y 轴 / 度量' }, { id: 'series', label: '系列' }].filter(slot => capability.value?.[slot.id]))
+const isMap = computed(() => bindingKind(props.widget) === 'map')
+const slots = computed(() => [{ id: 'dimensions', label: isMap.value ? '区域 / 维度' : 'X 轴 / 维度' }, { id: 'measures', label: isMap.value ? '数值 / 度量' : 'Y 轴 / 度量' }, { id: 'series', label: '系列' }].filter(slot => capability.value?.[slot.id]))
 watch(() => props.widget.id, () => { search.value = ''; pendingDataset.value = ''; target.value = props.widget.type === 'kpi' ? 'measures' : 'dimensions' }, { immediate: true })
 watch(slots, value => { if (!value.some(slot => slot.id === target.value)) target.value = 'measures' })
 const icon = field => field.semanticType === 'measure' ? '∑' : field.semanticType === 'time' ? '◷' : '▣'
@@ -87,6 +90,6 @@ input,select { box-sizing:border-box; width:100%; padding:7px; border:1px solid 
 button { cursor:pointer; color:inherit; background:white; border:1px solid var(--db-border,#e3e9eb); border-radius:5px; padding:6px; } button:disabled { opacity:.45; cursor:default; } button:focus-visible,input:focus-visible,select:focus-visible { outline:2px solid var(--db-accent,#4f8583); }
 .binding-fields { max-height:180px; overflow:auto; display:grid; gap:4px; }.binding-fields button { display:flex; justify-content:space-between; text-align:left; }.binding-fields small { flex-shrink:0; }
 .binding-slot { margin:8px 0; padding:6px; border:1px dashed var(--db-border,#e3e9eb); border-radius:6px; }.binding-slot.is-active { border-color:var(--db-accent,#4f8583); }.binding-slot-heading { width:100%; display:flex; justify-content:space-between; border:0; }.binding-slot p { margin:6px; }
-.binding-chip { display:flex; flex-wrap:wrap; align-items:center; gap:5px; background:var(--db-accent-soft,#edf5f3); border-radius:5px; padding:6px; margin-top:5px; }.binding-chip>span { flex:1; }.binding-chip button { border:0; background:transparent; }.binding-chip select { margin:0; }.binding-granularity { font-size:10px; flex-basis:100%!important; }.binding-error { color:var(--db-warning,#a47735); }
+.binding-chip { display:flex; flex-wrap:wrap; align-items:center; gap:5px; background:var(--db-accent-soft,#edf5f3); border-radius:5px; padding:6px; margin-top:5px; }.binding-chip>span { flex:1; }.binding-chip button { border:0; background:transparent; }.binding-chip select { margin:0; }.binding-axis-help { margin:4px 6px 7px; color:var(--db-muted,#78878e); }.binding-axis-select { display:flex; align-items:center; gap:4px; flex:1 1 100%; font-size:11px; }.binding-axis-select select { flex:1; }.binding-granularity { font-size:10px; flex-basis:100%!important; }.binding-error { color:var(--db-warning,#a47735); }
 .binding-inspector input[type=checkbox] { width:auto; }.query-scope { display:block; margin-top:8px; }
 </style>

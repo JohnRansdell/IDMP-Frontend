@@ -75,7 +75,7 @@
 
 <script setup>
 import { computed, markRaw, onMounted, ref } from 'vue'
-import { dashboardSceneCode, designerImmersive } from './shellState.js'
+import { dashboardCatalogRevision, dashboardRequestedId, designerImmersive } from './shellState.js'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import {
   Aim,
@@ -94,18 +94,23 @@ import {
 } from '@element-plus/icons-vue'
 import { sceneOptions } from '@/idmp/data/demo'
 import { fetchUnreadNotificationCount } from '@/idmp/api/modules/warnings'
-import { LOCAL_SCENE_DASHBOARDS, findLocalScene } from '@/idmp/features/dashboard/sceneRegistry.js'
+import { LOCAL_SCENE_DASHBOARDS } from '@/idmp/features/dashboard/sceneRegistry.js'
+import { readDashboardCatalog } from '@/idmp/features/dashboard/catalog.js'
+import { createDashboardSelectorOptions } from '@/idmp/features/dashboard/dashboardIdentity.js'
 
 const route = useRoute()
 const router = useRouter()
 const globalScene = ref(sceneOptions[0])
 const isDashboardRoute = computed(() => route.name === 'Dashboard')
-const currentSceneOptions = computed(() => isDashboardRoute.value
-  ? LOCAL_SCENE_DASHBOARDS.map(scene => ({ label: `${scene.name}（本地看板）`, value: scene.sceneCode }))
-  : sceneOptions.map(scene => ({ label: scene, value: scene })))
+const currentSceneOptions = computed(() => {
+  if (!isDashboardRoute.value) return sceneOptions.map(scene => ({ label: scene, value: scene }))
+  dashboardCatalogRevision.value
+  return createDashboardSelectorOptions(LOCAL_SCENE_DASHBOARDS, readDashboardCatalog(globalThis.localStorage))
+    .map(item => ({ label: item.name, value: item.id }))
+})
 const currentScene = computed({
-  get: () => isDashboardRoute.value ? (findLocalScene(dashboardSceneCode.value)?.sceneCode || LOCAL_SCENE_DASHBOARDS[0].sceneCode) : globalScene.value,
-  set: (value) => { if (isDashboardRoute.value) dashboardSceneCode.value = value; else globalScene.value = value }
+  get: () => isDashboardRoute.value ? dashboardRequestedId.value : globalScene.value,
+  set: (value) => { if (isDashboardRoute.value) dashboardRequestedId.value = value; else globalScene.value = value }
 })
 const unreadCount = ref(0)
 async function loadUnreadCount() {

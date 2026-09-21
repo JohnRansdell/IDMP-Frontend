@@ -38,19 +38,39 @@ export function queryWidgetDatasetWithRuntime(dataset, widget, { definitions = [
 
 export function deriveDependentFilterOptions(datasets = [], definitions = [], runtimeValues = {}) {
   const output = new Map()
+  const definitionsById = new Map(definitions.map(definition => [definition.id, definition]))
+  const ancestorsOf = definition => {
+    const result = [], seen = new Set()
+    const visit = id => {
+      if (seen.has(id)) return
+      seen.add(id)
+      const parent = definitionsById.get(id)
+      if (!parent || parent.enabled === false) return
+      result.push(parent)
+      for (const upstreamId of parent.dependsOn || []) visit(upstreamId)
+    }
+    for (const id of definition.dependsOn || []) visit(id)
+    return result
+  }
   for (const definition of definitions) {
-    const dependencyIds = definition.dependsOn || []
-    const upstream = definitions.filter(item => dependencyIds.includes(item.id) && item.enabled !== false)
+    const upstream = ancestorsOf(definition)
     const options = []
     for (const dataset of datasets) {
+      if (definition.optionSourceCode && dataset.sourceCode !== definition.optionSourceCode) continue
       const target = dataset.fields.find(field => field.id === definition.field && field.filterable && filterValueType(field) === definition.dataType)
       if (!target) continue
+      let canApplyAllParents = true
       const conditions = upstream.flatMap(def => {
         const source = dataset.fields.find(field => field.id === def.field && field.filterable && filterValueType(field) === def.dataType)
         const value = Object.hasOwn(runtimeValues, def.id) ? runtimeValues[def.id] : def.defaultValue
-        if (!source || value === null || value === undefined || value === '' || Array.isArray(value) && !value.length) return []
+        const hasValue = !(value === null || value === undefined || value === '' || Array.isArray(value) && !value.length)
+        // A dataset which can provide child values but cannot apply a selected
+        // parent must not leak unscoped options into the dependent control.
+        if (!source && hasValue) { canApplyAllParents = false; return [] }
+        if (!source || !hasValue) return []
         return [{ field: def.field, operator: def.type === 'multi-select' ? 'in' : def.type === 'date-range' ? 'between' : 'equals', value }]
       })
+      if (!canApplyAllParents) continue
       for (const row of applyFilters(dataset.rows, conditions, dataset.fields).rows) {
         const value = row?.[definition.field]
         if ((typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') && value !== '' && !(typeof value === 'number' && !Number.isFinite(value)) && !options.some(item => item === value)) options.push(value)

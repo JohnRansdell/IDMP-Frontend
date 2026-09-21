@@ -13,6 +13,7 @@
         <label>显示名称<input :value="def.label" @change="patch(def.id, { label: $event.target.value.trim() || fieldFor(def)?.label || def.field })" /></label>
         <label>字段<select :value="def.field" :data-testid="`global-filter-field-${def.id}`" @change="changeField(def, $event.target.value)"><option v-for="field in fieldChoices(def)" :key="field.id" :value="field.id">{{ field.label }} · {{ field.id }}</option></select></label>
         <label>控件类型<select :value="def.type" @change="patch(def.id, { type: $event.target.value, defaultValue: emptyDefault($event.target.value) })"><option v-for="type in fieldFor(def)?.filterTypes || [def.type]" :key="type" :value="type">{{ typeLabel(type) }}</option></select></label>
+        <label>候选数据来源<select :value="def.optionSourceCode || ''" @change="patch(def.id, { optionSourceCode: $event.target.value || undefined })"><option value="">全部兼容数据源</option><option v-for="source in optionSources" :key="source.code" :value="source.code">{{ source.name }}</option></select></label>
         <label>依赖筛选器<select multiple :value="def.dependsOn || []" @change="patch(def.id, { dependsOn: [...$event.target.selectedOptions].map(option => option.value) })"><option v-for="upstream in definitions.filter(item => item.id !== def.id)" :key="upstream.id" :value="upstream.id">{{ upstream.label }}</option></select></label>
         <label v-if="(def.dependsOn || []).length">上游变化后<select :value="def.invalidValueBehavior || 'clear'" @change="patch(def.id, { invalidValueBehavior: $event.target.value })"><option value="clear">清空失效值</option><option value="reset-default">恢复默认值</option></select></label>
         <div class="default-value"><label>默认值</label><FilterValue :type="def.type" :options="fieldFor(def)?.options || []" :model-value="def.defaultValue" @update:model-value="patch(def.id, { defaultValue: $event })" /></div>
@@ -28,7 +29,7 @@ import { computed, ref } from 'vue'
 import FilterValue from './FilterValue.vue'
 import { validateFilterDefinitions } from '../filterEngine.js'
 import { changeGlobalFilterField, createGlobalFilterDefinition, globalFilterScopeTargetIds } from '../globalFilterDesignerModel.js'
-const props = defineProps({ definitions: { type: Array, default: () => [] }, catalog: { type: Array, default: () => [] }, widgets: { type: Array, default: () => [] }, compatibleWidgetIdsByFilter: { type: Object, default: () => ({}) } })
+const props = defineProps({ definitions: { type: Array, default: () => [] }, catalog: { type: Array, default: () => [] }, optionSources: { type: Array, default: () => [] }, widgets: { type: Array, default: () => [] }, compatibleWidgetIdsByFilter: { type: Object, default: () => ({}) } })
 const emit = defineEmits(['change', 'delete', 'scope-change'])
 const selectedField = ref('')
 const available = computed(() => props.catalog.filter(field => field.semanticType !== 'measure' && !props.definitions.some(def => def.field === field.id)))

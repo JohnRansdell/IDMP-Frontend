@@ -1,6 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createDashboardChartTheme, clinicalTrendTone } from '../src/idmp/features/dashboard/chartTheme.js'
+import { formatKpiComparison } from '../src/idmp/features/dashboard/visualization.js'
+
+test('KPI comparison formatter keeps values numeric until percent presentation', () => {
+  assert.equal(formatKpiComparison(1.24, '%'), '+1.24%')
+  assert.equal(formatKpiComparison(-0.12, '%'), '-0.12%')
+  assert.equal(formatKpiComparison(0, '%'), '0%')
+  assert.equal(formatKpiComparison(3.18, '人'), '+3.18')
+  assert.equal(formatKpiComparison('+1.24%', '%'), '+1.24%')
+})
 
 test('Clinical Light preserves chart data and drill payloads without mutating business options', () => {
   const formatter = () => 'clinical value'
@@ -115,6 +124,7 @@ test('dashboard KPI preserves its analysis identity and explicit disabled state'
     analysisEnabled: false,
     title: '汇总指标',
     value: '12',
+    unit: '',
     change: '-',
     target: '-',
     status: 'success'

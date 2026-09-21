@@ -12,7 +12,8 @@ export const BINDING_CAPABILITIES = {
   radar: { dimensions: 1, measures: Infinity, series: 1 },
   funnel: { dimensions: 1, measures: 1, series: 0 },
   scatter: { dimensions: 0, measures: 2, series: 0 },
-  heatmap: { dimensions: 1, measures: 1, series: 1 }
+  heatmap: { dimensions: 1, measures: 1, series: 1 },
+  map: { dimensions: 1, measures: 1, series: 0 }
 }
 export const bindingKind = widget => widget.type === 'chart' ? widget.chartKind || 'line' : widget.type
 export const hasDataBinding = widget => Object.hasOwn(widget.config || {}, 'dataBinding')
@@ -144,6 +145,7 @@ export function bindingChartOption(kind, model) {
     const ys = model.series.map(item => item.name)
     return { tooltip: { position: 'top' }, grid: { top: 38, bottom: 28, left: 12, right: 16, containLabel: true }, xAxis: { type: 'category', data: model.categories }, yAxis: { type: 'category', data: ys }, visualMap: { min: 0, max: Math.max(0, ...model.series.flatMap(item => item.values.filter(value => value !== null))), calculable: true, orient: 'horizontal', left: 'center', bottom: 0 }, series: [{ type: 'heatmap', data: model.series.flatMap((item, y) => item.values.map((value, x) => value === null ? null : [x, y, value]).filter(Boolean)) }] }
   }
+  if (kind === 'map') return { tooltip: { trigger: 'item' }, grid: { top: 24, bottom: 30, left: 46, right: 18 }, xAxis: { type: 'value', show: false }, yAxis: { type: 'category', data: model.categories, inverse: true }, visualMap: { min: 0, max: Math.max(1, ...model.series[0].values.filter(value => value !== null)), calculable: true, orient: 'horizontal', left: 'center', bottom: 0 }, series: [{ name: model.series[0]?.name || '指标值', type: 'bar', data: model.series[0]?.values || [], itemStyle: { borderRadius: [0, 4, 4, 0] } }] }
   const dualAxis = ['line', 'bar'].includes(kind) && model.series.some(item => item.axis === 'right')
   return { tooltip: { trigger: 'axis' }, legend: { top: 0 }, grid: { top: 38, bottom: 28, left: 12, right: 16, containLabel: true }, xAxis: { type: 'category', data: model.categories }, yAxis: dualAxis ? [{ type: 'value' }, { type: 'value' }] : { type: 'value' }, series: model.series.map(item => ({ name: item.name, type: kind, data: item.values, ...(dualAxis ? { yAxisIndex: item.axis === 'right' ? 1 : 0 } : {}) })) }
 }

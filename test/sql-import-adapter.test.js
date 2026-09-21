@@ -9,7 +9,9 @@ import {
   canTrialSqlImport,
   isSqlImportTerminal,
   mergeSqlFactorMetadata,
+  nextSqlImportCode,
   normalizeSqlImportPreview,
+  normalizeSqlImportOperationError,
   normalizeSqlImportTask,
   shouldPollSqlImport
 } from '../src/idmp/api/adapters/sqlImport.js'
@@ -31,6 +33,22 @@ test('SQL import preview keeps opaque ids and normalizes generated drafts', () =
   assert.equal(preview.tables[0].candidates[0].viewMappingId, '102027642460316628')
   assert.equal(preview.factors[0].dsl.dslType, 'FACTOR')
   assert.equal(preview.diagnostics[0].severity, 'ERROR')
+})
+
+test('SQL import conflict recovery advances a stable run code and preserves conflict evidence', () => {
+  assert.equal(nextSqlImportCode('UAT_FACTOR_R01'), 'UAT_FACTOR_R02')
+  assert.equal(nextSqlImportCode('UAT_FACTOR_R009'), 'UAT_FACTOR_R010')
+  assert.equal(nextSqlImportCode('UAT_FACTOR'), 'UAT_FACTOR_R02')
+  const conflict = normalizeSqlImportOperationError({
+    status: 409,
+    code: 'FACTOR-40901',
+    traceId: 'trace-conflict',
+    payload: { code: 'FACTOR-40901', message: '因子编码已经存在', traceId: 'trace-conflict', data: { id: 99n, code: 'UAT_FACTOR_R01', status: 'DRAFT' } }
+  })
+  assert.equal(conflict.conflict, true)
+  assert.equal(conflict.traceId, 'trace-conflict')
+  assert.equal(conflict.resource.id, '99')
+  assert.equal(conflict.resource.code, 'UAT_FACTOR_R01')
 })
 
 test('SQL import preview exposes alternate mapping candidates and period fields from DSL', () => {

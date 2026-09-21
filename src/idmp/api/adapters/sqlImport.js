@@ -148,3 +148,30 @@ export function shouldPollSqlImport(task) { return SQL_IMPORT_RUNNING_STATUSES.h
 export function canSubmitSqlImportMetadata(task) { return String(task?.status || '').toUpperCase() === 'AWAITING_METADATA' }
 export function canTrialSqlImport(task) { return String(task?.status || '').toUpperCase() === 'READY_FOR_TRIAL' }
 export function canFinalizeSqlImport(task) { return String(task?.status || '').toUpperCase() === 'TRIAL_SUCCEEDED' }
+
+export function nextSqlImportCode(value) {
+  const code = String(value || '').trim().toUpperCase()
+  if (!code) return ''
+  const match = code.match(/^(.*)_R(\d+)$/)
+  if (!match) return `${code}_R02`
+  const width = Math.max(2, match[2].length)
+  return `${match[1]}_R${String(Number(match[2]) + 1).padStart(width, '0')}`
+}
+
+export function normalizeSqlImportOperationError(error = {}) {
+  const payload = error?.payload || {}
+  const data = payload?.data && typeof payload.data === 'object' ? payload.data : {}
+  const message = String(payload?.message || error?.message || 'SQL 导入操作失败')
+  const code = String(payload?.code || error?.code || '')
+  const status = Number(error?.status || payload?.status || 0)
+  const conflict = status === 409 || /409/.test(code) || /(因子|指标|资源).*(编码|名称).*(存在|重复|占用)|code.*(exist|duplicate|conflict)/i.test(message)
+  const candidate = data.existingResource || data.resource || data.conflictResource || (data.id || data.resourceId ? data : null)
+  const resource = candidate && typeof candidate === 'object' ? {
+    id: toOpaqueId(candidate.id || candidate.resourceId),
+    type: String(candidate.type || candidate.resourceType || (code.includes('INDICATOR') ? 'INDICATOR' : code.includes('FACTOR') ? 'FACTOR' : '')),
+    code: String(candidate.code || candidate.resourceCode || candidate.factorCode || candidate.indicatorCode || ''),
+    name: String(candidate.name || candidate.resourceName || candidate.factorName || candidate.indicatorName || ''),
+    status: String(candidate.status || candidate.publicationStatus || '')
+  } : null
+  return { conflict, status, code, message, traceId: String(payload?.traceId || error?.traceId || ''), resource }
+}

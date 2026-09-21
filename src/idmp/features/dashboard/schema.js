@@ -7,7 +7,7 @@ export const DASHBOARD_SCHEMA_STORAGE_PREFIX = 'idmp:dashboard-schema:v1:'
 export const GRID_LAYOUT_ENGINE = 'gridstack'
 export const GRID_COLUMNS = 24
 
-const VALID_WIDGET_TYPES = new Set(['primary', 'supporting', 'kpi', 'chart', 'warnings', 'ranking'])
+const VALID_WIDGET_TYPES = new Set(['primary', 'supporting', 'kpi', 'chart', 'text', 'warnings', 'ranking'])
 const WIDGET_METADATA_FIELDS = ['id', 'type', 'sourceCode', 'sourceName', 'kpiIndex', 'chartKind', 'visualType', 'preset', 'title', 'config']
 const ROOT_PERSISTED_FIELDS = new Set(['version', 'id', 'name', 'description', 'dashboardType', 'category', 'scope', 'sceneCode', 'responsivePolicy', 'layout', 'appearance', 'presentation', 'widgets', 'globalFilters'])
 const LAYOUT_PERSISTED_FIELDS = new Set(['engine', 'columns', 'float'])
@@ -91,6 +91,31 @@ export function applyGridLayoutToSchema(schema, layouts = []) {
 
 export function synchronizeDashboardGridLayout(schema, layouts = [], userInitiated = false) {
   return { schema: applyGridLayoutToSchema(schema, layouts), dirty: userInitiated === true }
+}
+
+// Column switching is deliberately schema-level so Designer and Viewer always
+// receive the same normalized desktop layout.  We only support the product
+// grid sizes (12/24), preserve every widget and resolve collisions by stacking.
+export function changeDashboardGridColumns(schema, columns) {
+  const nextColumns = Number(columns)
+  if (![12, 24].includes(nextColumns)) throw new TypeError('grid columns must be 12 or 24')
+  const currentColumns = Number(schema?.layout?.columns || GRID_COLUMNS)
+  if (currentColumns === nextColumns) return normalizeDashboardSchema(schema)
+  const occupied = []
+  const widgets = (schema?.widgets || []).map((widget) => {
+    const layout = widget.layout || getDefaultGridLayout(widget)
+    const scaled = {
+      x: Math.round(layout.x * nextColumns / currentColumns),
+      y: Math.max(0, Math.round(layout.y)),
+      w: Math.max(1, Math.round(layout.w * nextColumns / currentColumns)),
+      h: Math.max(1, Math.round(layout.h))
+    }
+    let candidate = normalizeGridLayout(scaled, nextColumns, getDefaultGridLayout(widget))
+    while (occupied.some(other => layoutsOverlap(candidate, other))) candidate = { ...candidate, y: candidate.y + 1 }
+    occupied.push(candidate)
+    return { ...widget, layout: candidate }
+  })
+  return normalizeDashboardSchema({ ...schema, layout: { ...schema.layout, columns: nextColumns }, widgets })
 }
 
 export function updateDashboardWidget(schema, widgetId, updater) {
@@ -295,6 +320,7 @@ function toInteger(value, fallback) {
   return Number.isFinite(number) ? Math.round(number) : fallback
 }
 function clamp(value, min, max) { return Math.min(Math.max(value, min), max) }
+function layoutsOverlap(a, b) { return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y }
 function isPlainObject(value) { return value && typeof value === 'object' && !Array.isArray(value) }
 function assertKnownFields(value, allowed, path) {
   if (!isPlainObject(value)) throw new TypeError(`${path} must be a plain object`)

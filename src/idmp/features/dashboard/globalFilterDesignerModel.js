@@ -18,6 +18,7 @@ export function createGlobalFilterDefinition(field, definitions = [], options = 
     defaultValue: emptyDefaultValue(type),
     dependsOn: [],
     invalidValueBehavior: 'clear',
+    ...(options.optionSourceCode ? { optionSourceCode: options.optionSourceCode } : {}),
     enabled: true
   }
 }

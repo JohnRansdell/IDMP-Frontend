@@ -82,7 +82,24 @@ export function formatIndicatorValue(source) {
   return `${source.currentValue}${source.unit || ''}`
 }
 
+// MOM/YOY stay numeric in the binding pipeline. This presentation formatter
+// gives percent KPIs their explicit comparison-unit suffix without changing
+// the underlying comparison value.
+export function formatKpiComparison(value, unit = '') {
+  if (value === null || value === undefined || value === '') return '—'
+  const text = String(value).trim()
+  const numeric = Number(text.replace(/%$/, ''))
+  if (!Number.isFinite(numeric)) return text
+  const visible = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(Math.abs(numeric))
+  const sign = numeric > 0 ? '+' : numeric < 0 ? '-' : ''
+  return `${sign}${visible}${unit === '%' ? '%' : ''}`
+}
+
 export function createKpiData(source) {
+  const comparisons = {}
+  if (source.mom !== undefined) comparisons.mom = source.mom
+  if (source.yoy !== undefined) comparisons.yoy = source.yoy
+  if (source.trendDirection !== undefined || source.mom !== undefined || source.yoy !== undefined) comparisons.trendDirection = normalizeTrendDirection(source.trendDirection, source.change)
   return {
     code: source.code,
     analysisIndicatorId: source.analysisIndicatorId || source.indicatorId || '',
@@ -90,10 +107,19 @@ export function createKpiData(source) {
     analysisEnabled: source.analysisEnabled !== false,
     title: source.name,
     value: formatIndicatorValue(source),
+    unit: source.unit || '',
+    ...comparisons,
     change: source.change,
     target: source.target,
     status: source.status
   }
+}
+
+export function normalizeTrendDirection(direction, legacyChange = '') {
+  if (['up', 'down', 'flat'].includes(direction)) return direction
+  if (String(legacyChange).includes('↑')) return 'up'
+  if (String(legacyChange).includes('↓')) return 'down'
+  return 'flat'
 }
 
 export function createPublishedIndicatorSources(indicators = [], publishedVersions = []) {
@@ -187,6 +213,7 @@ export function getVisualizationTitle(sourceName, visualType) {
   if (visualType === 'funnel') return `${sourceName}漏斗分析`
   if (visualType === 'scatter') return `${sourceName}散点分析`
   if (visualType === 'heatmap') return `${sourceName}热力分析`
+  if (visualType === 'map') return `${sourceName}演示区域分布`
   return sourceName
 }
 
@@ -234,6 +261,7 @@ export function createDashboardChartOption(widget, presetOptions = {}) {
   if (widget.chartKind === 'funnel') return createVirtualFunnelOption(widget, presetOptions)
   if (widget.chartKind === 'scatter') return createVirtualScatterOption(widget, presetOptions)
   if (widget.chartKind === 'heatmap') return createVirtualHeatmapOption(widget, presetOptions)
+  if (widget.chartKind === 'map') return createVirtualMapOption(widget, presetOptions)
   return createVirtualLineOption(widget, presetOptions)
 }
 
@@ -242,6 +270,9 @@ function createVirtualRadarOption(widget, options) { const source = getWidgetSou
 function createVirtualFunnelOption(widget, options) { const source = getWidgetSource(widget, options); return { series: [{ type: 'funnel', data: (source.pieData || source.departmentData || []).map(copyChartDataItem) }] } }
 function createVirtualScatterOption(widget, options) { const source = getWidgetSource(widget, options); return { xAxis: { type: 'value' }, yAxis: { type: 'value' }, series: [{ type: 'scatter', data: (source.trendData || []).map((value, index) => [index + 1, Number(value) || 0]) }] } }
 function createVirtualHeatmapOption(widget, options) { const source = getWidgetSource(widget, options), rows = source.departmentData || []; return { xAxis: { type: 'category', data: rows.map(row => row.name) }, yAxis: { type: 'category', data: ['指标值'] }, visualMap: { min: 0, max: Math.max(...rows.map(row => Number(row.value) || 0), 1), calculable: true }, series: [{ type: 'heatmap', data: rows.map((row, index) => [index, 0, Number(row.value) || 0]) }] } }
+// Geo adapter boundary: this intentionally uses named demo regions until a
+// sanctioned GeoJSON source is supplied. It is not presented as hospital GIS.
+function createVirtualMapOption(widget, options) { const source = getWidgetSource(widget, options), rows = source.departmentData || []; return { tooltip: { trigger: 'axis' }, grid: { top: 22, left: 62, right: 22, bottom: 30 }, xAxis: { type: 'value' }, yAxis: { type: 'category', inverse: true, data: rows.map(row => row.name) }, series: [{ name: '演示区域分布', type: 'bar', data: rows.map(row => Number(row.value) || 0), itemStyle: { color: '#4f8583', borderRadius: [0, 4, 4, 0] } }] } }
 
 function createVirtualBarOption(widget, presetOptions) {
   const source = getWidgetSource(widget, presetOptions)

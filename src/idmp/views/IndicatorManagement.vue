@@ -160,10 +160,11 @@
             </template>
           </el-table-column>
           <el-table-column label="场景数" width="78" align="center"><template #default="{ row }">{{ row.scenes ?? '—' }}</template></el-table-column>
-           <el-table-column label="操作" width="230" fixed="right">
+           <el-table-column label="操作" width="300" fixed="right">
             <template #default="{ row }">
               <button type="button" class="action-link" @click="openDetail(row)">查看</button>
                <button type="button" class="action-link" @click="openEditor(row.code)">编辑</button>
+              <button v-if="canOpenAnalysis(row)" type="button" class="action-link" @click="openAnalysis(row)">指标分析</button>
               <button v-if="sourceMode === 'live' && row.indicatorId" type="button" class="action-link danger-link" @click="openDelete(row)">删除</button>
             </template>
           </el-table-column>
@@ -199,6 +200,7 @@
           <div class="indicator-card__actions">
             <el-button @click="openDetail(row)">查看详情</el-button>
             <el-button type="primary" plain @click="openEditor(row.code)">编辑</el-button>
+            <el-button v-if="canOpenAnalysis(row)" type="success" plain @click="openAnalysis(row)">指标分析</el-button>
           </div>
         </article>
       </div>
@@ -397,6 +399,22 @@ function toScenarioCount(value) {
 
 const openEditor = id => router.push(`/indicator/edit/${id}`)
 const openDetail = row => router.push(`/indicator/view/${row.id || row.code}`)
+const canOpenAnalysis = row => Boolean(
+  row?.indicatorId &&
+  row?.versionId &&
+  String(row.status || '').toUpperCase() === 'PUBLISHED'
+)
+const openAnalysis = row => {
+  if (!canOpenAnalysis(row)) return
+  router.push({
+    name: 'IndicatorAnalysis',
+    query: {
+      indicator: String(row.indicatorId),
+      indicatorVersionId: String(row.versionId),
+      ...(row.name ? { indicatorName: String(row.name) } : {})
+    }
+  })
+}
 const openDelete = row => { deleteTarget.value = row }
 const closeDelete = () => { deleteTarget.value = null }
 const reloadAfterDelete = async () => { closeDelete(); await loadBackendIndicators() }

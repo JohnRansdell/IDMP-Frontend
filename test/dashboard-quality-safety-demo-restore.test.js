@@ -4,11 +4,11 @@ import { createQualitySafetyDemoSchema } from '../src/idmp/features/dashboard/ac
 import { canRestoreQualitySafetyDemo, createQualitySafetyDemoRestoreResult } from '../src/idmp/features/dashboard/qualitySafetyDemoRestore.js'
 import { createDashboardEditingSnapshot } from '../src/idmp/features/dashboard/editSession.js'
 
-test('restore entry is available only while editing the quality safety scene in a demo runtime', () => {
-  assert.equal(canRestoreQualitySafetyDemo({ isEditing: true, isDemoRuntime: true, sceneCode: 'quality-safety' }), true)
-  assert.equal(canRestoreQualitySafetyDemo({ isEditing: false, isDemoRuntime: true, sceneCode: 'quality-safety' }), false)
-  assert.equal(canRestoreQualitySafetyDemo({ isEditing: true, isDemoRuntime: false, sceneCode: 'quality-safety' }), false)
-  assert.equal(canRestoreQualitySafetyDemo({ isEditing: true, isDemoRuntime: true, sceneCode: 'performance' }), false)
+test('restore entry is available only while editing the canonical quality safety system dashboard', () => {
+  assert.equal(canRestoreQualitySafetyDemo({ isEditing: true, dashboardId: 'quality-overview-quality-safety' }), true)
+  assert.equal(canRestoreQualitySafetyDemo({ isEditing: false, dashboardId: 'quality-overview-quality-safety' }), false)
+  assert.equal(canRestoreQualitySafetyDemo({ isEditing: true, dashboardId: 'quality-overview-performance' }), false)
+  assert.equal(canRestoreQualitySafetyDemo({ isEditing: true, dashboardId: 'uat-custom-dashboard' }), false)
 })
 
 test('restoring replaces only the current quality safety editing schema and marks it dirty for explicit save', () => {
