@@ -29,7 +29,7 @@
           <div class="table-heading"><div><h2>映射关系列表</h2><p>源指标、映射关系和目标指标按业务关系分列展示。</p></div><div v-if="currentFilterGroup" class="group-relation-context"><span>当前语义组基准指标</span><strong>{{ indicatorRef(currentFilterGroup.canonicalIndicator) }}</strong></div></div>
           <StatePanel v-if="!loading && !mappings.length" type="empty" title="暂无映射关系" description="可调整筛选条件，或创建一条人工治理映射。" />
           <el-table v-else v-loading="loading" :data="mappings" class="mapping-table" table-layout="fixed">
-            <el-table-column label="映射名称" min-width="220"><template #default="{ row }"><div class="mapping-name"><strong>{{ row.name || '未命名映射' }}</strong><small class="mono-data">{{ row.code || row.id }}</small><span>{{ row.group?.name || row.group?.code || '未归类语义组' }}</span></div></template></el-table-column>
+            <el-table-column label="映射名称" min-width="280"><template #default="{ row }"><div class="mapping-name"><CodeTooltip :code="row.code || row.id" label="映射编码"><strong>{{ row.name || '未命名映射' }}</strong></CodeTooltip><span>{{ row.group?.name || row.group?.code || '未归类语义组' }}</span></div></template></el-table-column>
             <el-table-column label="源指标" min-width="270"><template #default="{ row }"><div class="mapping-indicator-cell"><small>源侧政策：{{ policyLabel(row.sourceIndicator) }}</small><strong>{{ indicatorRef(row.sourceIndicator) }}</strong><span class="mono-data">版本 {{ row.sourceIndicator?.indicatorVersionId || '-' }}</span></div></template></el-table-column>
             <el-table-column label="映射关系" width="190" align="center"><template #default="{ row }"><div class="mapping-type-cell"><span class="mapping-type-cell__arrow" aria-hidden="true">→</span><StatusBadge :label="mappingTypeLabel(row.mappingType)" /><small>{{ comparabilityLabel(row.comparability) }}</small></div></template></el-table-column>
             <el-table-column label="目标指标" min-width="270"><template #default="{ row }"><div class="mapping-indicator-cell"><small>目标侧政策：{{ policyLabel(row.targetIndicator) }}</small><strong>{{ indicatorRef(row.targetIndicator) }}</strong><span class="mono-data">版本 {{ row.targetIndicator?.indicatorVersionId || '-' }}</span></div></template></el-table-column>
@@ -45,8 +45,7 @@
           <div class="table-heading"><div><h2>语义组</h2><p>基准指标版本确定后，创建映射时自动成为源指标。</p></div></div>
           <StatePanel v-if="!groupLoading && !groups.length" type="empty" title="暂无语义组" description="请先选择一个已发布指标版本创建语义组。" />
           <el-table v-else v-loading="groupLoading" :data="groups" table-layout="fixed">
-            <el-table-column prop="code" label="编码" min-width="220"><template #default="{ row }"><span class="mono-data">{{ row.code }}</span></template></el-table-column>
-            <el-table-column prop="name" label="名称" min-width="220" />
+            <el-table-column prop="name" label="名称" min-width="280"><template #default="{ row }"><CodeTooltip :code="row.code" label="语义组编码"><span>{{ row.name }}</span></CodeTooltip></template></el-table-column>
             <el-table-column label="基准指标版本" min-width="250"><template #default="{ row }">{{ indicatorRef(row.canonicalIndicator) }}</template></el-table-column>
             <el-table-column prop="memberCount" label="有效成员" width="110" />
             <el-table-column label="状态" width="110"><template #default="{ row }"><StatusBadge :status="row.status" /></template></el-table-column>
@@ -86,6 +85,7 @@ import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
+import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
 import { fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
 import { compareIndicatorMappings, createMapping, createMappingGroup, fetchMapping, fetchMappingGroups, fetchMappings, updateMapping } from '@/idmp/api/modules/mappings'
 import { COMPARABILITY_TYPES, MAPPING_TYPES, comparabilityLabel, formatIndicatorRef, mappingStatusLabel, mappingTypeDescription, mappingTypeLabel, normalizePage, toOpaqueId } from '@/idmp/api/adapters/mapping'

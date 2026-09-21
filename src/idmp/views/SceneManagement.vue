@@ -102,12 +102,7 @@
               table-layout="fixed"
               class="scene-table"
             >
-              <el-table-column prop="code" label="指标编码" width="132">
-                <template #default="{ row }">
-                  <span class="mono-data">{{ row.code }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="name" label="指标名称" min-width="260" show-overflow-tooltip />
+              <el-table-column prop="name" label="指标名称" min-width="280" show-overflow-tooltip><template #default="{ row }"><CodeTooltip :code="row.code" label="指标编码"><span>{{ row.name }}</span></CodeTooltip></template></el-table-column>
               <el-table-column prop="version" label="版本" width="104">
                 <template #default="{ row }">
                   <span class="mono-data">{{ row.version }}</span>
@@ -205,12 +200,7 @@
           </div>
           <div class="table-scroll">
             <el-table :data="overrideRows" table-layout="fixed" class="scene-table">
-              <el-table-column prop="code" label="指标编码" width="132">
-                <template #default="{ row }">
-                  <span class="mono-data">{{ row.code }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="name" label="指标名称" min-width="230" />
+              <el-table-column prop="name" label="指标名称" min-width="280"><template #default="{ row }"><CodeTooltip :code="row.code" label="指标编码"><span>{{ row.name }}</span></CodeTooltip></template></el-table-column>
               <el-table-column prop="parameter" label="参数项" min-width="180" />
               <el-table-column prop="defaultValue" label="默认值" width="136" />
               <el-table-column label="场景覆盖值" width="152">
@@ -256,12 +246,7 @@
           </div>
           <div class="table-scroll">
             <el-table :data="calculationRows" table-layout="fixed" class="scene-table">
-              <el-table-column prop="code" label="指标编码" width="132">
-                <template #default="{ row }">
-                  <span class="mono-data">{{ row.code }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="name" label="指标名称" min-width="260" />
+              <el-table-column prop="name" label="指标名称" min-width="280"><template #default="{ row }"><CodeTooltip :code="row.code" label="指标编码"><span>{{ row.name }}</span></CodeTooltip></template></el-table-column>
               <el-table-column label="展示周期" width="170">
                 <template #default>
                   <span class="mono-data">{{ resultPeriod }}</span>
@@ -311,6 +296,7 @@ import {
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
+import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
 import { sceneIndicators } from '@/idmp/data/demo'
 
 const activeTab = ref('indicators')

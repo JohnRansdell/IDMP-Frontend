@@ -17,7 +17,7 @@
     <template v-else>
       <section class="surface-card domain-summary">
         <div class="summary-heading">
-          <div><span class="eyebrow">数据域</span><h2>{{ domain.name }}</h2><code>{{ domain.code }}</code></div>
+          <div><span class="eyebrow">数据域</span><CodeTooltip :code="domain.code" label="数据域编码"><h2>{{ domain.name }}</h2></CodeTooltip></div>
           <StatusBadge :status="domain.status" />
         </div>
         <dl class="summary-grid">
@@ -78,8 +78,7 @@
           <el-table-column label="ID" width="205">
             <template #default="{ row }"><span class="mono-data">{{ row.id }}</span></template>
           </el-table-column>
-          <el-table-column prop="code" label="语义表编码" min-width="210" show-overflow-tooltip />
-          <el-table-column prop="name" label="语义表名称" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="name" label="语义表名称" min-width="280" show-overflow-tooltip><template #default="{ row }"><CodeTooltip :code="row.code" label="语义表编码"><span>{{ row.name }}</span></CodeTooltip></template></el-table-column>
           <el-table-column prop="sourceTableName" label="来源物理表" min-width="220" show-overflow-tooltip />
           <el-table-column prop="sourceObjectType" label="源对象类型" width="140">
             <template #default="{ row }">{{ sourceObjectTypeLabel(row.sourceObjectType) || '—' }}</template>
@@ -133,8 +132,7 @@
         <div class="relation-overview" aria-label="关联关系概览">
           <article class="relation-overview__item relation-overview__item--table">
             <span>新建关系的左表</span>
-            <strong>{{ selectedTable.name || selectedTable.code }}</strong>
-            <small class="mono-data">{{ selectedTable.code }}</small>
+            <CodeTooltip :code="selectedTable.code" label="语义表编码"><strong>{{ selectedTable.name || selectedTable.code }}</strong></CodeTooltip>
           </article>
           <article class="relation-overview__item">
             <span>全部关系</span>
@@ -227,7 +225,7 @@
                 <template #default="{ row }">{{ row.sourceFieldName || '未返回映射来源' }}</template>
               </el-table-column>
               <el-table-column label="标准业务字段" min-width="165" show-overflow-tooltip>
-                <template #default="{ row }"><div class="semantic-field-cell"><strong>{{ row.name || '未命名字段' }}</strong><small>{{ row.code || '未返回编码' }}</small></div></template>
+                <template #default="{ row }"><div class="semantic-field-cell"><CodeTooltip :code="row.code" label="语义字段编码"><strong>{{ row.name || '未命名字段' }}</strong></CodeTooltip></div></template>
               </el-table-column>
               <el-table-column label="类型" width="88"><template #default="{ row }">{{ semanticDataTypeLabel(row.dataType) || '未知类型' }}</template></el-table-column>
               <el-table-column label="业务角色" width="86"><template #default="{ row }">{{ semanticKindLabel(row.semanticKind) || '未配置' }}</template></el-table-column>
@@ -352,6 +350,7 @@ import { Plus } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
+import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
 import { createSemanticTable, createSemanticTableRelation, disableSemanticTableRelation, fetchDataDomains, fetchSemanticTableFields, fetchSemanticTableRelations, fetchSemanticTables, fetchSourceTableFields, fetchSourceTables, publishSemanticTableRelation, saveSemanticField, updateDefaultTimeField, updateSemanticTableRelation, validateSemanticTableRelation } from '@/idmp/api/modules/meta'
 import { fetchSemanticFieldValueSet, bindSemanticFieldValueSet, fetchValueSet, fetchValueSets } from '@/idmp/api/modules/valueSets'
 import { fetchSourceValueProfile } from '@/idmp/api/modules/transformRules'

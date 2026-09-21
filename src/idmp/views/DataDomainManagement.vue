@@ -77,8 +77,7 @@
         table-layout="fixed"
         @row-click="openWorkspace"
       >
-        <el-table-column prop="code" label="数据域编码" min-width="220" show-overflow-tooltip />
-        <el-table-column prop="name" label="数据域名称" min-width="190" show-overflow-tooltip />
+        <el-table-column prop="name" label="数据域名称" min-width="280" show-overflow-tooltip><template #default="{ row }"><CodeTooltip :code="row.code" label="数据域编码"><span>{{ row.name }}</span></CodeTooltip></template></el-table-column>
         <el-table-column prop="description" label="业务说明" min-width="250" show-overflow-tooltip>
           <template #default="{ row }">{{ row.description || '—' }}</template>
         </el-table-column>
@@ -139,6 +138,7 @@ import { Plus, Refresh } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
+import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
 import { createDataDomain, fetchDataDomains } from '@/idmp/api/modules/meta'
 import { adaptDataDomainList, normalizeDataDomain } from '@/idmp/api/adapters/meta'
 import { getStatusLabel } from '@/idmp/design/status'

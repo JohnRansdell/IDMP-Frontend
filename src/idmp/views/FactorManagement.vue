@@ -102,16 +102,9 @@
           @selection-change="selectedRows = $event"
         >
           <el-table-column type="selection" width="46" />
-          <el-table-column prop="code" label="因子编码" width="140">
+          <el-table-column prop="name" label="因子名称" min-width="280" show-overflow-tooltip>
             <template #default="{ row }">
-              <button class="action-link code-link" type="button" @click="openFactorEditor(row.id || row.code)">
-                {{ row.code }}
-              </button>
-            </template>
-          </el-table-column>
-          <el-table-column prop="name" label="因子名称" min-width="230" show-overflow-tooltip>
-            <template #default="{ row }">
-              <span class="factor-name-text">{{ row.name }}</span>
+              <CodeTooltip :code="row.code" label="因子编码" :focusable="false"><button class="action-link factor-name-text" type="button" @click="openFactorEditor(row.id || row.code)">{{ row.name }}</button></CodeTooltip>
             </template>
           </el-table-column>
           <el-table-column prop="category" label="分类" width="120" />
@@ -175,6 +168,7 @@ import { Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
   import StatusBadge from '@/idmp/components/StatusBadge.vue'
+import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
  import ResourceDeleteDialog from '@/idmp/components/ResourceDeleteDialog.vue'
  import { deleteFactor, fetchFactorDeletionImpact, fetchFactors } from '@/idmp/api/modules/factors'
 import { factorRows } from '@/idmp/data/demo'

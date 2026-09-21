@@ -20,8 +20,7 @@
       <StatePanel v-else-if="error" type="error" title="值集加载失败" :description="error" />
       <StatePanel v-else-if="!rows.length" type="empty" title="暂无值集" description="当前筛选条件没有返回值集。" />
       <el-table v-else :data="rows" row-key="id" table-layout="fixed">
-        <el-table-column prop="code" label="编码" min-width="240" show-overflow-tooltip />
-        <el-table-column prop="name" label="名称" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="name" label="名称" min-width="280" show-overflow-tooltip><template #default="{ row }"><CodeTooltip :code="row.code" label="值集编码"><span>{{ row.name }}</span></CodeTooltip></template></el-table-column>
         <el-table-column label="匹配模式" width="150"><template #default="{ row }">{{ matchModeLabel(row.matchMode) || '—' }}</template></el-table-column>
         <el-table-column prop="status" label="状态" width="130"><template #default="{ row }"><StatusBadge :status="row.status" /></template></el-table-column>
         <el-table-column prop="currentPublishedVersionId" label="当前发布版本" width="180" show-overflow-tooltip><template #default="{ row }">{{ row.currentPublishedVersionId || '—' }}</template></el-table-column>
@@ -38,6 +37,7 @@ import { useRouter } from 'vue-router'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
+import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
 import { fetchValueSets } from '@/idmp/api/modules/valueSets'
 import { matchModeLabel } from '@/idmp/features/meta'
 

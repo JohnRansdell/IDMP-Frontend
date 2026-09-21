@@ -22,8 +22,7 @@
 
     <section class="surface-card table-card">
       <el-table v-loading="loading" :data="rows" empty-text="暂无场景">
-        <el-table-column prop="code" label="场景编码" width="220"><template #default="{ row }"><span class="mono-data">{{ row.code }}</span></template></el-table-column>
-        <el-table-column prop="name" label="场景名称" min-width="220" />
+        <el-table-column prop="name" label="场景名称" min-width="280"><template #default="{ row }"><CodeTooltip :code="row.code" label="场景编码"><span>{{ row.name }}</span></CodeTooltip></template></el-table-column>
         <el-table-column label="类型" width="130"><template #default="{ row }">{{ scenarioTypeLabel(row.type) }}</template></el-table-column>
         <el-table-column prop="governingOrgName" label="主管部门" min-width="160" />
         <el-table-column prop="indicatorCount" label="指标数" width="90" />
@@ -55,6 +54,7 @@ import { useRouter } from 'vue-router'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
+import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
 import { createScenario, fetchScenarios, fetchScenarioVersions } from '@/idmp/api/modules/scenarios'
 import { normalizePage, PERIOD_TYPES, SCENARIO_TYPES, publicationStatusLabel, scenarioTypeLabel, selectScenarioVersion } from '@/idmp/api/adapters/scenario'
 
