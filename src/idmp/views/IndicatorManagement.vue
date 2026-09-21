@@ -156,12 +156,19 @@
               <StatusBadge :status="row.status" :label="row.status" :tone="statusTone(row.status)" />
             </template>
           </el-table-column>
+          <el-table-column label="分析" width="96" align="center">
+            <template #default="{ row }">
+              <button v-if="canOpenAnalysis(row)" type="button" class="action-link" @click="openAnalysis(row)">进入分析</button>
+              <el-tooltip v-else content="指标分析仅适用于已发布且具备指标版本的指标">
+                <span class="analysis-unavailable" tabindex="0" aria-label="暂不可进入指标分析">—</span>
+              </el-tooltip>
+            </template>
+          </el-table-column>
           <el-table-column label="场景数" width="78" align="center"><template #default="{ row }">{{ row.scenes ?? '—' }}</template></el-table-column>
-           <el-table-column label="操作" width="300" fixed="right">
+           <el-table-column label="操作" width="210" fixed="right">
             <template #default="{ row }">
               <button type="button" class="action-link" @click="openDetail(row)">查看</button>
                <button type="button" class="action-link" @click="openEditor(row.code)">编辑</button>
-              <button v-if="canOpenAnalysis(row)" type="button" class="action-link" @click="openAnalysis(row)">指标分析</button>
               <button v-if="sourceMode === 'live' && row.indicatorId" type="button" class="action-link danger-link" @click="openDelete(row)">删除</button>
             </template>
           </el-table-column>
@@ -467,6 +474,11 @@ onMounted(() => {
 .direction-up { color: var(--idmp-support-success); }
 .direction-down { color: var(--idmp-support-danger); }
 .direction-neutral { color: var(--idmp-support-info); }
+
+.analysis-unavailable {
+  color: var(--idmp-text-secondary);
+  cursor: help;
+}
 
 .indicator-card-grid {
   display: grid;
