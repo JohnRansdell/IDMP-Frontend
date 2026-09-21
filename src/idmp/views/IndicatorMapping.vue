@@ -28,14 +28,16 @@
         <section class="surface-card table-card">
           <div class="table-heading"><div><h2>映射关系列表</h2><p>源指标、映射关系和目标指标按业务关系分列展示。</p></div><div v-if="currentFilterGroup" class="group-relation-context"><span>当前语义组基准指标</span><strong>{{ indicatorRef(currentFilterGroup.canonicalIndicator) }}</strong></div></div>
           <StatePanel v-if="!loading && !mappings.length" type="empty" title="暂无映射关系" description="可调整筛选条件，或创建一条人工治理映射。" />
-          <el-table v-else v-loading="loading" :data="mappings" class="mapping-table" table-layout="fixed">
-            <el-table-column label="映射名称" min-width="280"><template #default="{ row }"><div class="mapping-name"><CodeTooltip :code="row.code || row.id" label="映射编码"><strong>{{ row.name || '未命名映射' }}</strong></CodeTooltip><span>{{ row.group?.name || row.group?.code || '未归类语义组' }}</span></div></template></el-table-column>
-            <el-table-column label="源指标" min-width="270"><template #default="{ row }"><div class="mapping-indicator-cell"><small>源侧政策：{{ policyLabel(row.sourceIndicator) }}</small><strong>{{ indicatorRef(row.sourceIndicator) }}</strong><span class="mono-data">版本 {{ row.sourceIndicator?.indicatorVersionId || '-' }}</span></div></template></el-table-column>
-            <el-table-column label="映射关系" width="190" align="center"><template #default="{ row }"><div class="mapping-type-cell"><span class="mapping-type-cell__arrow" aria-hidden="true">→</span><StatusBadge :label="mappingTypeLabel(row.mappingType)" /><small>{{ comparabilityLabel(row.comparability) }}</small></div></template></el-table-column>
-            <el-table-column label="目标指标" min-width="270"><template #default="{ row }"><div class="mapping-indicator-cell"><small>目标侧政策：{{ policyLabel(row.targetIndicator) }}</small><strong>{{ indicatorRef(row.targetIndicator) }}</strong><span class="mono-data">版本 {{ row.targetIndicator?.indicatorVersionId || '-' }}</span></div></template></el-table-column>
-            <el-table-column label="治理状态" width="140"><template #default="{ row }"><div class="mapping-status-cell"><StatusBadge :status="row.reviewStatus" :label="mappingStatusLabel(row.reviewStatus)" /><small>{{ row.publicationStatus === 'PUBLISHED' ? '已发布' : '未发布' }}</small></div></template></el-table-column>
-            <el-table-column label="操作" width="88" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openDetail(row.id)">查看</el-button></template></el-table-column>
-          </el-table>
+          <div v-else class="mapping-table-scroll">
+            <el-table v-loading="loading" :data="mappings" class="mapping-table" table-layout="fixed">
+              <el-table-column label="映射名称" min-width="280"><template #default="{ row }"><div class="mapping-name"><CodeTooltip :code="row.code || row.id" label="映射编码"><strong>{{ row.name || '未命名映射' }}</strong></CodeTooltip><span>{{ row.group?.name || row.group?.code || '未归类语义组' }}</span></div></template></el-table-column>
+              <el-table-column label="源指标" min-width="270"><template #default="{ row }"><div class="mapping-indicator-cell"><small>源侧政策：{{ policyLabel(row.sourceIndicator) }}</small><strong>{{ indicatorRef(row.sourceIndicator) }}</strong><span class="mono-data">版本 {{ row.sourceIndicator?.indicatorVersionId || '-' }}</span></div></template></el-table-column>
+              <el-table-column label="映射关系" width="190" align="center"><template #default="{ row }"><div class="mapping-type-cell"><span class="mapping-type-cell__arrow" aria-hidden="true">→</span><StatusBadge :label="mappingTypeLabel(row.mappingType)" /><small>{{ comparabilityLabel(row.comparability) }}</small></div></template></el-table-column>
+              <el-table-column label="目标指标" min-width="270"><template #default="{ row }"><div class="mapping-indicator-cell"><small>目标侧政策：{{ policyLabel(row.targetIndicator) }}</small><strong>{{ indicatorRef(row.targetIndicator) }}</strong><span class="mono-data">版本 {{ row.targetIndicator?.indicatorVersionId || '-' }}</span></div></template></el-table-column>
+              <el-table-column label="治理状态" width="140"><template #default="{ row }"><div class="mapping-status-cell"><StatusBadge :status="row.reviewStatus" :label="mappingStatusLabel(row.reviewStatus)" /><small>{{ row.publicationStatus === 'PUBLISHED' ? '已发布' : '未发布' }}</small></div></template></el-table-column>
+              <el-table-column label="操作" width="88" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openDetail(row.id)">查看</el-button></template></el-table-column>
+            </el-table>
+          </div>
           <div class="table-footer"><span>共 {{ mappingTotal }} 条</span><el-pagination v-model:current-page="mappingPage" v-model:page-size="mappingSize" layout="prev, pager, next, sizes" :page-sizes="[10, 20, 50]" :total="mappingTotal" @current-change="loadMappings" @size-change="loadMappings" /></div>
         </section>
       </el-tab-pane>
@@ -137,5 +139,47 @@ onMounted(bootstrap)
 </script>
 
 <style scoped lang="scss">
-.indicator-mapping { min-width: 0; }.mapping-notice { margin-bottom: 16px; }.mapping-filter { display: flex; flex-wrap: wrap; gap: 10px 14px; }.mapping-filter :deep(.el-form-item) { margin: 0; }.mapping-filter :deep(.el-input), .mapping-filter :deep(.el-select) { width: 190px; }.mapping-filter__actions { margin-left: auto !important; }.mapping-type-shortcuts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }.mapping-type-shortcuts > span, .table-heading p { color: var(--idmp-text-helper); font-size: 12px; }.table-card { padding: 0; overflow: hidden; }.table-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px; border-bottom: 1px solid var(--idmp-border-subtle); }.table-heading h2, .section-title h3 { margin: 0; font-size: 16px; }.table-heading p, .section-title p { margin: 4px 0 0; }.group-relation-context { display: grid; gap: 3px; min-width: 220px; padding: 8px 10px; border-left: 3px solid var(--idmp-interactive); border-radius: 0 var(--idmp-radius-sm) var(--idmp-radius-sm) 0; background: var(--idmp-layer-02); }.group-relation-context span { color: var(--idmp-text-helper); font-size: 12px; }.mapping-table { min-width: 1200px; }.mapping-name, .mapping-indicator-cell, .mapping-status-cell { display: grid; gap: 5px; min-width: 0; }.mapping-name strong, .mapping-indicator-cell strong { overflow: hidden; color: var(--idmp-text-primary); text-overflow: ellipsis; white-space: nowrap; }.mapping-name small, .mapping-name span, .mapping-indicator-cell small, .mapping-indicator-cell span, .mapping-status-cell small { overflow: hidden; color: var(--idmp-text-helper); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }.mapping-type-cell { display: grid; justify-items: center; gap: 5px; }.mapping-type-cell__arrow { color: var(--idmp-interactive); font-size: 22px; line-height: 1; }.mapping-type-cell small { color: var(--idmp-text-helper); font-size: 12px; }.table-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; color: var(--idmp-text-helper); }.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }.comparison-preview { padding: 14px; border: 1px solid var(--idmp-border-subtle); border-radius: var(--idmp-radius-md); background: var(--idmp-layer-02); }.mapping-steps { margin: 0 0 20px; }.mapping-type-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 18px; }.mapping-type-picker__head { grid-column: 1 / -1; display: grid; gap: 3px; }.mapping-type-picker__head small, .mapping-type-option small { color: var(--idmp-text-helper); font-size: 12px; }.mapping-type-option { display: grid; gap: 6px; min-height: 82px; padding: 10px; border: 1px solid var(--idmp-border-subtle); border-radius: var(--idmp-radius-md); background: var(--idmp-layer-02); cursor: pointer; text-align: left; }.mapping-type-option:hover, .mapping-type-option.is-selected { border-color: var(--idmp-interactive); background: var(--idmp-interactive-subtle); } @media (max-width: 760px) { .mapping-filter__actions { margin-left: 0 !important; }.table-heading, .table-footer { align-items: flex-start; flex-direction: column; }.form-grid, .mapping-type-picker { grid-template-columns: 1fr; }.table-footer :deep(.el-pagination) { flex-wrap: wrap; } }
+.indicator-mapping { min-width: 0; }
+.mapping-notice { margin-bottom: 16px; }
+.mapping-filter { display: flex; flex-wrap: wrap; gap: 10px 14px; }
+.mapping-filter :deep(.el-form-item) { margin: 0; }
+.mapping-filter :deep(.el-input), .mapping-filter :deep(.el-select) { width: 190px; }
+.mapping-filter__actions { margin-left: auto !important; }
+.mapping-type-shortcuts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
+.mapping-type-shortcuts > span, .table-heading p { color: var(--idmp-text-helper); font-size: 12px; }
+
+/* Keep table content aligned with the padded cards used across IDMP. */
+.table-card { padding: 18px; overflow: hidden; }
+.table-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 0 0 14px; margin-bottom: 14px; border-bottom: 1px solid var(--idmp-border-subtle); }
+.table-heading h2, .section-title h3 { margin: 0; font-size: 16px; }
+.table-heading p, .section-title p { margin: 4px 0 0; }
+.table-card :deep(.el-table__cell) { padding-top: 14px; padding-bottom: 14px; }
+.table-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0 0; color: var(--idmp-text-helper); }
+
+.group-relation-context { display: grid; gap: 3px; min-width: 220px; padding: 8px 10px; border-left: 3px solid var(--idmp-interactive); border-radius: 0 var(--idmp-radius-sm) var(--idmp-radius-sm) 0; background: var(--idmp-layer-02); }
+.group-relation-context span { color: var(--idmp-text-helper); font-size: 12px; }
+.mapping-table-scroll { overflow-x: auto; }
+.mapping-table { min-width: 1200px; }
+.mapping-name, .mapping-indicator-cell, .mapping-status-cell { display: grid; gap: 5px; min-width: 0; }
+.mapping-name strong, .mapping-indicator-cell strong { overflow: hidden; color: var(--idmp-text-primary); text-overflow: ellipsis; white-space: nowrap; }
+.mapping-name small, .mapping-name span, .mapping-indicator-cell small, .mapping-indicator-cell span, .mapping-status-cell small { overflow: hidden; color: var(--idmp-text-helper); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.mapping-type-cell { display: grid; justify-items: center; gap: 5px; }
+.mapping-type-cell__arrow { color: var(--idmp-interactive); font-size: 22px; line-height: 1; }
+.mapping-type-cell small { color: var(--idmp-text-helper); font-size: 12px; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.comparison-preview { padding: 14px; border: 1px solid var(--idmp-border-subtle); border-radius: var(--idmp-radius-md); background: var(--idmp-layer-02); }
+.mapping-steps { margin: 0 0 20px; }
+.mapping-type-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 18px; }
+.mapping-type-picker__head { grid-column: 1 / -1; display: grid; gap: 3px; }
+.mapping-type-picker__head small, .mapping-type-option small { color: var(--idmp-text-helper); font-size: 12px; }
+.mapping-type-option { display: grid; gap: 6px; min-height: 82px; padding: 10px; border: 1px solid var(--idmp-border-subtle); border-radius: var(--idmp-radius-md); background: var(--idmp-layer-02); cursor: pointer; text-align: left; }
+.mapping-type-option:hover, .mapping-type-option.is-selected { border-color: var(--idmp-interactive); background: var(--idmp-interactive-subtle); }
+
+@media (max-width: 760px) {
+  .table-card { padding: 14px; }
+  .mapping-filter__actions { margin-left: 0 !important; }
+  .table-heading, .table-footer { align-items: flex-start; flex-direction: column; }
+  .form-grid, .mapping-type-picker { grid-template-columns: 1fr; }
+  .table-footer :deep(.el-pagination) { flex-wrap: wrap; }
+}
 </style>
