@@ -20,11 +20,11 @@ test('acceptance example is a valid five-widget current schema with filters and 
   assert.deepEqual(byTitle['组织层级分析'].config.interaction.drill.hierarchy, ['department', 'medicalGroup', 'doctor'])
   assert.deepEqual(byTitle['质量明细'].config.tableColumns, ['month', 'department', 'disease', 'indicatorValue'])
   assert.deepEqual(schema.widgets.map(item => item.layout), [
-    { x: 0, y: 0, w: 4, h: 6 },
-    { x: 4, y: 0, w: 10, h: 6 },
-    { x: 14, y: 0, w: 10, h: 6 },
-    { x: 0, y: 6, w: 13, h: 7 },
-    { x: 13, y: 6, w: 11, h: 7 }
+    { x: 0, y: 0, w: 6, h: 5 },
+    { x: 6, y: 0, w: 9, h: 5 },
+    { x: 15, y: 0, w: 9, h: 5 },
+    { x: 0, y: 5, w: 12, h: 6 },
+    { x: 12, y: 5, w: 12, h: 6 }
   ])
   assert.equal(schema.appearance.background.intensity, 100)
   assert.deepEqual(schema.globalFilters.find(item => item.id === 'disease').dependsOn, ['department'])

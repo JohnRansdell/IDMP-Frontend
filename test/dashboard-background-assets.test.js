@@ -81,9 +81,10 @@ test('unknown asset keys safely fall back to legacy widget background URLs witho
   assert.equal(resolveWidgetVisualStyle(schema.widgets[0]).palettePreset, 'default')
 })
 
-test('dashboard page owns background composition while inner canvases do not redraw it', async () => {
+test('dashboard background composition is contained within the viewer canvas', async () => {
   const source = await readFile(new URL('../src/idmp/views/Dashboard.vue', import.meta.url), 'utf8')
-  assert.match(source, /\.dashboard-page \{ min-height:100%; background-color:var\(--dashboard-background/)
+  assert.match(source, /\.dashboard-page \{ min-height:100%; \}/)
+  assert.match(source, /\.dashboard-schema-canvas \{[^}]*background-color:var\(--dashboard-background/)
   assert.doesNotMatch(source, /\.dashboard-surface \{ background-color:var\(--dashboard-background/)
   assert.doesNotMatch(source, /class="dashboard-schema-canvas dashboard-surface"/)
   assert.doesNotMatch(source, /class="dashboard-designer-canvas dashboard-surface"/)

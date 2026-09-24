@@ -38,13 +38,16 @@ export async function requestJson(path, options = {}) {
   }
 
   const controller = typeof AbortController === 'undefined' ? null : new AbortController()
-  const timeoutId = controller && timeoutMs > 0 ? globalThis.setTimeout(() => controller.abort(), timeoutMs) : null
+  let didTimeout = false
+  const timeoutId = controller && timeoutMs > 0 ? globalThis.setTimeout(() => { didTimeout = true; controller.abort() }, timeoutMs) : null
+  const abortFromExternalSignal = () => controller?.abort()
   if (controller && externalSignal) {
     if (externalSignal.aborted) controller.abort()
-    else externalSignal.addEventListener('abort', () => controller.abort(), { once: true })
+    else externalSignal.addEventListener('abort', abortFromExternalSignal, { once: true })
   }
 
   let response
+  let responseText
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...fetchOptions,
@@ -52,8 +55,12 @@ export async function requestJson(path, options = {}) {
       credentials: fetchOptions.credentials || 'include',
       ...(controller ? { signal: controller.signal } : {})
     })
+    // Keep the timeout active until the body has been fully received. Fetch
+    // resolves at headers, so clearing it immediately after fetch can leave
+    // callers waiting forever on a stalled response stream.
+    responseText = await response.text()
   } catch (error) {
-    if (error?.name === 'AbortError' && timeoutId) {
+    if (error?.name === 'AbortError' && didTimeout) {
       const timeoutError = new Error(`请求超时（${timeoutMs}ms）`)
       timeoutError.status = 408
       timeoutError.code = 'REQUEST_TIMEOUT'
@@ -63,9 +70,9 @@ export async function requestJson(path, options = {}) {
     throw error
   } finally {
     if (timeoutId) globalThis.clearTimeout(timeoutId)
+    if (externalSignal && controller) externalSignal.removeEventListener('abort', abortFromExternalSignal)
   }
 
-  const responseText = await response.text().catch(() => '')
   const payload = parseJsonPreservingLargeIntegers(responseText)
   if (!response.ok) {
     const error = createApiError(response.status, payload, path)

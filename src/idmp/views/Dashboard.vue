@@ -8,19 +8,10 @@
           {{ dashboardSourceLabel }}
         </span>
         <span v-if="dashboardStatus === 'demo'" class="data-source-badge" role="status">演示数据</span>
-        <span>数据期间：{{ period }}</span>
-        <span>统计范围：{{ department }}</span>
       </template>
       <template #actions>
-        <el-select v-model="period" class="dashboard-filter" aria-label="年度">
-          <el-option v-for="option in periodOptions" :key="option.value" :label="option.label" :value="option.value" />
-        </el-select>
-        <el-select v-model="department" class="dashboard-filter" aria-label="科室">
-          <el-option v-for="option in departmentOptions" :key="option.value" :label="option.label" :value="option.value" />
-        </el-select>
         <template v-if="!isEditing">
-          <el-button :type="presentationMode === 'standard' ? 'primary' : 'default'" @click="exitPresentation">标准模式</el-button>
-          <el-button :type="presentationMode === 'presentation' ? 'primary' : 'default'" @click="enterPresentation">大屏展示</el-button>
+          <el-button @click="enterPresentation">大屏展示</el-button>
         </template>
         <template v-if="isEditing">
           <el-button :icon="RefreshLeft" @click="resetDashboardLayout">恢复默认</el-button>
@@ -54,6 +45,12 @@
       description="正在读取已发布看板定义和当前筛选条件下的正式结果。"
     />
     <StatePanel
+      v-else-if="dashboardStatus === 'select'"
+      type="empty"
+      title="请选择场景看板"
+      description="请先从页面顶部的场景选择器中选择一个看板，选中后会自动加载对应内容。"
+    />
+    <StatePanel
       v-else-if="dashboardStatus === 'error'"
       type="error"
       title="质量看板加载失败"
@@ -82,12 +79,29 @@
     <template v-else-if="dashboardStatus === 'ready' || dashboardStatus === 'demo' || (dashboardStatus === 'unpublished' && isEditing)">
     <el-alert v-if="dashboardStatus === 'demo'" type="warning" :closable="false" title="当前展示统一演示模板与 Mock 数据，仅用于功能开发和演示；不代表医院正式业务数据。" />
     <section v-if="!isEditing && useSchemaViewer" class="dashboard-schema-viewer">
-      <DashboardFilterBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" @change="filterRuntimeValues = $event" />
-      <DashboardContextBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :interactions="activeInteractionFilters" :drill-states="drillRuntimeState" :widgets="viewerWidgets" @clear-filters="filterRuntimeValues = initialFilterValues(globalFilterDefinitions)" @clear-interactions="clearAllInteractionFilters" @clear-drills="clearAllWidgetDrills" />
-      <DashboardCanvas
+      <section class="dashboard-canvas-frame">
+        <div class="dashboard-toolbar" aria-label="看板查询条件">
+          <div class="dashboard-query-controls">
+            <label class="dashboard-query-control"><span>期间</span>
+              <el-select v-model="period" class="dashboard-filter dashboard-filter--compact" size="small" aria-label="统计期间">
+              <el-option v-for="option in periodOptions" :key="option.value" :label="option.label" :value="option.value" />
+              </el-select>
+            </label>
+            <label v-if="departmentOptions.length > 1" class="dashboard-query-control"><span>范围</span>
+              <el-select v-model="department" class="dashboard-filter dashboard-filter--compact" size="small" aria-label="统计范围">
+              <el-option v-for="option in departmentOptions" :key="option.value" :label="option.label" :value="option.value" />
+              </el-select>
+            </label>
+            <div v-else class="dashboard-query-scope" aria-label="统计范围"><span>范围</span><strong>{{ department || departmentOptions[0]?.label || '全院' }}</strong></div>
+          </div>
+          <DashboardFilterBar class="dashboard-toolbar__filters" compact :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" @change="filterRuntimeValues = $event" />
+        </div>
+        <DashboardContextBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :interactions="activeInteractionFilters" :drill-states="drillRuntimeState" :widgets="viewerWidgets" @clear-filters="filterRuntimeValues = initialFilterValues(globalFilterDefinitions)" @clear-interactions="clearAllInteractionFilters" @clear-drills="clearAllWidgetDrills" />
+        <DashboardCanvas
         :key="`viewer-${dashboardSchema?.id}-${viewerBreakpoint}`"
         ref="viewerCanvasRef"
         class="dashboard-schema-canvas"
+        :style="dashboardCanvasStyle"
         :widgets="viewerWidgets"
         :editable="false"
         :columns="viewerColumns"
@@ -122,7 +136,8 @@
             @alerts="goAlerts"
           />
         </template>
-      </DashboardCanvas>
+        </DashboardCanvas>
+      </section>
     </section>
 
     <div v-else class="dashboard-studio">
@@ -207,6 +222,7 @@
         :key="`designer-${editingDashboardSchema?.id}`"
         ref="designerCanvasRef"
         class="dashboard-designer-canvas"
+        :style="dashboardCanvasStyle"
         :widgets="designerWidgets"
         :editable="true"
         :columns="editingDashboardSchema?.layout?.columns || 24"
@@ -314,7 +330,7 @@
         <DashboardFilterBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" @change="filterRuntimeValues = $event" />
         <DashboardContextBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :interactions="activeInteractionFilters" :drill-states="drillRuntimeState" :widgets="designerWidgets" @clear-filters="filterRuntimeValues = initialFilterValues(globalFilterDefinitions)" @clear-interactions="clearAllInteractionFilters" @clear-drills="clearAllWidgetDrills" />
         <div class="dashboard-preview-frame">
-        <DashboardCanvas v-if="studioPreview" :widgets="previewWidgets" :columns="24" :editable="false">
+        <DashboardCanvas v-if="studioPreview" :style="dashboardCanvasStyle" :widgets="previewWidgets" :columns="24" :editable="false">
           <template #default="{ widget }"><WidgetRenderer :widget="widget" :primary-kpi="visibleKpis[0]" :supporting-kpis="visibleKpis.slice(1)" :warnings="dashboardWarnings" :ranking="departmentRanking" :department="department" :updated-at="dashboardQueryLabel" interactive :get-widget-kpi="getWidgetKpi" :get-title="getWidgetTitle" :get-description="getWidgetDescription" :get-icon="getWidgetIcon" :get-chart-option="getWidgetChartOption" :is-chart-empty="isChartEmpty" :get-chart-aria-label="getWidgetChartAriaLabel" :get-table-columns="getWidgetTableColumns" :get-table-rows="getWidgetTableRows" :get-pie-drill-targets="getWidgetPieDrillTargets" :get-pie-drill-source="getWidgetPieDrillSource" @chart-click="handleWidgetChartClick" /></template>
         </DashboardCanvas>
         </div>
@@ -565,7 +581,7 @@ const availableIndicatorSources = computed(() => {
 })
 const indicatorCatalogLoading = ref(false)
 const indicatorHydrationRequests = new Map()
-const dashboardStatus = ref('loading')
+const dashboardStatus = ref('select')
 const dashboardLoadMessage = ref('')
 const editingDashboardSchema = ref(null)
 const dashboardHistory = ref([])
@@ -591,19 +607,37 @@ const presentationMode = ref('standard')
 const presentationRef = ref()
 const dashboardSchema = ref(null)
 const dashboardBackgroundConfig = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.appearance?.background || {})
-const dashboardBackground = computed(() => dashboardBackgroundConfig.value.value || '#ffffff')
+const dashboardBackground = computed(() => dashboardBackgroundConfig.value.value || '#f3f6f8')
 const dashboardBackgroundIntensity = computed(() => {
   const value = Number((isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.appearance?.background?.intensity)
   return Number.isFinite(value) ? Math.min(100, Math.max(35, Math.round(value))) : 100
 })
 const dashboardSurfaceStyle = computed(() => ({
-  '--dashboard-background': dashboardBackground.value,
-  '--dashboard-background-wash': `rgba(255,255,255,${(1 - dashboardBackgroundIntensity.value / 100).toFixed(2)})`,
-  '--dashboard-background-image': safeBackgroundImage(resolveBackgroundAsset(dashboardBackgroundConfig.value.assetKey) || dashboardBackgroundConfig.value.image),
-  '--dashboard-background-size': dashboardBackgroundConfig.value.size || 'cover',
-  '--dashboard-background-position': dashboardBackgroundConfig.value.position || 'center',
-  '--dashboard-background-overlay': Number(dashboardBackgroundConfig.value.overlay) > 0 ? `rgba(255,255,255,${Math.min(1, Math.max(0, Number(dashboardBackgroundConfig.value.overlay))).toFixed(2)})` : 'transparent'
+  '--dashboard-background': dashboardBackground.value
 }))
+const dashboardCanvasStyle = computed(() => {
+  const config = dashboardBackgroundConfig.value
+  const value = String(config.value || '').trim()
+  const gradient = /^linear-gradient\(/i.test(value) ? value : ''
+  const color = gradient ? '#f3f6f8' : (value || '#f3f6f8')
+  const image = safeBackgroundImage(resolveBackgroundAsset(config.assetKey) || config.image)
+  const layers = []
+  const sizes = []
+  const positions = []
+  const overlay = Math.min(0.8, Math.max(0, Number(config.overlay) || 0))
+  const wash = 1 - dashboardBackgroundIntensity.value / 100
+  if (overlay > 0) { layers.push(`linear-gradient(rgba(255,255,255,${overlay}),rgba(255,255,255,${overlay}))`); sizes.push('auto'); positions.push('center') }
+  if (wash > 0) { layers.push(`linear-gradient(rgba(255,255,255,${wash}),rgba(255,255,255,${wash}))`); sizes.push('auto'); positions.push('center') }
+  if (gradient) { layers.push(gradient); sizes.push('auto'); positions.push('center') }
+  if (image !== 'none') { layers.push(image); sizes.push(config.size || 'cover'); positions.push(config.position || 'center') }
+  return {
+    backgroundColor: color,
+    backgroundImage: layers.length ? layers.join(', ') : 'none',
+    backgroundSize: sizes.join(', '),
+    backgroundPosition: positions.join(', '),
+    backgroundRepeat: layers.map(() => 'no-repeat').join(', ')
+  }
+})
 const viewerViewportWidth = ref(typeof window === 'undefined' ? 1440 : window.innerWidth)
 const viewerBreakpoint = computed(() => dashboardBreakpointForWidth(viewerViewportWidth.value))
 const viewerColumns = computed(() => responsiveColumns(viewerBreakpoint.value))
@@ -713,7 +747,7 @@ function updateDashboardMetadata(field, value) {
     }
   }
   function isRemoteDashboard(id = activeDashboardId.value) {
-    return localDashboardCatalog.value.some(item => item.origin === 'remote' && String(item.id) === String(id))
+    return localDashboardCatalog.value.some(item => item.origin === 'remote' && String(item.id) === String(id)) || (String(id) === managedDashboardId.value && !findLocalSceneByDashboardId(id))
   }
 function dashboardTypeLabel(type) { return ({ 'hospital-overview': '全院概览', topic: '专题', scene: '场景', department: '科室', custom: '自定义' })[type] || '自定义' }
 function scopeLabel(scope) { return ({ hospital: '全院', department: '科室', personal: '个人' })[scope] || '全院' }
@@ -896,6 +930,7 @@ const selectedDataSource = computed(() =>
 )
 
 const dashboardSourceLabel = computed(() => ({
+  select: '尚未选择看板',
   loading: '正在加载正式数据',
   ready: '正式接口数据',
   empty: '正式接口数据（暂无结果）',
@@ -1310,7 +1345,7 @@ function updateDashboardBackground(value) {
   if (!editingDashboardSchema.value) return
   const allowed = ['#ffffff', '#eaf5ff', 'linear-gradient(135deg,#d9efff 0%,#f7fbff 52%,#e5f6ef 100%)', 'linear-gradient(135deg,#0f4c81 0%,#1261a6 52%,#1f7f91 100%)', 'linear-gradient(135deg,#e8f0ff 0%,#f7f4ff 52%,#f0fbf7 100%)']
   const background = allowed.includes(value) ? value : '#ffffff'
-  editingDashboardSchema.value = { ...editingDashboardSchema.value, appearance: { ...editingDashboardSchema.value.appearance, background: { ...editingDashboardSchema.value.appearance?.background, type: background.startsWith('linear-gradient') ? 'gradient' : 'color', value: background, intensity: dashboardBackgroundIntensity.value } } }
+  editingDashboardSchema.value = { ...editingDashboardSchema.value, appearance: { ...editingDashboardSchema.value.appearance, background: { ...editingDashboardSchema.value.appearance?.background, type: background.startsWith('linear-gradient') ? 'gradient' : 'color', value: background, image: '', assetKey: '', intensity: dashboardBackgroundIntensity.value } } }
   markDashboardDirty()
 }
 function updateDashboardBackgroundIntensity(value) {
@@ -1429,6 +1464,9 @@ async function applyLayoutTemplate(template) {
 
 function updateDesignerStyle(partial) {
   if (!activeWidgetId.value) return
+  if (String(partial.backgroundAssetKey || '').startsWith('data:image/')) {
+    partial = { ...partial, backgroundImage: partial.backgroundAssetKey, backgroundAssetKey: '' }
+  }
   updateDesignerWidget((widget) => ({ ...widget, config: { ...widget.config, style: { ...widget.config?.style, ...partial } } }))
 }
 
@@ -1557,14 +1595,24 @@ function updateDashboardBackgroundOption(key, value) {
 function updateDashboardBuiltinBackground(assetKey) {
   if (!editingDashboardSchema.value) return
   const background = editingDashboardSchema.value.appearance?.background || {}
+  const customImage = String(assetKey || '').startsWith('data:image/')
   editingDashboardSchema.value = {
     ...editingDashboardSchema.value,
     appearance: {
       ...editingDashboardSchema.value.appearance,
-      background: { ...background, assetKey, image: '', type: assetKey ? 'image' : background.type }
+      background: { ...background, assetKey: customImage ? '' : assetKey, image: customImage ? assetKey : '', type: assetKey ? 'image' : background.type }
     }
   }
   markDashboardDirty()
+}
+function updateDashboardBackgroundAsset(asset) {
+  updateDashboardBuiltinBackground(asset)
+}
+function updateDesignerBackgroundAsset(asset) {
+  if (!activeWidgetId.value) return
+  const style = applyWidgetBackgroundMode(designerStyle.value, 'image')
+  const customImage = String(asset || '').startsWith('data:image/')
+  updateDesignerStyle({ ...style, backgroundAssetKey: customImage ? '' : asset, backgroundImage: customImage ? asset : '' })
 }
 async function applyDashboardCardSurface({ surface, scope }) {
   if (!editingDashboardSchema.value) return
@@ -1812,7 +1860,11 @@ async function loadDashboard(targetDashboardId = activeDashboardId.value) {
   dashboardAbortController?.abort()
   const generation = ++dashboardLoadGeneration
   const isCurrentLoad = () => canApplyDashboardLoad({ generation, latestGeneration: dashboardLoadGeneration, targetDashboardId, activeDashboardId: activeDashboardId.value })
-  if (isRemoteDashboard(targetDashboardId)) return loadRemoteDashboard(targetDashboardId, isCurrentLoad)
+  if (isRemoteDashboard(targetDashboardId)) {
+    const controller = new AbortController()
+    dashboardAbortController = controller
+    return loadRemoteDashboard(targetDashboardId, isCurrentLoad, controller.signal)
+  }
   if (shouldSkipRemoteDashboardBootstrap(targetDashboardId)) {
     // Local dashboards only recover their Schema and use frontend sources. They
     // must never request the quality-overview definition/query endpoints.
@@ -2052,16 +2104,16 @@ async function requestDashboardSwitch(nextDashboardId) {
   return dashboardSwitchPromise
 }
 
-async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true) {
+async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true, signal) {
   dashboardStatus.value = 'loading'
   dashboardLoadMessage.value = ''
   try {
-    const detail = await fetchDashboardDefinition(targetDashboardId)
+    const detail = await fetchDashboardDefinition(targetDashboardId, { signal })
     if (!isCurrentLoad()) return
     remoteDashboardMeta.value = dashboardDetailMeta(detail)
     let version = detail.version
     if (remoteDashboardMeta.value.currentPublishedVersionId && !isEditing.value) {
-      const versions = await fetchDashboardVersions(remoteDashboardMeta.value.dashboardId)
+      const versions = await fetchDashboardVersions(remoteDashboardMeta.value.dashboardId, { signal })
       if (!isCurrentLoad()) return
       version = (Array.isArray(versions) ? versions : []).find(item => String(item.id) === remoteDashboardMeta.value.currentPublishedVersionId) || version
     }
@@ -2083,7 +2135,14 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
       return
     }
     const sourceCodes = [...new Set(rawSchema.widgets.flatMap(widget => [widget.sourceCode, ...metricGroupSourceCodes(widget)]).filter(Boolean))]
-    const entries = await Promise.all(sourceCodes.map(async code => [code, await fetchDashboardDataSourceFields(code).catch(() => [])]))
+    const fieldsPromise = Promise.all(sourceCodes.map(async code => [code, await fetchDashboardDataSourceFields(code, { signal }).catch(error => {
+      if (signal?.aborted) throw error
+      return []
+    })]))
+    const queryPromise = remoteDashboardMeta.value.currentPublishedVersionId
+      ? queryDashboard(remoteDashboardMeta.value.dashboardId, buildRemoteDashboardQuery(rawSchema), { signal })
+      : Promise.resolve(null)
+    const [entries, result] = await Promise.all([fieldsPromise, queryPromise])
     if (!isCurrentLoad()) return
     remoteFieldCatalog.value = Object.fromEntries(entries)
     const schema = applyDefaultDashboardBindings(rawSchema, remoteFieldCatalog.value)
@@ -2100,8 +2159,6 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
       dashboardStatus.value = 'unpublished'
       return
     }
-    const result = await queryDashboard(remoteDashboardMeta.value.dashboardId, buildRemoteDashboardQuery(schema))
-    if (!isCurrentLoad()) return
     dashboardQueryResult.value = result
     remoteWidgetDatasets.value = Object.fromEntries(schema.widgets.map(widget => [String(widget.id), widgetResultToDataset(result?.widgets?.[widget.id], remoteFieldCatalog.value[widget.sourceCode], 'backend')]))
     dashboardStatus.value = Object.values(result?.widgets || {}).some(item => item?.status === 'READY') ? 'ready' : 'empty'
@@ -2279,28 +2336,37 @@ function onDesignerGlobalKeydown(event) {
 }
 
 onMounted(async () => {
-  refreshLocalLayoutTemplates()
-  let remoteCatalog = []
   try {
-    remoteCatalog = await refreshDashboardCatalog()
-  } catch (error) {
-    // An explicitly selected source-controlled scene can run with the
-    // documented demo fallback. Its schema/data do not require a catalog.
-    if (!findLocalSceneByDashboardId(managedDashboardId.value) || !isDemoRuntime()) {
-      dashboardStatus.value = 'error'
-      dashboardLoadMessage.value = formatDashboardLoadError(error)
-      return
+    refreshLocalLayoutTemplates()
+    if (!managedDashboardId.value) {
+      await refreshDashboardCatalog()
+    } else if (!findLocalSceneByDashboardId(managedDashboardId.value)) {
+      // A deep-linked dashboard can load by its id directly; refresh the selector list in parallel.
+      void refreshDashboardCatalog().catch(() => {})
     }
+    if (!managedDashboardId.value && !activeDashboardId.value) {
+      const defaultScene = LOCAL_SCENE_DASHBOARDS[0]
+      if (defaultScene) {
+        activeDashboardId.value = defaultScene.dashboardId
+        requestedDashboardId.value = defaultScene.dashboardId
+        activeSceneCode.value = defaultScene.sceneCode
+      }
+    }
+    if (managedDashboardId.value || activeDashboardId.value) {
+      loadDashboardSchema()
+      await loadDashboard()
+      void loadPublishedIndicatorCatalog()
+    } else {
+      // A dashboard route without a selected scene is an intentional idle state,
+      // not a request in progress. Let the user choose from the shared selector.
+      dashboardStatus.value = 'select'
+    }
+  } catch (error) {
+    // Initialization includes synchronous schema recovery as well as requests.
+    // Keep an unexpected startup exception from leaving the initial loading panel forever.
+    dashboardStatus.value = 'error'
+    dashboardLoadMessage.value = formatDashboardLoadError(error)
   }
-  if (!managedDashboardId.value && !isRemoteDashboard(activeDashboardId.value)) {
-    const firstRemoteDashboardId = remoteCatalog[0]?.id
-    const fallbackDemoDashboardId = LOCAL_SCENE_DASHBOARDS[0]?.dashboardId
-    activeDashboardId.value = firstRemoteDashboardId || fallbackDemoDashboardId || ''
-    requestedDashboardId.value = activeDashboardId.value
-  }
-  loadDashboardSchema()
-  await loadDashboard()
-  void loadPublishedIndicatorCatalog()
   document.addEventListener('fullscreenchange', syncFullscreenState)
   window.addEventListener('beforeunload', onDashboardBeforeUnload)
   window.addEventListener('keydown', onDesignerGlobalKeydown)
@@ -2320,7 +2386,7 @@ onBeforeUnmount(() => {
 
 <style scoped lang="scss">
 .dashboard-filter {
-  width: 122px;
+  width: 156px;
 }
 
 .dashboard-save-state {
@@ -2337,9 +2403,22 @@ onBeforeUnmount(() => {
   margin-top: 16px;
 }
 
-.dashboard-page { min-height:100%; background-color:var(--dashboard-background, #ffffff); background-image:linear-gradient(var(--dashboard-background-overlay, transparent), var(--dashboard-background-overlay, transparent)),linear-gradient(var(--dashboard-background-wash, rgba(255,255,255,0)), var(--dashboard-background-wash, rgba(255,255,255,0))),var(--dashboard-background-image, none); background-size:auto,auto,var(--dashboard-background-size, cover); background-position:center,center,var(--dashboard-background-position, center); background-repeat:no-repeat,no-repeat,no-repeat; background-attachment:scroll,scroll,scroll; }
-.dashboard-schema-viewer { max-width:100%; margin-top:16px; overflow-x:hidden; padding:12px; border-radius:8px; }
-.dashboard-schema-canvas { min-height:680px; max-width:100%; }
+.dashboard-page { min-height:100%; }
+.dashboard-schema-viewer { width:100%; margin-top:16px; overflow-x:auto; overflow-y:hidden; }
+.dashboard-canvas-frame { overflow:hidden; padding:6px 10px 10px; border:1px solid var(--idmp-border-subtle,#d9e0e6); border-radius:var(--idmp-radius-lg,4px); background:var(--idmp-layer-01,#fff); }
+.dashboard-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 16px; min-height:38px; padding:0 2px 8px; margin-bottom:7px; border-bottom:1px solid var(--idmp-border-subtle,#e7ecef); }
+.dashboard-query-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; }
+.dashboard-query-control,.dashboard-query-scope { display:flex; align-items:center; gap:6px; color:var(--idmp-text-secondary,#667085); font-size:12px; }
+.dashboard-query-control > span,.dashboard-query-scope > span { color:var(--idmp-text-helper,#858f99); }
+.dashboard-query-scope strong { color:var(--idmp-text-primary,#344054); font-weight:500; }
+.dashboard-filter.dashboard-filter--compact { width:142px; }
+.dashboard-toolbar__filters { min-width:0; }
+.dashboard-toolbar :deep(.dashboard-filter-bar.is-compact) { flex-wrap:wrap; gap:6px 12px; }
+.dashboard-toolbar :deep(.dashboard-filter-bar.is-compact small) { display:none; }
+.dashboard-toolbar :deep(.dashboard-filter-bar.is-compact .filter-control) { display:flex; align-items:center; gap:6px; }
+.dashboard-toolbar :deep(.dashboard-filter-bar.is-compact .filter-control > label) { margin:0; white-space:nowrap; }
+.dashboard-toolbar :deep(.dashboard-filter-bar.is-compact > button) { min-height:28px; padding:4px 8px; }
+.dashboard-schema-canvas { min-height:620px; max-width:100%; background-color:var(--dashboard-background,#f3f6f8); background-image:linear-gradient(var(--dashboard-background-overlay,transparent),var(--dashboard-background-overlay,transparent)),linear-gradient(var(--dashboard-background-wash,rgba(255,255,255,0)),var(--dashboard-background-wash,rgba(255,255,255,0))),var(--dashboard-background-image,none); background-size:auto,auto,var(--dashboard-background-size,cover); background-position:center,center,var(--dashboard-background-position,center); background-repeat:no-repeat,no-repeat,no-repeat; background-attachment:scroll,scroll,scroll; }
 .dashboard-designer-shell { min-width: 0; }
 .dashboard-property-inspector__empty { color: var(--idmp-text-helper, #667085); font-size: 13px; }
 .dashboard-settings-inspector { display:grid; gap:10px; margin-bottom:18px; }.dashboard-settings-inspector h3 { margin:0; font-size:14px; }.dashboard-settings-inspector label { display:grid; gap:4px; color:#475467; font-size:12px; }.dashboard-settings-inspector input,.dashboard-settings-inspector textarea,.dashboard-settings-inspector select { width:100%; box-sizing:border-box; border:1px solid #d0d5dd; border-radius:4px; padding:6px; background:#fff; }.dashboard-settings-inspector textarea { min-height:56px; resize:vertical; }
@@ -2365,8 +2444,8 @@ onBeforeUnmount(() => {
 .studio-scene-switcher { width:170px; }
 .dashboard-page:fullscreen { width: 100vw; height: 100vh; }
 
-@media (max-width: 1199px) { .dashboard-schema-canvas { min-height:560px; } }
-@media (max-width: 767px) { .dashboard-page { min-width:0; overflow-x:hidden; } .dashboard-schema-viewer { margin-top:8px; } .dashboard-schema-canvas { min-height:0; } .dashboard-schema-viewer :deep(.dashboard-widget__chrome) { min-width:0; } }
+@media (max-width: 1199px) { .dashboard-schema-canvas { min-height:540px; } }
+@media (max-width: 767px) { .dashboard-page { min-width:0; overflow-x:hidden; } .dashboard-schema-viewer { margin-top:12px; } .dashboard-toolbar { align-items:flex-start; } .dashboard-toolbar__filters { width:100%; } .dashboard-toolbar :deep(.dashboard-filter-bar.is-compact .filter-control) { flex:1 1 140px; } .dashboard-toolbar :deep(.dashboard-filter-bar.is-compact .filter-control input),.dashboard-toolbar :deep(.dashboard-filter-bar.is-compact .filter-control select) { max-width:100%; } .dashboard-filter.dashboard-filter--compact { width:130px; } .dashboard-canvas-frame { padding:4px; } .dashboard-schema-canvas { min-height:0; } .dashboard-schema-viewer :deep(.dashboard-widget__chrome) { min-width:0; } }
 
 .studio-template-library { margin-top:18px; padding-top:14px; border-top:1px solid #eaecf0; }.studio-template-library__heading { display:flex; align-items:center; justify-content:space-between; gap:8px; }.studio-template-library__heading span { display:flex; gap:7px; }.studio-template-library h3 { margin:0; font-size:13px; }.studio-template-library p { margin:5px 0 10px; color:#667085; font-size:12px; line-height:1.45; }.studio-template-library button { border:0; background:transparent; color:#1570ef; cursor:pointer; font-size:12px; padding:2px; }.studio-template-item { display:grid; grid-template-columns:72px minmax(0,1fr); gap:8px; padding:8px 0; border-top:1px solid #f2f4f7; cursor:pointer; }.studio-template-item.is-selected { margin:0 -5px; padding:8px 5px; background:#f0f8ff; }.studio-template-item strong,.studio-template-item small { display:block; }.studio-template-item strong { font-size:12px; color:#344054; }.studio-template-item small { margin-top:3px; color:#667085; font-size:11px; line-height:1.35; }.studio-template-tags { display:flex; flex-wrap:wrap; gap:3px; margin-top:5px; }.studio-template-tags em { padding:1px 4px; border-radius:3px; background:#eaf2f4; color:#52636c; font-size:9px; font-style:normal; }.studio-template-preview { display:grid; grid-template-columns:repeat(24,1fr); grid-template-rows:repeat(30,2px); gap:1px; min-height:48px; padding:2px; border:1px solid #eaecf0; border-radius:4px; background:#f8fafc; overflow:hidden; }.studio-template-item.is-selected .studio-template-preview { border-color:#75a8c2; }.studio-template-preview i { min-width:0; min-height:0; border-radius:1px; background:#4f8196; opacity:.76; }.studio-template-preview i:nth-child(2n) { background:#86aebd; }.studio-template-preview i:nth-child(3n) { background:#b7c8cf; }.studio-template-item__actions { grid-column:2; display:flex; gap:10px; }.studio-template-item__actions .is-danger { color:#b42318; }.studio-template-detail { display:grid; gap:6px; margin-top:8px; padding:9px; border:1px solid #cfe1e8; border-radius:6px; background:#f8fcfd; }.studio-template-detail strong { color:#174d6c; font-size:12px; }.studio-template-detail dl { display:grid; grid-template-columns:32px 1fr; gap:4px 7px; margin:0; font-size:11px; line-height:1.35; }.studio-template-detail dt { color:#667085; }.studio-template-detail dd { margin:0; color:#344054; }
 </style>
