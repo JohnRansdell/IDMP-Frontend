@@ -569,6 +569,7 @@ const addWidgetType = ref('kpi')
 const indicatorDataSources = ref(cloneDashboardSources(mockIndicatorDataSources))
 const catalogIndicatorSources = ref([])
 const remoteWidgetDatasets = ref({})
+const remoteWidgetPreviewGenerations = new Map()
 const remoteFieldCatalog = ref({})
 const remoteFilterOptions = ref({})
 const remoteDashboardMeta = ref(null)
@@ -876,6 +877,9 @@ function updateDesignerBinding(dataBinding) {
     else config.dataBinding = dataBinding
     return { ...widget, config }
   })
+  const updatedWidget = designerWidgets.value.find(widget => String(widget.id) === String(activeWidgetId.value))
+  const source = availableIndicatorSources.value.find(item => item.code === updatedWidget?.sourceCode)
+  if (dataBinding && source?.origin === 'dashboard-data-source') void previewRemoteWidget(updatedWidget)
 }
 // The bounded history records canonical, plain schema data only. GridStack nodes,
 // Vue proxies, filter runtime values and preview interaction state stay outside it.
@@ -1858,6 +1862,7 @@ function syncFullscreenState() {
 
 async function loadDashboard(targetDashboardId = activeDashboardId.value) {
   dashboardAbortController?.abort()
+  for (const [widgetId, generation] of remoteWidgetPreviewGenerations) remoteWidgetPreviewGenerations.set(widgetId, generation + 1)
   const generation = ++dashboardLoadGeneration
   const isCurrentLoad = () => canApplyDashboardLoad({ generation, latestGeneration: dashboardLoadGeneration, targetDashboardId, activeDashboardId: activeDashboardId.value })
   if (isRemoteDashboard(targetDashboardId)) {
@@ -2041,6 +2046,14 @@ async function loadRemoteFilterOptions() {
 
 async function previewRemoteWidget(widget) {
   if (!widget?.sourceCode) return
+  const widgetId = String(widget.id)
+  const generation = (remoteWidgetPreviewGenerations.get(widgetId) || 0) + 1
+  remoteWidgetPreviewGenerations.set(widgetId, generation)
+  const fields = remoteFieldCatalog.value[widget.sourceCode] || []
+  remoteWidgetDatasets.value = {
+    ...remoteWidgetDatasets.value,
+    [widgetId]: widgetResultToDataset({ status: 'LOADING', rows: [] }, fields, 'backend')
+  }
   try {
     const payload = schemaToDashboardPayload({
       ...editingDashboardSchema.value,
@@ -2048,12 +2061,17 @@ async function previewRemoteWidget(widget) {
     }, { dataSources: availableIndicatorSources.value }).widgets[0]
     const { widgetCodes, ...query } = buildRemoteDashboardQuery({ widgets: [widget] })
     const result = await previewDashboardWidget({ widget: payload, ...query })
+    if (remoteWidgetPreviewGenerations.get(widgetId) !== generation) return
     remoteWidgetDatasets.value = {
       ...remoteWidgetDatasets.value,
-      [String(widget.id)]: widgetResultToDataset(result, remoteFieldCatalog.value[widget.sourceCode], 'backend')
+      [widgetId]: widgetResultToDataset(result, fields, 'backend')
     }
-  } catch {
-    // Preview errors are represented by the normal empty binding state; saving remains available.
+  } catch (error) {
+    if (remoteWidgetPreviewGenerations.get(widgetId) !== generation) return
+    remoteWidgetDatasets.value = {
+      ...remoteWidgetDatasets.value,
+      [widgetId]: widgetResultToDataset({ status: 'ERROR', message: error?.message || '数据预览请求失败', rows: [] }, fields, 'backend')
+    }
   }
 }
 

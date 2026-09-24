@@ -34,6 +34,7 @@
       <label v-for="def in globalContext.definitions.value" :key="def.id" class="query-scope"><input type="checkbox" :data-ignore-filter="def.id" :checked="widget.config?.query?.ignoredGlobalFilterIds?.includes(def.id)" @change="ignoreFilter(def.id, $event.target.checked)" />忽略 {{ def.label }} <small v-if="!fields.some(field => field.id === def.field)">（当前数据不兼容）</small></label>
     </template>
     <p v-if="hasDataBinding(widget) && !validation.valid" role="status" class="binding-error">{{ validation.errors.join('；') }}</p>
+    <p v-if="directValueWarning" role="status" class="binding-error binding-error--direct">{{ directValueWarning }}</p>
     <button v-if="hasDataBinding(widget)" type="button" @click="emit('change', null)">恢复预设展示</button>
   </section>
   <p v-else class="binding-inspector">此组件保持原有业务展示，不启用字段绑定。</p>
@@ -42,8 +43,9 @@
 import { computed, inject, ref, watch } from 'vue'
 import FilterConditionEditor from './FilterConditionEditor.vue'
 import { dashboardFilterCatalog } from '../queryAdapter.js'
-import { AGGREGATIONS, BINDING_CAPABILITIES, bindingKind, emptyBinding, hasDataBinding, validateWidgetBinding } from '../bindingEngine.js'
+import { AGGREGATIONS, BINDING_CAPABILITIES, bindingKind, compileWidgetData, emptyBinding, hasDataBinding, validateWidgetBinding } from '../bindingEngine.js'
 import { createDefaultBinding, isEmptyDashboardBinding } from '../smartDefaultBinding.js'
+import { queryWidgetDatasetWithRuntime } from '../queryAdapter.js'
 const props = defineProps({ widget: { type: Object, required: true }, datasets: { type: Array, default: () => [] } })
 const emit = defineEmits(['change', 'query-change'])
 const globalContext = inject('dashboardFilterContext', { definitions: { value: [] } })
@@ -58,6 +60,20 @@ const rawBinding = computed(() => hasDataBinding(props.widget) ? props.widget.co
 // This is a UI projection only; it never silently rewrites persistence.
 const binding = computed(() => ({ ...emptyBinding(datasetId.value), ...rawBinding.value, ...Object.fromEntries(['dimensions', 'measures', 'series', 'sort'].map(slot => [slot, Array.isArray(rawBinding.value?.[slot]) ? rawBinding.value[slot].filter(item => item && typeof item === 'object' && typeof item.field === 'string') : []])) }))
 const fields = computed(() => props.datasets.find(item => item.id === datasetId.value)?.fields || [])
+const directValueWarning = computed(() => {
+  const dataset = props.datasets.find(item => item.id === datasetId.value)
+  if (!dataset || !binding.value.measures.some(item => item.aggregation === 'direct')) return ''
+  const widget = { ...props.widget, config: { ...props.widget.config, dataBinding: binding.value } }
+  const filteredDataset = queryWidgetDatasetWithRuntime(dataset, widget, {
+    definitions: globalContext.definitions.value,
+    values: globalContext.values?.value || {},
+    interactions: globalContext.interactions?.value || {}
+  })
+  const preview = compileWidgetData(bindingKind(props.widget), binding.value, filteredDataset)
+  return preview.status === 'invalid' && String(preview.message || '').startsWith('直接值遇到多行')
+    ? '当前筛选后，同一个 X 轴与系列组合对应多条记录，直接值无法确定唯一数值。请增加区分维度，或改用平均值、求和、最大值、最小值等聚合方式。'
+    : ''
+})
 const filterFields = computed(() => dashboardFilterCatalog(props.datasets.filter(item => item.id === datasetId.value)))
 const filteredFields = computed(() => fields.value.filter(field => `${field.label} ${field.id}`.toLowerCase().includes(search.value.toLowerCase())))
 const validation = computed(() => validateWidgetBinding(bindingKind(props.widget), rawBinding.value, fields.value))
