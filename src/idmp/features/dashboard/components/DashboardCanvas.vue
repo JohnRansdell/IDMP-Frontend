@@ -297,10 +297,11 @@ onBeforeUnmount(() => {
 <style scoped>
 .dashboard-canvas { position: relative; min-height: 320px; isolation: isolate; }
 .dashboard-canvas.is-editable {
-  background-color: #f8fafc;
+  background-color: transparent;
 }
 .dashboard-canvas.dashboard-surface {
-  background: linear-gradient(var(--dashboard-background-wash, rgba(255,255,255,0)), var(--dashboard-background-wash, rgba(255,255,255,0))), var(--dashboard-background, #f8fafc);
+  /* Keep Dashboard.vue's image/overlay composition intact on the inner canvas. */
+  background-color: var(--dashboard-background, #f8fafc);
 }
 .dashboard-grid-guide {
   position: absolute;

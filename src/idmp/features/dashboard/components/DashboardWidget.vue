@@ -30,6 +30,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { getWidgetGridConstraints } from '../gridLayout.js'
 import { normalizeWidgetSelectionId } from '../widgetCapabilities.js'
 import { getDashboardWidgetSizeTier } from '../widgetSizing.js'
+import { resolveBackgroundAsset } from '../backgroundAssets.js'
 
 const props = defineProps({
   widget: { type: Object, required: true },
@@ -48,8 +49,15 @@ function selectWidget(event) {
 }
 const chromeStyle = computed(() => {
   const style = props.widget.config?.style || {}
+  const image = safeImage(resolveBackgroundAsset(style.backgroundAssetKey) || style.backgroundImage)
+  const gradient = typeof style.backgroundGradient === 'string' ? style.backgroundGradient.trim() : ''
+  const overlay = style.backgroundOverlay === undefined && image ? 0.16 : Number(style.backgroundOverlay)
+  const layers = [overlay > 0 ? `linear-gradient(rgba(255,255,255,${Math.min(1, Math.max(0, overlay)).toFixed(2)}),rgba(255,255,255,${Math.min(1, Math.max(0, overlay)).toFixed(2)}))` : '', gradient, image ? `url("${image}")` : ''].filter(Boolean)
   return {
-    background: style.background,
+    backgroundColor: style.background,
+    backgroundImage: layers.length ? layers.join(', ') : undefined,
+    backgroundSize: image ? style.backgroundSize || 'cover' : undefined,
+    backgroundPosition: image ? style.backgroundPosition || 'center' : undefined,
     borderColor: style.borderColor,
     borderWidth: `${style.borderWidth ?? 1}px`,
     borderStyle: style.borderStyle || 'solid',
@@ -57,9 +65,15 @@ const chromeStyle = computed(() => {
     boxShadow: resolveShadow(style.shadow),
     padding: `${style.padding ?? 0}px`,
     opacity: style.opacity ?? 1,
+    backdropFilter: style.backdropBlur ? `blur(${style.backdropBlur})` : undefined,
+    WebkitBackdropFilter: style.backdropBlur ? `blur(${style.backdropBlur})` : undefined,
     '--widget-radius': `${style.borderRadius ?? 8}px`
   }
 })
+function safeImage(value) {
+  const url = typeof value === 'string' ? value.trim() : ''
+  return /^(https?:|data:image\/|\/)/i.test(url) ? url.replace(/["\\]/g, '') : ''
+}
 function resolveShadow(value) {
   const shadows = {
     none: 'none', sm: '0 1px 3px rgba(16,24,40,.12)', md: '0 4px 12px rgba(16,24,40,.16)',
@@ -90,4 +104,5 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
 .dashboard-widget.is-selected::after { content: ''; position: absolute; z-index: 10; inset: -5px; pointer-events: none; border: 2px solid #409eff; border-radius: calc(var(--widget-radius) + 5px); }
 .dashboard-widget.is-selected:not(.is-primary-selected)::after { border-color:rgba(64,158,255,.55); border-width:1px; }
 .dashboard-widget.is-locked::before { content:'锁定'; position:absolute; z-index:11; top:6px; right:7px; padding:2px 5px; border-radius:4px; color:#475467; background:rgba(255,255,255,.88); font-size:10px; pointer-events:none; }
+@media (prefers-reduced-motion: no-preference) { .dashboard-widget:not(.is-editable) .dashboard-widget__chrome { transition:transform .16s ease,box-shadow .16s ease; } .dashboard-widget:not(.is-editable):hover .dashboard-widget__chrome { transform:translateY(-1px); box-shadow:0 6px 18px rgba(31,69,89,.12); } }
 </style>

@@ -22,6 +22,7 @@ export const WIDGET_CONSTRAINTS = Object.freeze({
 export const resizeHandles = ['n', 'e', 's', 'w', 'ne', 'se', 'sw', 'nw']
 
 export const widgetTypeOptions = [
+  { label: '指标组', value: 'metric-group' },
   { label: '指标卡', value: 'kpi' },
   { label: '柱状图', value: 'bar' },
   { label: '折线图', value: 'line' },

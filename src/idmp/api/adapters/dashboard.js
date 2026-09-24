@@ -1,4 +1,4 @@
-import { normalizeDashboardSchema } from '@/idmp/features/dashboard/schema.js'
+import { normalizeDashboardSchema } from '../../features/dashboard/schema.js'
 
 const FRONTEND_TYPE_BY_REMOTE = Object.freeze({
   KPI: { type: 'kpi', visualType: 'kpi' },
@@ -22,6 +22,9 @@ const RESULT_SHAPE_BY_FRONTEND = Object.freeze({
 
 const stringId = value => value === null || value === undefined ? '' : String(value)
 const object = value => value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+const MOCK_MODE = 'MOCK'
+const MOCK_WIDGET_KEY = '__idmpMockWidget'
+const METRIC_GROUP_KEY = '__idmpMetricGroup'
 
 export function dashboardSummaryToCatalogEntry(item = {}) {
   return {
@@ -62,6 +65,45 @@ export function dashboardDetailMeta(detail = {}) {
   }
 }
 
+// The current backend stores widget style as an opaque JSON object, but does
+// not yet expose a first-class Mock data source.  A MOCK board therefore uses
+// legal TEXT widgets as storage carriers and keeps its original frontend
+// widget contract in style.__idmpMockWidget.  This is deliberately isolated so
+// it can be removed once the backend adds native MOCK/LIVE data modes.
+export function isMockDashboardDetail(detail = {}) {
+  return String(object(object(detail).version).style?.dataMode || '').toUpperCase() === MOCK_MODE
+}
+
+export function schemaToMockDashboardPayload(schema, { resourceVersion } = {}) {
+  const toMockWidget = widget => {
+    const config = object(widget.config)
+    return {
+      code: String(widget.id),
+      title: String(widget.title || '演示组件'),
+      type: 'TEXT',
+      position: { ...widget.layout },
+      fieldBindings: {},
+      query: { resultShape: 'OVERVIEW' },
+      filterBindings: object(config.interaction).clickFilter || {},
+      drill: object(config.interaction).drill || {},
+      chart: { text: object(config.text), chartKind: 'mock' },
+      style: { ...object(config.style), [MOCK_WIDGET_KEY]: {
+        type: widget.type, sourceCode: widget.sourceCode || '', sourceName: widget.sourceName || '',
+        kpiIndex: widget.kpiIndex, chartKind: widget.chartKind, visualType: widget.visualType,
+        preset: widget.preset, config
+      } }
+    }
+  }
+  return {
+    ...(resourceVersion === undefined ? {} : { resourceVersion }),
+    name: schema.name, description: schema.description || null, type: String(schema.dashboardType || 'CUSTOM').toUpperCase(),
+    category: schema.category || null, applicableScope: { scope: schema.scope, sceneCode: schema.sceneCode || undefined },
+    layout: { columns: schema.layout.columns, float: schema.layout.float }, theme: { name: schema.appearance?.theme || 'default' },
+    style: { appearance: schema.appearance || {}, presentation: schema.presentation || {}, dataMode: MOCK_MODE, mockDatasetVersion: 'frontend-fixture-v1' },
+    globalFilters: schema.globalFilters || [], interactions: {}, widgets: schema.widgets.map(toMockWidget)
+  }
+}
+
 export function schemaToDashboardPayload(schema, { resourceVersion, dataSources = [] } = {}) {
   const sources = new Map((Array.isArray(dataSources) ? dataSources : []).map(item => [item.code, item]))
   const sourceOf = widget => sources.get(widget.sourceCode) || object(widget.config?.dataSource)
@@ -69,6 +111,13 @@ export function schemaToDashboardPayload(schema, { resourceVersion, dataSources 
     const kind = widget.type === 'chart' ? widget.chartKind || 'line' : widget.type
     const source = sourceOf(widget)
     const config = object(widget.config)
+    if (widget.type === 'metric-group') {
+      return {
+        code: String(widget.id), title: String(widget.title || '指标组'), type: 'TEXT', position: { ...widget.layout },
+        fieldBindings: {}, query: { resultShape: 'OVERVIEW' }, filterBindings: {}, drill: {}, chart: { chartKind: 'metric-group' },
+        style: { ...object(config.style), [METRIC_GROUP_KEY]: { config } }
+      }
+    }
     return {
       code: String(widget.id), title: String(widget.title || source.name || '未命名组件'),
       type: REMOTE_TYPE_BY_FRONTEND[kind] || String(kind || 'KPI').toUpperCase(),
@@ -146,6 +195,26 @@ function remoteWidgetToSchemaWidget(widget = {}) {
   const remoteType = String(widget.type || '').toUpperCase()
   const mapped = FRONTEND_TYPE_BY_REMOTE[remoteType] || { type: 'chart', chartKind: remoteType.toLowerCase() || 'line', visualType: remoteType.toLowerCase() || 'line' }
   const chart = object(widget.chart), query = object(widget.query), style = object(widget.style)
+  const metricGroup = object(style[METRIC_GROUP_KEY])
+  if (remoteType === 'TEXT' && chart.chartKind === 'metric-group' && metricGroup.config) {
+    const restoredStyle = { ...style }
+    delete restoredStyle[METRIC_GROUP_KEY]
+    return { id: String(widget.code), type: 'metric-group', title: widget.title || '指标组', visualType: 'metric-group', config: { ...object(metricGroup.config), style: restoredStyle }, layout: { x: Number(widget.position?.x || 0), y: Number(widget.position?.y || 0), w: Number(widget.position?.w || 12), h: Number(widget.position?.h || 5) } }
+  }
+  const mockWidget = object(style[MOCK_WIDGET_KEY])
+  if (mockWidget.type) {
+    const restoredStyle = { ...style }
+    delete restoredStyle[MOCK_WIDGET_KEY]
+    return {
+      id: String(widget.code), type: mockWidget.type, sourceCode: mockWidget.sourceCode || '', sourceName: mockWidget.sourceName || '',
+      ...(mockWidget.kpiIndex === undefined ? {} : { kpiIndex: mockWidget.kpiIndex }),
+      ...(mockWidget.chartKind ? { chartKind: mockWidget.chartKind } : {}),
+      ...(mockWidget.visualType ? { visualType: mockWidget.visualType } : {}),
+      ...(mockWidget.preset ? { preset: mockWidget.preset } : {}), title: widget.title || '',
+      config: { ...object(mockWidget.config), style: restoredStyle },
+      layout: { x: Number(widget.position?.x || 0), y: Number(widget.position?.y || 0), w: Number(widget.position?.w || 4), h: Number(widget.position?.h || 3) }
+    }
+  }
   const interaction = {
     ...(Object.keys(object(widget.filterBindings)).length ? { clickFilter: widget.filterBindings } : {}),
     ...(Object.keys(object(widget.drill)).length ? { drill: widget.drill } : {})

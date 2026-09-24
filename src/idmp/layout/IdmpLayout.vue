@@ -74,7 +74,7 @@
 </template>
 
 <script setup>
-import { computed, markRaw, onMounted, ref } from 'vue'
+import { computed, markRaw, onMounted, ref, watch } from 'vue'
 import { dashboardCatalogRevision, dashboardRequestedId, designerImmersive } from './shellState.js'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import {
@@ -94,25 +94,36 @@ import {
 } from '@element-plus/icons-vue'
 import { sceneOptions } from '@/idmp/data/demo'
 import { fetchUnreadNotificationCount } from '@/idmp/api/modules/warnings'
+import { fetchDashboardCatalog } from '@/idmp/api/modules/analysisDashboard'
+import { dashboardSummaryToCatalogEntry } from '@/idmp/api/adapters/dashboard'
 import { LOCAL_SCENE_DASHBOARDS } from '@/idmp/features/dashboard/sceneRegistry.js'
-import { readDashboardCatalog } from '@/idmp/features/dashboard/catalog.js'
-import { createDashboardSelectorOptions } from '@/idmp/features/dashboard/dashboardIdentity.js'
 
 const route = useRoute()
 const router = useRouter()
 const globalScene = ref(sceneOptions[0])
 const isDashboardRoute = computed(() => route.name === 'Dashboard')
+const remoteDashboardOptions = ref([])
 const currentSceneOptions = computed(() => {
   if (!isDashboardRoute.value) return sceneOptions.map(scene => ({ label: scene, value: scene }))
-  dashboardCatalogRevision.value
-  return createDashboardSelectorOptions(LOCAL_SCENE_DASHBOARDS, readDashboardCatalog(globalThis.localStorage))
-    .map(item => ({ label: item.name, value: item.id }))
+  return [
+    ...remoteDashboardOptions.value.map(item => ({ label: item.name, value: item.id })),
+    ...LOCAL_SCENE_DASHBOARDS.map(item => ({ label: `演示 · ${item.name}`, value: item.dashboardId }))
+  ]
 })
 const currentScene = computed({
   get: () => isDashboardRoute.value ? dashboardRequestedId.value : globalScene.value,
   set: (value) => { if (isDashboardRoute.value) dashboardRequestedId.value = value; else globalScene.value = value }
 })
 const unreadCount = ref(0)
+async function refreshRemoteDashboardOptions() {
+  try {
+    const catalog = await fetchDashboardCatalog()
+    remoteDashboardOptions.value = (Array.isArray(catalog) ? catalog : []).map(dashboardSummaryToCatalogEntry)
+  } catch {
+    // Dashboard.vue exposes the actionable error. Never substitute localStorage here.
+    remoteDashboardOptions.value = []
+  }
+}
 async function loadUnreadCount() {
   try { unreadCount.value = Number((await fetchUnreadNotificationCount())?.unreadCount || 0) } catch { unreadCount.value = 0 }
 }
@@ -173,5 +184,6 @@ const displayBreadcrumbs = computed(() => {
   return breadcrumbs.value
 })
 
-onMounted(loadUnreadCount)
+watch(dashboardCatalogRevision, () => { void refreshRemoteDashboardOptions() })
+onMounted(() => { loadUnreadCount(); void refreshRemoteDashboardOptions() })
 </script>

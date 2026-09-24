@@ -10,6 +10,7 @@ import {
   saveLocalLayoutTemplate,
   validateLayoutTemplate
 } from '../src/idmp/features/dashboard/layoutTemplates.js'
+import { normalizeMetricGroupConfig } from '../src/idmp/features/dashboard/metricGroup.js'
 
 const storage = () => {
   const values = new Map()
@@ -69,4 +70,36 @@ test('invalid templates are rejected before application and local storage only r
 
 test('every shipped built-in template is valid before GridStack sees it', () => {
   for (const template of BUILT_IN_LAYOUT_TEMPLATES) assert.deepEqual(validateLayoutTemplate(template), { valid: true, errors: [] }, template.name)
+})
+
+test('design templates retain distinct density, hierarchy, and official metric group materialization', () => {
+  const designs = BUILT_IN_LAYOUT_TEMPLATES
+  assert.equal(designs.length, 6)
+  assert.equal(new Set(designs.map(template => template.id)).size, 6)
+  assert.ok(designs.every(template => template.description && template.visualTone && template.density && template.detail?.useCase && template.detail?.layout && template.detail?.visual && template.detail?.components))
+  assert.ok(designs.every(template => new Set(template.widgets.map(widget => `${widget.type}:${widget.title}`)).size === template.widgets.length))
+  const byId = id => designs.find(template => template.id === id)
+  const executive = byId('builtin-executive-brief')
+  const operations = byId('builtin-operations-analysis')
+  const minimal = byId('builtin-minimal-insight')
+  const clinical = byId('builtin-clinical-command')
+  const glass = byId('builtin-glass-medical')
+  const cockpit = byId('builtin-dark-cockpit')
+  assert.ok(minimal.widgets.length < executive.widgets.length)
+  assert.ok(executive.widgets.length < operations.widgets.length)
+  assert.ok(operations.widgets.some(widget => widget.chartKind === 'table'))
+  assert.equal(minimal.widgets.filter(widget => widget.type === 'text').length, 2)
+  assert.equal(cockpit.widgets.filter(widget => widget.type === 'metric-group')[0].config.metricGroup.itemAppearance, 'divider')
+  assert.equal(glass.widgets.every(widget => widget.config.style.backdropBlur === '12px'), true)
+  assert.equal(clinical.widgets[0].config.metricGroup.items[0].emphasis, 'hero')
+  assert.equal(executive.widgets.find(widget => widget.type === 'metric-group').config.metricGroup.items[0].emphasis, 'hero')
+  assert.equal(cockpit.widgets.find(widget => widget.type === 'metric-group').config.metricGroup.layout.columns, '4')
+  for (const template of designs) {
+    const group = template.widgets.find(widget => widget.type === 'metric-group')
+    assert.deepEqual(normalizeMetricGroupConfig(group.config.metricGroup), group.config.metricGroup, template.name)
+    const before = structuredClone(template)
+    const widgets = instantiateLayoutTemplate(template, { createWidgetId: index => `${template.id}-${index}` })
+    assert.deepEqual(template, before, `${template.name} is not mutated by creation`)
+    assert.equal(widgets.filter(widget => widget.type === 'metric-group')[0].config.metricGroup.items.every(item => item.id), true)
+  }
 })

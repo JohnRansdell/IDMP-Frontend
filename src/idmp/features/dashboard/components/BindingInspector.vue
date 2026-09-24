@@ -43,6 +43,7 @@ import { computed, inject, ref, watch } from 'vue'
 import FilterConditionEditor from './FilterConditionEditor.vue'
 import { dashboardFilterCatalog } from '../queryAdapter.js'
 import { AGGREGATIONS, BINDING_CAPABILITIES, bindingKind, emptyBinding, hasDataBinding, validateWidgetBinding } from '../bindingEngine.js'
+import { createDefaultBinding, isEmptyDashboardBinding } from '../smartDefaultBinding.js'
 const props = defineProps({ widget: { type: Object, required: true }, datasets: { type: Array, default: () => [] } })
 const emit = defineEmits(['change', 'query-change'])
 const globalContext = inject('dashboardFilterContext', { definitions: { value: [] } })
@@ -76,7 +77,12 @@ function add(field) {
   next.sort = (next.sort || []).filter(sort => [...next.dimensions, ...next.measures].some(entry => entry.field === sort.field))
   emit('change', next)
 }
-function changeDataset(id) { pendingDataset.value = id; if (hasDataBinding(props.widget)) emit('change', emptyBinding(id)) }
+function changeDataset(id) {
+  pendingDataset.value = id
+  if (!hasDataBinding(props.widget) || isEmptyDashboardBinding(props.widget.config?.dataBinding)) {
+    emit('change', createDefaultBinding(bindingKind(props.widget), props.datasets, { datasetId: id }) || emptyBinding(id))
+  }
+}
 function remove(slot, index) { const next = { ...binding.value, [slot]: binding.value[slot].filter((_, i) => i !== index) }; next.sort = next.sort.filter(sort => [...next.dimensions, ...next.measures].some(item => item.field === sort.field)); emit('change', next) }
 function patchItem(slot, index, patch) { emit('change', { ...binding.value, [slot]: binding.value[slot].map((item, i) => i === index ? { ...item, ...patch } : item) }) }
 function setSort(field, direction) { emit('change', { ...binding.value, sort: field ? [{ field, direction }] : [] }) }

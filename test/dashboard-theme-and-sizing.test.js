@@ -11,6 +11,15 @@ test('Clinical Light uses the system blue as its primary chart color and preserv
   assert.equal(option.media.at(-1).option.legend.type, 'scroll')
 })
 
+test('dark chart surfaces use readable defaults without overriding explicit colors', () => {
+  const dark = createDashboardChartTheme({ title: { textStyle: { color: '#facc15' } }, legend: { textStyle: { color: '#f0abfc' } }, xAxis: { axisLabel: { color: '#86efac' } }, yAxis: { nameTextStyle: { color: '#93c5fd' } } }, 'dark')
+  assert.equal(dark.textStyle.color, '#f8fbff')
+  assert.equal(dark.legend.textStyle.color, '#f0abfc')
+  assert.equal(dark.xAxis.axisLabel.color, '#86efac')
+  assert.equal(dark.yAxis.nameTextStyle.color, '#93c5fd')
+  assert.equal(dark.yAxis.axisLabel.color, '#d9e9f5')
+})
+
 test('size tier changes with the measured container dimensions', () => {
   assert.equal(getDashboardWidgetSizeTier(120, 240), 'micro')
   assert.equal(getDashboardWidgetSizeTier(240, 170), 'compact')

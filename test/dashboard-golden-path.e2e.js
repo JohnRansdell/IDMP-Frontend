@@ -22,10 +22,10 @@ class Cdp {
       const message = JSON.parse(event.data)
       if (!message.id) this.onEvent?.(message)
       if (!message.id || !this.pending.has(message.id)) return
-      const { resolve, reject, timeout } = this.pending.get(message.id)
+      const { resolve, reject, timeout, method } = this.pending.get(message.id)
       this.pending.delete(message.id)
       clearTimeout(timeout)
-      message.error ? reject(new Error(message.error.message)) : resolve(message.result)
+      message.error ? reject(new Error(`CDP ${method}: ${message.error.message}`)) : resolve(message.result)
     })
   }
   async send(method, params = {}) {
@@ -36,7 +36,7 @@ class Cdp {
         this.pending.delete(id)
         reject(new Error(`CDP command timed out: ${method}`))
       }, 20000)
-      this.pending.set(id, { resolve, reject, timeout })
+      this.pending.set(id, { resolve, reject, timeout, method })
       this.socket.send(JSON.stringify({ id, method, params }))
     })
   }
@@ -45,7 +45,15 @@ class Cdp {
 
 const appPort = 41739
 const debugPort = 41740
-const appUrl = `http://127.0.0.1:${appPort}/dashboard`
+const previewSmokeMode = process.env.VITE_DASHBOARD_PREVIEW_MODE === '1'
+// Preview mode provides data fallbacks, but it does not select a populated
+// dashboard. Select the existing quality-safety scene through its supported
+// managed-dashboard route rather than relying on an empty default catalog.
+// The non-preview golden path keeps its existing backend-backed target.
+const dashboardId = previewSmokeMode ? 'quality-overview-quality-safety' : 'quality-overview'
+const appUrl = previewSmokeMode
+  ? `http://127.0.0.1:${appPort}/dashboard?id=${dashboardId}`
+  : `http://127.0.0.1:${appPort}/dashboard`
 const chromePath = process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
 const profile = await mkdtemp(join(tmpdir(), 'idmp-dashboard-e2e-'))
 // Invoke Vite's JavaScript entry directly. Spawning pnpm.cmd without a Windows
@@ -78,7 +86,7 @@ try {
   // subscriptions is required by the constrained headless renderer here.
   await waitFor(cdp, `document.querySelector('[data-testid="dashboard-edit"]')`)
   await click(cdp, '[data-testid="dashboard-edit"]')
-  await waitFor(cdp, `document.querySelector('[data-testid="dashboard-canvas"] .grid-stack-item')`)
+  await waitForDashboardCanvas(cdp)
 
   if (process.env.DASHBOARD_VISUAL_DIR) {
     await mkdir(process.env.DASHBOARD_VISUAL_DIR, { recursive: true })
@@ -95,6 +103,11 @@ try {
   }
 
   const initialCount = await value(cdp, `document.querySelectorAll('[data-testid="dashboard-canvas"] .grid-stack-item').length`)
+  if (previewSmokeMode) {
+    const firstWidget = await value(cdp, `(() => { const widget = document.querySelector('[data-testid="dashboard-canvas"] .grid-stack-item'); return { id: widget?.getAttribute('data-widget-id') || '', type: widget?.querySelector('[data-widget-type]')?.getAttribute('data-widget-type') || widget?.querySelector('[class*="widget"]')?.className || '' }; })()`)
+    assert.ok(initialCount > 0, 'preview smoke dashboard must render at least one widget')
+    process.stdout.write(`dashboard-visual-smoke: PASS dashboard=${dashboardId} widgets=${initialCount} first=${JSON.stringify(firstWidget)}\n`)
+  } else {
   await click(cdp, '[aria-label="指标数据"]')
   await waitFor(cdp, `document.querySelector('.el-select-dropdown__item:not(.is-disabled)')`)
   await click(cdp, '.el-select-dropdown__item:not(.is-disabled)')
@@ -134,7 +147,7 @@ try {
 
   await domClick(cdp, '[data-testid="dashboard-save"]')
   await waitFor(cdp, `document.querySelector('.dashboard-save-state')?.textContent.trim().startsWith('✓ 已保存')`)
-  const saved = await value(cdp, `JSON.parse(localStorage.getItem('idmp:dashboard-schema:v1:quality-overview'))`)
+  const saved = await value(cdp, `JSON.parse(localStorage.getItem('idmp:dashboard-schema:v1:${dashboardId}'))`)
   const added = saved.widgets.find((widget) => widget.title === 'Golden Path KPI')
   assert.ok(added, 'saved schema must contain the added KPI')
   assert.equal(saved.widgets.length, initialCount + 1)
@@ -143,7 +156,7 @@ try {
 
   await reload(cdp)
   await waitFor(cdp, `document.body.textContent.includes('Golden Path KPI')`)
-  const restored = await value(cdp, `JSON.parse(localStorage.getItem('idmp:dashboard-schema:v1:quality-overview')).widgets.find(widget => widget.title === 'Golden Path KPI')`)
+  const restored = await value(cdp, `JSON.parse(localStorage.getItem('idmp:dashboard-schema:v1:${dashboardId}')).widgets.find(widget => widget.title === 'Golden Path KPI')`)
   assert.deepEqual(restored.layout, afterResize)
   await click(cdp, '[data-testid="dashboard-edit"]')
   await waitFor(cdp, `document.querySelector('[data-widget-id="${added.id}"]')`)
@@ -153,13 +166,14 @@ try {
   await click(cdp, `[data-widget-id="${added.id}"]`)
   await click(cdp, '[data-testid="dashboard-delete-widget"]')
   await domClick(cdp, '[data-testid="dashboard-save"]')
-  await waitFor(cdp, `!JSON.parse(localStorage.getItem('idmp:dashboard-schema:v1:quality-overview')).widgets.some(widget => widget.id === '${added.id}')`)
+  await waitFor(cdp, `!JSON.parse(localStorage.getItem('idmp:dashboard-schema:v1:${dashboardId}')).widgets.some(widget => widget.id === '${added.id}')`)
   await reload(cdp)
   await waitFor(cdp, `document.querySelector('[data-testid="dashboard-edit"]')`)
   assert.equal(await value(cdp, `document.body.textContent.includes('Golden Path KPI')`), false)
   process.stdout.write('dashboard-golden-path: PASS\n')
   await runMembershipGoldenPath(cdp, { click, domClick, value, waitFor, delay, reload })
   await runBindingGoldenPath(cdp, { click, domClick, value, waitFor, setInput, gridNode, delay, reload })
+  }
 } catch (error) {
   process.stderr.write(`dashboard-e2e failure: ${error instanceof Error ? error.stack : String(error)}\n${chromeDiagnostic(processLog.chrome)}\nVite stderr=${processLog.server.stderr.trim() || '(empty)'}\n`)
   throw error
@@ -231,6 +245,38 @@ async function waitFor(cdp, expression, timeout = 15000) {
     await delay(100)
   }
   throw new Error(`timed out waiting for: ${expression}`)
+}
+
+async function waitForDashboardCanvas(cdp) {
+  const expression = `document.querySelector('[data-testid="dashboard-canvas"].grid-stack') && document.querySelector('[data-testid="dashboard-canvas"] .grid-stack-item')`
+  try {
+    await waitFor(cdp, expression)
+  } catch (error) {
+    const diagnostic = await dashboardDiagnostic(cdp).catch((diagnosticError) => ({ diagnosticError: diagnosticError.message }))
+    throw new Error(`${error.message}\nDashboard diagnostic: ${JSON.stringify(diagnostic)}`)
+  }
+}
+
+async function dashboardDiagnostic(cdp) {
+  return value(cdp, `(() => {
+    const text = document.body?.innerText || ''
+    const count = (selector) => document.querySelectorAll(selector).length
+    return {
+      href: location.href,
+      title: document.title,
+      readyState: document.readyState,
+      bodyText: text.replace(/\\s+/g, ' ').slice(0, 700),
+      dashboardRoot: Boolean(document.querySelector('[data-testid="dashboard-edit"], .dashboard-page, .dashboard-workspace')),
+      editButton: Boolean(document.querySelector('[data-testid="dashboard-edit"]')),
+      canvas: Boolean(document.querySelector('[data-testid="dashboard-canvas"]')),
+      gridStack: Boolean(document.querySelector('[data-testid="dashboard-canvas"].grid-stack')),
+      gridStackItems: count('[data-testid="dashboard-canvas"] .grid-stack-item'),
+      loading: count('.el-loading-mask, .dashboard-loading, .is-loading'),
+      empty: count('.studio-empty, .dashboard-empty, .empty-state'),
+      error: count('.dashboard-error, .el-alert--error, .el-result--error'),
+      widgets: Array.from(document.querySelectorAll('[data-testid="dashboard-canvas"] .grid-stack-item')).slice(0, 3).map((element) => ({ id: element.getAttribute('data-widget-id'), type: element.querySelector('[data-widget-type]')?.getAttribute('data-widget-type') || element.className }))
+    }
+  })()`)
 }
 
 async function value(cdp, expression) {

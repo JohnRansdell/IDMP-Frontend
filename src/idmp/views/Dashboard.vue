@@ -24,8 +24,8 @@
         </template>
         <template v-if="isEditing">
           <el-button :icon="RefreshLeft" @click="resetDashboardLayout">恢复默认</el-button>
-          <el-button data-testid="dashboard-undo" :disabled="!canUndo" @click="undoDashboardEdit">撤销</el-button>
-          <el-button data-testid="dashboard-redo" :disabled="!canRedo" @click="redoDashboardEdit">重做</el-button>
+          <el-button data-testid="dashboard-undo" title="撤销上一步编辑" :disabled="!canUndo" @click="undoDashboardEdit">撤销</el-button>
+          <el-button data-testid="dashboard-redo" title="重做上一步编辑" :disabled="!canRedo" @click="redoDashboardEdit">重做</el-button>
           <el-button data-testid="dashboard-configure-widget" :disabled="!activeDesignerWidget" @click="openWidgetConfig(activeWidgetId)">配置组件</el-button>
           <el-button data-testid="dashboard-delete-widget" :icon="Delete" :disabled="!activeDesignerWidget" @click="deleteActiveWidget">删除组件</el-button>
           <span class="dashboard-save-state" :class="`is-${saveState}`">{{ saveStateLabel }}</span>
@@ -59,7 +59,10 @@
       title="质量看板加载失败"
       :description="dashboardLoadMessage || '未展示演示数据，请检查后端看板是否已发布后重试。'"
     >
-      <template #actions><el-button type="primary" @click="loadDashboard">重新加载</el-button></template>
+      <template #actions>
+        <el-button type="primary" @click="retryRemoteDashboardCatalog">重新加载</el-button>
+        <el-button v-if="remoteCatalogIsEmpty" @click="newDashboardForm('blank')">创建服务端看板</el-button>
+      </template>
     </StatePanel>
     <StatePanel
       v-else-if="dashboardStatus === 'empty'"
@@ -70,25 +73,21 @@
       <template #actions><el-button @click="loadDashboard">重新加载</el-button></template>
     </StatePanel>
     <StatePanel
-      v-else-if="dashboardStatus === 'unpublished'"
+      v-else-if="dashboardStatus === 'unpublished' && !isEditing"
       type="empty"
       title="看板尚未发布"
       description="当前仅存在草稿配置，请进入编辑模式保存并发布后查看正式数据。"
     />
 
-    <template v-else-if="dashboardStatus === 'ready' || dashboardStatus === 'demo'">
-    <el-alert v-if="dashboardStatus === 'demo'" type="warning" :closable="false" title="当前展示演示数据，尚未接入医院正式看板数据。" />
-    <section v-if="!isEditing && useSchemaViewer" class="dashboard-schema-viewer dashboard-surface" :style="dashboardSurfaceStyle">
+    <template v-else-if="dashboardStatus === 'ready' || dashboardStatus === 'demo' || (dashboardStatus === 'unpublished' && isEditing)">
+    <el-alert v-if="dashboardStatus === 'demo'" type="warning" :closable="false" title="当前展示统一演示模板与 Mock 数据，仅用于功能开发和演示；不代表医院正式业务数据。" />
+    <section v-if="!isEditing && useSchemaViewer" class="dashboard-schema-viewer">
       <DashboardFilterBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" @change="filterRuntimeValues = $event" />
-      <section v-if="activeInteractionFilters.length" class="dashboard-interaction-summary" aria-label="联动筛选">
-        <span v-for="interaction in activeInteractionFilters" :key="interaction.id">联动：{{ interaction.label }} = {{ interaction.value }}</span>
-        <el-button size="small" text @click="clearAllInteractionFilters">清除联动</el-button>
-      </section>
+      <DashboardContextBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :interactions="activeInteractionFilters" :drill-states="drillRuntimeState" :widgets="viewerWidgets" @clear-filters="filterRuntimeValues = initialFilterValues(globalFilterDefinitions)" @clear-interactions="clearAllInteractionFilters" @clear-drills="clearAllWidgetDrills" />
       <DashboardCanvas
         :key="`viewer-${dashboardSchema?.id}-${viewerBreakpoint}`"
         ref="viewerCanvasRef"
-        class="dashboard-schema-canvas dashboard-surface"
-        :style="dashboardSurfaceStyle"
+        class="dashboard-schema-canvas"
         :widgets="viewerWidgets"
         :editable="false"
         :columns="viewerColumns"
@@ -144,12 +143,12 @@
           </el-dropdown>
           <el-button v-if="canRestoreQualitySafetyDemo" data-testid="dashboard-restore-quality-safety-demo" @click="restoreQualitySafetyDemoLayout">恢复演示布局</el-button>
           <el-button data-testid="dashboard-preview" @click="studioPreview = true">预览</el-button>
-          <el-button data-testid="dashboard-undo" :disabled="!canUndo" @click="undoDashboardEdit">撤销</el-button>
-          <el-button data-testid="dashboard-redo" :disabled="!canRedo" @click="redoDashboardEdit">重做</el-button>
+          <el-button data-testid="dashboard-undo" title="撤销上一步编辑" :disabled="!canUndo" @click="undoDashboardEdit">撤销</el-button>
+          <el-button data-testid="dashboard-redo" title="重做上一步编辑" :disabled="!canRedo" @click="redoDashboardEdit">重做</el-button>
           <el-button data-testid="dashboard-save" type="primary" :icon="Check" @click="saveDashboardLayout">保存布局</el-button>
           <el-button v-if="isRemoteDashboard()" data-testid="dashboard-publish" @click="publishCurrentDashboard">发布</el-button>
           <el-dropdown @command="handleStudioCommand">
-            <el-button aria-label="更多看板操作">···</el-button>
+            <el-button aria-label="更多看板操作" title="更多看板操作">···</el-button>
             <template #dropdown><el-dropdown-menu><el-dropdown-item command="reset">恢复默认布局</el-dropdown-item><el-dropdown-item command="exit">退出编辑</el-dropdown-item></el-dropdown-menu></template>
           </el-dropdown>
         </div>
@@ -175,27 +174,31 @@
         </section>
         <p v-else-if="selectedDataSource?.origin === 'acceptance'" class="dashboard-acceptance-source">验收数据 / 演示数据，不代表医院真实业务数据。</p>
         <p v-if="dashboardStatus === 'demo'" class="dashboard-demo-source" role="status">演示数据：用于功能预览，不是医院真实业务数据。</p>
-        <h3>常用组件</h3>
-        <button v-for="item in filteredLibrary" :key="item.type" :data-testid="`dashboard-library-${item.type}`" class="studio-library-item" :class="{ 'is-current': addWidgetType === item.type }" @click="addWidgetType = item.type">
-          <span class="studio-library-icon" aria-hidden="true">{{ item.icon }}</span><span><strong>{{ item.name }}</strong><small>{{ item.hint }}</small></span>
-        </button>
+        <section v-for="group in groupedWidgetLibrary" :key="group.name" class="studio-library-group" :aria-label="group.name">
+          <h3>{{ group.name }}</h3>
+          <button v-for="item in group.items" :key="item.type" :data-testid="`dashboard-library-${item.type}`" class="studio-library-item" :class="{ 'is-current': addWidgetType === item.type }" @click="addWidgetType = item.type">
+            <span class="studio-library-icon" aria-hidden="true">{{ item.icon }}</span><span><strong>{{ item.name }}</strong><small>{{ item.hint }}</small></span>
+          </button>
+        </section>
         <p v-if="!filteredLibrary.length">没有匹配的组件</p>
-        <el-button data-testid="dashboard-add-widget" type="primary" plain :disabled="!selectedDataSource && addWidgetType !== 'text'" :icon="Plus" @click="addDashboardWidget">添加组件</el-button>
+        <el-button data-testid="dashboard-add-widget" type="primary" plain :disabled="!selectedDataSource && !['text', 'metric-group'].includes(addWidgetType)" :icon="Plus" @click="addDashboardWidget">添加组件</el-button>
         <section class="studio-template-library" aria-label="布局模板">
-          <div class="studio-template-library__heading"><h3>模板</h3><button type="button" @click="saveCurrentLayoutAsTemplate">保存当前布局</button></div>
-          <p>内置模板与仅保存在当前浏览器的本地模板。</p>
-          <article v-for="template in layoutTemplates" :key="template.id" class="studio-template-item">
+          <div class="studio-template-library__heading"><h3>设计模板</h3><span><button type="button" @click="newDashboardForm('blank')">空白看板</button><button type="button" @click="saveCurrentLayoutAsTemplate">保存当前布局</button></span></div>
+          <p>选择后查看用途与构图；系统模板与本地模板相互独立。</p>
+          <article v-for="template in layoutTemplates" :key="template.id" :data-template-id="template.id" class="studio-template-item" :class="{ 'is-selected': selectedTemplateId === template.id }" @click="selectedTemplateId = template.id">
             <div class="studio-template-preview" aria-hidden="true"><i v-for="(widget, index) in template.widgets" :key="index" :style="templatePreviewStyle(widget)" /></div>
-            <div><strong>{{ template.name }}</strong><small>{{ template.description }}</small></div>
-            <div class="studio-template-item__actions"><button type="button" @click="applyLayoutTemplate(template)">使用</button><button v-if="!template.id.startsWith('builtin-')" type="button" class="is-danger" @click="removeLocalLayoutTemplate(template.id)">删除</button></div>
+            <div><strong>{{ template.name }}</strong><small>{{ template.description }}</small><span v-if="template.tags" class="studio-template-tags"><em v-for="tag in template.tags.slice(0, 3)" :key="tag">{{ tag }}</em><em v-if="template.density">{{ template.density }}</em></span></div>
+            <div class="studio-template-item__actions"><button type="button" @click.stop="applyLayoutTemplate(template)">使用</button><button v-if="!template.id.startsWith('builtin-')" type="button" class="is-danger" @click.stop="removeLocalLayoutTemplate(template.id)">删除</button></div>
           </article>
+          <section v-if="selectedTemplateDetail" class="studio-template-detail" data-testid="dashboard-template-detail"><strong>{{ selectedTemplateDetail.name }}</strong><dl><dt>适用</dt><dd>{{ selectedTemplateDetail.detail?.useCase || selectedTemplateDetail.description }}</dd><dt>布局</dt><dd>{{ selectedTemplateDetail.detail?.layout || '可编辑布局模板' }}</dd><dt>视觉</dt><dd>{{ selectedTemplateDetail.detail?.visual || '沿用组件样式' }}</dd><dt>组件</dt><dd>{{ selectedTemplateDetail.detail?.components || `${selectedTemplateDetail.widgets.length} 个组件` }}</dd></dl></section>
         </section>
         <div class="studio-library-note">点击添加 · 拖动布局<br />选中组件后在右侧编辑属性</div>
       </aside>
       <main class="studio-workspace">
         <div class="studio-canvas-heading"><span>画布</span><span>{{ editingDashboardSchema?.layout?.columns || 24 }} 列 · Clinical Light</span></div>
-        <div class="studio-canvas-scroll dashboard-surface" :style="dashboardSurfaceStyle">
+        <div class="studio-canvas-scroll">
         <DashboardFilterBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" @change="filterRuntimeValues = $event" />
+        <DashboardContextBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :interactions="activeInteractionFilters" :drill-states="drillRuntimeState" :widgets="designerWidgets" @clear-filters="filterRuntimeValues = initialFilterValues(globalFilterDefinitions)" @clear-interactions="clearAllInteractionFilters" @clear-drills="clearAllWidgetDrills" />
         <div v-if="!designerWidgets.length" class="studio-empty">
           <span aria-hidden="true">▦</span><h2>创建你的第一个看板组件</h2><p>从左侧选择指标与组件，开始构建分析看板。</p>
           <el-button :disabled="!selectedDataSource" @click="addWidgetType = 'kpi'; addDashboardWidget()">添加 KPI</el-button>
@@ -203,8 +206,7 @@
       <DashboardCanvas
         :key="`designer-${editingDashboardSchema?.id}`"
         ref="designerCanvasRef"
-        class="dashboard-designer-canvas dashboard-surface"
-        :style="dashboardSurfaceStyle"
+        class="dashboard-designer-canvas"
         :widgets="designerWidgets"
         :editable="true"
         :columns="editingDashboardSchema?.layout?.columns || 24"
@@ -226,6 +228,8 @@
             :department="department"
             :updated-at="dashboardQueryLabel"
             editing
+            designer
+            :selected-metric-item-id="widget.id === activeWidgetId ? selectedMetricItemId : ''"
             :get-widget-kpi="getWidgetKpi"
             :get-title="getWidgetTitle"
             :get-description="getWidgetDescription"
@@ -237,15 +241,21 @@
             :get-table-rows="getWidgetTableRows"
             :get-pie-drill-targets="getWidgetPieDrillTargets"
             :get-pie-drill-source="getWidgetPieDrillSource"
+            @metric-item-select="selectMetricGroupItem"
+            @metric-item-add="addMetricGroupItemFromCanvas"
+            @metric-item-duplicate="duplicateMetricGroupItemFromCanvas"
+            @metric-item-remove="removeMetricGroupItemFromCanvas"
+            @metric-item-reorder="reorderMetricGroupItemFromCanvas"
           />
         </template>
       </DashboardCanvas>
         </div>
       </main>
       <aside class="studio-inspector" aria-label="组件属性">
-        <div class="studio-inspector-heading"><h2>组件属性</h2><button data-testid="dashboard-settings" @click="showDashboardSettings">看板设置</button><button data-testid="dashboard-configure-widget" :disabled="!activeDesignerWidget" @click="openWidgetConfig(activeWidgetId)">配置</button></div>
+        <div class="studio-inspector-heading"><div><h2>{{ inspectorObjectTitle }}</h2><p>{{ inspectorObjectType }}</p></div><span class="studio-inspector-heading__actions"><button data-testid="dashboard-settings" @click="showDashboardSettings">看板设置</button><button data-testid="dashboard-configure-widget" :disabled="!activeDesignerWidget" @click="openWidgetConfig(activeWidgetId)">配置</button></span></div>
         <template v-if="!selectedWidgetIds.length">
-          <section class="dashboard-settings-inspector"><h3>看板设置</h3><label>名称<input :value="editingDashboardSchema?.name" @change="updateDashboardMetadata('name', $event.target.value)" /></label><label>描述<textarea :value="editingDashboardSchema?.description" @change="updateDashboardMetadata('description', $event.target.value)" /></label><label>类型<select :value="editingDashboardSchema?.dashboardType" @change="updateDashboardMetadata('dashboardType', $event.target.value)"><option value="hospital-overview">全院概览</option><option value="topic">专题看板</option><option value="scene">场景看板</option><option value="department">科室看板</option><option value="custom">自定义看板</option></select><small>定义业务用途与入口类型，不直接改变组件数据。</small></label><label>分类<input :value="editingDashboardSchema?.category" @change="updateDashboardMetadata('category', $event.target.value)" /><small>用于看板分类和检索，不直接影响图表数据。</small></label><label>范围<select :value="editingDashboardSchema?.scope" @change="updateDashboardMetadata('scope', $event.target.value)"><option value="hospital">全院</option><option value="department">科室</option><option value="personal">个人</option></select><small>定义适用业务范围；实际权限由服务端控制。</small></label><label>背景预设<select :value="editingDashboardSchema?.appearance?.background?.value || '#ffffff'" @change="updateDashboardBackground($event.target.value)"><option value="#ffffff">临床白</option><option value="#eaf5ff">雾蓝</option><option value="linear-gradient(135deg,#d9efff 0%,#f7fbff 52%,#e5f6ef 100%)">蓝青渐变</option><option value="linear-gradient(135deg,#0f4c81 0%,#1261a6 52%,#1f7f91 100%)">深海蓝</option><option value="linear-gradient(135deg,#e8f0ff 0%,#f7f4ff 52%,#f0fbf7 100%)">清透渐变</option></select><small>编辑画布与预览会同步显示该背景。</small></label><label>背景强度 <output>{{ dashboardBackgroundIntensity }}%</output><input type="range" min="35" max="100" step="5" :value="dashboardBackgroundIntensity" @input="updateDashboardBackgroundIntensity($event.target.value)" /></label><small>降低强度可柔化渐变；深色背景会保留浅色卡片对比度。</small></section>
+          <section class="dashboard-settings-inspector"><h3>看板设置</h3><label>名称<input :value="editingDashboardSchema?.name" @change="updateDashboardMetadata('name', $event.target.value)" /></label><label>描述<textarea :value="editingDashboardSchema?.description" @change="updateDashboardMetadata('description', $event.target.value)" /></label><label>类型<select :value="editingDashboardSchema?.dashboardType" @change="updateDashboardMetadata('dashboardType', $event.target.value)"><option value="hospital-overview">全院概览</option><option value="topic">专题看板</option><option value="scene">场景看板</option><option value="department">科室看板</option><option value="custom">自定义看板</option></select><small>定义业务用途与入口类型，不直接改变组件数据。</small></label><label>分类<input :value="editingDashboardSchema?.category" @change="updateDashboardMetadata('category', $event.target.value)" /><small>用于看板分类和检索，不直接影响图表数据。</small></label><label>范围<select :value="editingDashboardSchema?.scope" @change="updateDashboardMetadata('scope', $event.target.value)"><option value="hospital">全院</option><option value="department">科室</option><option value="personal">个人</option></select><small>定义适用业务范围；实际权限由服务端控制。</small></label><label>背景预设<select :value="editingDashboardSchema?.appearance?.background?.value || '#ffffff'" @change="updateDashboardBackground($event.target.value)"><option value="#ffffff">临床白</option><option value="#eaf5ff">雾蓝</option><option value="linear-gradient(135deg,#d9efff 0%,#f7fbff 52%,#e5f6ef 100%)">蓝青渐变</option><option value="linear-gradient(135deg,#0f4c81 0%,#1261a6 52%,#1f7f91 100%)">深海蓝</option><option value="linear-gradient(135deg,#e8f0ff 0%,#f7f4ff 52%,#f0fbf7 100%)">清透渐变</option></select><small>编辑画布与预览会同步显示该背景。</small></label><BackgroundAssetPicker :model-value="editingDashboardSchema?.appearance?.background?.assetKey || ''" @update:model-value="updateDashboardBuiltinBackground" /><label>图片适配<select :value="editingDashboardSchema?.appearance?.background?.size || 'cover'" @change="updateDashboardBackgroundOption('size', $event.target.value)"><option value="cover">覆盖</option><option value="contain">包含</option><option value="auto">原始尺寸</option></select></label><label>图片位置<select :value="editingDashboardSchema?.appearance?.background?.position || 'center'" @change="updateDashboardBackgroundOption('position', $event.target.value)"><option value="center">居中</option><option value="top">顶部</option><option value="bottom">底部</option></select></label><label>背景叠层<input type="range" min="0" max="0.8" step="0.05" :value="editingDashboardSchema?.appearance?.background?.overlay || 0" @input="updateDashboardBackgroundOption('overlay', Number($event.target.value))" /></label><label>背景强度 <output>{{ dashboardBackgroundIntensity }}%</output><input type="range" min="35" max="100" step="5" :value="dashboardBackgroundIntensity" @input="updateDashboardBackgroundIntensity($event.target.value)" /></label><small>降低强度可柔化渐变；深色背景会保留浅色卡片对比度。</small></section>
+          <CardSurfaceControls @apply="applyDashboardCardSurface" />
           <section class="dashboard-settings-inspector"><h3>网格</h3><label>Grid Columns<select :value="editingDashboardSchema?.layout?.columns || 24" @change="changeDesignerGridColumns($event.target.value)"><option :value="24">24 列</option><option :value="12">12 列</option></select></label><small>切换将安全重排组件；Viewer 保持自动响应式，不提供平板或手机配置。</small></section>
           <section class="dashboard-settings-inspector dashboard-global-filter-settings" data-testid="dashboard-global-filter-settings"><h3>全局筛选（{{ globalFilterDefinitions.length }}）</h3><GlobalFilterDesigner :definitions="globalFilterDefinitions" :catalog="filterCatalog" :option-sources="globalFilterOptionSources" :widgets="designerWidgets" :compatible-widget-ids-by-filter="compatibleWidgetIdsByGlobalFilter" @change="updateGlobalFilters" @delete="deleteGlobalFilter" @scope-change="updateGlobalFilterScope" /></section>
         </template>
@@ -265,15 +275,17 @@
               <section v-if="activeDesignerWidget.type === 'text'" class="dashboard-style-form dashboard-text-content"><h3>内容</h3><label>标题<input :value="activeDesignerWidget.config?.text?.title || ''" @input="updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, text: { ...widget.config?.text, title: $event.target.value } } }))" /></label><label>正文<textarea aria-label="文本正文" :value="activeDesignerWidget.config?.text?.body || ''" @input="updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, text: { ...widget.config?.text, body: $event.target.value } } }))" /></label><small>可输入多行看板说明、数据口径或业务提示。</small></section>
               <label v-if="activeWidgetVisualizationOptions.length" class="studio-field-label">展示形式</label>
               <el-select v-if="activeWidgetVisualizationOptions.length" v-model="activeWidgetVisualizationType" aria-label="选中组件展示形式"><el-option v-for="option in activeWidgetVisualizationOptions" :key="option.value" :label="option.label" :value="option.value" /></el-select>
-              <dl class="dashboard-property-list"><dt>指标</dt><dd>{{ activeDesignerWidget.sourceName || activeDesignerWidget.sourceCode || '未绑定' }}</dd><dt>展示类型</dt><dd>{{ activeDesignerWidget.chartKind || activeDesignerWidget.type }}</dd></dl>
+              <MetricGroupInspector v-if="activeDesignerWidget.type === 'metric-group'" :widget="activeDesignerWidget" :sources="availableIndicatorSources" :get-datasets="getBindingDatasets" :selected-item-id="selectedMetricItemId" @change="updateMetricGroupConfig" @select-item="selectedMetricItemId = $event" />
+              <dl v-else class="dashboard-property-list"><dt>指标</dt><dd>{{ activeDesignerWidget.sourceName || activeDesignerWidget.sourceCode || '未绑定' }}</dd><dt>展示类型</dt><dd>{{ activeDesignerWidget.chartKind || activeDesignerWidget.type }}</dd></dl>
               <section class="dashboard-precise-layout"><h3>位置与尺寸</h3><label>X<input :value="activeDesignerWidget.layout.x" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ x: $event.target.value })" /></label><label>Y<input :value="activeDesignerWidget.layout.y" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ y: $event.target.value })" /></label><label>宽度<input :value="activeDesignerWidget.layout.w" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ w: $event.target.value })" /></label><label>高度<input :value="activeDesignerWidget.layout.h" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ h: $event.target.value })" /></label><label>宽度（%）<input :value="gridWidthToPercentage(activeDesignerWidget.layout.w)" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ w: percentageToGridWidth($event.target.value) })" /></label><small>实际尺寸约 {{ precisePixelSize.width }} × {{ precisePixelSize.height }} px；仅作显示，不保存。</small></section>
-              <BindingInspector v-if="activeDesignerWidget.type !== 'text'" :key="activeDesignerWidget.id" :widget="activeDesignerWidget" :datasets="getBindingDatasets(activeDesignerWidget)" @change="updateDesignerBinding" @query-change="updateDesignerQuery" />
+              <BindingInspector v-if="!['text', 'metric-group'].includes(activeDesignerWidget.type)" :key="activeDesignerWidget.id" :widget="activeDesignerWidget" :datasets="getBindingDatasets(activeDesignerWidget)" @change="updateDesignerBinding" @query-change="updateDesignerQuery" />
             </el-tab-pane>
             <el-tab-pane label="样式" name="style">
               <div class="dashboard-style-form">
                 <template v-if="activeDesignerWidget.type === 'text'"><h3>文本样式</h3><label>对齐<select :value="activeDesignerWidget.config?.text?.align || 'left'" @change="updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, text: { ...widget.config?.text, align: $event.target.value } } }))"><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></label><label>字号<input type="number" min="10" max="48" :value="activeDesignerWidget.config?.text?.fontSize || 14" @change="updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, text: { ...widget.config?.text, fontSize: Number($event.target.value) } } }))" /></label><label>字重<select :value="activeDesignerWidget.config?.text?.fontWeight || 400" @change="updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, text: { ...widget.config?.text, fontWeight: Number($event.target.value) } } }))"><option :value="400">常规</option><option :value="500">中等</option><option :value="600">加粗</option><option :value="700">粗体</option></select></label><label>文字颜色<input type="color" :value="activeDesignerWidget.config?.text?.color || '#25343b'" @input="updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, text: { ...widget.config?.text, color: $event.target.value } } }))" /></label></template>
-                <ChartStyleInspector v-if="activeDesignerWidget.type === 'chart' || activeDesignerWidget.type === 'kpi'" :widget="activeDesignerWidget" @update="updateDesignerStyle" @reset="resetDesignerVisualStyle" />
-                <h3>卡片外观</h3><label>背景颜色 <input type="color" :value="designerStyle.background" @input="updateDesignerStyle({ background: $event.target.value })" /></label>
+                <ChartStyleInspector v-if="activeDesignerWidget.type === 'chart' || activeDesignerWidget.type === 'kpi' || activeDesignerWidget.type === 'metric-group'" :widget="activeDesignerWidget" @update="updateDesignerStyle" @reset="resetDesignerVisualStyle" />
+                <SurfaceEffectPicker :style="designerStyle" @update="setWidgetSurfaceEffect" />
+                <section class="style-section"><h3>卡片外观</h3><p>卡片背景只影响当前组件；页面背景请在看板设置中调整。</p><div class="background-mode" role="radiogroup" aria-label="卡片背景"><button v-for="mode in backgroundModes" :key="mode.id" type="button" :class="{ 'is-active': widgetBackgroundMode === mode.id }" @click="setWidgetBackgroundMode(mode.id)">{{ mode.label }}</button></div></section><label v-if="widgetBackgroundMode === 'solid'">背景颜色 <input type="color" :value="designerStyle.background" @input="updateDesignerStyle({ background: $event.target.value })" /></label><label v-if="widgetBackgroundMode === 'gradient'">卡片渐变<input :value="designerStyle.backgroundGradient || ''" placeholder="linear-gradient(...)" @change="updateDesignerStyle({ backgroundGradient: $event.target.value })" /></label><template v-if="widgetBackgroundMode === 'image'"><BackgroundAssetPicker :model-value="designerStyle.backgroundAssetKey || ''" @update:model-value="updateDesignerStyle({ ...applyWidgetBackgroundMode(designerStyle, 'image'), backgroundAssetKey: $event, backgroundImage: '' })" /><label>图片适配<select :value="designerStyle.backgroundSize || 'cover'" @change="updateDesignerStyle({ backgroundSize: $event.target.value })"><option value="cover">覆盖</option><option value="contain">包含</option><option value="auto">原始尺寸</option></select></label><label>图片位置<select :value="designerStyle.backgroundPosition || 'center'" @change="updateDesignerStyle({ backgroundPosition: $event.target.value })"><option value="center">居中</option><option value="top">顶部</option><option value="bottom">底部</option></select></label><label>背景叠层<input type="range" min="0" max="0.8" step="0.05" :value="designerStyle.backgroundOverlay || 0" @input="updateDesignerStyle({ backgroundOverlay: Number($event.target.value) })" /></label></template>
                 <label>边框颜色 <input type="color" :value="designerStyle.borderColor" @input="updateDesignerStyle({ borderColor: $event.target.value })" /></label>
                 <label>边框宽度 <input data-testid="dashboard-widget-border-width" type="number" min="0" max="8" :value="designerStyle.borderWidth" @input="updateDesignerStyle({ borderWidth: Number($event.target.value) })" /></label>
                 <label>圆角 <input type="number" min="0" max="32" :value="designerStyle.borderRadius" @input="updateDesignerStyle({ borderRadius: Number($event.target.value) })" /></label>
@@ -300,12 +312,9 @@
       <footer class="studio-status"><span>{{ designerWidgets.length }} 个组件 · {{ activeDesignerWidget ? '已选中 ' + getWidgetTitle(activeDesignerWidget) : '未选中组件' }}</span><span>拖动调整位置 · 右下角调整大小</span></footer>
       <el-dialog v-model="studioPreview" title="看板预览" width="88%" destroy-on-close>
         <DashboardFilterBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" @change="filterRuntimeValues = $event" />
-        <section v-if="activeInteractionFilters.length" class="dashboard-interaction-summary" aria-label="联动筛选">
-          <span v-for="interaction in activeInteractionFilters" :key="interaction.id">联动：{{ interaction.label }} = {{ interaction.value }}</span>
-          <el-button size="small" text @click="clearAllInteractionFilters">清除联动</el-button>
-        </section>
-        <div class="dashboard-preview-frame dashboard-surface" :style="dashboardSurfaceStyle">
-        <DashboardCanvas v-if="studioPreview" class="dashboard-surface" :style="dashboardSurfaceStyle" :widgets="previewWidgets" :columns="24" :editable="false">
+        <DashboardContextBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :interactions="activeInteractionFilters" :drill-states="drillRuntimeState" :widgets="designerWidgets" @clear-filters="filterRuntimeValues = initialFilterValues(globalFilterDefinitions)" @clear-interactions="clearAllInteractionFilters" @clear-drills="clearAllWidgetDrills" />
+        <div class="dashboard-preview-frame">
+        <DashboardCanvas v-if="studioPreview" :widgets="previewWidgets" :columns="24" :editable="false">
           <template #default="{ widget }"><WidgetRenderer :widget="widget" :primary-kpi="visibleKpis[0]" :supporting-kpis="visibleKpis.slice(1)" :warnings="dashboardWarnings" :ranking="departmentRanking" :department="department" :updated-at="dashboardQueryLabel" interactive :get-widget-kpi="getWidgetKpi" :get-title="getWidgetTitle" :get-description="getWidgetDescription" :get-icon="getWidgetIcon" :get-chart-option="getWidgetChartOption" :is-chart-empty="isChartEmpty" :get-chart-aria-label="getWidgetChartAriaLabel" :get-table-columns="getWidgetTableColumns" :get-table-rows="getWidgetTableRows" :get-pie-drill-targets="getWidgetPieDrillTargets" :get-pie-drill-source="getWidgetPieDrillSource" @chart-click="handleWidgetChartClick" /></template>
         </DashboardCanvas>
         </div>
@@ -328,6 +337,16 @@
       </el-dialog>
     </div>
     </template>
+    <el-dialog v-if="dashboardStatus === 'error'" v-model="dashboardMenuDialog" title="新建服务端看板" width="520px" destroy-on-close>
+      <div class="dashboard-create-form">
+        <label>名称<input v-model="dashboardCreateForm.name" maxlength="80" /></label>
+        <label>描述<textarea v-model="dashboardCreateForm.description" maxlength="300" /></label>
+        <label>类型<select v-model="dashboardCreateForm.dashboardType"><option value="hospital-overview">全院概览</option><option value="topic">专题看板</option><option value="scene">场景看板</option><option value="department">科室看板</option><option value="custom">自定义看板</option></select></label>
+        <label>分类<input v-model="dashboardCreateForm.category" maxlength="80" /></label>
+        <label>适用范围<select v-model="dashboardCreateForm.scope"><option value="hospital">全院</option><option value="department">科室</option><option value="personal">个人</option></select></label>
+      </div>
+      <template #footer><el-button @click="dashboardMenuDialog = false">取消</el-button><el-button type="primary" @click="createDashboardFromMenu">创建并编辑</el-button></template>
+    </el-dialog>
   </div>
 </template>
 
@@ -356,14 +375,18 @@ import StatePanel from '@/idmp/components/StatePanel.vue'
 import DashboardCanvas from '@/idmp/features/dashboard/components/DashboardCanvas.vue'
 import WidgetRenderer from '@/idmp/features/dashboard/components/WidgetRenderer.vue'
 import BindingInspector from '@/idmp/features/dashboard/components/BindingInspector.vue'
+import MetricGroupInspector from '@/idmp/features/dashboard/components/MetricGroupInspector.vue'
 import BindingInteractionInspector from '@/idmp/features/dashboard/components/BindingInteractionInspector.vue'
 import DashboardFilterBar from '@/idmp/features/dashboard/components/DashboardFilterBar.vue'
+import DashboardContextBar from '@/idmp/features/dashboard/components/DashboardContextBar.vue'
 import GlobalFilterDesigner from '@/idmp/features/dashboard/components/GlobalFilterDesigner.vue'
 import { initialFilterValues } from '@/idmp/features/dashboard/filterEngine.js'
 import { dashboardFilterCatalog, deriveDependentFilterOptions, normalizeDependentFilterValues } from '@/idmp/features/dashboard/queryAdapter.js'
 import { provide } from 'vue'
 import { compareDashboardGridMembership } from '@/idmp/features/dashboard/gridMembership.js'
 import { createWidgetBindingDatasets } from '@/idmp/features/dashboard/fieldCatalog.js'
+import { bindingKind } from '@/idmp/features/dashboard/bindingEngine.js'
+import { createDefaultBinding } from '@/idmp/features/dashboard/smartDefaultBinding.js'
 import { buildIndicatorAnalysisRouteQuery } from '@/idmp/features/dashboard/analysisNavigation.js'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
 import {
@@ -374,7 +397,7 @@ import {
 import {
   applyDefaultDashboardBindings, dashboardDataSourceToFrontend, dashboardDetailMeta,
   dashboardDetailToSchema, dashboardFieldsToFrontend, dashboardSummaryToCatalogEntry,
-  schemaToDashboardPayload, widgetResultToDataset
+  isMockDashboardDetail, schemaToDashboardPayload, schemaToMockDashboardPayload, widgetResultToDataset
 } from '@/idmp/api/adapters/dashboard'
 import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
 import { fetchIndicatorAnalysis, fetchIndicators, fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
@@ -395,6 +418,7 @@ import { createDashboardEditingSnapshot } from '@/idmp/features/dashboard/editSe
 import { buildPublishedIndicatorAnalysisQuery, schemaPublishedIndicatorSourceCodes } from '@/idmp/features/dashboard/publishedIndicatorRuntime.js'
 import { dashboardActiveId, dashboardRequestedId, dashboardSceneCode, designerImmersive, notifyDashboardCatalogChanged } from '@/idmp/layout/shellState.js'
 import { createQualitySafetyDemoSchema } from '@/idmp/features/dashboard/acceptanceExample.js'
+import { addMetricGroupItem, createMetricGroupConfig, duplicateMetricGroupItem, metricGroupSourceCodes, removeMetricGroupItem, reorderMetricGroupItem } from '@/idmp/features/dashboard/metricGroup.js'
 import { canRestoreQualitySafetyDemo as canRestoreQualitySafetyDemoEntry, createQualitySafetyDemoRestoreResult } from '@/idmp/features/dashboard/qualitySafetyDemoRestore.js'
 import { applyGlobalFilterScope, removeGlobalFilter } from '@/idmp/features/dashboard/globalFilterDesignerModel.js'
 import { resolveCompatibleGlobalFilterWidgetIds } from '@/idmp/features/dashboard/globalFilterCompatibility.js'
@@ -412,7 +436,7 @@ import {
   clonePersistableValue
 } from '@/idmp/features/dashboard/schema'
 import { DASHBOARD_RECOVERY_STATUS, persistDashboardSchema, recoverDashboardSchema } from '@/idmp/features/dashboard/persistence'
-import { BUILT_IN_DASHBOARD_IDS, DASHBOARD_STUDIO_MENU_COMMANDS, createLocalDashboard, duplicateLocalDashboard, readDashboardCatalog, removeLocalDashboard, renameLocalDashboard, saveDashboardToCatalog } from '@/idmp/features/dashboard/catalog.js'
+import { BUILT_IN_DASHBOARD_IDS, DASHBOARD_STUDIO_MENU_COMMANDS, duplicateLocalDashboard, removeLocalDashboard, renameLocalDashboard } from '@/idmp/features/dashboard/catalog.js'
 import { DASHBOARD_UNSAVED_MESSAGE, handleDashboardBeforeUnload, shouldProtectDashboardNavigation } from '@/idmp/features/dashboard/navigationProtection'
 import { getWidgetGridConstraints, legacyPixelLayoutToGrid } from '@/idmp/features/dashboard/gridLayout'
 import { clearWidgetSelection, nextWidgetSelection, alignSelectedLayout, distributeSelectedLayout } from '@/idmp/features/dashboard/layoutOperations.js'
@@ -435,8 +459,13 @@ import {
   normalizeDashboardDrillTarget,
   resolveDashboardChartDrillTarget
 } from '@/idmp/features/dashboard/visualization'
-import { applyWidgetVisualStyle, resetWidgetVisualStyle } from '@/idmp/features/dashboard/visualStyle'
+import { applyWidgetBackgroundMode, applyWidgetVisualStyle, resetWidgetVisualStyle, resolveWidgetBackgroundMode } from '@/idmp/features/dashboard/visualStyle'
 import ChartStyleInspector from '@/idmp/features/dashboard/components/ChartStyleInspector.vue'
+import BackgroundAssetPicker from '@/idmp/features/dashboard/components/BackgroundAssetPicker.vue'
+import CardSurfaceControls from '@/idmp/features/dashboard/components/CardSurfaceControls.vue'
+import SurfaceEffectPicker from '@/idmp/features/dashboard/components/SurfaceEffectPicker.vue'
+import { resolveBackgroundAsset, resolveDashboardSurfaceTone } from '@/idmp/features/dashboard/backgroundAssets.js'
+import { applyCardSurface, applyCardSurfaceToWidgets } from '@/idmp/features/dashboard/cardSurface.js'
 
 import '@/idmp/features/dashboard/dashboard-v2.css'
 const studioPreview = ref(false)
@@ -449,23 +478,29 @@ const dashboardCreateForm = ref({ name: '', description: '', dashboardType: 'cus
 const librarySearch = ref('')
 const localLayoutTemplates = ref([])
 const layoutTemplates = computed(() => [...BUILT_IN_LAYOUT_TEMPLATES, ...localLayoutTemplates.value])
+const selectedTemplateId = ref(BUILT_IN_LAYOUT_TEMPLATES[0].id)
+const selectedTemplateDetail = computed(() => layoutTemplates.value.find(template => template.id === selectedTemplateId.value) || layoutTemplates.value[0] || null)
 const acceptanceIndicatorSources = dashboardAcceptanceSources
 const dashboardMenuCommands = DASHBOARD_STUDIO_MENU_COMMANDS
 const libraryItems = [
-  { type: 'kpi', name: 'KPI 指标卡', hint: '指标 · 单值与目标', icon: '◫' },
-  { type: 'text', name: '文本', hint: '文本说明 · 口径与提示', icon: 'T' },
-  { type: 'line', name: '趋势折线', hint: '趋势 · 时间序列', icon: '⌁' },
-  { type: 'bar', name: '比较柱状', hint: '比较 · 分类对比', icon: '▥' },
-  { type: 'pie', name: '构成环形', hint: '构成 · 占比分析', icon: '◉' },
-  { type: 'table', name: '数据表格', hint: '明细 · 分组数值', icon: '▤' },
-  { type: 'gauge', name: '仪表盘', hint: '单值 · 进度展示', icon: '◌' },
-  { type: 'radar', name: '雷达图', hint: '多维 · 对比分析', icon: '◇' },
-  { type: 'funnel', name: '漏斗图', hint: '阶段 · 转化分析', icon: '▽' },
-  { type: 'scatter', name: '散点图', hint: '双度量 · 分布', icon: '⠿' },
-  { type: 'heatmap', name: '热力图', hint: '维度 · 数值矩阵', icon: '▦' },
-  { type: 'map', name: '地图 / 区域分布', hint: '区域维度 · 数值度量', icon: '⌖' }
+  { group: '指标', type: 'metric-group', name: '指标组', hint: '集中展示多个关键指标', icon: '▦' },
+  { group: '指标', type: 'kpi', name: 'KPI 指标卡', hint: '指标 · 单值与目标', icon: '◫' },
+  { group: '常用图表', type: 'bar', name: '比较柱状', hint: '比较 · 分类对比', icon: '▥' },
+  { group: '常用图表', type: 'line', name: '趋势折线', hint: '趋势 · 时间序列', icon: '⌁' },
+  { group: '常用图表', type: 'pie', name: '构成环形', hint: '构成 · 占比分析', icon: '◉' },
+  { group: '分析图表', type: 'scatter', name: '散点图', hint: '双度量 · 分布', icon: '⠿' },
+  { group: '分析图表', type: 'radar', name: '雷达图', hint: '多维 · 对比分析', icon: '◇' },
+  { group: '分析图表', type: 'funnel', name: '漏斗图', hint: '阶段 · 转化分析', icon: '▽' },
+  { group: '分析图表', type: 'heatmap', name: '热力图', hint: '维度 · 数值矩阵', icon: '▦' },
+  { group: '展示', type: 'gauge', name: '仪表盘', hint: '单值 · 进度展示', icon: '◌' },
+  { group: '展示', type: 'map', name: '地图 / 区域分布', hint: '区域维度 · 数值度量', icon: '⌖' },
+  { group: '展示', type: 'table', name: '数据表格', hint: '明细 · 分组数值', icon: '▤' },
+  { group: '展示', type: 'text', name: '文本', hint: '文本说明 · 口径与提示', icon: 'T' }
 ]
 const filteredLibrary = computed(() => libraryItems.filter(item => (item.name + item.hint).includes(librarySearch.value.trim())))
+const groupedWidgetLibrary = computed(() => ['指标', '常用图表', '分析图表', '展示']
+  .map(name => ({ name, items: filteredLibrary.value.filter(item => item.group === name) }))
+  .filter(group => group.items.length))
 function handleStudioCommand(command) {
   if (command === 'reset') resetDashboardLayout()
   if (command === 'exit') exitDashboardEdit()
@@ -485,8 +520,8 @@ const currentDashboardId = computed(() => activeDashboardId.value)
 const currentDashboardName = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.name || activeScene.value?.name || '本地看板')
 const currentDashboardProtected = computed(() => !activeScene.value && !BUILT_IN_DASHBOARD_IDS.has(currentDashboardId.value) ? false : true)
 const dashboardSelectorOptions = computed(() => [
-  ...LOCAL_SCENE_DASHBOARDS.map(item => ({ id: item.dashboardId, name: item.name, origin: 'system-scene' })),
-  ...localDashboardCatalog.value.map(item => ({ ...item, origin: item.origin || 'local' }))
+  ...localDashboardCatalog.value.map(item => ({ ...item, origin: 'remote' })),
+  ...LOCAL_SCENE_DASHBOARDS.map(item => ({ id: item.dashboardId, name: `演示 · ${item.name}`, origin: 'system-scene' }))
 ])
 const canRestoreQualitySafetyDemo = computed(() => canRestoreQualitySafetyDemoEntry({ isEditing: isEditing.value, dashboardId: activeDashboardId.value }))
 const periodOptions = ref([
@@ -501,6 +536,8 @@ const viewerCanvasRef = ref()
 const isEditing = ref(false)
 const selectedWidgetIds = ref([])
 const primarySelectedWidgetId = ref('')
+// Selection is a Designer affordance only. It is deliberately not written to the schema.
+const selectedMetricItemId = ref('')
 const activeWidgetId = computed({
   get: () => primarySelectedWidgetId.value,
   set: value => {
@@ -519,6 +556,8 @@ const remoteWidgetDatasets = ref({})
 const remoteFieldCatalog = ref({})
 const remoteFilterOptions = ref({})
 const remoteDashboardMeta = ref(null)
+const remoteDashboardIsMock = ref(false)
+const remoteCatalogIsEmpty = computed(() => localDashboardCatalog.value.length === 0)
 // The eager filter watcher evaluates bindingDatasets during setup, so this source catalog must exist first.
 const availableIndicatorSources = computed(() => {
   const sources = [...acceptanceIndicatorSources, ...indicatorDataSources.value, ...catalogIndicatorSources.value]
@@ -533,6 +572,14 @@ const dashboardHistory = ref([])
 const dashboardHistoryIndex = ref(-1)
 let restoringDashboardHistory = false
 const designerWidgets = computed(() => editingDashboardSchema.value?.widgets || [])
+const inspectorObjectTitle = computed(() => selectedWidgetIds.value.length > 1 ? `已选择 ${selectedWidgetIds.value.length} 个组件` : activeDesignerWidget.value ? getWidgetTitle(activeDesignerWidget.value) : '看板设置')
+const inspectorObjectType = computed(() => {
+  if (!activeDesignerWidget.value) return '页面背景、卡片背景与全局筛选'
+  if (selectedWidgetIds.value.length > 1) return `已选择 ${selectedWidgetIds.value.length} 个组件 · 布局操作`
+  const labels = { kpi: '指标卡', 'metric-group': '指标组', text: '文本', chart: '图表' }
+  const widget = activeDesignerWidget.value
+  return labels[widget.type] || widget.chartKind || '组件'
+})
 const canUndo = computed(() => isEditing.value && dashboardHistoryIndex.value > 0)
 const canRedo = computed(() => isEditing.value && dashboardHistoryIndex.value >= 0 && dashboardHistoryIndex.value < dashboardHistory.value.length - 1)
 const designerInspectorTab = ref('data')
@@ -543,14 +590,19 @@ const lastSavedAt = ref('')
 const presentationMode = ref('standard')
 const presentationRef = ref()
 const dashboardSchema = ref(null)
-const dashboardBackground = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.appearance?.background?.value || '#ffffff')
+const dashboardBackgroundConfig = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.appearance?.background || {})
+const dashboardBackground = computed(() => dashboardBackgroundConfig.value.value || '#ffffff')
 const dashboardBackgroundIntensity = computed(() => {
   const value = Number((isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.appearance?.background?.intensity)
   return Number.isFinite(value) ? Math.min(100, Math.max(35, Math.round(value))) : 100
 })
 const dashboardSurfaceStyle = computed(() => ({
   '--dashboard-background': dashboardBackground.value,
-  '--dashboard-background-wash': `rgba(255,255,255,${(1 - dashboardBackgroundIntensity.value / 100).toFixed(2)})`
+  '--dashboard-background-wash': `rgba(255,255,255,${(1 - dashboardBackgroundIntensity.value / 100).toFixed(2)})`,
+  '--dashboard-background-image': safeBackgroundImage(resolveBackgroundAsset(dashboardBackgroundConfig.value.assetKey) || dashboardBackgroundConfig.value.image),
+  '--dashboard-background-size': dashboardBackgroundConfig.value.size || 'cover',
+  '--dashboard-background-position': dashboardBackgroundConfig.value.position || 'center',
+  '--dashboard-background-overlay': Number(dashboardBackgroundConfig.value.overlay) > 0 ? `rgba(255,255,255,${Math.min(1, Math.max(0, Number(dashboardBackgroundConfig.value.overlay))).toFixed(2)})` : 'transparent'
 }))
 const viewerViewportWidth = ref(typeof window === 'undefined' ? 1440 : window.innerWidth)
 const viewerBreakpoint = computed(() => dashboardBreakpointForWidth(viewerViewportWidth.value))
@@ -577,6 +629,7 @@ function getBindingDatasets(widget) {
   return bindingDatasets.value.get(source?.code) || []
 }
 provide('dashboardBindingDatasets', getBindingDatasets)
+provide('dashboardSurfaceTone', computed(() => resolveDashboardSurfaceTone(dashboardBackgroundConfig.value)))
 const globalFilterDefinitions = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.globalFilters || [])
 const compatibleWidgetIdsByGlobalFilter = computed(() => Object.fromEntries(globalFilterDefinitions.value.map(definition => [definition.id, resolveCompatibleGlobalFilterWidgetIds(definition, designerWidgets.value, getBindingDatasets)])))
 const filterRuntimeValues = ref({})
@@ -650,17 +703,34 @@ function updateDashboardMetadata(field, value) {
     try {
       const remote = await fetchDashboardCatalog()
       localDashboardCatalog.value = (Array.isArray(remote) ? remote : []).map(dashboardSummaryToCatalogEntry)
-    } catch {
-      // Keep the existing browser catalog usable when the API is temporarily unavailable.
-      localDashboardCatalog.value = readDashboardCatalog(localStorage)
+      notifyDashboardCatalogChanged()
+      return localDashboardCatalog.value
+    } catch (error) {
+      // Never turn a backend failure into a browser-local "saved" dashboard.
+      localDashboardCatalog.value = []
+      notifyDashboardCatalogChanged()
+      throw error
     }
-    notifyDashboardCatalogChanged()
   }
   function isRemoteDashboard(id = activeDashboardId.value) {
     return localDashboardCatalog.value.some(item => item.origin === 'remote' && String(item.id) === String(id))
   }
 function dashboardTypeLabel(type) { return ({ 'hospital-overview': '全院概览', topic: '专题', scene: '场景', department: '科室', custom: '自定义' })[type] || '自定义' }
 function scopeLabel(scope) { return ({ hospital: '全院', department: '科室', personal: '个人' })[scope] || '全院' }
+async function retryRemoteDashboardCatalog() {
+  try {
+    const remoteCatalog = await refreshDashboardCatalog()
+    const dashboardId = remoteCatalog.find(item => String(item.id) === String(activeDashboardId.value))?.id || remoteCatalog[0]?.id
+    if (!dashboardId) throw new Error('服务端看板目录为空，请创建看板或联系管理员授权。')
+    activeDashboardId.value = dashboardId
+    requestedDashboardId.value = dashboardId
+    loadDashboardSchema(dashboardId)
+    await loadDashboard(dashboardId)
+  } catch (error) {
+    dashboardStatus.value = 'error'
+    dashboardLoadMessage.value = formatDashboardLoadError(error)
+  }
+}
 function newDashboardForm(mode) {
   dashboardCreateMode.value = mode
   dashboardCreateForm.value = { name: '', description: '', dashboardType: 'custom', category: '', scope: 'personal', templateId: layoutTemplates.value[0]?.id || '' }
@@ -694,7 +764,10 @@ async function createDashboardFromMenu() {
     const { value } = await ElMessageBox.prompt('请输入新的看板名称', '重命名当前看板', { inputValue: currentDashboardName.value, inputPattern: /\S+/, inputErrorMessage: '名称不能为空', confirmButtonText: '保存', cancelButtonText: '取消' })
       if (isRemoteDashboard()) {
         const schema = normalizeDashboardSchema({ ...(editingDashboardSchema.value || dashboardSchema.value), name: value })
-        const saved = await saveDashboard(currentDashboardId.value, schemaToDashboardPayload(schema, { resourceVersion: remoteDashboardMeta.value?.resourceVersion, dataSources: availableIndicatorSources.value }))
+        const payload = remoteDashboardIsMock.value
+          ? schemaToMockDashboardPayload(schema, { resourceVersion: remoteDashboardMeta.value?.resourceVersion })
+          : schemaToDashboardPayload(schema, { resourceVersion: remoteDashboardMeta.value?.resourceVersion, dataSources: availableIndicatorSources.value })
+        const saved = await saveDashboard(currentDashboardId.value, payload)
         remoteDashboardMeta.value = dashboardDetailMeta(saved)
         dashboardSchema.value = saved?.version?.layout ? dashboardDetailToSchema(saved) : schema
         if (editingDashboardSchema.value) editingDashboardSchema.value = clonePersistableValue(dashboardSchema.value)
@@ -729,7 +802,8 @@ async function deleteCurrentDashboard() {
     else removeLocalDashboard(currentDashboardId.value, localStorage)
     await refreshDashboardCatalog()
     finishDashboardEdit()
-    await selectDashboard(LOCAL_SCENE_DASHBOARDS.find(item => item.sceneCode === 'quality-safety')?.dashboardId || LOCAL_SCENE_DASHBOARDS[0].dashboardId)
+    const nextDashboardId = localDashboardCatalog.value[0]?.id
+    if (nextDashboardId) await selectDashboard(nextDashboardId)
   } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(`删除失败：${error.message || '未知错误'}`) }
 }
 async function openLocalDashboard(id, { startEditing = false } = {}) {
@@ -832,6 +906,8 @@ const dashboardSourceLabel = computed(() => ({
 const activeDesignerWidget = computed(() => editingDashboardSchema.value?.widgets.find((widget) => widget.id === activeWidgetId.value))
 const precisePixelSize = computed(() => { const widget = activeDesignerWidget.value; const geometry = designerCanvasRef.value?.getGridGeometry?.() || { cellWidth: 0, cellHeight: 60, margin: 0 }; const width = widget?.layout.w || 0, height = widget?.layout.h || 0; return { width: Math.round(width * geometry.cellWidth + Math.max(0, width - 1) * geometry.margin), height: Math.round(height * geometry.cellHeight + Math.max(0, height - 1) * geometry.margin) } })
 const designerStyle = computed(() => activeDesignerWidget.value?.config?.style || {})
+const widgetBackgroundMode = computed(() => resolveWidgetBackgroundMode(designerStyle.value))
+const backgroundModes = Object.freeze([{ id: 'none', label: '无' }, { id: 'solid', label: '纯色' }, { id: 'gradient', label: '渐变' }, { id: 'image', label: '图片' }])
 const saveStateLabel = computed(() => {
   if (saveState.value === 'error') return '保存失败'
   if (dashboardDirty.value) return '● 有未保存更改'
@@ -1013,6 +1089,24 @@ function getWidgetChartOption(widget) {
     getSource: () => getWidgetSource(widget)
   }))
 }
+function updateMetricGroupConfig(config) {
+  updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, ...config } }))
+}
+function selectMetricGroupItem(itemId) { selectedMetricItemId.value = itemId }
+function mutateMetricGroup(mutator) {
+  if (activeDesignerWidget.value?.type !== 'metric-group') return null
+  let result
+  updateDesignerWidget(widget => {
+    result = mutator(widget.config?.metricGroup || {})
+    const config = result?.config || result || widget.config?.metricGroup
+    return { ...widget, config: { ...widget.config, metricGroup: config } }
+  })
+  return result
+}
+function addMetricGroupItemFromCanvas() { const result = mutateMetricGroup(config => addMetricGroupItem(config, availableIndicatorSources.value[0] || {})); if (result?.item) selectedMetricItemId.value = result.item.id }
+function duplicateMetricGroupItemFromCanvas(itemId) { const result = mutateMetricGroup(config => duplicateMetricGroupItem(config, itemId)); if (result?.item) selectedMetricItemId.value = result.item.id }
+function removeMetricGroupItemFromCanvas(itemId) { const result = mutateMetricGroup(config => removeMetricGroupItem(config, itemId)); selectedMetricItemId.value = result?.selectedId || '' }
+function reorderMetricGroupItemFromCanvas({ itemId, targetId }) { mutateMetricGroup(config => reorderMetricGroupItem(config, itemId, targetId)) }
 
 function isChartEmpty(widget) {
   if (widget.preset === 'trend') return !trendTableRows.value.length
@@ -1154,24 +1248,28 @@ function addDashboardWidget() {
 let designerWidgetSequence = 0
 async function addDesignerWidget() {
   let source = selectedDataSource.value
-  if (!source && addWidgetType.value !== 'text') return
+  if (!source && !['text', 'metric-group'].includes(addWidgetType.value)) return
   try {
-    if (!source) throw new Error('文本组件无需指标数据')
-    await ensureRemoteDataSourceFields(source.code)
-    source = await hydrateIndicatorSource(source)
+    if (source && addWidgetType.value !== 'metric-group') {
+      await ensureRemoteDataSourceFields(source.code)
+      source = await hydrateIndicatorSource(source)
+    }
   } catch (error) {
     ElMessage.warning(error?.message || '指标正式结果暂不可用，已按指标绑定添加空组件')
   }
   const type = addWidgetType.value
   let id
   do { id = `dashboard-widget-${Date.now()}-${++designerWidgetSequence}` } while (designerWidgets.value.some(widget => String(widget.id) === id))
-  const metadata = type === 'text'
+  const metadata = type === 'metric-group'
+    ? { id, type: 'metric-group', title: '指标组', visualType: 'metric-group', config: { metricGroup: createMetricGroupConfig(availableIndicatorSources.value) }, layout: getDefaultGridLayout('metric-group') }
+    : type === 'text'
     ? { id, type: 'text', title: '说明', visualType: 'text', config: { text: { title: '看板说明', body: '请输入数据口径、业务提示或分区说明。', align: 'left', fontSize: 14, fontWeight: 400 } }, layout: getDefaultGridLayout('text') }
     : type === 'kpi'
     ? { id, type: 'kpi', sourceCode: source.code, sourceName: source.name, visualType: 'kpi', config: {}, layout: getDefaultGridLayout('kpi') }
     : { id, type: 'chart', chartKind: type, title: getVisualizationTitle(source.name, type), sourceCode: source.code, sourceName: source.name, visualType: type, config: {}, layout: getDefaultGridLayout({ type: 'chart', chartKind: type }) }
   const normalizedMetadata = normalizeWidgetMetadata(metadata)
-  const widget = { ...normalizedMetadata, layout: metadata.layout }
+  const dataBinding = !['text', 'metric-group'].includes(type) ? createDefaultBinding(bindingKind(normalizedMetadata), getBindingDatasets(normalizedMetadata)) : null
+  const widget = { ...normalizedMetadata, ...(dataBinding ? { config: { ...normalizedMetadata.config, dataBinding } } : {}), layout: metadata.layout }
   editingDashboardSchema.value = { ...editingDashboardSchema.value, widgets: [...designerWidgets.value, widget] }
   markDashboardDirty()
   await nextTick()
@@ -1188,6 +1286,7 @@ function deleteActiveWidget() {
   }
 }
 function clearAllInteractionFilters() { interactionFilterState.value = {} }
+function clearAllWidgetDrills() { drillRuntimeState.value = {} }
 function advanceWidgetDrill(widget, dataset, value) {
   const hierarchy = widget.config?.interaction?.drill?.hierarchy || []
   const current = drillRuntimeState.value[String(widget.id)]?.path || []
@@ -1202,6 +1301,10 @@ function resetWidgetDrill(widgetId) {
   const next = { ...drillRuntimeState.value }
   delete next[String(widgetId)]
   drillRuntimeState.value = next
+}
+function safeBackgroundImage(value) {
+  const url = typeof value === 'string' ? value.trim() : ''
+  return /^(https?:|data:image\/|\/)/i.test(url) ? `url("${url.replace(/["\\]/g, '')}")` : 'none'
 }
 function updateDashboardBackground(value) {
   if (!editingDashboardSchema.value) return
@@ -1438,6 +1541,39 @@ async function exitDashboardEdit() {
 function saveDashboardLayout() {
   if (isEditing.value) saveDashboardSchema()
 }
+function setWidgetBackgroundMode(mode) {
+  if (!activeWidgetId.value) return
+  updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, style: applyWidgetBackgroundMode(widget.config?.style, mode) } }))
+}
+function setWidgetSurfaceEffect(surface) {
+  if (!activeWidgetId.value) return
+  updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, style: applyCardSurface(widget.config?.style, surface) } }))
+}
+function updateDashboardBackgroundOption(key, value) {
+  if (!editingDashboardSchema.value || !['image', 'assetKey', 'size', 'position', 'overlay'].includes(key)) return
+  editingDashboardSchema.value = { ...editingDashboardSchema.value, appearance: { ...editingDashboardSchema.value.appearance, background: { ...editingDashboardSchema.value.appearance?.background, [key]: value } } }
+  markDashboardDirty()
+}
+function updateDashboardBuiltinBackground(assetKey) {
+  if (!editingDashboardSchema.value) return
+  const background = editingDashboardSchema.value.appearance?.background || {}
+  editingDashboardSchema.value = {
+    ...editingDashboardSchema.value,
+    appearance: {
+      ...editingDashboardSchema.value.appearance,
+      background: { ...background, assetKey, image: '', type: assetKey ? 'image' : background.type }
+    }
+  }
+  markDashboardDirty()
+}
+async function applyDashboardCardSurface({ surface, scope }) {
+  if (!editingDashboardSchema.value) return
+  await runDashboardHistoryTransaction(() => {
+    editingDashboardSchema.value = { ...editingDashboardSchema.value, widgets: applyCardSurfaceToWidgets(editingDashboardSchema.value.widgets, surface, scope) }
+    markDashboardDirty()
+  })
+  ElMessage.success('已应用卡片表面；可继续单独调整组件背景')
+}
 
 async function publishCurrentDashboard() {
   if (!isRemoteDashboard()) return
@@ -1467,10 +1603,10 @@ async function saveDashboardSchema() {
     const validation = validateDashboardSchema(schema)
     if (!validation.valid) throw new Error(validation.errors.join('；'))
     if (isRemoteDashboard()) {
-      const saved = await saveDashboard(activeDashboardId.value, schemaToDashboardPayload(schema, {
-        resourceVersion: remoteDashboardMeta.value?.resourceVersion,
-        dataSources: availableIndicatorSources.value
-      }))
+      const payload = remoteDashboardIsMock.value
+        ? schemaToMockDashboardPayload(schema, { resourceVersion: remoteDashboardMeta.value?.resourceVersion })
+        : schemaToDashboardPayload(schema, { resourceVersion: remoteDashboardMeta.value?.resourceVersion, dataSources: availableIndicatorSources.value })
+      const saved = await saveDashboard(activeDashboardId.value, payload)
       remoteDashboardMeta.value = dashboardDetailMeta(saved)
       const normalizedRemote = saved?.version?.layout ? dashboardDetailToSchema(saved) : schema
       editingDashboardSchema.value = normalizedRemote
@@ -1484,19 +1620,27 @@ async function saveDashboardSchema() {
       ElMessage.success('看板配置已保存')
       return true
     }
-    const key = activeDashboardStorageKey.value
-    const normalizedPersisted = persistDashboardSchema(localStorage, key, schema)
-    saveDashboardToCatalog(normalizedPersisted, localStorage)
-    editingDashboardSchema.value = normalizedPersisted
-    dashboardHistory.value = [clonePersistableValue(normalizedPersisted)]
-    dashboardHistoryIndex.value = 0
-    dashboardSchema.value = normalizedPersisted
-    dashboardRecovery.value = { status: DASHBOARD_RECOVERY_STATUS.VALID_CURRENT_SCHEMA, schema: normalizedPersisted, raw: JSON.stringify(normalizedPersisted), error: null }
-    dashboardDirty.value = false
-    saveState.value = 'saved'
-    lastSavedAt.value = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date())
-    ElMessage.success('看板布局已保存')
-    return true
+    if (activeScene.value) {
+      const saved = await createDashboard(schemaToMockDashboardPayload(schema))
+      const meta = dashboardDetailMeta(saved)
+      remoteDashboardMeta.value = meta
+      remoteDashboardIsMock.value = true
+      const normalizedRemote = dashboardDetailToSchema(saved)
+      activeDashboardId.value = meta.dashboardId
+      requestedDashboardId.value = meta.dashboardId
+      editingDashboardSchema.value = normalizedRemote
+      dashboardSchema.value = normalizedRemote
+      dashboardHistory.value = [clonePersistableValue(normalizedRemote)]
+      dashboardHistoryIndex.value = 0
+      dashboardDirty.value = false
+      saveState.value = 'saved'
+      lastSavedAt.value = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date())
+      await refreshDashboardCatalog()
+      dashboardStatus.value = 'unpublished'
+      ElMessage.success('演示看板已保存到服务端草稿，可继续发布')
+      return true
+    }
+    throw new Error('当前看板无法保存到服务端。')
   } catch (error) {
     saveState.value = 'error'
     const message = error instanceof Error ? error.message : '未知错误'
@@ -1526,6 +1670,29 @@ async function resetDashboardLayout() {
 function createBlankLocalSchema(dashboardId = activeDashboardId.value) {
   const metadata = localDashboardCatalog.value.find(item => item.id === dashboardId)
   return normalizeDashboardSchema({ version: 1, id: dashboardId, name: metadata?.name || findLocalSceneByDashboardId(dashboardId)?.name || '本地看板', dashboardType: metadata?.dashboardType || 'custom', category: metadata?.category || '', scope: metadata?.scope || 'personal', layout: { engine: 'gridstack', columns: 24, float: false }, widgets: [], globalFilters: [] })
+}
+
+// Demo scenes are source-controlled fixtures. They intentionally ignore each
+// browser's localStorage so everyone on the same deployed version sees the
+// same layout and mock values while backend data is still being built.
+function createDemoSceneSchema(dashboardId = activeDashboardId.value) {
+  const scene = findLocalSceneByDashboardId(dashboardId)
+  if (scene?.sceneCode === 'quality-safety') {
+    return createQualitySafetyDemoSchema({ id: dashboardId, sceneCode: scene.sceneCode })
+  }
+  return normalizeDashboardSchema({
+    version: 1,
+    id: dashboardId,
+    name: scene?.name || '医疗质量演示看板',
+    description: '统一演示模板，使用 Mock 数据。',
+    dashboardType: scene?.dashboardType || 'scene',
+    category: '演示看板',
+    scope: 'hospital',
+    sceneCode: scene?.sceneCode || '',
+    layout: { engine: 'gridstack', columns: 24, float: false },
+    widgets: createDesignerWidgets(createDefaultLayout()),
+    globalFilters: []
+  })
 }
 
 function resetDesignerVisualStyle() {
@@ -1591,6 +1758,12 @@ function readLegacyDashboardLayout() {
 }
 
 function loadDashboardSchema(dashboardId = activeDashboardId.value) {
+  if (findLocalSceneByDashboardId(dashboardId)) {
+    dashboardSchema.value = createDemoSceneSchema(dashboardId)
+    dashboardRecovery.value = { status: DASHBOARD_RECOVERY_STATUS.VALID_CURRENT_SCHEMA, schema: dashboardSchema.value, raw: null, error: null }
+    loadedDashboardId.value = dashboardId
+    return
+  }
   const recovery = recoverDashboardSchema(localStorage, getDashboardSchemaStorageKey(dashboardId))
   dashboardRecovery.value = recovery
   if (recovery.status === DASHBOARD_RECOVERY_STATUS.VALID_CURRENT_SCHEMA) {
@@ -1690,10 +1863,11 @@ async function loadDashboard(targetDashboardId = activeDashboardId.value) {
 }
 
 function formatDashboardLoadError(error) {
-  const path = String(error?.path || `/analysis/dashboards/${DASHBOARD_CODE}`)
+  const path = String(error?.path || '')
   const status = Number(error?.status)
   const statusLabel = Number.isFinite(status) && status > 0 ? `（HTTP ${status}）` : ''
   const message = String(error?.message || '').trim()
+  if (!path) return message || '服务端看板目录为空，请创建看板或联系管理员授权。'
   return `正式看板请求失败：${path}${statusLabel}${message ? `。${message}` : '。生产环境不会自动使用演示数据。'}`
 }
 
@@ -1891,8 +2065,24 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
       if (!isCurrentLoad()) return
       version = (Array.isArray(versions) ? versions : []).find(item => String(item.id) === remoteDashboardMeta.value.currentPublishedVersionId) || version
     }
+    remoteDashboardIsMock.value = isMockDashboardDetail({ dashboard: detail.dashboard, version })
     const rawSchema = dashboardDetailToSchema({ dashboard: detail.dashboard, version })
-    const sourceCodes = [...new Set(rawSchema.widgets.map(widget => widget.sourceCode).filter(Boolean))]
+    if (remoteDashboardIsMock.value) {
+      indicatorDataSources.value = cloneDashboardSources(mockIndicatorDataSources)
+      selectedDataCode.value = selectedDataCode.value || indicatorDataSources.value[0]?.code || ''
+      dashboardSchema.value = rawSchema
+      if (isEditing.value) {
+        editingDashboardSchema.value = clonePersistableValue(rawSchema)
+        dashboardHistory.value = [clonePersistableValue(rawSchema)]
+        dashboardHistoryIndex.value = 0
+      }
+      dashboardDefinition.value = detail
+      dashboardQueryResult.value = null
+      remoteWidgetDatasets.value = {}
+      dashboardStatus.value = remoteDashboardMeta.value.currentPublishedVersionId ? 'demo' : 'unpublished'
+      return
+    }
+    const sourceCodes = [...new Set(rawSchema.widgets.flatMap(widget => [widget.sourceCode, ...metricGroupSourceCodes(widget)]).filter(Boolean))]
     const entries = await Promise.all(sourceCodes.map(async code => [code, await fetchDashboardDataSourceFields(code).catch(() => [])]))
     if (!isCurrentLoad()) return
     remoteFieldCatalog.value = Object.fromEntries(entries)
@@ -2069,9 +2259,10 @@ watch([period, department], () => {
   loadDashboard()
   if (getDashboardDemoPolicy().loadPublishedIndicators) void refreshSchemaPublishedIndicatorSources()
 })
+watch(activeWidgetId, () => { selectedMetricItemId.value = '' })
 let remoteFilterReloadTimer
 watch(filterRuntimeValues, () => {
-  if (!isEditing.value && isRemoteDashboard()) {
+  if (!isEditing.value && isRemoteDashboard() && !remoteDashboardIsMock.value) {
     globalThis.clearTimeout(remoteFilterReloadTimer)
     remoteFilterReloadTimer = globalThis.setTimeout(() => { void loadDashboard() }, 180)
   }
@@ -2089,7 +2280,24 @@ function onDesignerGlobalKeydown(event) {
 
 onMounted(async () => {
   refreshLocalLayoutTemplates()
-  await refreshDashboardCatalog()
+  let remoteCatalog = []
+  try {
+    remoteCatalog = await refreshDashboardCatalog()
+  } catch (error) {
+    // An explicitly selected source-controlled scene can run with the
+    // documented demo fallback. Its schema/data do not require a catalog.
+    if (!findLocalSceneByDashboardId(managedDashboardId.value) || !isDemoRuntime()) {
+      dashboardStatus.value = 'error'
+      dashboardLoadMessage.value = formatDashboardLoadError(error)
+      return
+    }
+  }
+  if (!managedDashboardId.value && !isRemoteDashboard(activeDashboardId.value)) {
+    const firstRemoteDashboardId = remoteCatalog[0]?.id
+    const fallbackDemoDashboardId = LOCAL_SCENE_DASHBOARDS[0]?.dashboardId
+    activeDashboardId.value = firstRemoteDashboardId || fallbackDemoDashboardId || ''
+    requestedDashboardId.value = activeDashboardId.value
+  }
   loadDashboardSchema()
   await loadDashboard()
   void loadPublishedIndicatorCatalog()
@@ -2129,7 +2337,7 @@ onBeforeUnmount(() => {
   margin-top: 16px;
 }
 
-.dashboard-surface { background:linear-gradient(var(--dashboard-background-wash, rgba(255,255,255,0)), var(--dashboard-background-wash, rgba(255,255,255,0))), var(--dashboard-background, #ffffff); }
+.dashboard-page { min-height:100%; background-color:var(--dashboard-background, #ffffff); background-image:linear-gradient(var(--dashboard-background-overlay, transparent), var(--dashboard-background-overlay, transparent)),linear-gradient(var(--dashboard-background-wash, rgba(255,255,255,0)), var(--dashboard-background-wash, rgba(255,255,255,0))),var(--dashboard-background-image, none); background-size:auto,auto,var(--dashboard-background-size, cover); background-position:center,center,var(--dashboard-background-position, center); background-repeat:no-repeat,no-repeat,no-repeat; background-attachment:scroll,scroll,scroll; }
 .dashboard-schema-viewer { max-width:100%; margin-top:16px; overflow-x:hidden; padding:12px; border-radius:8px; }
 .dashboard-schema-canvas { min-height:680px; max-width:100%; }
 .dashboard-designer-shell { min-width: 0; }
@@ -2142,7 +2350,9 @@ onBeforeUnmount(() => {
 .dashboard-style-form label { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--idmp-text-secondary, #475467); font-size: 13px; }
 .dashboard-style-form input[type='number'], .dashboard-style-form select { width: 110px; padding: 5px 6px; border: 1px solid #d0d5dd; border-radius: 4px; }
 .dashboard-style-form input[type='color'] { width: 44px; height: 28px; padding: 0; border: 0; background: transparent; }
-.dashboard-page.is-presentation-mode { position: fixed; inset: 0; z-index: 3000; min-height: 100vh; overflow: auto; padding: 24px; background:linear-gradient(var(--dashboard-background-wash, rgba(255,255,255,0)), var(--dashboard-background-wash, rgba(255,255,255,0))), var(--dashboard-background, #ffffff); color: var(--idmp-text-primary, #101828); }
+.studio-inspector-heading { align-items:flex-start !important; gap:10px; padding-bottom:12px; margin-bottom:4px; border-bottom:1px solid var(--db-border,#e3e9eb); }.studio-inspector-heading h2 { margin:0 !important; color:var(--db-text,#25343b); }.studio-inspector-heading p { margin:3px 0 0; color:var(--db-muted,#667780); font-size:11px; line-height:1.4; }.studio-inspector-heading__actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:4px; }.studio-library-group + .studio-library-group { margin-top:16px; padding-top:12px; border-top:1px solid var(--db-border,#e3e9eb); }.studio-library-group h3 { margin:0 0 8px !important; }.studio-library-item.is-current::after { content:'✓'; margin-left:auto; color:var(--db-accent,#1261a6); font-weight:700; }.studio-library-item:focus-visible,.studio-template-item:focus-visible { outline:2px solid var(--db-accent,#1261a6); outline-offset:2px; }
+.style-section { display:grid; gap:6px; }.style-section h3,.style-section p { margin:0; }.style-section p { color:#667780; font-size:11px; line-height:1.5; }.background-mode { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; }.background-mode button { border:1px solid #d0d5dd; border-radius:5px; padding:6px 3px; background:#fff; color:#475467; font-size:11px; cursor:pointer; }.background-mode button.is-active { border-color:#1261a6; background:#edf6ff; color:#1261a6; font-weight:600; }
+.dashboard-page.is-presentation-mode { position: fixed; inset: 0; z-index: 3000; min-height: 100vh; overflow: auto; padding: 24px; color: var(--idmp-text-primary, #101828); }
 .dashboard-page.is-presentation-mode :deep(.page-heading) { display: none; }
 .dashboard-page.is-presentation-mode .dashboard-schema-viewer { margin: 0; }
 .dashboard-page.is-presentation-mode .dashboard-schema-canvas { min-height: calc(100vh - 48px); }
@@ -2158,12 +2368,5 @@ onBeforeUnmount(() => {
 @media (max-width: 1199px) { .dashboard-schema-canvas { min-height:560px; } }
 @media (max-width: 767px) { .dashboard-page { min-width:0; overflow-x:hidden; } .dashboard-schema-viewer { margin-top:8px; } .dashboard-schema-canvas { min-height:0; } .dashboard-schema-viewer :deep(.dashboard-widget__chrome) { min-width:0; } }
 
-.studio-template-library { margin-top: 18px; padding-top: 14px; border-top: 1px solid #eaecf0; }
-.studio-template-library__heading { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-.studio-template-library h3 { margin:0; font-size:13px; }.studio-template-library p { margin:5px 0 10px; color:#667085; font-size:12px; line-height:1.45; }
-.studio-template-library button { border:0; background:transparent; color:#1570ef; cursor:pointer; font-size:12px; padding:2px; }
-.studio-template-item { display:grid; grid-template-columns:72px minmax(0,1fr); gap:8px; padding:8px 0; border-top:1px solid #f2f4f7; }
-.studio-template-item strong,.studio-template-item small { display:block; }.studio-template-item strong { font-size:12px; color:#344054; }.studio-template-item small { margin-top:3px; color:#667085; font-size:11px; line-height:1.35; }
-.studio-template-preview { display:grid; grid-template-columns:repeat(24,1fr); grid-template-rows:repeat(12,4px); gap:1px; min-height:48px; padding:2px; border:1px solid #eaecf0; border-radius:4px; background:#f8fafc; overflow:hidden; }
-.studio-template-preview i { min-width:0; min-height:0; border-radius:1px; background:#98a2b3; opacity:.72; }.studio-template-item__actions { grid-column:2; display:flex; gap:10px; }.studio-template-item__actions .is-danger { color:#b42318; }
+.studio-template-library { margin-top:18px; padding-top:14px; border-top:1px solid #eaecf0; }.studio-template-library__heading { display:flex; align-items:center; justify-content:space-between; gap:8px; }.studio-template-library__heading span { display:flex; gap:7px; }.studio-template-library h3 { margin:0; font-size:13px; }.studio-template-library p { margin:5px 0 10px; color:#667085; font-size:12px; line-height:1.45; }.studio-template-library button { border:0; background:transparent; color:#1570ef; cursor:pointer; font-size:12px; padding:2px; }.studio-template-item { display:grid; grid-template-columns:72px minmax(0,1fr); gap:8px; padding:8px 0; border-top:1px solid #f2f4f7; cursor:pointer; }.studio-template-item.is-selected { margin:0 -5px; padding:8px 5px; background:#f0f8ff; }.studio-template-item strong,.studio-template-item small { display:block; }.studio-template-item strong { font-size:12px; color:#344054; }.studio-template-item small { margin-top:3px; color:#667085; font-size:11px; line-height:1.35; }.studio-template-tags { display:flex; flex-wrap:wrap; gap:3px; margin-top:5px; }.studio-template-tags em { padding:1px 4px; border-radius:3px; background:#eaf2f4; color:#52636c; font-size:9px; font-style:normal; }.studio-template-preview { display:grid; grid-template-columns:repeat(24,1fr); grid-template-rows:repeat(30,2px); gap:1px; min-height:48px; padding:2px; border:1px solid #eaecf0; border-radius:4px; background:#f8fafc; overflow:hidden; }.studio-template-item.is-selected .studio-template-preview { border-color:#75a8c2; }.studio-template-preview i { min-width:0; min-height:0; border-radius:1px; background:#4f8196; opacity:.76; }.studio-template-preview i:nth-child(2n) { background:#86aebd; }.studio-template-preview i:nth-child(3n) { background:#b7c8cf; }.studio-template-item__actions { grid-column:2; display:flex; gap:10px; }.studio-template-item__actions .is-danger { color:#b42318; }.studio-template-detail { display:grid; gap:6px; margin-top:8px; padding:9px; border:1px solid #cfe1e8; border-radius:6px; background:#f8fcfd; }.studio-template-detail strong { color:#174d6c; font-size:12px; }.studio-template-detail dl { display:grid; grid-template-columns:32px 1fr; gap:4px 7px; margin:0; font-size:11px; line-height:1.35; }.studio-template-detail dt { color:#667085; }.studio-template-detail dd { margin:0; color:#344054; }
 </style>

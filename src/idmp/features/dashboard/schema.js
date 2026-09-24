@@ -1,27 +1,29 @@
 import { DASHBOARD_CODE } from './constants.js'
 import { validateFilterDefinitions, validateConditions, validateWidgetQuery, validateWidgetInteraction } from './filterEngine.js'
 import { getWidgetGridCapability } from './widgetCapabilities.js'
+import { normalizeMetricGroupConfig } from './metricGroup.js'
+import { normalizeKpiVariant } from './kpiVariants.js'
 
 export const DASHBOARD_SCHEMA_VERSION = 1
 export const DASHBOARD_SCHEMA_STORAGE_PREFIX = 'idmp:dashboard-schema:v1:'
 export const GRID_LAYOUT_ENGINE = 'gridstack'
 export const GRID_COLUMNS = 24
 
-const VALID_WIDGET_TYPES = new Set(['primary', 'supporting', 'kpi', 'chart', 'text', 'warnings', 'ranking'])
+const VALID_WIDGET_TYPES = new Set(['primary', 'supporting', 'kpi', 'chart', 'text', 'warnings', 'ranking', 'metric-group'])
 const WIDGET_METADATA_FIELDS = ['id', 'type', 'sourceCode', 'sourceName', 'kpiIndex', 'chartKind', 'visualType', 'preset', 'title', 'config']
 const ROOT_PERSISTED_FIELDS = new Set(['version', 'id', 'name', 'description', 'dashboardType', 'category', 'scope', 'sceneCode', 'responsivePolicy', 'layout', 'appearance', 'presentation', 'widgets', 'globalFilters'])
 const LAYOUT_PERSISTED_FIELDS = new Set(['engine', 'columns', 'float'])
 const WIDGET_PERSISTED_FIELDS = new Set([...WIDGET_METADATA_FIELDS, 'layout'])
 const WIDGET_LAYOUT_PERSISTED_FIELDS = new Set(['x', 'y', 'w', 'h'])
 const APPEARANCE_PERSISTED_FIELDS = new Set(['theme', 'background', 'cardStyle', 'gridGap'])
-const BACKGROUND_PERSISTED_FIELDS = new Set(['type', 'value', 'intensity'])
+const BACKGROUND_PERSISTED_FIELDS = new Set(['type', 'value', 'intensity', 'image', 'assetKey', 'size', 'position', 'overlay'])
 const PRESENTATION_PERSISTED_FIELDS = new Set(['defaultMode', 'allowFullscreen', 'fit'])
 export const DEFAULT_WIDGET_STYLE = Object.freeze({
   background: '#ffffff', borderColor: '#d0d5dd', borderWidth: 1,
   borderStyle: 'solid', borderRadius: 8, shadow: 'none', padding: 0, opacity: 1
 })
 export const DEFAULT_DASHBOARD_APPEARANCE = Object.freeze({
-  theme: 'default', background: { type: 'color', value: '', intensity: 100 }, cardStyle: 'default', gridGap: 8
+  theme: 'default', background: { type: 'color', value: '', intensity: 100, image: '', assetKey: '', size: 'cover', position: 'center', overlay: 0 }, cardStyle: 'default', gridGap: 8
 })
 export const DEFAULT_DASHBOARD_PRESENTATION = Object.freeze({ defaultMode: 'standard', allowFullscreen: true, fit: 'viewport' })
 
@@ -60,6 +62,8 @@ export function normalizeWidgetMetadata(widget = {}) {
   normalized.type = type
   normalized.config = isPlainObject(widget.config) ? clonePersistableValue(widget.config) : {}
   normalized.config.style = { ...DEFAULT_WIDGET_STYLE, ...(isPlainObject(normalized.config.style) ? normalized.config.style : {}) }
+  if (type === 'kpi') normalized.config.style.kpiVariant = normalizeKpiVariant(normalized.config.style.kpiVariant)
+  if (type === 'metric-group') normalized.config.metricGroup = normalizeMetricGroupConfig(normalized.config.metricGroup)
   return normalized
 }
 

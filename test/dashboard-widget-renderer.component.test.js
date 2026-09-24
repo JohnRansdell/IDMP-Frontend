@@ -11,6 +11,7 @@ const vue = await import('vue'); const { mount } = await import('@vue/test-utils
 const { createDashboardChartOption, formatKpiComparison } = await import('../src/idmp/features/dashboard/visualization.js')
 const { createDashboardChartTheme, clinicalTrendTone } = await import('../src/idmp/features/dashboard/chartTheme.js')
 const { applyWidgetVisualStyle, resolveWidgetVisualStyle } = await import('../src/idmp/features/dashboard/visualStyle.js')
+const { resolveWidgetSurfaceTone } = await import('../src/idmp/features/dashboard/backgroundAssets.js')
 const { hasDataBinding } = await import('../src/idmp/features/dashboard/bindingEngine.js')
 async function loadRenderer() {
   const file = fileURLToPath(new URL('../src/idmp/features/dashboard/components/WidgetRenderer.vue', import.meta.url))
@@ -19,8 +20,8 @@ async function loadRenderer() {
   const vueBindings = [...code.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]vue['"];?/g)].flatMap(([, specifiers]) => specifiers.split(',').map(specifier => specifier.trim()).filter(Boolean).map(specifier => { const [imported, local = imported] = specifier.split(/\s+as\s+/); return { imported: imported.trim(), local: local.trim() } }))
   const vuePrelude = vueBindings.map(({ imported, local }) => `const ${local} = globalThis.__renderer.vue.${imported};`).join('\n')
   code = code.replace(/^import .*$/gm, '').replace('export default', 'return')
-  globalThis.__renderer = { vue, hasDataBinding, createDashboardChartTheme, clinicalTrendTone, formatKpiComparison, applyWidgetVisualStyle, resolveWidgetVisualStyle, BindingWidget: vue.defineComponent({ render: () => null }), IdmpChart: vue.defineComponent({ props: { option: Object }, setup: props => () => vue.h('pre', { class: 'chart-option' }, JSON.stringify(props.option)) }), StatePanel: vue.defineComponent({ render: () => null }), Bell: {}, InfoFilled: {}, TrophyBase: {}, WarningFilled: {} }
-  code = `const { hasDataBinding, createDashboardChartTheme, clinicalTrendTone, formatKpiComparison, applyWidgetVisualStyle, resolveWidgetVisualStyle, BindingWidget, IdmpChart, StatePanel, Bell, InfoFilled, TrophyBase, WarningFilled } = globalThis.__renderer;
+  globalThis.__renderer = { vue, hasDataBinding, createDashboardChartTheme, clinicalTrendTone, formatKpiComparison, applyWidgetVisualStyle, resolveWidgetVisualStyle, resolveWidgetSurfaceTone, BindingWidget: vue.defineComponent({ render: () => null }), IdmpChart: vue.defineComponent({ props: { option: Object }, setup: props => () => vue.h('pre', { class: 'chart-option' }, JSON.stringify(props.option)) }), StatePanel: vue.defineComponent({ render: () => null }), Bell: {}, InfoFilled: {}, TrophyBase: {}, WarningFilled: {} }
+  code = `const { hasDataBinding, createDashboardChartTheme, clinicalTrendTone, formatKpiComparison, applyWidgetVisualStyle, resolveWidgetVisualStyle, resolveWidgetSurfaceTone, BindingWidget, IdmpChart, StatePanel, Bell, InfoFilled, TrophyBase, WarningFilled } = globalThis.__renderer;
   ${vuePrelude}
   ${code}`
   return Function(code)()

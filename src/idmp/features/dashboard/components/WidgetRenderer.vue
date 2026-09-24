@@ -1,5 +1,6 @@
 <template>
-  <BindingWidget v-if="hasDataBinding(widget)" :widget="widget" :title="getTitle(widget)" :inert="widget.type === 'chart' && !interactive && editing" @chart-click="interactive && emit('chart-click', widget, $event)" />
+  <MetricGroupWidget v-if="widget.type === 'metric-group'" :widget="widget" :get-widget-kpi="getWidgetKpi" :designer="designer" :selected-item-id="selectedMetricItemId" @select-item="emit('metric-item-select', $event)" @duplicate="emit('metric-item-duplicate', $event)" @remove="emit('metric-item-remove', $event)" @add="emit('metric-item-add')" @reorder="emit('metric-item-reorder', $event)" />
+  <BindingWidget v-else-if="hasDataBinding(widget)" :widget="widget" :title="getTitle(widget)" :inert="widget.type === 'chart' && !interactive && editing" @chart-click="interactive && emit('chart-click', widget, $event)" />
   <article v-else-if="widget.type === 'primary'" class="dashboard-renderer-card db-primary-metric" :class="{ 'is-clickable': interactive }" @click="interactive && emit('primary-analysis')">
     <div class="db-primary-metric__head"><div><span class="db-primary-metric__eyebrow">重点关注</span><h2>{{ primaryKpi?.title || '重点指标' }}</h2></div><span class="status-pill" :class="`is-${primaryKpi?.status || 'info'}`">{{ primaryKpi?.status === 'danger' ? '超出目标' : primaryKpi?.status === 'info' ? '待配置' : '在目标内' }}</span></div>
     <div class="db-primary-metric__value clinical-metric">{{ primaryKpi?.value || '暂无数据' }}</div>
@@ -14,7 +15,7 @@
 
   <article v-else-if="widget.type === 'text'" class="dashboard-renderer-card db-text-card" :style="textStyle"><h2 v-if="widget.config?.text?.title">{{ widget.config.text.title }}</h2><p>{{ widget.config?.text?.body || '请输入看板说明、数据口径或业务提示。' }}</p></article>
 
-  <article v-else-if="widget.type === 'kpi'" class="dashboard-renderer-card db-kpi-card" :class="{ 'is-clickable': interactive }" @click="interactive && emit('widget-analysis', widget)">
+  <article v-else-if="widget.type === 'kpi'" class="dashboard-renderer-card db-kpi-card" :class="[{ 'is-clickable': interactive }, `is-variant-${kpiVariant}`]" @click="interactive && emit('widget-analysis', widget)">
     <div class="db-kpi-card__top" :style="kpiTitleStyle"><span>{{ widgetKpi.title }}</span><span class="db-kpi-dot" :class="`is-${widgetKpi.status}`" /></div><strong :style="kpiValueStyle">{{ widgetKpi.value }}</strong><div class="db-kpi-change" :class="`is-${trendTone}`" :style="kpiTrendStyle">{{ widgetKpi.change }}</div><div v-if="widgetKpi.mom !== undefined || widgetKpi.yoy !== undefined" class="db-kpi-comparisons" :style="kpiTrendStyle"><span>环比 {{ formatKpiComparison(widgetKpi.mom, widgetKpi.unit) }}</span><span>同比 {{ formatKpiComparison(widgetKpi.yoy, widgetKpi.unit) }}</span><b :aria-label="`趋势：${trendLabel}`">{{ trendArrow }}</b></div><div class="db-kpi-target">{{ widgetKpi.target }}</div>
   </article>
 
@@ -26,7 +27,7 @@
     <div class="db-section-title"><div><h2><el-icon><component :is="getIcon(widget)" /></el-icon>{{ getTitle(widget) }}</h2><p v-if="getDescription(widget)" class="db-section-title__description">{{ getDescription(widget) }}</p></div></div>
     <DashboardDrillPie :targets="getPieDrillTargets(widget)" :source="getPieDrillSource(widget)" :title="getTitle(widget)" :disabled="editing" />
   </article>
-  <article v-else-if="widget.type === 'chart'" class="dashboard-renderer-card db-chart-card" :inert="!interactive && editing">
+  <article v-else-if="widget.type === 'chart'" class="dashboard-renderer-card db-chart-card" :class="{ 'is-dark-surface': surfaceTone === 'dark' }" :inert="!interactive && editing">
     <div class="db-section-title"><div><h2><el-icon><component :is="getIcon(widget)" /></el-icon>{{ getTitle(widget) }}</h2><p v-if="getDescription(widget)" class="db-section-title__description">{{ getDescription(widget) }}</p></div></div>
     <IdmpChart :option="themedChartOption" :empty="isChartEmpty(widget)" height="100%" fit-container :aria-label="getChartAriaLabel(widget)" :updated-at="updatedAt" @chart-click="interactive && emit('chart-click', widget, $event)">
       <template #table><table class="dashboard-chart-table"><thead><tr><th v-for="column in getTableColumns(widget)" :key="column.key">{{ column.label }}</th></tr></thead><tbody><tr v-for="(row, index) in getTableRows(widget)" :key="`${widget.id}-${index}`"><td v-for="column in getTableColumns(widget)" :key="column.key">{{ row[column.key] }}</td></tr></tbody></table></template>
@@ -39,29 +40,34 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, inject } from 'vue'
 import BindingWidget from './BindingWidget.vue'
+import MetricGroupWidget from './MetricGroupWidget.vue'
 import DashboardDrillPie from '../DashboardDrillPie.vue'
 import { hasDataBinding } from '../bindingEngine.js'
 import { createDashboardChartTheme, clinicalTrendTone } from '../chartTheme.js'
 import { formatKpiComparison } from '../visualization.js'
 import { applyWidgetVisualStyle, resolveWidgetVisualStyle } from '../visualStyle.js'
+import { resolveWidgetSurfaceTone } from '../backgroundAssets.js'
 import { Bell, InfoFilled, TrophyBase, WarningFilled } from '@element-plus/icons-vue'
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 
 const props = defineProps({
-  widget: { type: Object, required: true }, primaryKpi: { type: Object, default: null }, supportingKpis: { type: Array, default: () => [] }, warnings: { type: Array, default: () => [] }, ranking: { type: Array, default: () => [] }, department: { type: String, default: '' }, updatedAt: { type: String, default: '' }, interactive: { type: Boolean, default: false }, editing: { type: Boolean, default: false },
+  widget: { type: Object, required: true }, primaryKpi: { type: Object, default: null }, supportingKpis: { type: Array, default: () => [] }, warnings: { type: Array, default: () => [] }, ranking: { type: Array, default: () => [] }, department: { type: String, default: '' }, updatedAt: { type: String, default: '' }, interactive: { type: Boolean, default: false }, editing: { type: Boolean, default: false }, designer: { type: Boolean, default: false }, selectedMetricItemId: { type: String, default: '' },
   getWidgetKpi: { type: Function, required: true }, getTitle: { type: Function, required: true }, getDescription: { type: Function, required: true }, getIcon: { type: Function, required: true }, getChartOption: { type: Function, required: true }, isChartEmpty: { type: Function, required: true }, getChartAriaLabel: { type: Function, required: true }, getTableColumns: { type: Function, required: true }, getTableRows: { type: Function, required: true }, getPieDrillTargets: { type: Function, default: () => [] }, getPieDrillSource: { type: Function, default: () => 'live' }
 })
-const emit = defineEmits(['primary-analysis', 'indicator-analysis', 'widget-analysis', 'chart-click', 'alerts'])
+const emit = defineEmits(['primary-analysis', 'indicator-analysis', 'widget-analysis', 'chart-click', 'alerts', 'metric-item-select', 'metric-item-duplicate', 'metric-item-remove', 'metric-item-add', 'metric-item-reorder'])
 const widgetKpi = computed(() => props.getWidgetKpi(props.widget))
-const themedChartOption = computed(() => props.widget.type === 'chart' ? createDashboardChartTheme(applyWidgetVisualStyle(props.widget, props.getChartOption(props.widget))) : {})
+const dashboardSurfaceTone = inject('dashboardSurfaceTone', computed(() => 'light'))
+const surfaceTone = computed(() => resolveWidgetSurfaceTone(props.widget, dashboardSurfaceTone.value))
+const themedChartOption = computed(() => props.widget.type === 'chart' ? createDashboardChartTheme(applyWidgetVisualStyle(props.widget, props.getChartOption(props.widget)), surfaceTone.value) : {})
 const visualStyle = computed(() => resolveWidgetVisualStyle(props.widget))
 const kpiValueStyle = computed(() => ({ color: visualStyle.value.kpi.valueColor || undefined }))
 const kpiTitleStyle = computed(() => ({ color: visualStyle.value.kpi.titleColor || undefined }))
 const kpiTrendStyle = computed(() => ({ color: visualStyle.value.kpi.trendColor || undefined }))
 const trendTone = computed(() => clinicalTrendTone(widgetKpi.value.status))
+const kpiVariant = computed(() => ['standard', 'hero', 'horizontal', 'status', 'trend', 'minimal'].includes(props.widget.config?.style?.kpiVariant) ? props.widget.config.style.kpiVariant : 'standard')
 const trendArrow = computed(() => ({ up: '↑', down: '↓', flat: '↔' }[widgetKpi.value.trendDirection] || '↔'))
 const trendLabel = computed(() => ({ up: '上升', down: '下降', flat: '持平' }[widgetKpi.value.trendDirection] || '持平'))
 const textStyle = computed(() => ({ textAlign: props.widget.config?.text?.align || 'left', color: props.widget.config?.text?.color || 'inherit', fontSize: `${Number(props.widget.config?.text?.fontSize) || 14}px`, fontWeight: props.widget.config?.text?.fontWeight || 400 }))
@@ -79,6 +85,7 @@ const textStyle = computed(() => ({ textAlign: props.widget.config?.text?.align 
 
 /* Shared Clinical Light surface content. Saved outer-card styling stays in DashboardWidget. */
 .dashboard-renderer-card { padding: 16px 18px; min-width: 0; min-height: 0; color: var(--db-text, #25343b); font-variant-numeric: tabular-nums; }
+.dashboard-renderer-card.is-dark-surface { color:#f8fbff; }.dashboard-renderer-card.is-dark-surface .db-section-title__description { color:#d9e9f5; }
 .db-section-title { min-height: 30px; align-items: start; margin-bottom: 12px; }
 .db-section-title h2 { display:flex; align-items:center; gap:6px; font-size:13px; font-weight:550; margin:0; }
 .db-section-title__description { margin:5px 0 0; font-size:11px; color:var(--db-muted,#78878e); }
@@ -129,4 +136,13 @@ const textStyle = computed(() => ({ textAlign: props.widget.config?.text?.align 
  .db-ranking-list li { grid-template-columns:22px minmax(0,1fr) 44px; gap:7px; } .db-ranking-list .db-rank-bar { display:none; }
  .db-supporting-metric { grid-template-columns:minmax(0,1fr) auto; gap:6px; } .db-supporting-metric__change,.db-supporting-metric__target { display:none; }
 }
+
+/* Variants rearrange the established KPI presentation only; source values,
+   comparisons and clinical trend tone remain untouched. */
+.db-kpi-card.is-variant-hero { padding:clamp(16px,3cqi,28px); justify-content:center; }.db-kpi-card.is-variant-hero strong { margin:10px 0; font-size:clamp(36px,8cqi,58px); font-weight:600; line-height:1.05; }.db-kpi-card.is-variant-hero .db-kpi-card__top { font-size:12px; }.db-kpi-card.is-variant-hero .db-kpi-change { margin-top:4px; }.db-kpi-card.is-variant-hero .db-kpi-comparisons { margin-top:8px; }.db-kpi-card.is-variant-hero .db-kpi-target { display:none; }
+.db-kpi-card.is-variant-horizontal { display:grid; grid-template-columns:minmax(0,1fr) auto auto; grid-template-rows:auto auto; column-gap:14px; align-items:center; padding:12px 16px; }.db-kpi-card.is-variant-horizontal .db-kpi-card__top { grid-column:1; grid-row:1 / span 2; }.db-kpi-card.is-variant-horizontal strong { grid-column:2; grid-row:1 / span 2; margin:0; font-size:clamp(24px,5cqi,36px); white-space:nowrap; }.db-kpi-card.is-variant-horizontal .db-kpi-change { grid-column:3; grid-row:1; white-space:nowrap; }.db-kpi-card.is-variant-horizontal .db-kpi-comparisons { grid-column:3; grid-row:2; margin:0; gap:4px; font-size:10px; }.db-kpi-card.is-variant-horizontal .db-kpi-comparisons span:first-child { display:none; }.db-kpi-card.is-variant-horizontal .db-kpi-comparisons b { display:none; }.db-kpi-card.is-variant-horizontal .db-kpi-target { display:none; }
+.db-kpi-card.is-variant-status { border-left:4px solid var(--db-border,#c8d5da); padding-left:16px; }.db-kpi-card.is-variant-status .db-kpi-dot { width:10px; height:10px; box-shadow:0 0 0 4px color-mix(in srgb,currentColor 12%,transparent); }.db-kpi-card.is-variant-status .db-kpi-card__top { padding-bottom:8px; border-bottom:1px solid var(--db-border,#e3e9eb); }.db-kpi-card.is-variant-status .db-kpi-change { margin-top:8px; font-weight:600; }.db-kpi-card.is-variant-status .db-kpi-comparisons { margin-top:auto; }.db-kpi-card.is-variant-status:has(.db-kpi-dot.is-danger) { border-left-color:var(--db-danger,#b45858); }.db-kpi-card.is-variant-status:has(.db-kpi-dot.is-warning) { border-left-color:var(--db-warning,#a47735); }.db-kpi-card.is-variant-status:has(.db-kpi-dot.is-success) { border-left-color:var(--db-success,#357b62); }
+.db-kpi-card.is-variant-trend .db-kpi-change { display:none; }.db-kpi-card.is-variant-trend strong { margin-bottom:14px; }.db-kpi-card.is-variant-trend .db-kpi-comparisons { display:grid; grid-template-columns:1fr 1fr auto; gap:0; margin-top:auto; padding-top:10px; border-top:1px solid var(--db-border,#e3e9eb); }.db-kpi-card.is-variant-trend .db-kpi-comparisons span { padding-right:8px; }.db-kpi-card.is-variant-trend .db-kpi-comparisons span + span { padding-left:8px; border-left:1px solid var(--db-border,#e3e9eb); }.db-kpi-card.is-variant-trend .db-kpi-target { display:none; }
+.db-kpi-card.is-variant-minimal { justify-content:center; padding:clamp(14px,3cqi,26px); }.db-kpi-card.is-variant-minimal .db-kpi-card__top { justify-content:center; min-height:auto; color:var(--db-muted,#78878e); font-size:11px; text-align:center; }.db-kpi-card.is-variant-minimal .db-kpi-dot,.db-kpi-card.is-variant-minimal .db-kpi-change,.db-kpi-card.is-variant-minimal .db-kpi-target { display:none; }.db-kpi-card.is-variant-minimal strong { margin:10px 0 0; font-size:clamp(34px,7cqi,54px); font-weight:500; line-height:1.05; text-align:center; }.db-kpi-card.is-variant-minimal .db-kpi-comparisons { justify-content:center; margin-top:10px; font-size:10px; }.db-kpi-card.is-variant-minimal .db-kpi-comparisons span:first-child { display:none; }.db-kpi-card.is-variant-minimal .db-kpi-comparisons b { display:none; }
+@container (max-width: 330px) { .db-kpi-card.is-variant-horizontal { display:flex; flex-wrap:wrap; align-content:center; gap:4px 8px; }.db-kpi-card.is-variant-horizontal .db-kpi-card__top { width:100%; }.db-kpi-card.is-variant-horizontal strong,.db-kpi-card.is-variant-horizontal .db-kpi-change,.db-kpi-card.is-variant-horizontal .db-kpi-comparisons { display:block; }.db-kpi-card.is-variant-horizontal .db-kpi-comparisons { margin-left:auto; }.db-kpi-card.is-variant-hero strong,.db-kpi-card.is-variant-minimal strong { font-size:30px; } }
 </style>

@@ -18,6 +18,6 @@ export function buildPublishedIndicatorAnalysisQuery(source = {}, period = '') {
 
 export function schemaPublishedIndicatorSourceCodes(schema) {
   return [...new Set((schema?.widgets || [])
-    .map(widget => String(widget?.sourceCode || ''))
+    .flatMap(widget => [String(widget?.sourceCode || ''), ...((widget?.type === 'metric-group' ? widget.config?.metricGroup?.items || [] : []).map(item => String(item?.sourceCode || '')))])
     .filter(code => code.startsWith('catalog-indicator-')))]
 }
