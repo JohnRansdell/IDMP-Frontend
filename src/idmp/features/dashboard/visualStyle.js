@@ -18,25 +18,27 @@ export const HEATMAP_SCALES = Object.freeze({
 // established style contract, so Viewer, copy, templates and persistence never
 // need a parallel "preset runtime".
 export const WIDGET_STYLE_PRESETS = Object.freeze({
-  clinical: Object.freeze({ label: '临床白', style: { background: '#ffffff', borderColor: '#d8e2e7', borderWidth: 1, borderRadius: 10, shadow: 'sm', palettePreset: 'medicalBlue', colors: [], kpi: { valueColor: '#153b5d', titleColor: '#52636c', trendColor: '' } } }),
-  blueTeal: Object.freeze({ label: '蓝青医疗', style: { background: '#f2f9fb', backgroundGradient: 'linear-gradient(135deg,#f8fcff 0%,#edf9f7 100%)', borderColor: '#b8d9df', borderWidth: 1, borderRadius: 12, shadow: 'sm', palettePreset: 'blueTeal', colors: [], kpi: { valueColor: '#12616d', titleColor: '#45656c', trendColor: '' } } }),
-  mistBlue: Object.freeze({ label: '清透蓝', style: { background: '#f4f8ff', backgroundGradient: 'linear-gradient(135deg,#f9fbff 0%,#e9f3ff 100%)', borderColor: '#c8dcf2', borderWidth: 1, borderRadius: 12, shadow: 'sm', palettePreset: 'medicalBlue', colors: [], kpi: { valueColor: '#1d5d98', titleColor: '#526b85', trendColor: '' } } }),
-  mint: Object.freeze({ label: '薄荷绿', style: { background: '#f2faf6', backgroundGradient: 'linear-gradient(135deg,#f8fdfb 0%,#e8f6ef 100%)', borderColor: '#bfded0', borderWidth: 1, borderRadius: 12, shadow: 'sm', palettePreset: 'green', colors: [], kpi: { valueColor: '#286b53', titleColor: '#55766a', trendColor: '' } } }),
-  warm: Object.freeze({ label: '暖橙', style: { background: '#fff9f3', backgroundGradient: 'linear-gradient(135deg,#fffdf9 0%,#fff2e3 100%)', borderColor: '#efd4b8', borderWidth: 1, borderRadius: 12, shadow: 'sm', palettePreset: 'warm', colors: [], kpi: { valueColor: '#9b5636', titleColor: '#796253', trendColor: '' } } }),
-  violet: Object.freeze({ label: '柔和紫', style: { background: '#faf8ff', backgroundGradient: 'linear-gradient(135deg,#fdfbff 0%,#f0ecff 100%)', borderColor: '#d9cff2', borderWidth: 1, borderRadius: 12, shadow: 'sm', palettePreset: 'colorful', colors: [], kpi: { valueColor: '#65548c', titleColor: '#6c6480', trendColor: '' } } })
+  clinical: Object.freeze({ label: '临床白', style: { background: '#ffffff', borderColor: '#d8e2e7', borderWidth: 1, borderRadius: 10, shadow: 'sm', palettePreset: 'medicalBlue', colors: [], kpi: { valueColor: '#153b5d', titleColor: '#52636c', trendColor: '' }, text: { titleColor: '#153b5d', bodyColor: '#52636c' } } }),
+  blueTeal: Object.freeze({ label: '蓝青医疗', style: { background: '#f2f9fb', backgroundGradient: 'linear-gradient(135deg,#f8fcff 0%,#edf9f7 100%)', borderColor: '#b8d9df', borderWidth: 1, borderRadius: 12, shadow: 'sm', palettePreset: 'blueTeal', colors: [], kpi: { valueColor: '#12616d', titleColor: '#45656c', trendColor: '' }, text: { titleColor: '#12616d', bodyColor: '#45656c' } } }),
+  mistBlue: Object.freeze({ label: '清透蓝', style: { background: '#f4f8ff', backgroundGradient: 'linear-gradient(135deg,#f9fbff 0%,#e9f3ff 100%)', borderColor: '#c8dcf2', borderWidth: 1, borderRadius: 12, shadow: 'sm', palettePreset: 'medicalBlue', colors: [], kpi: { valueColor: '#1d5d98', titleColor: '#526b85', trendColor: '' }, text: { titleColor: '#1d5d98', bodyColor: '#526b85' } } }),
+  mint: Object.freeze({ label: '薄荷绿', style: { background: '#f2faf6', backgroundGradient: 'linear-gradient(135deg,#f8fdfb 0%,#e8f6ef 100%)', borderColor: '#bfded0', borderWidth: 1, borderRadius: 12, shadow: 'sm', palettePreset: 'green', colors: [], kpi: { valueColor: '#286b53', titleColor: '#55766a', trendColor: '' }, text: { titleColor: '#286b53', bodyColor: '#55766a' } } }),
+  warm: Object.freeze({ label: '暖橙', style: { background: '#fff9f3', backgroundGradient: 'linear-gradient(135deg,#fffdf9 0%,#fff2e3 100%)', borderColor: '#efd4b8', borderWidth: 1, borderRadius: 12, shadow: 'sm', palettePreset: 'warm', colors: [], kpi: { valueColor: '#9b5636', titleColor: '#796253', trendColor: '' }, text: { titleColor: '#9b5636', bodyColor: '#796253' } } }),
+  violet: Object.freeze({ label: '柔和紫', style: { background: '#faf8ff', backgroundGradient: 'linear-gradient(135deg,#fdfbff 0%,#f0ecff 100%)', borderColor: '#d9cff2', borderWidth: 1, borderRadius: 12, shadow: 'sm', palettePreset: 'colorful', colors: [], kpi: { valueColor: '#65548c', titleColor: '#6c6480', trendColor: '' }, text: { titleColor: '#65548c', bodyColor: '#6c6480' } } })
 })
 
 export function applyWidgetStylePreset(style = {}, presetId = 'clinical') {
   const preset = WIDGET_STYLE_PRESETS[presetId]
   if (!preset) return { ...record(style) }
   const current = record(style)
-  const next = { ...current, ...preset.style, kpi: { ...record(current.kpi), ...preset.style.kpi } }
+  const next = { ...current, ...preset.style, kpi: { ...record(current.kpi), ...preset.style.kpi }, text: { ...record(current.text), ...preset.style.text } }
   // A preset is a coherent surface selection, not an accidental image carryover.
   delete next.backgroundAssetKey
   delete next.backgroundImage
   delete next.backgroundOverlay
   delete next.backgroundSize
   delete next.backgroundPosition
+  delete next.backgroundMode
+  if (!Object.hasOwn(preset.style, 'backgroundGradient')) delete next.backgroundGradient
   return next
 }
 
@@ -77,6 +79,7 @@ const defaults = Object.freeze({
   gauge: { progressColor: '', trackColor: '#e5ecee', showPointer: true, valueColor: '' },
   map: { lowColor: '#dceeff', highColor: '#1261a6', borderColor: '#ffffff', borderWidth: 1, showLabel: true },
   kpi: { valueColor: '', titleColor: '', trendColor: '' },
+  text: { titleColor: '', bodyColor: '' },
   table: { headerBackground: '#f3f7f8', zebra: true, compact: false }
 })
 
@@ -91,7 +94,7 @@ export function resolveWidgetVisualStyle(widget = {}) {
   return {
     palettePreset: source.palettePreset === 'custom' || Object.hasOwn(VISUAL_PALETTES, source.palettePreset) ? source.palettePreset : defaults.palettePreset,
     colors,
-    common: merge('common'), bar: { ...merge('bar'), orientation: ['vertical', 'horizontal'].includes(source.bar?.orientation) ? source.bar.orientation : 'vertical' }, line: merge('line'), pie: merge('pie'), scatter: merge('scatter'), radar: merge('radar'), funnel: merge('funnel'), heatmap: merge('heatmap'), gauge: merge('gauge'), map: merge('map'), kpi: merge('kpi'), table: merge('table')
+    common: merge('common'), bar: { ...merge('bar'), orientation: ['vertical', 'horizontal'].includes(source.bar?.orientation) ? source.bar.orientation : 'vertical' }, line: merge('line'), pie: merge('pie'), scatter: merge('scatter'), radar: merge('radar'), funnel: merge('funnel'), heatmap: merge('heatmap'), gauge: merge('gauge'), map: merge('map'), kpi: merge('kpi'), text: merge('text'), table: merge('table')
   }
 }
 
@@ -102,7 +105,7 @@ export function widgetPalette(widget) {
 
 export function resetWidgetVisualStyle(style = {}) {
   const next = { ...record(style) }
-  ;['palettePreset', 'colors', 'common', 'bar', 'line', 'pie', 'scatter', 'radar', 'funnel', 'heatmap', 'gauge', 'map', 'kpi', 'table'].forEach(key => delete next[key])
+  ;['palettePreset', 'colors', 'common', 'bar', 'line', 'pie', 'scatter', 'radar', 'funnel', 'heatmap', 'gauge', 'map', 'kpi', 'text', 'table'].forEach(key => delete next[key])
   return next
 }
 

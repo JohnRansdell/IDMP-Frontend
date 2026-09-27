@@ -86,7 +86,7 @@ export function formatIndicatorValue(source) {
 // gives percent KPIs their explicit comparison-unit suffix without changing
 // the underlying comparison value.
 export function formatKpiComparison(value, unit = '') {
-  if (value === null || value === undefined || value === '') return '—'
+  if (value === null || value === undefined || value === '') return '-'
   const text = String(value).trim()
   const numeric = Number(text.replace(/%$/, ''))
   if (!Number.isFinite(numeric)) return text
@@ -96,10 +96,6 @@ export function formatKpiComparison(value, unit = '') {
 }
 
 export function createKpiData(source) {
-  const comparisons = {}
-  if (source.mom !== undefined) comparisons.mom = source.mom
-  if (source.yoy !== undefined) comparisons.yoy = source.yoy
-  if (source.trendDirection !== undefined || source.mom !== undefined || source.yoy !== undefined) comparisons.trendDirection = normalizeTrendDirection(source.trendDirection, source.change)
   return {
     code: source.code,
     analysisIndicatorId: source.analysisIndicatorId || source.indicatorId || '',
@@ -108,10 +104,17 @@ export function createKpiData(source) {
     title: source.name,
     value: formatIndicatorValue(source),
     unit: source.unit || '',
-    ...comparisons,
-    change: source.change,
-    target: source.target,
-    status: source.status
+    mom: source.mom ?? null,
+    yoy: source.yoy ?? null,
+    comparisonUnit: source.comparisonUnit || '',
+    trendDirection: ['up', 'down', 'flat'].includes(source.trendDirection)
+      ? source.trendDirection
+      : (source.mom !== undefined || source.yoy !== undefined
+          ? normalizeTrendDirection(source.trendDirection, source.change)
+          : null),
+    change: source.change || '',
+    target: source.target || '',
+    status: source.status || 'info'
   }
 }
 
@@ -190,6 +193,10 @@ export function applyIndicatorAnalysisToSource(source, payload = {}) {
   return {
     ...source,
     unit,
+    yoy: payload?.comparison?.yoy ?? payload?.yoy ?? overview?.yoy ?? source.yoy ?? null,
+    mom: payload?.comparison?.mom ?? payload?.mom ?? overview?.mom ?? source.mom ?? null,
+    comparisonUnit: payload?.comparison?.unit || payload?.comparisonUnit || source.comparisonUnit || '',
+    trendDirection: payload?.comparison?.trendDirection || payload?.trendDirection || source.trendDirection || null,
     currentValue: hasData ? resolveAnalysisDisplayValue(overview, unit) : null,
     change: hasData ? '当前正式结果' : '暂无正式结果',
     status: hasData ? 'success' : 'info',

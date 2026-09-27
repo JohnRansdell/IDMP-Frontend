@@ -298,8 +298,8 @@
             </el-tab-pane>
             <el-tab-pane label="样式" name="style">
               <div class="dashboard-style-form">
-                <template v-if="activeDesignerWidget.type === 'text'"><h3>文本样式</h3><label>对齐<select :value="activeDesignerWidget.config?.text?.align || 'left'" @change="updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, text: { ...widget.config?.text, align: $event.target.value } } }))"><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></label><label>字号<input type="number" min="10" max="48" :value="activeDesignerWidget.config?.text?.fontSize || 14" @change="updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, text: { ...widget.config?.text, fontSize: Number($event.target.value) } } }))" /></label><label>字重<select :value="activeDesignerWidget.config?.text?.fontWeight || 400" @change="updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, text: { ...widget.config?.text, fontWeight: Number($event.target.value) } } }))"><option :value="400">常规</option><option :value="500">中等</option><option :value="600">加粗</option><option :value="700">粗体</option></select></label><label>文字颜色<input type="color" :value="activeDesignerWidget.config?.text?.color || '#25343b'" @input="updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, text: { ...widget.config?.text, color: $event.target.value } } }))" /></label></template>
-                <ChartStyleInspector v-if="activeDesignerWidget.type === 'chart' || activeDesignerWidget.type === 'kpi' || activeDesignerWidget.type === 'metric-group'" :widget="activeDesignerWidget" @update="updateDesignerStyle" @reset="resetDesignerVisualStyle" />
+                <template v-if="activeDesignerWidget.type === 'text'"><h3>文本样式</h3><label>对齐<select :value="activeDesignerWidget.config?.text?.align || 'left'" @change="updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, text: { ...widget.config?.text, align: $event.target.value } } }))"><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></label><label>字号<input type="number" min="10" max="48" :value="activeDesignerWidget.config?.text?.fontSize || 14" @change="updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, text: { ...widget.config?.text, fontSize: Number($event.target.value) } } }))" /></label><label>字重<select :value="activeDesignerWidget.config?.text?.fontWeight || 400" @change="updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, text: { ...widget.config?.text, fontWeight: Number($event.target.value) } } }))"><option :value="400">常规</option><option :value="500">中等</option><option :value="600">加粗</option><option :value="700">粗体</option></select></label><label>正文颜色<input type="color" :value="designerStyle.text?.bodyColor || activeDesignerWidget.config?.text?.color || '#52636c'" @input="updateDesignerStyle({ text: { ...designerStyle.text, bodyColor: $event.target.value } })" /></label><label>标题颜色<input type="color" :value="designerStyle.text?.titleColor || '#25343b'" @input="updateDesignerStyle({ text: { ...designerStyle.text, titleColor: $event.target.value } })" /></label></template>
+                <ChartStyleInspector :widget="activeDesignerWidget" @update="updateDesignerStyle" @reset="resetDesignerVisualStyle" />
                 <SurfaceEffectPicker :style="designerStyle" @update="setWidgetSurfaceEffect" />
                 <section class="style-section"><h3>卡片外观</h3><p>卡片背景只影响当前组件；页面背景请在看板设置中调整。</p><div class="background-mode" role="radiogroup" aria-label="卡片背景"><button v-for="mode in backgroundModes" :key="mode.id" type="button" :class="{ 'is-active': widgetBackgroundMode === mode.id }" @click="setWidgetBackgroundMode(mode.id)">{{ mode.label }}</button></div></section><label v-if="widgetBackgroundMode === 'solid'">背景颜色 <input type="color" :value="designerStyle.background" @input="updateDesignerStyle({ background: $event.target.value })" /></label><label v-if="widgetBackgroundMode === 'gradient'">卡片渐变<input :value="designerStyle.backgroundGradient || ''" placeholder="linear-gradient(...)" @change="updateDesignerStyle({ backgroundGradient: $event.target.value })" /></label><template v-if="widgetBackgroundMode === 'image'"><BackgroundAssetPicker :model-value="designerStyle.backgroundAssetKey || ''" @update:model-value="updateDesignerStyle({ ...applyWidgetBackgroundMode(designerStyle, 'image'), backgroundAssetKey: $event, backgroundImage: '' })" /><label>图片适配<select :value="designerStyle.backgroundSize || 'cover'" @change="updateDesignerStyle({ backgroundSize: $event.target.value })"><option value="cover">覆盖</option><option value="contain">包含</option><option value="auto">原始尺寸</option></select></label><label>图片位置<select :value="designerStyle.backgroundPosition || 'center'" @change="updateDesignerStyle({ backgroundPosition: $event.target.value })"><option value="center">居中</option><option value="top">顶部</option><option value="bottom">底部</option></select></label><label>背景叠层<input type="range" min="0" max="0.8" step="0.05" :value="designerStyle.backgroundOverlay || 0" @input="updateDesignerStyle({ backgroundOverlay: Number($event.target.value) })" /></label></template>
                 <label>边框颜色 <input type="color" :value="designerStyle.borderColor" @input="updateDesignerStyle({ borderColor: $event.target.value })" /></label>
@@ -1057,6 +1057,9 @@ function getWidgetKpi(widget) {
     code: widget.sourceCode || '',
     title: widget.sourceName || '指标数据不可用',
     value: '暂无数据',
+    yoy: null,
+    mom: null,
+    trendDirection: null,
     change: '当前筛选条件无数据',
     target: '请调整筛选条件或重新添加',
     status: 'info'
@@ -1969,6 +1972,10 @@ function createDashboardSources(result = {}) {
       category: '质量看板汇总',
       unit: '',
       currentValue: formatNumber(rawValue),
+      yoy: card?.yoy ?? card?.yearOnYear ?? null,
+      mom: card?.mom ?? card?.monthOnMonth ?? null,
+      comparisonUnit: card?.comparisonUnit || card?.changeUnit || '',
+      trendDirection: card?.trendDirection || null,
       change: '当前查询结果',
       target: '来源：已发布看板',
       status: 'success',

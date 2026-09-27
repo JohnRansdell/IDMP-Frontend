@@ -6,7 +6,7 @@
         <div v-if="designer" class="metric-group__item-tools"><button type="button" class="metric-group__drag" aria-label="拖动排序" title="拖动排序">⋮⋮</button><button type="button" aria-label="复制指标" title="复制指标" @click.stop="$emit('duplicate', item.id)">⧉</button><button type="button" aria-label="删除指标" title="删除指标" @click.stop="$emit('remove', item.id)">×</button></div>
         <div class="metric-group__item-head"><span>{{ item.label }}</span><i :class="`is-${item.status}`" /></div>
         <strong>{{ item.value }}<small v-if="item.unit">{{ item.unit }}</small></strong>
-        <div class="metric-group__comparison" :class="`is-${clinicalTrendTone(item.status)}`"><span v-if="item.mom !== undefined">环比 {{ comparison(item.mom, item.unit) }}</span><span v-if="item.yoy !== undefined">同比 {{ comparison(item.yoy, item.unit) }}</span><span v-if="item.mom === undefined && item.yoy === undefined">{{ item.change || '暂无比较数据' }}</span></div>
+        <div class="metric-group__comparison" :class="`is-${clinicalTrendTone(item.status)}`" :style="{ color: style.kpi.trendColor || undefined }"><span>同比 {{ comparison(item.yoy, item.comparisonUnit || item.unit) }}</span><span>环比 {{ comparison(item.mom, item.comparisonUnit || item.unit) }}</span></div>
       </section>
     </div>
     <button v-else-if="designer" class="metric-group__empty" type="button" @click="$emit('add')">添加第一个指标</button>
@@ -29,7 +29,7 @@ const filters = inject('dashboardFilterContext', { definitions: { value: [] }, v
 const draggedId = ref('')
 const config = computed(() => normalizeMetricGroupConfig(props.widget.config?.metricGroup))
 const style = computed(() => resolveWidgetVisualStyle(props.widget))
-const groupStyle = computed(() => ({ '--metric-value': style.value.kpi.valueColor || '#153b5d', '--metric-title': style.value.kpi.titleColor || '#52636c', '--metric-border': props.widget.config?.style?.borderColor || '#e3e9eb' }))
+const groupStyle = computed(() => ({ '--metric-value': style.value.kpi.valueColor || '#153b5d', '--metric-title': style.value.kpi.titleColor || '#52636c', '--metric-trend': style.value.kpi.trendColor || '#78878e', '--metric-border': props.widget.config?.style?.borderColor || '#e3e9eb' }))
 const items = computed(() => config.value.items.map(item => {
   const virtual = metricGroupItemWidget(props.widget, item); const fallback = props.getWidgetKpi(virtual)
   if (!item.dataBinding) return { ...fallback, ...item, unit: item.unit || fallback.unit }

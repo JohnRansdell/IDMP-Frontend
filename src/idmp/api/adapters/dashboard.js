@@ -144,7 +144,11 @@ export function schemaToDashboardPayload(schema, { resourceVersion, dataSources 
 export function dashboardDataSourceToFrontend(source = {}) {
   return {
     code: String(source.code || ''), name: String(source.name || '未命名指标'), description: source.description || '', category: source.category || '指标目录',
-    unit: source.unit || '', origin: 'dashboard-data-source', originLabel: '已发布指标',
+    unit: source.unit || '',
+    yoy: source.yoy ?? null, mom: source.mom ?? null,
+    comparisonUnit: source.comparisonUnit || source.changeUnit || '',
+    trendDirection: source.trendDirection || null,
+    origin: 'dashboard-data-source', originLabel: '已发布指标',
     indicatorId: stringId(source.indicatorId), indicatorCode: String(source.code || ''),
     indicatorVersionId: stringId(source.indicatorVersionId), analysisIndicatorId: stringId(source.indicatorId),
     analysisIndicatorVersionId: stringId(source.indicatorVersionId), analysisEnabled: true,
@@ -165,7 +169,22 @@ export function dashboardFieldsToFrontend(fields = []) {
 }
 
 export function widgetResultToDataset(result = {}, fields = [], id = 'backend') {
-  return { id, label: '正式指标结果', fields: dashboardFieldsToFrontend(result.fields?.length ? result.fields : fields), rows: Array.isArray(result.rows) ? result.rows : [], status: result.status || 'EMPTY', message: result.message || '', resultId: stringId(result.resultId), snapshotId: stringId(result.snapshotId) }
+  return {
+    id,
+    label: '正式指标结果',
+    fields: dashboardFieldsToFrontend(result.fields?.length ? result.fields : fields),
+    rows: Array.isArray(result.rows) ? result.rows : [],
+    comparison: {
+      yoy: result.comparison?.yoy ?? result.yoy ?? null,
+      mom: result.comparison?.mom ?? result.mom ?? null,
+      unit: result.comparison?.unit || result.comparisonUnit || '',
+      trendDirection: result.comparison?.trendDirection || result.trendDirection || null
+    },
+    status: result.status || 'EMPTY',
+    message: result.message || '',
+    resultId: stringId(result.resultId),
+    snapshotId: stringId(result.snapshotId)
+  }
 }
 
 // The server permits an empty fieldBindings object for simple components. The

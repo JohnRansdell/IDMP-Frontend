@@ -1,6 +1,6 @@
 <template>
   <article class="dashboard-renderer-card" :class="[kind === 'kpi' ? 'db-kpi-card' : 'db-chart-card', { 'is-dark-surface': surfaceTone === 'dark' }]" data-testid="binding-widget" :data-binding-status="model.status">
-    <div class="db-section-title"><h2>{{ title }}</h2><nav v-if="drill.active" class="drill-breadcrumb" aria-label="组件下钻路径"><button v-for="(part, index) in drill.breadcrumb" :key="`${part}-${index}`" type="button" @click="drill.back(widget.id, index)">{{ part }}</button><button type="button" @click="drill.reset(widget.id)">返回顶层</button></nav></div>
+    <div class="db-section-title"><h2 :style="{ color: visualStyle.kpi.titleColor || undefined }">{{ title }}</h2><nav v-if="drill.active" class="drill-breadcrumb" aria-label="组件下钻路径"><button v-for="(part, index) in drill.breadcrumb" :key="`${part}-${index}`" type="button" @click="drill.back(widget.id, index)">{{ part }}</button><button type="button" @click="drill.reset(widget.id)">返回顶层</button></nav></div>
     <p v-if="dataset?.filterDiagnostics?.length" role="status" class="filter-diagnostic">{{ dataset.filterDiagnostics.join('；') }}</p>
     <div v-if="model.status !== 'ready'" class="binding-state" role="status" :data-testid="`binding-${model.status}`"><strong>{{ model.status === 'invalid' ? (String(model.message || '').startsWith('直接值遇到多行') ? '直接值无法显示' : '尚未配置数据') : dataset?.status === 'LOADING' ? '正在更新数据' : dataset?.status === 'ERROR' ? '数据预览失败' : '当前筛选条件下暂无数据' }}</strong><p>{{ dataset?.status === 'LOADING' ? '正在读取当前字段配置的预览结果。' : dataset?.status === 'ERROR' ? dataset.message : model.status === 'invalid' ? (model.message || '选择数据源后配置维度和指标。') : (dataset?.message || '可调整筛选条件，或检查当前数据是否有结果。') }}</p></div>
     <strong v-else-if="kind === 'kpi'" data-testid="binding-kpi-value" :style="{ color: visualStyle.kpi.valueColor || undefined }">{{ displayKpiValue }}{{ model.unit }}</strong>
@@ -9,12 +9,17 @@
     <IdmpChart v-else :option="option" height="100%" fit-container :aria-label="`${title}，${model.series?.length || 1} 个系列`" @chart-click="onChartClick">
       <template #table><table><thead><tr><th>维度</th><th v-for="series in model.series" :key="series.name">{{ series.name }}</th></tr></thead><tbody><tr v-for="(category, index) in model.categories" :key="category"><td>{{ category }}</td><td v-for="series in model.series" :key="series.name">{{ formatVisibleValue(series.values[index]) }}</td></tr></tbody></table></template>
     </IdmpChart>
+    <div v-if="kind === 'kpi'" class="db-kpi-comparisons binding-kpi-comparisons" :style="{ color: visualStyle.kpi.trendColor || undefined }">
+      <span>同比 {{ formatKpiComparison(kpiComparison.yoy, kpiComparison.unit) }}</span>
+      <span>环比 {{ formatKpiComparison(kpiComparison.mom, kpiComparison.unit) }}</span>
+    </div>
   </article>
 </template>
 <script setup>
 import { computed, inject } from 'vue'
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
 import { bindingKind, compileWidgetData, bindingChartOption, formatDashboardMetric } from '../bindingEngine.js'
+import { formatKpiComparison } from '../visualization.js'
 import { createDashboardChartTheme } from '../chartTheme.js'
 import { applyWidgetVisualStyle, resolveWidgetVisualStyle } from '../visualStyle.js'
 import { resolveWidgetSurfaceTone } from '../backgroundAssets.js'
@@ -37,6 +42,15 @@ const rawTableColumns = computed(() => {
 })
 const rawTableRows = computed(() => rawTableColumns.value.length ? (dataset.value?.rows || []) : [])
 const displayKpiValue = computed(() => formatDashboardMetric(model.value?.value))
+const kpiComparison = computed(() => {
+  const result = dataset.value?.comparison || {}
+  const row = model.value?.status === 'ready' ? dataset.value?.rows?.[0] : null
+  return {
+    yoy: result.yoy ?? row?.yoy ?? null,
+    mom: result.mom ?? row?.mom ?? null,
+    unit: result.unit || row?.comparisonUnit || model.value?.unit || ''
+  }
+})
 const surfaceTone = computed(() => resolveWidgetSurfaceTone(props.widget))
 const option = computed(() => createDashboardChartTheme(applyWidgetVisualStyle(props.widget, bindingChartOption(kind.value, model.value)), surfaceTone.value))
 const visualStyle = computed(() => resolveWidgetVisualStyle(props.widget))
@@ -55,6 +69,7 @@ table { width:100%; font-size:12px; border-collapse:collapse; } td,th { padding:
 .dashboard-renderer-card.is-dark-surface { color:#f8fbff; }
 .drill-breadcrumb { display:flex; gap:4px; align-items:center; flex-wrap:wrap; font-size:10px; }.drill-breadcrumb button { border:0; padding:0; background:transparent; color:var(--db-accent,#1261a6); cursor:pointer; }
 .db-kpi-card>strong { display:block; font-size:32px; font-weight:550; line-height:1.2; margin:12px 0 8px; overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
+.binding-kpi-comparisons { display:flex; flex-wrap:wrap; gap:6px 10px; margin-top:8px; color:var(--db-secondary,#5c6d75); font-size:11px; line-height:16px; }
 @container (max-height:150px) { .db-kpi-card .db-section-title { min-height:20px; margin-bottom:6px; }.db-kpi-card>strong { font-size:28px; margin:6px 0; } }
 @container (max-height:110px) { .db-kpi-card>strong { font-size:26px; }.db-section-title h2 { font-size:12px; } }
 @container (max-width:420px) { .db-chart-card { padding:12px 10px 8px; }.db-section-title { min-height:24px; margin-bottom:6px; }.binding-ranking li { grid-template-columns:20px minmax(0,1fr) auto; gap:8px; } }

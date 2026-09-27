@@ -9,6 +9,8 @@ test('KPI comparison formatter keeps values numeric until percent presentation',
   assert.equal(formatKpiComparison(0, '%'), '0%')
   assert.equal(formatKpiComparison(3.18, '人'), '+3.18')
   assert.equal(formatKpiComparison('+1.24%', '%'), '+1.24%')
+  assert.equal(formatKpiComparison(undefined, '%'), '-')
+  assert.equal(formatKpiComparison(null, '%'), '-')
 })
 
 test('Clinical Light preserves chart data and drill payloads without mutating business options', () => {
@@ -125,6 +127,10 @@ test('dashboard KPI preserves its analysis identity and explicit disabled state'
     title: '汇总指标',
     value: '12',
     unit: '',
+    mom: null,
+    yoy: null,
+    comparisonUnit: '',
+    trendDirection: null,
     change: '-',
     target: '-',
     status: 'success'
