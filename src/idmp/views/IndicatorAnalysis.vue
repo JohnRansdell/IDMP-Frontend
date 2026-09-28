@@ -289,8 +289,24 @@
         </el-tab-pane>
       </el-tabs>
     </section>
-    <el-drawer v-model="showDataDiagnostics" title="数据诊断" size="520px" destroy-on-close>
-      <p class="diagnostics-intro">这里用于解释当前报告期没有结果的原因，以及依赖数据可用情况；正常分析时无需关注。</p>
+    <el-drawer v-model="showDataDiagnostics" title="数据说明" size="620px" destroy-on-close>
+      <p class="diagnostics-intro">这里说明当前指标的计算口径、结果可用性和追溯信息。</p>
+      <section class="diagnostics-section diagnostics-explanation">
+        <h3>指标计算口径</h3>
+        <p>{{ indicatorDataExplanation.formulaText }}</p>
+        <div v-if="indicatorDataExplanation.operands.length" class="formula-operands">
+          <article v-for="operand in indicatorDataExplanation.operands" :key="operand.role" class="formula-operand">
+            <span>{{ operand.role === 'NUMERATOR' ? '分子' : operand.role === 'DENOMINATOR' ? '分母' : '参与因子' }}</span>
+            <strong>{{ operand.factorNames.join('、') || '-' }}</strong>
+            <p>因子版本：{{ operand.factorVersionIds.join('、') || '-' }}</p>
+            <template v-if="operand.role !== 'FACTOR'">
+              <div class="formula-operand__result"><span>本期结果</span><strong>{{ formatExplanationOperandValue(operand) }}</strong></div>
+              <p v-if="!operand.hasResultValue">当前正式结果未返回{{ operand.role === 'NUMERATOR' ? '分子' : '分母' }}值。</p>
+            </template>
+          </article>
+        </div>
+        <p v-else>当前指标版本尚未返回公式定义，暂无法识别分子、分母因子。</p>
+      </section>
       <ResultAvailabilityPanel v-if="analysisAvailability" :availability="analysisAvailability" @open-batch="openCalculationBatch" />
       <section v-if="availablePeriod" class="diagnostics-section">
         <h3>可用数据范围</h3>
@@ -324,7 +340,9 @@ import ResultAvailabilityPanel from '@/idmp/components/ResultAvailabilityPanel.v
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import DrillExplorer from '@/idmp/features/analysis/DrillExplorer.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
-import { fetchIndicatorAnalysis, fetchIndicatorAvailablePeriod, fetchIndicatorScenarioComparison, fetchIndicatorScenarios, fetchIndicators, fetchIndicatorVersion, fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
+import { fetchIndicatorAnalysis, fetchIndicatorAvailablePeriod, fetchIndicatorFormula, fetchIndicatorScenarioComparison, fetchIndicatorScenarios, fetchIndicators, fetchIndicatorVersion, fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
+import { fetchFactorVersion } from '@/idmp/api/modules/factors'
+import { collectFormulaFactorVersionIds, createIndicatorDataExplanation, extractIndicatorFormula } from '@/idmp/api/adapters/indicator'
 import { deriveDrillPathResultIds, reconcileScenarioPointWithRoot } from '@/idmp/api/adapters/drill'
 import { searchResultDrill } from '@/idmp/api/modules/drill'
 import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
@@ -340,6 +358,7 @@ const reportGranularity = ref(String(route.query.granularity || 'MONTHLY').toUpp
 const backendAnalysis = ref(null)
 const trendBackendAnalysis = ref(null)
 const backendIndicatorVersion = ref(null)
+const formulaFactorVersions = ref({})
 const availablePeriod = ref(null)
 let analysisRefreshSequence = 0
 const analysisErrorMessage = ref('')
@@ -411,6 +430,12 @@ const analysisOverview = computed(() => {
       !dimensions.department_code && !dimensions.department_id
   }) || backendAnalysis.value?.overview || null
 })
+const indicatorDataExplanation = computed(() => createIndicatorDataExplanation({
+  analysis: backendAnalysis.value || {},
+  overview: analysisOverview.value,
+  version: backendIndicatorVersion.value || {},
+  factorVersions: formulaFactorVersions.value
+}))
 const hasBackendAnalysisData = computed(() => Boolean(backendAnalysis.value?.dataAvailable && analysisOverview.value))
 const hasLiveAnalysisResponse = computed(() => Boolean(backendAnalysis.value && selectedBackendIndicator.value))
 const analysisAvailability = computed(() => backendAnalysis.value ? resolveResultAvailability(backendAnalysis.value) : null)
@@ -985,6 +1010,12 @@ function formatCount(value) {
   return Number.isFinite(number) ? number.toLocaleString('zh-CN') : '-'
 }
 
+function formatExplanationOperandValue(operand) {
+  if (!operand?.hasResultValue) return '-'
+  const value = formatCount(operand.value)
+  return value === '-' ? '-' : `${value}${operand.unit || ''}`
+}
+
 function formatDecimal(value) {
   const number = Number(value)
   return Number.isFinite(number) ? number.toFixed(8) : '-'
@@ -1317,6 +1348,7 @@ async function refreshMortalityAnalysis() {
   backendAnalysis.value = null
   trendBackendAnalysis.value = null
   backendIndicatorVersion.value = null
+  formulaFactorVersions.value = {}
   availablePeriod.value = null
   analysisErrorMessage.value = ''
   mortalityChain.value = null
@@ -1329,7 +1361,7 @@ async function refreshMortalityAnalysis() {
   try {
     if (initialVersionId) {
       try {
-        backendIndicatorVersion.value = await fetchIndicatorVersion(initialVersionId)
+        backendIndicatorVersion.value = await fetchAnalysisIndicatorVersion(initialVersionId)
       } catch {
         backendIndicatorVersion.value = null
       }
@@ -1375,7 +1407,7 @@ async function refreshMortalityAnalysis() {
       if (versionId) {
         if (backendIndicator && versionId !== initialVersionId) {
           try {
-            backendIndicatorVersion.value = await fetchIndicatorVersion(versionId)
+            backendIndicatorVersion.value = await fetchAnalysisIndicatorVersion(versionId)
           } catch {
             backendIndicatorVersion.value = null
           }
@@ -1384,6 +1416,8 @@ async function refreshMortalityAnalysis() {
         if (versionId !== initialVersionId && resolveIndicatorCalculationMode(backendIndicatorVersion.value, backendIndicator) !== 'STATIC') await loadAvailablePeriod(versionId, refreshSequence)
       }
     }
+
+    if (backendIndicatorVersion.value) await loadAnalysisFormulaFactorVersions(backendIndicatorVersion.value, refreshSequence)
 
     mortalityChain.value = mortalityIndicator && chain.status === 'fulfilled' ? chain.value : null
     mortalityChainLoading.value = false
@@ -1397,6 +1431,32 @@ async function refreshMortalityAnalysis() {
       ElMessage.warning(analysisErrorMessage.value)
     }
   }
+}
+
+async function fetchAnalysisIndicatorVersion(versionId) {
+  const version = await fetchIndicatorVersion(versionId)
+  let formula = extractIndicatorFormula(version)
+  if (!formula) {
+    try {
+      formula = await fetchIndicatorFormula(versionId)
+    } catch {
+      formula = null
+    }
+  }
+  return { ...version, formula: formula || version?.formula || version?.formulaAst }
+}
+
+async function loadAnalysisFormulaFactorVersions(version, refreshSequence) {
+  const ids = collectFormulaFactorVersionIds(extractIndicatorFormula(version))
+  if (!ids.length) {
+    if (refreshSequence === analysisRefreshSequence) formulaFactorVersions.value = {}
+    return
+  }
+  const responses = await Promise.allSettled(ids.map((id) => fetchFactorVersion(id)))
+  if (refreshSequence !== analysisRefreshSequence) return
+  formulaFactorVersions.value = Object.fromEntries(responses.flatMap((response, index) => (
+    response.status === 'fulfilled' && response.value ? [[ids[index], response.value]] : []
+  )))
 }
 
 async function loadAvailablePeriod(versionId, refreshSequence) {
@@ -1632,6 +1692,45 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
 .diagnostics-section h3 {
   margin: 0;
   font-size: 15px;
+}
+
+.formula-operands {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.formula-operand {
+  padding: 12px;
+  border: 1px solid var(--idmp-border, #d0d5dd);
+  border-radius: 8px;
+  background: var(--idmp-surface-subtle, #f8fafc);
+}
+
+.formula-operand > span,
+.formula-operand__result > span {
+  display: block;
+  color: var(--idmp-text-secondary, #667085);
+  font-size: 12px;
+}
+
+.formula-operand > strong {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.formula-operand__result {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.formula-operand__result > strong {
+  color: var(--idmp-primary, #1570ef);
 }
 
 .analysis-empty-state {

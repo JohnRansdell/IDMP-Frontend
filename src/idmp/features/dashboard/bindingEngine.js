@@ -1,4 +1,5 @@
 import { numericValue } from './fieldCatalog.js'
+import { chartColorKey } from './visualStyle.js'
 
 export const AGGREGATIONS = { direct: '直接值（不聚合）', sum: '求和', avg: '平均值', max: '最大值', min: '最小值', count: '有效值计数' }
 export const BINDING_CAPABILITIES = {
@@ -147,5 +148,6 @@ export function bindingChartOption(kind, model) {
   }
   if (kind === 'map') return { tooltip: { trigger: 'item' }, grid: { top: 24, bottom: 30, left: 46, right: 18 }, xAxis: { type: 'value', show: false }, yAxis: { type: 'category', data: model.categories, inverse: true }, visualMap: { min: 0, max: Math.max(1, ...model.series[0].values.filter(value => value !== null)), calculable: true, orient: 'horizontal', left: 'center', bottom: 0 }, series: [{ name: model.series[0]?.name || '指标值', type: 'bar', data: model.series[0]?.values || [], itemStyle: { borderRadius: [0, 4, 4, 0] } }] }
   const dualAxis = ['line', 'bar'].includes(kind) && model.series.some(item => item.axis === 'right')
-  return { tooltip: { trigger: 'axis' }, legend: { top: 0 }, grid: { top: 38, bottom: 28, left: 12, right: 16, containLabel: true }, xAxis: { type: 'category', data: model.categories }, yAxis: dualAxis ? [{ type: 'value' }, { type: 'value' }] : { type: 'value' }, series: model.series.map(item => ({ name: item.name, type: kind, data: item.values, ...(dualAxis ? { yAxisIndex: item.axis === 'right' ? 1 : 0 } : {}) })) }
+  const categoryColoredBar = kind === 'bar' && model.series.length === 1
+  return { tooltip: { trigger: 'axis' }, legend: { top: 0 }, grid: { top: 38, bottom: 28, left: 12, right: 16, containLabel: true }, xAxis: { type: 'category', data: model.categories }, yAxis: dualAxis ? [{ type: 'value' }, { type: 'value' }] : { type: 'value' }, series: model.series.map(item => ({ name: item.name, type: kind, data: categoryColoredBar ? item.values.map((value, index) => ({ value, id: chartColorKey('category', model.dimensionTuples?.[index] || model.categories[index]) })) : item.values, ...(dualAxis ? { yAxisIndex: item.axis === 'right' ? 1 : 0 } : {}) })) }
 }

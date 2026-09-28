@@ -49,6 +49,83 @@ export function selectIndicatorSummaryRecord(payload = {}) {
   ), records[0])
 }
 
+// The analysis API and the indicator-version API are intentionally kept as
+// separate sources: the former owns a result snapshot, while the latter owns
+// the formula definition.  These helpers produce a small, display-ready
+// bridge without ever recalculating the official indicator value on the
+// client.
+export function extractIndicatorFormula(payload = {}) {
+  return payload?.formula?.formula || payload?.formula || payload?.formulaAst || payload?.definition?.formula || null
+}
+
+export function collectFormulaFactorVersionIds(formula, ids = []) {
+  const node = formula?.root || formula
+  collectFormulaFactorIds(node, ids)
+  return [...new Set(ids.map(toOpaqueId).filter(Boolean))]
+}
+
+export function createIndicatorDataExplanation({ analysis = {}, overview = null, version = {}, factorVersions = {} } = {}) {
+  const formula = extractIndicatorFormula(version)
+  const root = formula?.root || formula
+  const result = overview || analysis?.overview || {}
+  const display = formula?.display || {}
+  const isRatio = String(root?.nodeType || '').toUpperCase() === 'BINARY' && String(root?.operator || '').toUpperCase() === 'DIV'
+  const multiplier = String(display.multiplier || '')
+
+  if (isRatio) {
+    const numerator = createExplanationOperand('NUMERATOR', collectFormulaFactorIds(root.left), result, factorVersions)
+    const denominator = createExplanationOperand('DENOMINATOR', collectFormulaFactorIds(root.right), result, factorVersions)
+    return {
+      type: 'RATIO',
+      formulaText: `${operandNames(numerator)} ÷ ${operandNames(denominator)}${multiplier === '100' || String(display.format || '').toUpperCase() === 'PERCENT' ? ' × 100%' : ''}`,
+      operands: [numerator, denominator]
+    }
+  }
+
+  const factors = createExplanationOperand('FACTOR', collectFormulaFactorIds(root), result, factorVersions)
+  return {
+    type: 'FACTORS',
+    formulaText: factors.factorNames.length ? `参与因子：${factors.factorNames.join('、')}` : '当前指标版本未返回可解析的公式因子。',
+    operands: factors.factorVersionIds.length ? [factors] : []
+  }
+}
+
+function collectFormulaFactorIds(node, ids = []) {
+  if (!node || typeof node !== 'object') return ids
+  if (Array.isArray(node.factorRefs)) {
+    node.factorRefs.forEach((item) => {
+      const id = item?.factorVersionId ?? item?.versionId ?? item?.id
+      if (id !== undefined && id !== null && id !== '') ids.push(id)
+    })
+  }
+  if (String(node.nodeType || '').toUpperCase() === 'FACTOR_REF') {
+    const id = node.factorVersionId ?? node.versionId ?? node.refVersionId
+    if (id !== undefined && id !== null && id !== '') ids.push(id)
+  }
+  collectFormulaFactorIds(node.left, ids)
+  collectFormulaFactorIds(node.right, ids)
+  if (Array.isArray(node.children)) node.children.forEach((child) => collectFormulaFactorIds(child, ids))
+  return ids
+}
+
+function createExplanationOperand(role, ids, result, factorVersions) {
+  const factorVersionIds = [...new Set(ids.map(toOpaqueId).filter(Boolean))]
+  const factorNames = factorVersionIds.map((id) => resolveFactorVersionName(factorVersions?.[id], id, role))
+  const valueKey = role === 'NUMERATOR' ? 'numerator' : role === 'DENOMINATOR' ? 'denominator' : ''
+  const value = valueKey ? result?.[valueKey] ?? result?.[`${valueKey}Value`] ?? null : null
+  const unit = valueKey ? result?.[`${valueKey}Unit`] ?? result?.[`${valueKey}UnitCode`] ?? '' : ''
+  return { role, factorVersionIds, factorNames, value, unit, hasResultValue: value !== null && value !== undefined && value !== '' }
+}
+
+function resolveFactorVersionName(factorVersion, versionId, role) {
+  return factorVersion?.factorName || factorVersion?.name || factorVersion?.factor?.name || factorVersion?.factor?.factorName || factorVersion?.factorCode || factorVersion?.code ||
+    `${role === 'NUMERATOR' ? '分子' : role === 'DENOMINATOR' ? '分母' : '参与'}因子（版本 ${versionId}）`
+}
+
+function operandNames(operand) {
+  return operand.factorNames.length ? operand.factorNames.join(' + ') : operand.role === 'NUMERATOR' ? '分子因子' : '分母因子'
+}
+
 export function normalizeIndicatorTrialResults(payload = {}) {
   const data = payload?.data || payload || {}
   const responseTargets = Array.isArray(data.targets) ? data.targets : []

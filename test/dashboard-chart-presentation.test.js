@@ -7,12 +7,14 @@ test('chart presentation presets materialize existing style fields without data 
   assert.equal(chartPresentationPresets('bar').length, 4); assert.equal(chartPresentationPresets('line').length, 4); assert.equal(chartPresentationPresets('pie').length, 4)
   const source = widget('bar', { palettePreset: 'warm' }, { dataBinding: { dataset: 'd', measures: [{ field: 'value', aggregation: 'sum' }], sort: [{ field: 'value', direction: 'desc' }] }, interaction: { clickAction: 'cross-filter' } })
   const style = applyChartPresentationPreset(source, 'ranking')
-  assert.equal(style.bar.orientation, 'horizontal'); assert.equal(style.palettePreset, 'warm'); assert.deepEqual(source.config.dataBinding.sort, [{ field: 'value', direction: 'desc' }]); assert.equal(source.config.interaction.clickAction, 'cross-filter')
+  assert.equal(style.bar.orientation, 'horizontal'); assert.equal(style.palettePreset, 'warm'); assert.equal(style.presentationPreset, 'ranking'); assert.deepEqual(source.config.dataBinding.sort, [{ field: 'value', direction: 'desc' }]); assert.equal(source.config.interaction.clickAction, 'cross-filter')
   assert.equal(applyChartPresentationPreset(widget('line'), 'area').line.area, true); assert.equal(applyChartPresentationPreset(widget('pie'), 'minimal-donut').pie.innerRadius, 70)
+  const labelAnalysis = applyChartPresentationPreset(widget('pie'), 'label-analysis')
+  assert.equal(labelAnalysis.presentationPreset, 'label-analysis'); assert.equal(labelAnalysis.pie.labelPosition, 'inside'); assert.equal(labelAnalysis.common.showLegend, false)
 })
 test('ranking presentation swaps only chart axes and preserves data and tooltip', () => {
   const data = [56, 49, 46]; const option = applyWidgetVisualStyle(widget('bar', { bar: { orientation: 'horizontal', borderRadius: 7 } }), { tooltip: { trigger: 'axis' }, xAxis: { type: 'category', data: ['A', 'B', 'C'] }, yAxis: { type: 'value' }, series: [{ type: 'bar', data }] })
-  assert.equal(option.xAxis.type, 'value'); assert.equal(option.yAxis.type, 'category'); assert.deepEqual(option.yAxis.data, ['A', 'B', 'C']); assert.deepEqual(option.series[0].data, data); assert.equal(option.tooltip.trigger, 'axis')
+  assert.equal(option.xAxis.type, 'value'); assert.equal(option.yAxis.type, 'category'); assert.deepEqual(option.yAxis.data, ['A', 'B', 'C']); assert.deepEqual(option.series[0].data.map(item => item.value), data); assert.equal(option.tooltip.trigger, 'axis')
 })
 
 test('advanced visualization presets materialize every supported visual style only', () => {

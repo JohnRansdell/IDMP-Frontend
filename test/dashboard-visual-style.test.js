@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { applyWidgetBackgroundMode, applyWidgetStylePreset, applyWidgetVisualStyle, chartPaletteLabels, resetWidgetVisualStyle, resolveWidgetBackgroundMode, resolveWidgetVisualStyle } from '../src/idmp/features/dashboard/visualStyle.js'
+import { applyWidgetBackgroundMode, applyWidgetStylePreset, applyWidgetVisualStyle, chartColorKey, chartColorTargets, chartPaletteLabels, resetWidgetVisualStyle, resolveWidgetBackgroundMode, resolveWidgetVisualStyle } from '../src/idmp/features/dashboard/visualStyle.js'
 import { createPersistableDashboardSnapshot, normalizeDashboardSchema } from '../src/idmp/features/dashboard/schema.js'
 
 const widget = (chartKind, style = {}) => ({ id: `${chartKind}-1`, type: 'chart', chartKind, config: { style } })
@@ -15,6 +15,20 @@ test('palette labels describe the visualization rather than anonymous series', (
   assert.deepEqual(chartPaletteLabels(widget('map'), 2), ['区域色阶 1', '区域色阶 2'])
   assert.ok(chartPaletteLabels({ type: 'kpi' }, 2).every(label => !label.includes('系列')))
   assert.ok(chartPaletteLabels({ type: 'metric-group' }, 2).every(label => !label.includes('系列')))
+})
+
+test('bar colors target actual categories and retain their stable dimension keys', () => {
+  const bar = widget('bar', { colorOverrides: { [chartColorKey('category', { department: '外科' })]: '#e67e22' } })
+  const model = { categories: ['内科', '外科', '儿科'], dimensionTuples: [{ department: '内科' }, { department: '外科' }, { department: '儿科' }], series: [{ name: '出院人数', values: [12, 18, 9] }] }
+  assert.deepEqual(chartColorTargets(bar, model), [
+    { key: chartColorKey('category', { department: '内科' }), label: '内科' },
+    { key: chartColorKey('category', { department: '外科' }), label: '外科' },
+    { key: chartColorKey('category', { department: '儿科' }), label: '儿科' }
+  ])
+  const option = applyWidgetVisualStyle(bar, { xAxis: { type: 'category', data: model.categories }, yAxis: { type: 'value' }, series: [{ name: '出院人数', type: 'bar', data: model.series[0].values.map((value, index) => ({ value, id: chartColorKey('category', model.dimensionTuples[index]) })) }] })
+  assert.equal(option.series[0].data.length, 3)
+  assert.equal(option.series[0].data[1].itemStyle.color, '#e67e22')
+  assert.notEqual(option.series[0].data[0].itemStyle.color, '#e67e22')
 })
 
 test('line visual style maps safe schema controls to chart option and preserves data', () => {
@@ -50,9 +64,12 @@ test('x axis rotation has explicit and deterministic auto presentation without c
   const data = [12, 14, 18]
   const explicit = applyWidgetVisualStyle(widget('bar', { common: { xAxisLabelRotation: 45 } }), { grid: { bottom: 28 }, xAxis: { type: 'category', data: ['一月', '二月', '三月'] }, series: [{ type: 'bar', data }] })
   assert.equal(explicit.xAxis.axisLabel.rotate, 45)
-  assert.equal(explicit.grid.bottom, 54)
+  assert.equal(explicit.grid.bottom, 28)
   assert.equal(explicit.grid.containLabel, true)
-  assert.deepEqual(explicit.series[0].data, data)
+  assert.equal(explicit.xAxis.axisLabel.width, 88)
+  assert.equal(explicit.xAxis.axisLabel.overflow, 'truncate')
+  assert.equal(explicit.xAxis.axisLabel.hideOverlap, true)
+  assert.deepEqual(explicit.series[0].data.map(item => item.value), data)
   const shortAuto = applyWidgetVisualStyle(widget('line'), { xAxis: { type: 'category', data: ['一月', '二月'] }, series: [{ type: 'line', data }] })
   const denseAuto = applyWidgetVisualStyle(widget('line'), { xAxis: { type: 'category', data: ['呼吸内科一组', '呼吸内科二组', '心血管内科一组', '心血管内科二组', '神经内科一组', '神经内科二组', '消化内科一组'] }, series: [{ type: 'line', data }] })
   assert.equal(shortAuto.xAxis.axisLabel.rotate, 0)
@@ -61,6 +78,36 @@ test('x axis rotation has explicit and deterministic auto presentation without c
     const result = applyWidgetVisualStyle(widget('bar', { common: { xAxisLabelRotation: rotate } }), { xAxis: { data: ['一月'] }, series: [{ type: 'bar', data }] })
     assert.equal(result.xAxis.axisLabel.rotate, rotate)
   }
+})
+
+test('rotated labels do not reserve a second bottom band or affect horizontal bars', () => {
+  const data = [12, 14, 18]
+  const steep = applyWidgetVisualStyle(widget('line', { common: { xAxisLabelRotation: 90 } }), {
+    grid: { top: 38, bottom: 28 },
+    xAxis: { type: 'category', data: ['呼吸内科长期随访组', '心血管内科长期随访组'] },
+    series: [{ type: 'line', data }]
+  })
+  assert.equal(steep.grid.bottom, 28)
+  assert.equal(steep.xAxis.axisLabel.width, 64)
+
+  const bottomLegend = applyWidgetVisualStyle(widget('line', { common: { xAxisLabelRotation: 45, legendPosition: 'bottom' } }), {
+    grid: { bottom: 28 }, legend: {}, xAxis: { type: 'category', data: ['一月', '二月'] }, series: [{ type: 'line', data }]
+  })
+  assert.equal(bottomLegend.grid.bottom, 36)
+
+  const horizontal = applyWidgetVisualStyle(widget('bar', {
+    common: { xAxisLabelRotation: 60 },
+    bar: { orientation: 'horizontal' }
+  }), {
+    grid: { left: 42, bottom: 28 },
+    xAxis: { type: 'category', data: ['呼吸内科长期随访组'] },
+    yAxis: { type: 'value' },
+    series: [{ type: 'bar', data }]
+  })
+  assert.equal(horizontal.grid.bottom, 28)
+  assert.equal(horizontal.grid.left, 82)
+  assert.equal(horizontal.xAxis.type, 'value')
+  assert.equal(horizontal.yAxis.axisLabel.rotate, 0)
 })
 
 test('style preset expands into concrete widget style without a second runtime field', () => {
@@ -101,11 +148,12 @@ test('dashboard and widget visual fields survive the persistence boundary', () =
 test('legacy widgets resolve existing visuals and reset leaves binding layout and interaction intact', () => {
   const legacy = widget('line')
   assert.equal(resolveWidgetVisualStyle(legacy).line.width, 2.5)
-  const schema = normalizeDashboardSchema({ version: 1, id: 'style-reset', widgets: [{ id: 'line', type: 'chart', chartKind: 'line', layout: { x: 2, y: 3, w: 12, h: 6 }, config: { style: { background: '#fff', line: { width: 5 }, palettePreset: 'warm' }, dataBinding: { dataset: 'dual', dimensions: [{ field: 'month' }], measures: [{ field: 'actualValue', aggregation: 'direct' }], series: [], sort: [] }, interaction: { clickAction: 'cross-filter' } } }] })
+  const schema = normalizeDashboardSchema({ version: 1, id: 'style-reset', widgets: [{ id: 'line', type: 'chart', chartKind: 'line', layout: { x: 2, y: 3, w: 12, h: 6 }, config: { style: { background: '#fff', line: { width: 5 }, palettePreset: 'warm', presentationPreset: 'area' }, dataBinding: { dataset: 'dual', dimensions: [{ field: 'month' }], measures: [{ field: 'actualValue', aggregation: 'direct' }], series: [], sort: [] }, interaction: { clickAction: 'cross-filter' } } }] })
   const item = schema.widgets[0]
   const style = resetWidgetVisualStyle(item.config.style)
   assert.equal(style.background, '#fff')
   assert.equal(style.line, undefined)
+  assert.equal(style.presentationPreset, undefined)
   assert.equal(style.palettePreset, undefined)
   assert.deepEqual(item.layout, { x: 2, y: 3, w: 12, h: 6 })
   assert.equal(item.config.dataBinding.dataset, 'dual')

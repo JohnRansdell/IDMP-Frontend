@@ -475,7 +475,7 @@ import {
   normalizeDashboardDrillTarget,
   resolveDashboardChartDrillTarget
 } from '@/idmp/features/dashboard/visualization'
-import { applyWidgetBackgroundMode, applyWidgetVisualStyle, resetWidgetVisualStyle, resolveWidgetBackgroundMode } from '@/idmp/features/dashboard/visualStyle'
+import { applyWidgetBackgroundMode, resetWidgetVisualStyle, resolveWidgetBackgroundMode } from '@/idmp/features/dashboard/visualStyle'
 import ChartStyleInspector from '@/idmp/features/dashboard/components/ChartStyleInspector.vue'
 import BackgroundAssetPicker from '@/idmp/features/dashboard/components/BackgroundAssetPicker.vue'
 import CardSurfaceControls from '@/idmp/features/dashboard/components/CardSurfaceControls.vue'
@@ -1125,11 +1125,11 @@ function getWidgetIcon(widget) {
 }
 
 function getWidgetChartOption(widget) {
-  return applyWidgetVisualStyle(widget, createDashboardChartOption(widget, {
+  return createDashboardChartOption(widget, {
     trendOption: trendOption.value,
     rateOption: rateOption.value,
     getSource: () => getWidgetSource(widget)
-  }))
+  })
 }
 function updateMetricGroupConfig(config) {
   updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, ...config } }))

@@ -59,15 +59,38 @@ export function applyWidgetBackgroundMode(style = {}, mode = 'none') {
   return next
 }
 
-export function chartPaletteLabels(widget = {}, count = 1) {
+export function chartColorKey(type, value) { return `${type}:${typeof value === 'string' ? value : JSON.stringify(value)}` }
+
+export function chartColorTargets(widget = {}, model = null, rawOption = {}) {
   const kind = widget.chartKind || widget.visualType || ''
-  const names = Array.isArray(widget.config?.series) ? widget.config.series.map(item => item?.name).filter(Boolean) : []
+  const modelSeries = Array.isArray(model?.series) ? model.series : []
+  const series = modelSeries.length ? modelSeries : (Array.isArray(rawOption.series) ? rawOption.series : rawOption.series ? [rawOption.series] : [])
+  const target = (key, label) => ({ key, label: String(label ?? '未命名数据') })
+  if (kind === 'bar' && series.length === 1) {
+    const categories = Array.isArray(model?.categories) ? model.categories : (Array.isArray(rawOption.xAxis?.data) ? rawOption.xAxis.data : [])
+    const tuples = Array.isArray(model?.dimensionTuples) ? model.dimensionTuples : []
+    const values = Array.isArray(series[0]?.data) ? series[0].data : []
+    return categories.length
+      ? categories.map((name, index) => target(chartColorKey('category', tuples[index] || name), name))
+      : values.map((item, index) => target(item?.id || chartColorKey('category', item?.name || index), item?.name || `柱形 ${index + 1}`))
+  }
+  if (['pie', 'funnel'].includes(kind)) {
+    const items = Array.isArray(model?.items) ? model.items : (Array.isArray(series[0]?.data) ? series[0].data : [])
+    return items.map((item, index) => target(item?.id || chartColorKey('category', item?.name || index), item?.name || `分类 ${index + 1}`))
+  }
+  return series.map((item, index) => target(chartColorKey('series', item?.id || item?.name || item?.field || index), item?.name || `数据系列 ${index + 1}`))
+}
+
+export function chartPaletteLabels(widget = {}, count = 1) {
+  const targets = chartColorTargets(widget)
+  if (targets.length) return targets.slice(0, count).map(target => target.label)
+  const kind = widget.chartKind || widget.visualType || ''
   const base = kind === 'pie' ? '分类颜色' : kind === 'funnel' ? '阶段颜色' : kind === 'heatmap' ? '数值色阶' : kind === 'map' ? '区域色阶' : kind === 'scatter' ? '散点颜色' : kind === 'radar' ? '雷达配色' : kind === 'line' ? '折线颜色' : kind === 'bar' ? '柱形颜色' : '数据颜色'
-  return Array.from({ length: count }, (_, index) => names[index] || (count === 1 ? base : `${base} ${index + 1}`))
+  return Array.from({ length: count }, (_, index) => count === 1 ? base : `${base} ${index + 1}`)
 }
 
 const defaults = Object.freeze({
-  palettePreset: 'default', colors: [],
+  palettePreset: 'default', colors: [], colorOverrides: {},
   common: { showLegend: true, legendPosition: 'top', showAxisLine: true, showGridLine: true, xAxisLabelRotation: 'auto' },
   bar: { opacity: 1, borderRadius: 3, width: 'auto', orientation: 'vertical' },
   line: { width: 2.5, type: 'solid', smooth: false, showSymbol: false, symbol: 'circle', symbolSize: 6, area: false, areaOpacity: 0.16 },
@@ -93,7 +116,7 @@ export function resolveWidgetVisualStyle(widget = {}) {
   const merge = key => ({ ...defaults[key], ...record(source[key]) })
   return {
     palettePreset: source.palettePreset === 'custom' || Object.hasOwn(VISUAL_PALETTES, source.palettePreset) ? source.palettePreset : defaults.palettePreset,
-    colors,
+    colors, colorOverrides: record(source.colorOverrides),
     common: merge('common'), bar: { ...merge('bar'), orientation: ['vertical', 'horizontal'].includes(source.bar?.orientation) ? source.bar.orientation : 'vertical' }, line: merge('line'), pie: merge('pie'), scatter: merge('scatter'), radar: merge('radar'), funnel: merge('funnel'), heatmap: merge('heatmap'), gauge: merge('gauge'), map: merge('map'), kpi: merge('kpi'), text: merge('text'), table: merge('table')
   }
 }
@@ -105,7 +128,7 @@ export function widgetPalette(widget) {
 
 export function resetWidgetVisualStyle(style = {}) {
   const next = { ...record(style) }
-  ;['palettePreset', 'colors', 'common', 'bar', 'line', 'pie', 'scatter', 'radar', 'funnel', 'heatmap', 'gauge', 'map', 'kpi', 'text', 'table'].forEach(key => delete next[key])
+  ;['presentationPreset', 'palettePreset', 'colors', 'colorOverrides', 'common', 'bar', 'line', 'pie', 'scatter', 'radar', 'funnel', 'heatmap', 'gauge', 'map', 'kpi', 'text', 'table'].forEach(key => delete next[key])
   return next
 }
 
@@ -126,7 +149,7 @@ export const CHART_PRESENTATION_PRESETS = Object.freeze({
     Object.freeze({ id: 'standard', label: '标准饼图', style: { pie: { donut: false, innerRadius: 48, showLabel: true, labelPosition: 'outside' }, common: { showLegend: true } } }),
     Object.freeze({ id: 'donut-summary', label: '环形摘要', style: { pie: { donut: true, innerRadius: 55, showLabel: true, labelPosition: 'outside' }, common: { showLegend: true } } }),
     Object.freeze({ id: 'minimal-donut', label: '极简环形', style: { pie: { donut: true, innerRadius: 70, showLabel: false, labelPosition: 'outside' }, common: { showLegend: true } } }),
-    Object.freeze({ id: 'label-analysis', label: '标签分析', style: { pie: { donut: false, innerRadius: 48, showLabel: true, labelPosition: 'outside' }, common: { showLegend: true } } })
+    Object.freeze({ id: 'label-analysis', label: '标签分析', style: { pie: { donut: false, innerRadius: 48, showLabel: true, labelPosition: 'inside' }, common: { showLegend: false } } })
   ]),
   scatter: Object.freeze([
     Object.freeze({ id: 'standard', label: '标准散点', style: { scatter: { symbol: 'circle', symbolSize: 8, opacity: 1 }, common: { showLegend: true, showGridLine: true } } }),
@@ -166,7 +189,7 @@ export function applyChartPresentationPreset(widget = {}, presetId = '') {
   const preset = chartPresentationPresets(kind).find(item => item.id === presetId)
   if (!preset) return { ...record(widget.config?.style) }
   const current = record(widget.config?.style)
-  return { ...current, ...preset.style, bar: { ...record(current.bar), ...record(preset.style.bar) }, line: { ...record(current.line), ...record(preset.style.line) }, pie: { ...record(current.pie), ...record(preset.style.pie) }, scatter: { ...record(current.scatter), ...record(preset.style.scatter) }, radar: { ...record(current.radar), ...record(preset.style.radar) }, funnel: { ...record(current.funnel), ...record(preset.style.funnel) }, gauge: { ...record(current.gauge), ...record(preset.style.gauge) }, heatmap: { ...record(current.heatmap), ...record(preset.style.heatmap) }, map: { ...record(current.map), ...record(preset.style.map) }, common: { ...record(current.common), ...record(preset.style.common) } }
+  return { ...current, ...preset.style, presentationPreset: presetId, bar: { ...record(current.bar), ...record(preset.style.bar) }, line: { ...record(current.line), ...record(preset.style.line) }, pie: { ...record(current.pie), ...record(preset.style.pie) }, scatter: { ...record(current.scatter), ...record(preset.style.scatter) }, radar: { ...record(current.radar), ...record(preset.style.radar) }, funnel: { ...record(current.funnel), ...record(preset.style.funnel) }, gauge: { ...record(current.gauge), ...record(preset.style.gauge) }, heatmap: { ...record(current.heatmap), ...record(preset.style.heatmap) }, map: { ...record(current.map), ...record(preset.style.map) }, common: { ...record(current.common), ...record(preset.style.common) } }
 }
 
 export function applyWidgetVisualStyle(widget, rawOption = {}) {
@@ -176,10 +199,16 @@ export function applyWidgetVisualStyle(widget, rawOption = {}) {
   const axis = value => ({ ...value, axisLine: { ...value.axisLine, show: common.showAxisLine !== false }, splitLine: { ...value.splitLine, show: common.showGridLine !== false } })
   const applyAxis = axisValue => Array.isArray(axisValue) ? axisValue.map(axis) : axisValue ? axis(axisValue) : axisValue
   const kind = widget.chartKind || widget.visualType || ''
-  const rotation = resolveXAxisRotation(rawOption.xAxis, common.xAxisLabelRotation)
+  const horizontalBar = kind === 'bar' && style.bar.orientation === 'horizontal' && !Array.isArray(rawOption.yAxis)
+  // A horizontal bar swaps the category axis onto Y, so an X-label rotation
+  // must not reserve space for a category axis that no longer exists.
+  const rotation = horizontalBar ? 0 : resolveXAxisRotation(rawOption.xAxis, common.xAxisLabelRotation)
+  const rotatedLabelLayout = rotation
+    ? { rotate: rotation, interval: 'auto', hideOverlap: true, margin: 8, width: rotation >= 60 ? 64 : 88, overflow: 'truncate', ellipsis: '…' }
+    : { rotate: 0 }
   const rotateXAxis = value => Array.isArray(value)
     ? value.map(axisValue => rotateXAxis(axisValue))
-    : value ? { ...value, axisLabel: { ...value.axisLabel, rotate: rotation } } : value
+    : value ? { ...value, axisLabel: { ...value.axisLabel, ...rotatedLabelLayout } } : value
   let option = {
     ...rawOption,
     color: palette,
@@ -187,14 +216,25 @@ export function applyWidgetVisualStyle(widget, rawOption = {}) {
     xAxis: rotateXAxis(applyAxis(rawOption.xAxis)),
     yAxis: applyAxis(rawOption.yAxis)
   }
-  if (kind === 'bar' && style.bar.orientation === 'horizontal' && !Array.isArray(rawOption.yAxis)) {
+  if (horizontalBar) {
     const category = rawOption.xAxis
     const value = rawOption.yAxis
     if (category?.type === 'category' && value?.type === 'value') {
       option = { ...option, grid: { ...option.grid, left: Math.max(Number(option.grid?.left) || 42, 82) }, xAxis: { ...value, type: 'value' }, yAxis: { ...category, type: 'category', inverse: true, axisLabel: { ...category.axisLabel, rotate: 0 } } }
     }
   }
-  if (rotation) option.grid = { ...rawOption.grid, bottom: Math.max(Number(rawOption.grid?.bottom) || 28, rotation >= 60 ? 70 : 54), containLabel: true }
+  if (rotation) {
+    const baseBottom = Number(option.grid?.bottom)
+    const hasBottomLegend = Boolean(option.legend) && common.showLegend !== false && common.legendPosition === 'bottom'
+    // containLabel already reserves room for the rotated labels. Increasing
+    // grid.bottom as well leaves a second, empty label band and collapses the
+    // plot in short dashboard cards.
+    option.grid = {
+      ...option.grid,
+      bottom: hasBottomLegend ? Math.max(Number.isFinite(baseBottom) ? baseBottom : 28, 36) : (Number.isFinite(baseBottom) ? baseBottom : 28),
+      containLabel: true
+    }
+  }
   if (kind === 'heatmap') option.visualMap = { ...rawOption.visualMap, inRange: { ...rawOption.visualMap?.inRange, color: HEATMAP_SCALES[style.heatmap.colorScale] || HEATMAP_SCALES.blue } }
   if (kind === 'map') {
     option.visualMap = { ...rawOption.visualMap, inRange: { ...rawOption.visualMap?.inRange, color: [style.map.lowColor, style.map.highColor] } }
@@ -206,10 +246,22 @@ export function applyWidgetVisualStyle(widget, rawOption = {}) {
       const isMap = kind === 'map'
       const bar = isMap ? { ...style.bar, borderRadius: 3, opacity: 1 } : style.bar
       const width = { narrow: '38%', standard: '58%', wide: '78%' }[bar.width]
-      return { ...series, ...(width ? { barWidth: width } : {}), label: bar.orientation === 'horizontal' ? { ...series.label, show: true, position: 'right' } : series.label, itemStyle: { ...series.itemStyle, color: isMap ? undefined : color, opacity: bar.opacity, borderRadius: isMap || bar.orientation === 'horizontal' ? [0, bar.borderRadius, bar.borderRadius, 0] : [bar.borderRadius, bar.borderRadius, 0, 0], ...(isMap ? { borderColor: style.map.borderColor, borderWidth: style.map.borderWidth } : {}) } }
+      const categoryColors = kind === 'bar' && (Array.isArray(rawOption.series) ? rawOption.series.length : 1) === 1
+      const categories = Array.isArray(rawOption.xAxis?.data) ? rawOption.xAxis.data : []
+      const data = categoryColors && Array.isArray(series.data)
+        ? series.data.map((item, itemIndex) => {
+          const itemValue = item && typeof item === 'object' && !Array.isArray(item) ? item : { value: item }
+          const key = itemValue.id || chartColorKey('category', itemValue.name || categories[itemIndex] || itemIndex)
+          return { ...itemValue, id: key, itemStyle: { ...itemValue.itemStyle, color: style.colorOverrides[key] || palette[itemIndex % palette.length] } }
+        })
+        : series.data
+      const seriesKey = chartColorKey('series', series.id || series.name || index)
+      return { ...series, data, ...(width ? { barWidth: width } : {}), label: bar.orientation === 'horizontal' ? { ...series.label, show: true, position: 'right' } : series.label, itemStyle: { ...series.itemStyle, color: isMap || categoryColors ? undefined : style.colorOverrides[seriesKey] || color, opacity: bar.opacity, borderRadius: isMap || bar.orientation === 'horizontal' ? [0, bar.borderRadius, bar.borderRadius, 0] : [bar.borderRadius, bar.borderRadius, 0, 0], ...(isMap ? { borderColor: style.map.borderColor, borderWidth: style.map.borderWidth } : {}) } }
     }
-    if (series.type === 'line') return { ...series, showSymbol: style.line.showSymbol !== false, symbol: style.line.symbol, symbolSize: style.line.symbolSize, lineStyle: { ...series.lineStyle, color, width: style.line.width, type: style.line.type }, itemStyle: { ...series.itemStyle, color }, smooth: style.line.smooth === true, ...(style.line.area ? { areaStyle: { ...series.areaStyle, color, opacity: style.line.areaOpacity } } : { areaStyle: undefined }) }
-    if (series.type === 'pie') return { ...series, radius: style.pie.donut ? [`${style.pie.innerRadius}%`, '70%'] : ['0%', '70%'], label: { ...series.label, show: style.pie.showLabel !== false, position: style.pie.labelPosition === 'inside' ? 'inside' : 'outside' } }
+    const seriesKey = chartColorKey('series', series.id || series.name || index)
+    const seriesColor = style.colorOverrides[seriesKey] || color
+    if (series.type === 'line') return { ...series, showSymbol: style.line.showSymbol !== false, symbol: style.line.symbol, symbolSize: style.line.symbolSize, lineStyle: { ...series.lineStyle, color: seriesColor, width: style.line.width, type: style.line.type }, itemStyle: { ...series.itemStyle, color: seriesColor }, smooth: style.line.smooth === true, ...(style.line.area ? { areaStyle: { ...series.areaStyle, color: seriesColor, opacity: style.line.areaOpacity } } : { areaStyle: undefined }) }
+    if (series.type === 'pie') return { ...series, radius: style.pie.donut ? [`${style.pie.innerRadius}%`, '70%'] : ['0%', '70%'], label: { ...series.label, show: style.pie.showLabel !== false, position: style.pie.labelPosition === 'inside' ? 'inside' : 'outside' }, data: (series.data || []).map((item, itemIndex) => { const value = item && typeof item === 'object' ? item : { value: item }; const key = value.id || chartColorKey('category', value.name || itemIndex); return { ...value, id: key, itemStyle: { ...value.itemStyle, color: style.colorOverrides[key] || palette[itemIndex % palette.length] } } }) }
     if (series.type === 'scatter') return { ...series, symbol: style.scatter.symbol, symbolSize: style.scatter.symbolSize, itemStyle: { ...series.itemStyle, color, opacity: style.scatter.opacity } }
     if (series.type === 'radar') return { ...series, symbol: style.radar.showSymbol === false ? 'none' : 'circle', symbolSize: style.radar.symbolSize, lineStyle: { ...series.lineStyle, color, width: style.radar.width }, itemStyle: { ...series.itemStyle, color }, areaStyle: style.radar.area ? { ...series.areaStyle, color, opacity: style.radar.areaOpacity } : undefined }
     if (series.type === 'funnel') return { ...series, gap: style.funnel.gap, label: { ...series.label, show: style.funnel.showLabel !== false, position: style.funnel.labelPosition === 'inside' ? 'inside' : 'outside' } }

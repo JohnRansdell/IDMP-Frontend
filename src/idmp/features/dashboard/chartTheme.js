@@ -9,7 +9,10 @@ export function createDashboardChartTheme(option = {}, surfaceTone = 'light') {
     textStyle: { fontFamily: 'Inter, system-ui, sans-serif', color: tokens.text, ...option.textStyle },
     tooltip: { ...option.tooltip, backgroundColor: '#fff', borderColor: '#e2e8eb', borderWidth: 1, padding: [9, 12], textStyle: { color: '#25343b', fontSize: 12, lineHeight: 20 }, extraCssText: 'box-shadow:0 8px 24px rgba(37,52,59,.12);border-radius:10px;' },
     legend: { ...option.legend, itemWidth: 10, itemHeight: 8, itemGap: 14, textStyle: { color: tokens.legend, fontSize: 11, ...option.legend?.textStyle } },
-    media: [...(Array.isArray(option.media) ? option.media : []), { query: { maxWidth: 420 }, option: { grid: { left: 32, right: 12, top: 32, bottom: 28, containLabel: true }, legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: 10 } }, xAxis: { axisLabel: { fontSize: 10, interval: 'auto' } }, yAxis: { axisLabel: { fontSize: 10 } } } }],
+    // Keep bottom/containLabel from the base option. The visual-style layer
+    // owns rotated-label layout; overriding it here would reintroduce a
+    // different layout policy for narrow cards.
+    media: [...(Array.isArray(option.media) ? option.media : []), { query: { maxWidth: 420 }, option: { grid: { left: 32, right: 12, top: 32 }, legend: { type: 'scroll', bottom: 0, textStyle: { fontSize: 10 } }, xAxis: { axisLabel: { fontSize: 10, interval: 'auto' } }, yAxis: { axisLabel: { fontSize: 10 } } } }],
     ...(option.xAxis ? { xAxis: axis(option.xAxis) } : {}),
     ...(option.yAxis ? { yAxis: axis(option.yAxis) } : {}),
     series: (Array.isArray(option.series) ? option.series : option.series ? [option.series] : []).map(series => ({

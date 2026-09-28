@@ -2,11 +2,10 @@
   <section class="chart-style-inspector" aria-label="组件可视化样式">
     <h3>主题方案</h3><p class="style-hint">应用协调的卡片、文字、边框与数据配色。</p><div class="style-presets"><button v-for="(preset, id) in presets" :key="id" type="button" :title="preset.label" @click="applyPreset(id)"><i v-for="color in presetSwatches(preset)" :key="color" :style="{ background: color }" />{{ preset.label }}</button></div>
     <KpiVariantPicker v-if="kind === 'kpi' && widget.type === 'kpi'" :model-value="kpiVariant" @update:model-value="patch({ kpiVariant: $event })" />
-    <ChartPresentationPicker v-if="['bar', 'line', 'pie', 'scatter', 'radar', 'funnel', 'gauge', 'heatmap', 'map'].includes(kind)" :kind="kind" @select="applyPresentation" />
+    <ChartPresentationPicker v-if="['bar', 'line', 'pie', 'scatter', 'radar', 'funnel', 'gauge', 'heatmap', 'map'].includes(kind)" :kind="kind" :model-value="presentationPreset" @select="applyPresentation" />
     <template v-if="isChart">
       <h3>图表</h3><template v-if="supportsPalette"><label>{{ paletteTitle }}<select :value="style.palettePreset" @change="patch({ palettePreset: $event.target.value })"><option value="default">默认</option><option value="medicalBlue">医疗蓝</option><option value="blueTeal">蓝青</option><option value="green">绿色</option><option value="warm">暖色</option><option value="colorful">多彩</option><option value="custom">自定义</option></select></label>
-      <label>{{ paletteLabels[0] }}<input :aria-label="paletteLabels[0]" type="color" :value="paletteColors[0]" @input="setPaletteColor(0, $event.target.value)" /></label>
-      <div v-if="style.palettePreset === 'custom'" class="palette-list"><label v-for="(_, index) in paletteColors" :key="index">{{ paletteLabels[index] }}<input type="color" :value="paletteColors[index]" @input="setPaletteColor(index, $event.target.value)" /></label></div></template>
+      <div v-if="paletteTargets.length" class="palette-list"><label v-for="(target, index) in paletteTargets" :key="target.key">{{ target.label }}<input type="color" :aria-label="`${target.label}颜色`" :value="targetColor(target, index)" @input="setTargetColor(target, $event.target.value)" /></label></div><p v-else class="style-hint">当前组件暂无可配置的数据项；完成字段绑定并返回数据后可按实际内容设置颜色。</p></template>
 
       <template v-if="axisKinds"><h4>图例与坐标轴</h4><label><input type="checkbox" :checked="style.common.showLegend" @change="section('common', { showLegend: $event.target.checked })" />显示图例</label><label v-if="style.common.showLegend">位置<select :value="style.common.legendPosition" @change="section('common', { legendPosition: $event.target.value })"><option value="top">顶部</option><option value="bottom">底部</option></select></label><label>X 轴标签旋转<select :value="style.common.xAxisLabelRotation" @change="section('common', { xAxisLabelRotation: $event.target.value === 'auto' ? 'auto' : number($event.target.value) })"><option value="auto">自动</option><option v-for="value in [0,30,45,60,90]" :key="value" :value="value">{{ value }}°</option></select></label><label><input type="checkbox" :checked="style.common.showAxisLine" @change="section('common', { showAxisLine: $event.target.checked })" />显示轴线</label><label><input type="checkbox" :checked="style.common.showGridLine" @change="section('common', { showGridLine: $event.target.checked })" />显示网格线</label></template>
       <details class="style-advanced"><summary>高级</summary>
@@ -31,29 +30,45 @@
   </section>
 </template>
 <script setup>
-import { computed } from 'vue'
-import { applyWidgetStylePreset, chartPaletteLabels, resolveWidgetVisualStyle, WIDGET_STYLE_PRESETS, widgetPalette } from '../visualStyle.js'
+import { computed, inject } from 'vue'
+import { applyWidgetStylePreset, chartColorTargets, resolveWidgetVisualStyle, WIDGET_STYLE_PRESETS, widgetPalette } from '../visualStyle.js'
 import KpiVariantPicker from './KpiVariantPicker.vue'
 import ChartPresentationPicker from './ChartPresentationPicker.vue'
 import { applyChartPresentationPreset } from '../visualStyle.js'
 import { normalizeKpiVariant } from '../kpiVariants.js'
+import { bindingKind, compileWidgetData, hasDataBinding } from '../bindingEngine.js'
+import { queryWidgetDatasetWithRuntime } from '../queryAdapter.js'
+import { effectiveDrill } from '../drillDown.js'
 const props = defineProps({ widget: { type: Object, required: true } })
 const kind = computed(() => props.widget.type === 'metric-group' ? 'kpi' : props.widget.chartKind || props.widget.visualType || props.widget.type)
 const isChart = computed(() => props.widget.type === 'chart')
 const axisKinds = computed(() => ['line', 'bar', 'scatter', 'radar'].includes(kind.value))
 const supportsPalette = computed(() => !['gauge', 'heatmap', 'map'].includes(kind.value))
 const style = computed(() => resolveWidgetVisualStyle(props.widget))
+const getDatasets = inject('dashboardBindingDatasets', () => [])
+const filters = inject('dashboardFilterContext', { definitions: { value: [] }, values: { value: {} }, interactions: { value: {} } })
+const drillContext = inject('dashboardDrillContext', { states: { value: {} } })
+const sourceDataset = computed(() => {
+  if (!hasDataBinding(props.widget)) return null
+  const dataset = getDatasets(props.widget).find(item => item.id === props.widget.config?.dataBinding?.dataset)
+  return queryWidgetDatasetWithRuntime(dataset, props.widget, { definitions: filters.definitions.value, values: filters.values.value, interactions: filters.interactions?.value || {} })
+})
+const effectiveBinding = computed(() => hasDataBinding(props.widget)
+  ? effectiveDrill(props.widget, sourceDataset.value, drillContext.states.value[String(props.widget.id)])
+  : null)
+const colorModel = computed(() => effectiveBinding.value ? compileWidgetData(bindingKind(props.widget), effectiveBinding.value.binding, effectiveBinding.value.dataset) : null)
+const paletteTargets = computed(() => chartColorTargets(props.widget, colorModel.value))
 const kpiVariant = computed(() => normalizeKpiVariant(props.widget.config?.style?.kpiVariant))
+const presentationPreset = computed(() => props.widget.config?.style?.presentationPreset || '')
 const presets = WIDGET_STYLE_PRESETS
-const paletteColors = computed(() => { const colors = widgetPalette(props.widget); return [...colors, ...['#1261a6', '#4f8583', '#a47735', '#ab6680']].slice(0, 4) })
-const paletteLabels = computed(() => chartPaletteLabels(props.widget, paletteColors.value.length))
 const paletteTitle = computed(() => ({ pie: '分类配色', funnel: '阶段配色', heatmap: '数值色阶', map: '区域色阶', radar: '雷达系列配色' }[kind.value] || '数据配色'))
 const emit = defineEmits(['update', 'reset'])
 function number(value) { return Number(value) }
 function percent(value) { return Math.round(Number(value) * 100) }
 function patch(change) { emit('update', change) }
 function section(name, change) { patch({ [name]: { ...style.value[name], ...change } }) }
-function setPaletteColor(index, color) { const colors = [...paletteColors.value]; colors[index] = color; patch({ palettePreset: 'custom', colors }) }
+function targetColor(target, index) { return style.value.colorOverrides[target.key] || widgetPalette(props.widget)[index % widgetPalette(props.widget).length] || '#1261a6' }
+function setTargetColor(target, color) { patch({ colorOverrides: { ...style.value.colorOverrides, [target.key]: color } }) }
 function applyPreset(id) { emit('update', applyWidgetStylePreset(props.widget.config?.style, id)) }
 function applyPresentation(id) { emit('update', applyChartPresentationPreset(props.widget, id)) }
 function presetSwatches(preset) { return [preset.style.background, preset.style.kpi?.valueColor, preset.style.borderColor, (widgetPalette({ config: { style: preset.style } }) || [])[0]].filter(Boolean).slice(0, 4) }

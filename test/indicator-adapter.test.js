@@ -2,7 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   buildIndicatorVersionPayload,
+  collectFormulaFactorVersionIds,
   combineFormulaNodes,
+  createIndicatorDataExplanation,
   drillLevelLabel,
   drillPathLabel,
   findUnsupportedDrillFactors,
@@ -235,4 +237,49 @@ test('indicator version adapter restores drill config from backend response', ()
     maxLevel: 'OUT_DEPT',
     pathVersionId: '7001'
   })
+})
+
+test('analysis explanation keeps ratio definitions separate from official result values', () => {
+  const version = {
+    formula: {
+      root: {
+        nodeType: 'BINARY', operator: 'DIV',
+        left: { nodeType: 'FACTOR_REF', factorVersionId: 'numerator-version' },
+        right: { nodeType: 'FACTOR_REF', factorVersionId: 'denominator-version' }
+      },
+      display: { format: 'PERCENT', multiplier: '100' }
+    }
+  }
+  const explanation = createIndicatorDataExplanation({
+    overview: { numeratorValue: 0, denominator: 15647, numeratorUnit: '人次' },
+    version,
+    factorVersions: {
+      'numerator-version': { factorName: '男性出院病案人次' },
+      'denominator-version': { name: '全部出院病案人次' }
+    }
+  })
+
+  assert.equal(explanation.type, 'RATIO')
+  assert.equal(explanation.formulaText, '男性出院病案人次 ÷ 全部出院病案人次 × 100%')
+  assert.deepEqual(explanation.operands.map((item) => item.factorNames), [['男性出院病案人次'], ['全部出院病案人次']])
+  assert.equal(explanation.operands[0].value, 0)
+  assert.equal(explanation.operands[0].hasResultValue, true)
+  assert.equal(explanation.operands[1].value, 15647)
+})
+
+test('analysis explanation lists non-ratio factors and falls back to version ids', () => {
+  const formula = {
+    root: {
+      nodeType: 'BINARY', operator: 'ADD',
+      left: { nodeType: 'FACTOR_REF', factorVersionId: 'left-version' },
+      right: { nodeType: 'FACTOR_REF', factorVersionId: 'right-version' }
+    }
+  }
+  const explanation = createIndicatorDataExplanation({ version: { formula } })
+
+  assert.deepEqual(collectFormulaFactorVersionIds(formula), ['left-version', 'right-version'])
+  assert.equal(explanation.type, 'FACTORS')
+  assert.deepEqual(explanation.operands[0].factorVersionIds, ['left-version', 'right-version'])
+  assert.match(explanation.formulaText, /参与因子/)
+  assert.match(explanation.operands[0].factorNames[0], /版本 left-version/)
 })

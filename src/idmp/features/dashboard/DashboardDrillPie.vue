@@ -97,7 +97,8 @@ import IdmpChart from '@/idmp/components/IdmpChart.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import { searchResultDrill } from '@/idmp/api/modules/drill'
 import { normalizeOrganizationDrillLevel } from '@/idmp/api/adapters/drill'
-import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
+import { createDashboardChartTheme } from './chartTheme.js'
+import { applyWidgetVisualStyle } from './visualStyle.js'
 import {
   createPieDrillRequestGate,
   getPieNextNavigation,
@@ -107,6 +108,8 @@ import {
 } from './pieDrill.js'
 
 const props = defineProps({
+  widget: { type: Object, default: () => ({}) },
+  surfaceTone: { type: String, default: 'light' },
   targets: { type: Array, required: true },
   source: { type: String, default: 'live' },
   title: { type: String, default: '科室指标分布' },
@@ -149,8 +152,7 @@ const resultMetadata = computed(() => {
     `更新：${context.updatedAt || result.value?.updatedAt || '接口未提供'}`
   ].filter(Boolean).join(' · ')
 })
-const chartOption = computed(() => ({
-  color: IDMP_CHART_COLORS,
+const rawChartOption = computed(() => ({
   tooltip: {
     trigger: 'item',
     renderMode: 'richText',
@@ -182,6 +184,10 @@ const chartOption = computed(() => ({
     }))
   }]
 }))
+const chartOption = computed(() => createDashboardChartTheme(
+  applyWidgetVisualStyle(props.widget, rawChartOption.value),
+  props.surfaceTone
+))
 
 function displayNumber(value) {
   const numeric = numericPieValue(value)
