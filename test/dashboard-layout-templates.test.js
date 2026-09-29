@@ -45,6 +45,26 @@ test('instantiation creates fresh ids and valid 24-column layouts without source
   assert.throws(() => instantiateLayoutTemplate(template, { createWidgetId: () => 'duplicate' }), /duplicate widget ids/)
 })
 
+test('warning widgets retain their reusable filters but never event records in a template', () => {
+  const source = {
+    ...dashboard,
+    widgets: [{
+      id: 'old-warning', type: 'warnings', title: '高危预警',
+      config: {
+        style: { borderRadius: 10 },
+        warning: { status: 'OPEN', severity: 'HIGH', indicatorVersionId: '9001', ruleId: '77', pageSize: 8, showTime: false },
+        runtimeResult: { records: [{ id: 'event-a' }] }
+      },
+      layout: { x: 0, y: 0, w: 8, h: 7 }
+    }]
+  }
+  const template = createLayoutTemplateFromDashboard(source, { id: 'local-warning', name: '预警布局' })
+  assert.deepEqual(template.widgets[0].config.warning, source.widgets[0].config.warning)
+  assert.equal(template.widgets[0].config.runtimeResult, undefined)
+  const [widget] = instantiateLayoutTemplate(template, { createWidgetId: () => 'new-warning' })
+  assert.deepEqual(widget.config.warning, source.widgets[0].config.warning)
+})
+
 test('applying a template replaces only widgets and leaves dashboard metadata available for undo', () => {
   const template = createLayoutTemplateFromDashboard(dashboard, { id: 'local-apply', name: '应用' })
   const before = structuredClone(dashboard)
@@ -73,19 +93,22 @@ test('every shipped built-in template is valid before GridStack sees it', () => 
 })
 
 test('design templates retain distinct density, hierarchy, and official metric group materialization', () => {
-  const designs = BUILT_IN_LAYOUT_TEMPLATES
-  assert.equal(designs.length, 6)
-  assert.equal(new Set(designs.map(template => template.id)).size, 6)
+  const designs = BUILT_IN_LAYOUT_TEMPLATES.filter(template => template.visualTone)
+  assert.equal(designs.length, 7)
+  assert.equal(new Set(designs.map(template => template.id)).size, 7)
   assert.ok(designs.every(template => template.description && template.visualTone && template.density && template.detail?.useCase && template.detail?.layout && template.detail?.visual && template.detail?.components))
   assert.ok(designs.every(template => new Set(template.widgets.map(widget => `${widget.type}:${widget.title}`)).size === template.widgets.length))
   const byId = id => designs.find(template => template.id === id)
   const executive = byId('builtin-executive-brief')
+  const quality = byId('builtin-quality-overview')
   const operations = byId('builtin-operations-analysis')
   const minimal = byId('builtin-minimal-insight')
   const clinical = byId('builtin-clinical-command')
   const glass = byId('builtin-glass-medical')
   const cockpit = byId('builtin-dark-cockpit')
   assert.ok(minimal.widgets.length < executive.widgets.length)
+  assert.equal(quality.appearance.theme, 'mint-medical')
+  assert.equal(quality.widgets.filter(widget => widget.type === 'metric-group').length, 2)
   assert.ok(executive.widgets.length < operations.widgets.length)
   assert.ok(operations.widgets.some(widget => widget.chartKind === 'table'))
   assert.equal(minimal.widgets.filter(widget => widget.type === 'text').length, 2)
@@ -102,4 +125,12 @@ test('design templates retain distinct density, hierarchy, and official metric g
     assert.deepEqual(template, before, `${template.name} is not mutated by creation`)
     assert.equal(widgets.filter(widget => widget.type === 'metric-group')[0].config.metricGroup.items.every(item => item.id), true)
   }
+})
+
+test('FR-M8 business templates include hospital, performance, quality-safety, and respiratory department entries', () => {
+  const names = new Set(BUILT_IN_LAYOUT_TEMPLATES.map(template => template.name))
+  assert.ok(names.has('全院概览'))
+  assert.ok(names.has('绩效考核看板'))
+  assert.ok(names.has('医疗质量安全看板'))
+  assert.ok(names.has('呼吸内科质控看板'))
 })

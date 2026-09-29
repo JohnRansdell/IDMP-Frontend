@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { alignSelectedLayout, clearWidgetSelection, distributeSelectedLayout, nextWidgetSelection } from '../src/idmp/features/dashboard/layoutOperations.js'
+import { alignSelectedLayout, clearWidgetSelection, distributeSelectedLayout, nextMarqueeSelection, nextWidgetSelection } from '../src/idmp/features/dashboard/layoutOperations.js'
 const widgets = [
   { id: 'a', layout: { x: 0, y: 0, w: 2, h: 2 } },
   { id: 'b', layout: { x: 5, y: 3, w: 3, h: 2 } },
@@ -11,6 +11,12 @@ test('selection is a single runtime model with additive toggle and clear', () =>
   selection = nextWidgetSelection(selection, 'b', { additive: true }); assert.deepEqual(selection, { ids: ['a', 'b'], primaryId: 'b' })
   selection = nextWidgetSelection(selection, 'a', { additive: true }); assert.deepEqual(selection, { ids: ['b'], primaryId: 'b' })
   assert.deepEqual(clearWidgetSelection(), { ids: [], primaryId: '' })
+})
+test('marquee selection replaces or extends the current selection as one operation', () => {
+  assert.deepEqual(nextMarqueeSelection({ ids: ['a'], primaryId: 'a' }, ['b', 'c']), { ids: ['b', 'c'], primaryId: 'c' })
+  assert.deepEqual(nextMarqueeSelection({ ids: ['a'], primaryId: 'a' }, ['b', 'b'], { additive: true }), { ids: ['a', 'b'], primaryId: 'b' })
+  assert.deepEqual(nextMarqueeSelection({ ids: ['a'], primaryId: 'a' }, [], { additive: true }), { ids: ['a'], primaryId: 'a' })
+  assert.deepEqual(nextMarqueeSelection({ ids: ['a'], primaryId: 'a' }, []), { ids: [], primaryId: '' })
 })
 test('alignment uses integer grid geometry and rejects collisions', () => {
   assert.deepEqual(alignSelectedLayout(widgets, ['a', 'c'], 'right').widgets.map(item => item.layout.x), [12, 5, 12])

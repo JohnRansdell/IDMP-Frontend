@@ -40,11 +40,17 @@ export function createWidgetBindingDatasets(source, { result, demo = false, mont
     if (source.acceptanceDataset === 'dual-axis') return [dataset('acceptance-dual-axis', '固定验收数据 · 双 Y 轴月度数据', dashboardAcceptanceDualAxisRows, dualAxisHints)]
     return [dataset('current', `${source.name} · 固定验收值`, [{ value: source.currentValue, mom: source.mom, yoy: source.yoy }], { value: { ...numberHint, unit: source.unit || '' }, mom: numberHint, yoy: numberHint })]
   }
-  if (source?.origin === 'indicator-catalog') {
-    const rows = records(source.bindingRows)
-    return rows.length
-      ? [dataset('analysis', `${source.name || 'Published indicator'} analysis dimensions`, rows, { value: { ...numberHint, unit: source.unit || '' } })]
-      : []
+  if (['indicator-catalog', 'dashboard-data-source'].includes(source?.origin)) {
+    const currentRows = records(source.analysisCurrentRows)
+    const trendRows = records(source.analysisTrendRows)
+    const comparisonRows = records(source.analysisComparisonRows || source.bindingRows)
+    const valueHint = { ...numberHint, unit: source.unit || '' }
+    return [
+      currentRows.length ? dataset('current', `${source.name || 'Published indicator'} · 当前值`, currentRows, { value: valueHint }) : null,
+      trendRows.length ? dataset('trend', `${source.name || 'Published indicator'} · 趋势`, trendRows, { periodStart: monthHint, value: valueHint, numeratorValue: numberHint, denominatorValue: numberHint }) : null,
+      comparisonRows.length ? dataset('departments', `${source.name || 'Published indicator'} · 维度对比`, comparisonRows, { value: valueHint, numeratorValue: numberHint, denominatorValue: numberHint }) : null,
+      records(source.bindingRows).length ? dataset('analysis', `${source.name || 'Published indicator'} analysis dimensions`, records(source.bindingRows), { value: valueHint }) : null
+    ].filter(Boolean)
   }
   if (!demo && result) {
     // Do not reuse createDashboardSources' common trend for each summary metric.

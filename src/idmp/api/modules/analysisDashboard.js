@@ -20,6 +20,7 @@ export function fetchDashboardDefinition(code = DEFAULT_DASHBOARD_CODE, options 
 
 export function queryDashboard(code = DEFAULT_DASHBOARD_CODE, payload = {}, options = {}) {
   return requestJson(`/analysis/dashboards/${encodeURIComponent(code)}/query`, {
+    timeoutMs: 90000,
     ...options,
     method: 'POST',
     body: JSON.stringify(payload)

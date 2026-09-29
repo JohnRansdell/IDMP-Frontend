@@ -28,7 +28,7 @@
 <script setup>
 import { computed, inject } from 'vue'
 import { hasDataBinding } from '../bindingEngine.js'
-import { DRILLABLE_KINDS } from '../drillDown.js'
+import { DRILLABLE_KINDS, resolveDrillHierarchy } from '../drillDown.js'
 
 const props = defineProps({ widget: { type: Object, required: true }, datasets: { type: Array, default: () => [] } })
 const emit = defineEmits(['change', 'query-change'])
@@ -38,8 +38,10 @@ const targets = computed(() => dashboardContext.widgets.value.filter(item => ite
 const sources = computed(() => dashboardContext.widgets.value.filter(item => item.id !== props.widget.id && item.config?.interaction?.clickFilter?.enabled))
 const clickFilter = computed(() => ({ enabled: false, field: dimensions.value[0]?.field || '', targetWidgetIds: [], ...(props.widget.config?.interaction?.clickFilter || {}) }))
 const clickAction = computed(() => props.widget.config?.interaction?.clickAction || (clickFilter.value.enabled ? 'cross-filter' : 'none'))
-const drillSupported = computed(() => DRILLABLE_KINDS.has(props.widget.chartKind || props.widget.type))
-const drillHierarchy = computed(() => props.widget.config?.interaction?.drill?.hierarchy || ['department', 'medicalGroup', 'doctor'])
+const selectedDataset = computed(() => props.datasets.find(dataset => dataset?.id === props.widget.config?.dataBinding?.dataset) || props.datasets[0])
+const datasetFields = computed(() => selectedDataset.value?.fields || [])
+const drillHierarchy = computed(() => resolveDrillHierarchy(props.widget.config?.interaction?.drill?.hierarchy || ['department', 'medicalGroup', 'doctor'], datasetFields.value))
+const drillSupported = computed(() => DRILLABLE_KINDS.has(props.widget.chartKind || props.widget.type) && drillHierarchy.value.length > 1)
 const active = computed(() => Object.hasOwn(dashboardContext.interactions.value, `interaction-${props.widget.id}`))
 
 function patchClick(change) {

@@ -15,7 +15,13 @@ function safeTemplateWidget(widget = {}) {
   TEMPLATE_WIDGET_FIELDS.forEach((field) => { if (widget[field] !== undefined) result[field] = clonePersistableValue(widget[field]) })
   result.type = widget.type
   result.layout = clonePersistableValue(widget.layout)
-  result.config = { style: { ...DEFAULT_WIDGET_STYLE, ...(plain(widget.config?.style) ? clonePersistableValue(widget.config.style) : {}) }, ...(widget.type === 'metric-group' ? { metricGroup: clonePersistableValue(widget.config?.metricGroup || {}) } : {}) }
+  result.config = {
+    style: { ...DEFAULT_WIDGET_STYLE, ...(plain(widget.config?.style) ? clonePersistableValue(widget.config.style) : {}) },
+    ...(widget.type === 'metric-group' ? { metricGroup: clonePersistableValue(widget.config?.metricGroup || {}) } : {}),
+    // Warning filters and display options belong to the reusable component
+    // definition. The actual warning events remain server-owned.
+    ...(widget.type === 'warnings' ? { warning: clonePersistableValue(widget.config?.warning || {}) } : {})
+  }
   return result
 }
 
@@ -74,7 +80,11 @@ export function instantiateLayoutTemplate(template, { createWidgetId = (index) =
     ids.add(id)
     const metadata = normalizeWidgetMetadata({
       id, type: item.type, chartKind: item.chartKind, visualType: item.visualType, preset: item.preset, title: item.title,
-      config: { style: item.config?.style, ...(item.type === 'metric-group' ? { metricGroup: item.config?.metricGroup || {} } : {}) }
+      config: {
+        style: item.config?.style,
+        ...(item.type === 'metric-group' ? { metricGroup: item.config?.metricGroup || {} } : {}),
+        ...(item.type === 'warnings' ? { warning: item.config?.warning || {} } : {})
+      }
     })
     return { ...metadata, layout: normalizeGridLayout(item.layout, GRID_COLUMNS, item.layout) }
   })
@@ -123,8 +133,10 @@ const group = (x, y, w, h, surface, palette, preset, count, title = '核心指�
 }
 const text = (x, y, w, h, title, body, surface, palette) => ({ type: 'text', title, config: { style: style(surface, palette), text: { title, body } }, layout: { x, y, w, h } })
 const ranking = (x, y, w, h, title, surface, palette) => ({ type: 'ranking', title, config: { style: style(surface, palette) }, layout: { x, y, w, h } })
+const warnings = (x, y, w, h, title, surface, palette) => ({ type: 'warnings', title, config: { style: style(surface, palette) }, layout: { x, y, w, h } })
 
 export const BUILT_IN_LAYOUT_TEMPLATES = Object.freeze([
+  design('builtin-quality-overview', '全院质量总览', '质量管理 · 浅青医疗 · 中密度', 'Mint', ['医疗', '总览', '推荐'], { theme: 'mint-medical', background: { type: 'color', value: '#eaf8f6', intensity: 100 } }, { density: '中密度', useCase: '全院质量、运营指标与异常事项的日常查看', layout: '左侧实时指标与异常，右侧核心指标、趋势与 TOP 排名', visual: '浅青背景、白色面板、青橙蓝 KPI 与柔和阴影', components: '实时指标、核心指标、预警、趋势、TOP 排名' }, [text(0, 0, 24, 2, '质量分析首页', '统一查看实时指标、核心指标与需要跟进的异常事项。', 'standard', 'mintHospital'), group(0, 3, 8, 8, 'standard', 'mintHospital', 'quality-overview', 4, '实时指标'), group(8, 3, 16, 8, 'standard', 'mintHospital', 'quality-overview', 6, '核心指标'), warnings(0, 12, 8, 10, '指标值异常', 'standard', 'mintHospital'), chart('line', 8, 12, 16, 8, '入院/出院人数', 'standard', 'mintHospital'), chart('bar', 8, 21, 16, 8, '各类数据 TOP10', 'standard', 'mintHospital')]),
   design('builtin-executive-brief', '高管简报', '管理汇报 · Light · 低密度', 'Light', ['Light', '低密度'], { background: { type: 'color', value: '#f4f7f9' } }, { density: '低密度', useCase: '管理层周报、月报与结论汇报', layout: 'Hero 摘要、主趋势与少量辅助分析', visual: '大留白、弱阴影、浅色阅读面', components: '指标组、主趋势、结构、明细' }, [text(0, 0, 24, 2, '管理摘要', '聚焦本期结论与管理动作。', 'standard', 'medicalBlue'), group(0, 3, 24, 6, 'standard', 'medicalBlue', 'hero-secondary', 4, '核心摘要'), chart('line', 0, 10, 16, 9, '主趋势', 'standard', 'medicalBlue'), chart('pie', 16, 10, 8, 9, '结构分析', 'standard', 'medicalBlue'), chart('table', 0, 20, 24, 5, '关键明细', 'standard', 'medicalBlue')]),
   design('builtin-clinical-command', '临床指挥舱', '实时监控 · Dark · Glass', 'Dark', ['Dark', 'Glass', '监控'], { background: { type: 'image', assetKey: 'deep-blue', value: '#0f3158' } }, { density: '中高密度', useCase: '核心指标与风险状态监测', layout: '风险指标组、不对称主监控区与辅助分析', visual: '深蓝背景、Glass 表面、高对比图表', components: '风险指标组、趋势、风险结构、排名、辅助分析' }, [group(0, 0, 24, 5, 'glass', 'blueTeal', 'risk-monitor', 5, '风险与核心指标'), chart('line', 0, 6, 15, 8, '实时监控趋势', 'glass', 'blueTeal'), chart('pie', 15, 6, 9, 8, '风险结构', 'glass', 'blueTeal'), ranking(15, 15, 9, 6, '风险排名', 'glass', 'blueTeal'), chart('bar', 0, 15, 8, 6, '次趋势', 'glass', 'blueTeal'), chart('bar', 8, 15, 7, 6, '辅助分析', 'glass', 'blueTeal'), chart('table', 0, 22, 24, 5, '监测明细', 'translucent', 'blueTeal')]),
   design('builtin-operations-analysis', '运营分析', '运营管理 · Light · 高密度', 'Light', ['Light', '高密度', '分析'], { background: { type: 'color', value: '#edf7f8' } }, { density: '高密度', useCase: '日常运营管理与数据分析', layout: '顶部 KPI Strip、多图对比与完整明细区域', visual: '紧凑蓝青分析面、低留白', components: '指标带、主趋势、排名、结构、比较、明细' }, [group(0, 0, 24, 4, 'standard', 'blueTeal', 'metric-strip', 6, '运营指标带'), chart('line', 0, 5, 12, 6, '主趋势分析', 'standard', 'blueTeal'), ranking(12, 5, 6, 6, '运营排名', 'standard', 'blueTeal'), chart('pie', 18, 5, 6, 6, '结构分析', 'standard', 'blueTeal'), chart('bar', 0, 12, 8, 6, '部门比较', 'standard', 'blueTeal'), chart('bar', 8, 12, 8, 6, '目标达成', 'standard', 'blueTeal'), chart('pie', 16, 12, 8, 6, '构成对比', 'standard', 'blueTeal'), chart('table', 0, 19, 24, 5, '运营明细', 'standard', 'blueTeal'), chart('bar', 0, 25, 24, 5, '补充分析', 'standard', 'blueTeal')]),
@@ -137,16 +149,22 @@ export const BUILT_IN_LAYOUT_TEMPLATES = Object.freeze([
     { type: 'ranking', title: '科室排名', config: { style: {} }, layout: { x: 14, y: 3, w: 10, h: 7 } },
     { type: 'chart', chartKind: 'pie', visualType: 'pie', title: '指标构成', config: { style: {} }, layout: { x: 0, y: 11, w: 12, h: 8 } }
   ] },
-  { version: 1, id: 'builtin-topic-analysis', name: '专题分析', description: '专题指标、比较、排名与明细。', columns: 24, widgets: [
+  { version: 1, id: 'builtin-performance-assessment', name: '绩效考核看板', description: '绩效指标、月度趋势、科室排名与上报明细。', columns: 24, widgets: [
+    ...[0, 6, 12, 18].map((x, index) => ({ type: 'kpi', title: `绩效指标 ${index + 1}`, visualType: 'kpi', config: { style: {} }, layout: { x, y: 0, w: 6, h: 3 } })),
+    { type: 'chart', chartKind: 'line', visualType: 'line', title: '绩效指标趋势', config: { style: {} }, layout: { x: 0, y: 3, w: 14, h: 8 } },
+    { type: 'ranking', title: '科室绩效排名', config: { style: {} }, layout: { x: 14, y: 3, w: 10, h: 7 } },
+    { type: 'chart', chartKind: 'table', visualType: 'table', title: '绩效上报明细', config: { style: {} }, layout: { x: 0, y: 11, w: 24, h: 8 } }
+  ] },
+  { version: 1, id: 'builtin-topic-analysis', name: '医疗质量安全看板', description: '质量安全指标、比较、排名与明细。', columns: 24, widgets: [
     ...[0, 6].map((x, index) => ({ type: 'kpi', title: `专题指标 ${index + 1}`, visualType: 'kpi', config: { style: {} }, layout: { x, y: 0, w: 6, h: 3 } })),
     { type: 'chart', chartKind: 'bar', visualType: 'bar', title: '专题比较', config: { style: {} }, layout: { x: 0, y: 3, w: 14, h: 8 } },
     { type: 'ranking', title: '专题排名', config: { style: {} }, layout: { x: 14, y: 3, w: 10, h: 7 } },
     { type: 'chart', chartKind: 'table', visualType: 'table', title: '专题明细', config: { style: {} }, layout: { x: 0, y: 11, w: 24, h: 8 } }
   ] },
-  { version: 1, id: 'builtin-department-overview', name: '科室概览', description: '4 个科室指标、趋势、排名与预警。', columns: 24, widgets: [
+  { version: 1, id: 'builtin-department-overview', name: '呼吸内科质控看板', description: '呼吸内科质控指标、趋势、科室排名与预警。', columns: 24, widgets: [
     ...[0, 6, 12, 18].map((x, index) => ({ type: 'kpi', title: `科室指标 ${index + 1}`, visualType: 'kpi', config: { style: {} }, layout: { x, y: 0, w: 6, h: 3 } })),
     { type: 'chart', chartKind: 'line', visualType: 'line', title: '科室趋势', config: { style: {} }, layout: { x: 0, y: 3, w: 14, h: 8 } },
     { type: 'ranking', title: '科室排名', config: { style: {} }, layout: { x: 14, y: 3, w: 10, h: 7 } },
     { type: 'warnings', title: '预警事项', config: { style: {} }, layout: { x: 14, y: 10, w: 10, h: 7 } }
   ] }
-].slice(0, 6))
+])

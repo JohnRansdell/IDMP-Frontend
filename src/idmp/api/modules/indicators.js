@@ -102,6 +102,13 @@ export function trialIndicatorVersion(versionId, payload, idempotencyKey) {
   })
 }
 
+export function queryIndicatorVersion(versionId, payload) {
+  return requestJson(`/indicator-versions/${encodeURIComponent(versionId)}/query`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
 export function publishIndicatorVersion(versionId, idempotencyKey) {
   return requestJson(`/indicator-versions/${versionId}/publish`, {
     method: 'POST',

@@ -3,6 +3,7 @@ import { validateFilterDefinitions, validateConditions, validateWidgetQuery, val
 import { getWidgetGridCapability } from './widgetCapabilities.js'
 import { normalizeMetricGroupConfig } from './metricGroup.js'
 import { normalizeKpiVariant } from './kpiVariants.js'
+import { validateComponentQueryScope, validateIndicatorBindings } from './multiIndicator.js'
 
 export const DASHBOARD_SCHEMA_VERSION = 1
 export const DASHBOARD_SCHEMA_STORAGE_PREFIX = 'idmp:dashboard-schema:v1:'
@@ -23,7 +24,7 @@ export const DEFAULT_WIDGET_STYLE = Object.freeze({
   borderStyle: 'solid', borderRadius: 8, shadow: 'none', padding: 0, opacity: 1
 })
 export const DEFAULT_DASHBOARD_APPEARANCE = Object.freeze({
-  theme: 'default', background: { type: 'color', value: '', intensity: 100, image: '', assetKey: '', size: 'cover', position: 'center', overlay: 0 }, cardStyle: 'default', gridGap: 8
+  theme: 'default', background: { type: 'color', value: '#ffffff', intensity: 100, image: '', assetKey: '', size: 'cover', position: 'center', overlay: 0 }, cardStyle: 'default', gridGap: 8
 })
 export const DEFAULT_DASHBOARD_PRESENTATION = Object.freeze({ defaultMode: 'standard', allowFullscreen: true, fit: 'viewport' })
 
@@ -62,7 +63,7 @@ export function normalizeWidgetMetadata(widget = {}) {
   normalized.type = type
   normalized.config = isPlainObject(widget.config) ? clonePersistableValue(widget.config) : {}
   normalized.config.style = { ...DEFAULT_WIDGET_STYLE, ...(isPlainObject(normalized.config.style) ? normalized.config.style : {}) }
-  if (type === 'kpi') normalized.config.style.kpiVariant = normalizeKpiVariant(normalized.config.style.kpiVariant)
+  if (['kpi', 'primary', 'supporting'].includes(type)) normalized.config.style.kpiVariant = normalizeKpiVariant(normalized.config.style.kpiVariant)
   if (type === 'metric-group') normalized.config.metricGroup = normalizeMetricGroupConfig(normalized.config.metricGroup)
   return normalized
 }
@@ -254,6 +255,8 @@ export function validateDashboardSchema(schema) {
       if (!widget || typeof widget !== 'object') { errors.push(`${prefix} must be an object`); return }
       errors.push(...validateWidgetQuery(widget.config?.query))
       errors.push(...validateWidgetInteraction(widget.config?.interaction))
+      errors.push(...validateComponentQueryScope(widget.config?.backendQuery))
+      errors.push(...validateIndicatorBindings(widget.config?.indicatorBindings, widget.type === 'chart' ? widget.chartKind : widget.type))
       if (widget.config?.dataBinding?.filters !== undefined) errors.push(...validateConditions(widget.config.dataBinding.filters))
       if (typeof widget.id !== 'string' || !widget.id.trim()) errors.push(`${prefix}.id is required`)
       else if (ids.has(widget.id)) errors.push(`${prefix}.id is duplicated`)
@@ -306,12 +309,17 @@ export function normalizeDashboardSchema(input = {}) {
       background: {
         ...DEFAULT_DASHBOARD_APPEARANCE.background,
         ...(isPlainObject(source.appearance?.background) ? source.appearance.background : {}),
+        value: normalizeDashboardBackgroundValue(source.appearance?.background?.value),
         intensity: normalizeBackgroundIntensity(source.appearance?.background?.intensity)
       }
     },
     presentation: { ...DEFAULT_DASHBOARD_PRESENTATION, ...(isPlainObject(source.presentation) ? source.presentation : {}) },
     widgets
   }
+}
+
+function normalizeDashboardBackgroundValue(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : DEFAULT_DASHBOARD_APPEARANCE.background.value
 }
 
 function normalizeBackgroundIntensity(value) {

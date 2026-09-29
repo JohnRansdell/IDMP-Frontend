@@ -6,16 +6,23 @@ export function isEmptyDashboardBinding(binding) {
   return !binding || slots(binding).every(slot => !Array.isArray(binding[slot]) || binding[slot].length === 0)
 }
 
-const measure = field => ({ field: field.id, label: field.label, aggregation: field.recommendedAggregation || field.defaultAggregation || field.aggregation || (field.aggregations || []).find(value => value === 'avg') || field.aggregations?.[0] || 'avg', axis: 'left' })
+export function preferredMeasureAggregation(field = {}) {
+  const normalize = value => String(value || '').toLowerCase() === 'none' ? 'direct' : String(value || '').toLowerCase()
+  const explicit = [field.recommendedAggregation, field.defaultAggregation, field.aggregation].map(normalize).find(Boolean)
+  const supported = (field.aggregations || []).map(normalize).filter(Boolean)
+  return explicit || supported.find(value => value === 'avg') || supported[0] || 'avg'
+}
+const measure = field => ({ field: field.id, label: field.label, aggregation: preferredMeasureAggregation(field), axis: 'left' })
 const dimension = field => ({ field: field.id, label: field.label, ...(field.semanticType === 'time' ? { granularity: 'raw' } : {}) })
-const preferredDatasets = { kpi: ['current'], gauge: ['current'], line: ['trend', 'acceptance'], bar: ['departments', 'acceptance'], pie: ['distribution', 'departments', 'acceptance'], funnel: ['distribution', 'departments', 'acceptance'], radar: ['departments', 'acceptance'], scatter: ['acceptance'], heatmap: ['acceptance'] }
+const preferredDatasets = { kpi: ['current'], gauge: ['current'], line: ['trend', 'acceptance'], bar: ['departments', 'acceptance'], table: ['departments', 'acceptance'], ranking: ['departments', 'acceptance'], pie: ['distribution', 'departments', 'acceptance'], funnel: ['distribution', 'departments', 'acceptance'], radar: ['departments', 'acceptance'], scatter: ['acceptance'], heatmap: ['acceptance'] }
 const rankByName = (field, tokens) => {
   const name = `${field.label || ''} ${field.id || ''}`.toLowerCase()
   const index = tokens.findIndex(token => name.includes(token))
   return index < 0 ? tokens.length : index
 }
-const sortByPreference = (fields, tokens) => fields.map((field, index) => ({ field, index, rank: rankByName(field, tokens) }))
-  .sort((left, right) => left.rank - right.rank || left.index - right.index).map(item => item.field)
+const identifierPenalty = field => /(?:^|_)(?:code|id)$/i.test(String(field?.id || '')) ? 1 : 0
+const sortByPreference = (fields, tokens) => fields.map((field, index) => ({ field, index, rank: rankByName(field, tokens), identifierPenalty: identifierPenalty(field) }))
+  .sort((left, right) => left.rank - right.rank || left.identifierPenalty - right.identifierPenalty || left.index - right.index).map(item => item.field)
 const candidates = (datasets, kind) => {
   const preferred = preferredDatasets[kind] || []
   const rank = dataset => {
@@ -37,7 +44,7 @@ export function createDefaultBinding(kind, datasets = [], { datasetId = '' } = {
     const timeOrCategory = times[0] || category
     const base = emptyBinding(source.id)
     if (['kpi', 'gauge'].includes(kind) && measures[0]) return { ...base, measures: [measure(measures[0])] }
-    if (['line', 'bar', 'pie', 'funnel', 'radar'].includes(kind)) {
+    if (['line', 'bar', 'table', 'ranking', 'pie', 'funnel', 'radar'].includes(kind)) {
       const selected = kind === 'line' ? timeOrCategory : category
       if (selected && measures[0]) return {
         ...base,

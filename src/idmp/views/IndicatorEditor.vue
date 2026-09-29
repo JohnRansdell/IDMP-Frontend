@@ -348,6 +348,11 @@
                 @change="resetIndicatorTrialAfterPeriodChange"
               />
             </div>
+            <section v-if="indicatorRuntimeParameters.length" class="indicator-runtime-parameters">
+              <div class="indicator-runtime-parameters__heading"><strong>SQL 运行参数</strong><small>参数来自引用因子的已编译声明，本次试算会与周期一起提交。</small></div>
+              <el-alert v-if="indicatorRuntimeParameterConflicts.length" type="error" :closable="false" show-icon :title="`存在不兼容的同名参数：${indicatorRuntimeParameterConflicts.map(item => item.code).join('、')}`" />
+              <RuntimeParameterFields v-model="indicatorRuntimeParameterValues" :declarations="indicatorRuntimeParameters" @change="resetIndicatorTrialAfterPeriodChange" />
+            </section>
             <el-alert
               v-if="isStaticIndicator && indicatorWorkflow.initializationBatchId"
               :type="['SUCCEEDED', 'SUCCESS'].includes(indicatorWorkflow.initializationStatus) ? 'success' : indicatorWorkflow.initializationStatus === 'FAILED' ? 'error' : 'info'"
@@ -386,7 +391,7 @@
               >
                 发布指标版本
               </el-button>
-              <el-button v-if="indicatorWorkflow.published && !isStaticIndicator" type="primary" plain :loading="workflowLoading.formal" @click="generateFormalResultAndOpenAnalysis">
+              <el-button v-if="indicatorWorkflow.published && !isStaticIndicator && !hasTemporaryIndicatorRuntimeParameters" type="primary" plain :loading="workflowLoading.formal" @click="generateFormalResultAndOpenAnalysis">
                 生成正式结果并去指标分析
               </el-button>
             </div>
@@ -758,6 +763,8 @@ import {
 import { getStatusLabel } from '@/idmp/design/status'
 import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
 import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
+import RuntimeParameterFields from '@/idmp/components/RuntimeParameterFields.vue'
+import { buildSqlRuntimeParameterValues, collectSqlRuntimeParameters, validateSqlRuntimeParameterValues } from '@/idmp/api/adapters/sqlImport'
 
 const route = useRoute()
 const router = useRouter()
@@ -794,6 +801,8 @@ const indicatorWorkflow = reactive({
   trialAvailability: null
 })
 const indicatorTrialPeriod = ref(initialIndicatorTrialPeriod())
+const indicatorRuntimeParameterGroups = ref([])
+const indicatorRuntimeParameterValues = ref({})
 const indicatorTrialResultSet = ref({ targets: [] })
 const indicatorTrialTargets = ref([])
 const selectedIndicatorTrialTargetKey = ref('')
@@ -1333,6 +1342,9 @@ watch(
 const hasIndicatorTrialPeriod = computed(() =>
   Array.isArray(indicatorTrialPeriod.value) && indicatorTrialPeriod.value.length === 2
 )
+const indicatorRuntimeParameters = computed(() => collectSqlRuntimeParameters(indicatorRuntimeParameterGroups.value.map(group => ({ ...group, key: group.factorCode || group.factorVersionId }))))
+const indicatorRuntimeParameterConflicts = computed(() => indicatorRuntimeParameters.value.filter(item => item.conflict))
+const hasTemporaryIndicatorRuntimeParameters = computed(() => indicatorRuntimeParameters.value.some(item => item.parameterMode === 'TEMPORARY'))
 
 const dragFactor = factor => {
   draggedFactor.value = factor
@@ -1535,6 +1547,8 @@ function hydrateIndicatorVersion(version) {
   resetDrillCapability()
   hydrateFormulaFactors(formula)
   selectedDrillPaths.value = normalizeDrillPaths(version)
+  indicatorRuntimeParameterGroups.value = Array.isArray(version.factorRuntimeParameters) ? version.factorRuntimeParameters : []
+  indicatorRuntimeParameterValues.value = {}
 }
 
 function extractFormula(payload) {
@@ -1977,6 +1991,12 @@ async function trialIndicatorOnly() {
     return
   }
 
+  const parameterMessage = validateSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)
+  if (parameterMessage) {
+    ElMessage.warning(parameterMessage)
+    return
+  }
+
   workflowLoading.trial = true
   resetIndicatorTrialResultCollection()
   try {
@@ -1984,6 +2004,7 @@ async function trialIndicatorOnly() {
       periodStart: indicatorTrialPeriod.value[0],
       periodEnd: indicatorTrialPeriod.value[1]
     }
+    if (indicatorRuntimeParameters.value.length) trialPayload.parameters = buildSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)
     const idempotencyKey = createIdempotencyKey('indicator-workflow')
     recordWorkflowRequest({
       step: '发起试算',
@@ -2301,6 +2322,7 @@ async function refreshIndicatorVersionState() {
   indicatorWorkflow.compiled = indicatorWorkflow.compiled || Boolean(latest.currentArtifactId)
   indicatorWorkflow.published = status === 'PUBLISHED'
   indicatorWorkflow.publishedVersionId = status === 'PUBLISHED' ? resolveIndicatorVersionId(latest) : indicatorWorkflow.publishedVersionId
+  if (Array.isArray(latest.factorRuntimeParameters)) indicatorRuntimeParameterGroups.value = latest.factorRuntimeParameters
   return latest
 }
 
@@ -2841,6 +2863,26 @@ onMounted(async () => {
     font-size: 12px;
   }
 }
+
+.indicator-runtime-parameters {
+  display: grid;
+  gap: 12px;
+  margin: 0 16px 14px;
+  padding: 14px;
+  border: 1px solid var(--idmp-border-subtle);
+  border-radius: 8px;
+  background: var(--idmp-layer-02);
+}
+
+.indicator-runtime-parameters__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.indicator-runtime-parameters__heading strong { color: var(--idmp-text-primary); font-size: 14px; }
+.indicator-runtime-parameters__heading small { color: var(--idmp-text-helper); font-size: 12px; }
 
 .drill-capability-card {
   margin: 16px;

@@ -106,6 +106,12 @@ try {
   if (previewSmokeMode) {
     const firstWidget = await value(cdp, `(() => { const widget = document.querySelector('[data-testid="dashboard-canvas"] .grid-stack-item'); return { id: widget?.getAttribute('data-widget-id') || '', type: widget?.querySelector('[data-widget-type]')?.getAttribute('data-widget-type') || widget?.querySelector('[class*="widget"]')?.className || '' }; })()`)
     assert.ok(initialCount > 0, 'preview smoke dashboard must render at least one widget')
+    await click(cdp, '[data-testid="dashboard-canvas"] .grid-stack-item')
+    await click(cdp, '#tab-style')
+    await click(cdp, '[data-testid="theme-preset-warm"]')
+    await waitFor(cdp, `document.querySelector('[data-testid="theme-preset-warm"]')?.getAttribute('aria-pressed') === 'true'`)
+    const themedBorder = await value(cdp, `getComputedStyle(document.querySelector('[data-testid="dashboard-canvas"] .grid-stack-item .dashboard-widget__chrome')).borderColor`)
+    assert.equal(themedBorder, 'rgb(239, 212, 184)', 'warm theme must update the real card border')
     process.stdout.write(`dashboard-visual-smoke: PASS dashboard=${dashboardId} widgets=${initialCount} first=${JSON.stringify(firstWidget)}\n`)
   } else {
   await click(cdp, '[aria-label="指标数据"]')

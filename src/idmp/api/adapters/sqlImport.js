@@ -8,9 +8,61 @@ function cleanMappings(tableMappings = {}) {
     .map(([key, value]) => [key, toOpaqueId(value)]))
 }
 
+export const SQL_RUNTIME_PARAMETER_TYPES = ['STRING', 'INTEGER', 'DECIMAL', 'BOOLEAN', 'DATE', 'DATETIME']
+export const SQL_RUNTIME_PARAMETER_MODES = ['TEMPORARY', 'DIMENSION']
+
+export function normalizeSqlRuntimeParameter(parameter = {}) {
+  const type = String(parameter.type || 'STRING').toUpperCase()
+  const parameterMode = String(parameter.parameterMode || 'TEMPORARY').toUpperCase()
+  return {
+    code: String(parameter.code || '').trim(),
+    type: SQL_RUNTIME_PARAMETER_TYPES.includes(type) ? type : 'STRING',
+    required: parameter.required === true,
+    parameterMode: SQL_RUNTIME_PARAMETER_MODES.includes(parameterMode) ? parameterMode : 'TEMPORARY'
+  }
+}
+
+export function collectSqlRuntimeParameters(factors = []) {
+  const declarations = new Map()
+  ;(factors || []).forEach((factor) => {
+    ;(factor.parameters || []).map(normalizeSqlRuntimeParameter).filter(item => item.code).forEach((item) => {
+      const identity = `${item.type}|${item.required}|${item.parameterMode}`
+      const current = declarations.get(item.code)
+      if (!current) declarations.set(item.code, { ...item, factorKeys: [String(factor.key || '')], conflict: false, identities: [identity] })
+      else {
+        current.factorKeys.push(String(factor.key || ''))
+        if (!current.identities.includes(identity)) current.identities.push(identity)
+        current.conflict = current.identities.length > 1
+      }
+    })
+  })
+  return [...declarations.values()].map(({ identities, ...item }) => item)
+}
+
+export function buildSqlRuntimeParameterValues(declarations, values = {}) {
+  return Object.fromEntries(declarations.flatMap((declaration) => {
+    const value = values?.[declaration.code]
+    if (value === undefined || value === null || value === '') return []
+    if (declaration.type === 'INTEGER') return [[declaration.code, Number.parseInt(value, 10)]]
+    if (declaration.type === 'DECIMAL') return [[declaration.code, Number(value)]]
+    if (declaration.type === 'BOOLEAN') return [[declaration.code, value === true || value === 'true']]
+    return [[declaration.code, String(value)]]
+  }))
+}
+
 export function buildSqlImportCreatePayload({ sql, tableMappings, definitionType = 'SQL' } = {}) {
   const mappings = cleanMappings(tableMappings)
   return { sql: String(sql || '').trim(), ...(Object.keys(mappings).length ? { tableMappings: mappings } : {}), definitionType }
+}
+
+export function validateSqlRuntimeParameterSyntax(sql = '') {
+  const parameterCodes = [...String(sql).matchAll(/(^|[^:]):([A-Za-z][A-Za-z0-9_]*)\b/g)]
+    .map((match) => match[2])
+  const uniqueCodes = [...new Set(parameterCodes)]
+  if (!uniqueCodes.length) return ''
+  const legacyParameters = uniqueCodes.map(code => `:${code}`).join('、')
+  const templateParameters = uniqueCodes.map(code => `{{${code}}}`).join('、')
+  return `SQL 业务参数不支持冒号写法 ${legacyParameters}。请把完整筛选条件写成可选模板，例如 [[AND 字段 = {{${uniqueCodes[0]}}}]]；参数占位符为 ${templateParameters}`
 }
 
 export function normalizeSqlImportPreview(payload = {}) {
@@ -27,14 +79,18 @@ export function normalizeSqlImportPreview(payload = {}) {
         semanticTableCode: String(candidate.semanticTableCode || candidate.tableCode || ''), defaultTimeFieldCode: String(candidate.defaultTimeFieldCode || '')
       }))
     })),
-    factors: Array.isArray(preview.factors) ? preview.factors.map((factor) => ({
-      key: String(factor.key || ''), suggestedCode: String(factor.suggestedCode || factor.code || ''),
-      suggestedName: String(factor.suggestedName || factor.name || ''), outputAlias: String(factor.outputAlias || ''),
-      timeFields: collectTimeFields({
+    factors: Array.isArray(preview.factors) ? preview.factors.map((factor) => {
+      const timeFieldOptions = collectTimeFieldOptions({
         ...factor,
-        timeFields: factor.timeFields || preview.timeFields?.[factor.key] || preview.candidateTimeFields?.[factor.key]
-      }), dsl: factor.dsl || {}
-    })) : [],
+        timeFieldOptions: factor.timeFieldOptions || factor.timeFields || preview.timeFields?.[factor.key] || preview.candidateTimeFields?.[factor.key]
+      })
+      return {
+        key: String(factor.key || ''), suggestedCode: String(factor.suggestedCode || factor.code || ''),
+        suggestedName: String(factor.suggestedName || factor.name || ''), outputAlias: String(factor.outputAlias || ''),
+        timeFieldOptions, timeFields: timeFieldOptions.map(item => item.fieldReference),
+        parameters: (factor.parameters || factor.dsl?.parameters || []).map(normalizeSqlRuntimeParameter), dsl: factor.dsl || {}
+      }
+    }) : [],
     formula: preview.formula ? { template: preview.formula.template || preview.formula, displayText: String(preview.formula.displayText || '') } : null,
     diagnostics: Array.isArray(preview.diagnostics) ? preview.diagnostics.map((item) => ({
       severity: String(item.severity || 'ERROR').toUpperCase(), code: String(item.code || ''), path: String(item.path || ''),
@@ -69,11 +125,33 @@ function normalizePreviewTableRows(preview = {}) {
   return [...grouped.values()]
 }
 
-function collectTimeFields(factor = {}) {
-  const explicit = factor.timeFields || factor.candidateTimeFields || factor.timeFieldCandidates || factor.availableTimeFields || []
-  const fields = Array.isArray(explicit) ? explicit.map((item) => String(item?.fieldName || item?.fieldCode || item)) : []
-  collectPeriodFields(factor.dsl, fields)
-  return [...new Set(fields.filter(Boolean))]
+function collectTimeFieldOptions(factor = {}) {
+  const explicit = factor.timeFieldOptions || factor.timeFields || factor.candidateTimeFields || factor.timeFieldCandidates || factor.availableTimeFields || []
+  const options = Array.isArray(explicit) ? explicit.map(normalizeTimeFieldOption).filter(item => item.fieldReference) : []
+  const periodFields = []
+  collectPeriodFields(factor.dsl, periodFields)
+  periodFields.forEach((fieldReference) => {
+    if (!options.some(item => item.fieldReference === fieldReference)) {
+      options.push(normalizeTimeFieldOption({ fieldReference, recommended: true, recommendationReasons: ['SQL 中已使用的周期字段'] }))
+    }
+  })
+  return [...new Map(options.map(item => [item.fieldReference, item])).values()]
+    .sort((left, right) => Number(right.recommended) - Number(left.recommended) || Number(right.priority || 0) - Number(left.priority || 0))
+}
+
+function normalizeTimeFieldOption(item) {
+  if (typeof item === 'string' || typeof item === 'number') {
+    return { fieldReference: String(item), physicalTable: '', sqlAlias: '', columnName: String(item), columnType: '', comment: '', priority: 0, recommended: false, recommendationReasons: [] }
+  }
+  const option = item && typeof item === 'object' ? item : {}
+  const columnName = String(option.columnName || option.fieldName || option.fieldCode || '')
+  const fieldReference = String(option.fieldReference || option.reference || (option.sqlAlias && columnName ? `${option.sqlAlias}.${columnName}` : columnName))
+  return {
+    physicalTable: String(option.physicalTable || option.tableName || ''), sqlAlias: String(option.sqlAlias || option.tableAlias || ''),
+    columnName: columnName || fieldReference, fieldReference, columnType: String(option.columnType || option.dataType || ''),
+    comment: String(option.comment || option.description || ''), priority: Number(option.priority || 0), recommended: option.recommended === true,
+    recommendationReasons: Array.isArray(option.recommendationReasons) ? option.recommendationReasons.map(String) : []
+  }
 }
 
 function collectPeriodFields(node, fields) {
@@ -94,7 +172,9 @@ export function mergeSqlFactorMetadata(current = [], drafts = []) {
     return {
       key: draft.key, code: saved?.code || draft.suggestedCode, name: saved?.name || draft.suggestedName,
       description: saved?.description || '', missingRowPolicy: saved?.missingRowPolicy || 'KEEP_NULL',
-      calculationMode: saved?.calculationMode || (saved?.timeField ? 'TEMPORAL' : 'STATIC'), timeField: saved?.timeField || ''
+      calculationMode: saved?.calculationMode || (saved?.timeField ? 'TEMPORAL' : 'STATIC'),
+      timeField: saved?.timeField || draft.timeFieldOptions?.find(item => item.recommended)?.fieldReference || '',
+      parameters: (saved?.parameters || draft.parameters || []).map(normalizeSqlRuntimeParameter)
     }
   })
 }
@@ -109,6 +189,7 @@ export function buildSqlImportMetadataPayload({ scope, category, indicator, fact
         key: String(item.key || '').trim(), code: String(item.code || '').trim(), name: String(item.name || '').trim(),
         ...(String(item.description || '').trim() ? { description: String(item.description).trim() } : {}),
         ...(item.missingRowPolicy ? { missingRowPolicy: item.missingRowPolicy } : {}), calculationMode,
+        ...((item.parameters || []).length ? { parameters: item.parameters.map(normalizeSqlRuntimeParameter) } : {}),
         ...(calculationMode === 'TEMPORAL' && String(item.timeField || '').trim() ? { timeField: String(item.timeField).trim() } : {})
       }
     })
@@ -121,10 +202,22 @@ export function buildSqlImportMetadataPayload({ scope, category, indicator, fact
   return payload
 }
 
-export function buildSqlImportTrialPayload(factors = [], period = []) {
-  return (factors || []).some((factor) => String(factor.calculationMode).toUpperCase() === 'TEMPORAL')
+export function buildSqlImportTrialPayload(factors = [], period = [], parameterValues = {}) {
+  const payload = (factors || []).some((factor) => String(factor.calculationMode).toUpperCase() === 'TEMPORAL')
     ? { periodStart: period?.[0], periodEnd: period?.[1] } : {}
+  const declarations = collectSqlRuntimeParameters(factors)
+  if (declarations.length) payload.parameters = buildSqlRuntimeParameterValues(declarations, parameterValues)
+  return payload
 }
+
+export function validateSqlRuntimeParameterValues(declarations = [], values = {}) {
+  const conflicts = declarations.filter(item => item.conflict).map(item => item.code)
+  if (conflicts.length) return `同名参数声明不一致：${conflicts.join('、')}`
+  const missing = declarations.filter(item => item.required && (values[item.code] === undefined || values[item.code] === null || values[item.code] === '')).map(item => item.code)
+  return missing.length ? `请填写必填参数：${missing.join('、')}` : ''
+}
+
+export const buildSqlRuntimeQueryPayload = buildSqlImportTrialPayload
 
 export const SQL_IMPORT_RUNNING_STATUSES = new Set(['RUNNING', 'ABANDONING'])
 export const SQL_IMPORT_TERMINAL_STATUSES = new Set(['SUCCEEDED', 'ABANDONED', 'CLEANUP_FAILED'])
@@ -139,7 +232,14 @@ export function normalizeSqlImportTask(payload = {}) {
       artifactId: toOpaqueId(resource.artifactId), compiled: resource.compiled === true, published: resource.published === true,
       diagnostics: Array.isArray(resource.diagnostics) ? resource.diagnostics : [], trial: resource.trial || null
     })) : [],
-    result: data.result ? { ...data.result, indicatorId: toOpaqueId(data.result.indicatorId), indicatorVersionId: toOpaqueId(data.result.indicatorVersionId), initializationBatchId: toOpaqueId(data.result.initializationBatchId) } : null
+    result: data.result ? {
+      ...data.result,
+      indicatorId: toOpaqueId(data.result.indicatorId), indicatorVersionId: toOpaqueId(data.result.indicatorVersionId),
+      initializationBatchId: toOpaqueId(data.result.initializationBatchId),
+      factors: (data.result.factors || []).map(item => ({
+        ...item, factorId: toOpaqueId(item.factorId), factorVersionId: toOpaqueId(item.factorVersionId), artifactId: toOpaqueId(item.artifactId)
+      }))
+    } : null
   }
 }
 

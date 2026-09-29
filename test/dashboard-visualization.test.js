@@ -22,7 +22,7 @@ test('Clinical Light preserves chart data and drill payloads without mutating bu
   assert.equal(themed.series[0].id, 'measure')
   assert.equal(themed.tooltip.formatter, formatter)
   assert.equal(source.series[0].radius, undefined)
-  assert.deepEqual(themed.series[0].radius, ['48%', '70%'])
+  assert.deepEqual(themed.series[0].radius, ['42%', '64%'])
   assert.equal(clinicalTrendTone('success'), 'success')
   assert.equal(clinicalTrendTone('unknown'), 'neutral')
 })
@@ -39,6 +39,7 @@ import {
   createKpiData,
   createPublishedIndicatorSources,
   normalizeDashboardDrillTarget,
+  resolvePrimaryAnalysisOverview,
   resolveDashboardChartDrillTarget
 } from '../src/idmp/features/dashboard/visualization.js'
 
@@ -106,6 +107,25 @@ test('formal indicator analysis hydrates the bound dashboard source without mock
   assert.equal(empty.currentValue, null)
   assert.equal(empty.change, '暂无正式结果')
   assert.deepEqual(empty.trendData, [])
+})
+
+test('formal overview stays authoritative when a hospital dimension row has a different value', () => {
+  const payload = {
+    dataAvailable: true,
+    overview: { value: 0.0039, displayValue: '0.39%', resultId: 'overview-result' },
+    dimensionComparison: [
+      { dimensions: { hospital_code: 'H001' }, value: 0.0034, displayValue: '0.34%', resultId: 'hospital-result' }
+    ]
+  }
+  const source = { code: 'MORTALITY', name: 'Mortality', unit: '%' }
+
+  assert.equal(resolvePrimaryAnalysisOverview(payload), payload.overview)
+  assert.equal(applyIndicatorAnalysisToSource(source, payload).currentValue, '0.39%')
+})
+
+test('hospital dimension row is only a fallback when the formal overview is absent', () => {
+  const hospitalResult = { dimensions: { hospital_id: 'H001' }, value: 0.0034 }
+  assert.equal(resolvePrimaryAnalysisOverview({ dimensionComparison: [hospitalResult] }), hospitalResult)
 })
 
 test('dashboard KPI preserves its analysis identity and explicit disabled state', () => {

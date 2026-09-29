@@ -32,6 +32,8 @@
       <label>宽度<select data-testid="metric-item-span" :value="selectedItem.layout.span" @change="patchItem({ layout: { ...selectedItem.layout, span: Number($event.target.value) } })"><option :value="1">普通</option><option :value="2">加宽</option></select></label>
       <label>强调级别<select data-testid="metric-item-emphasis" :value="selectedItem.emphasis" @change="patchItem({ emphasis: $event.target.value })"><option value="normal">普通</option><option value="emphasis">重点</option><option value="hero">主指标</option></select></label>
       <label>内容对齐<select :value="selectedItem.align" @change="patchItem({ align: $event.target.value })"><option value="left">左</option><option value="center">居中</option></select></label>
+      <label>卡片色调<select :value="selectedItem.tone || 'neutral'" @change="patchItem({ tone: $event.target.value })"><option value="neutral">默认</option><option value="mint">浅青</option><option value="apricot">浅橙</option><option value="sky">浅蓝</option></select></label>
+      <KpiVariantPicker :model-value="selectedItem.kpiVariant" @update:model-value="patchItem({ kpiVariant: $event })" />
       <div class="metric-group-inspector__order"><button type="button" :disabled="selectedIndex === 0" @click="move(-1)">上移</button><button type="button" :disabled="selectedIndex === config.items.length - 1" @click="move(1)">下移</button><button data-testid="metric-group-add-item" type="button" @click="add">+ 添加指标</button><button data-testid="metric-item-duplicate" type="button" @click="duplicate">复制指标</button><button data-testid="metric-item-delete" type="button" class="is-danger" @click="remove">删除</button></div>
       <BindingInspector :key="selectedItem.id" :widget="virtualWidget" :datasets="getDatasets(virtualWidget)" @change="binding => patchItem({ dataBinding: binding })" @query-change="() => {}" />
     </template>
@@ -41,6 +43,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import BindingInspector from './BindingInspector.vue'
+import KpiVariantPicker from './KpiVariantPicker.vue'
 import { addMetricGroupItem, applyMetricGroupPreset, duplicateMetricGroupItem, METRIC_GROUP_PRESETS, metricGroupItemWidget, moveMetricGroupItem, normalizeMetricGroupConfig, removeMetricGroupItem } from '../metricGroup.js'
 
 const props = defineProps({ widget: { type: Object, required: true }, sources: { type: Array, default: () => [] }, getDatasets: { type: Function, required: true }, selectedItemId: { type: String, default: '' } })

@@ -44,6 +44,7 @@ export function validateWidgetBinding(kind, binding, fields = []) {
       seen.add(field.id)
       if ((slot === 'measures') !== (field.semanticType === 'measure')) errors.push(`${field.label} 不适用于此配置槽`)
       if (slot === 'measures' && !Object.hasOwn(AGGREGATIONS, item.aggregation)) errors.push('不支持的聚合方式')
+      if (slot === 'measures' && field.aggregations?.length && !field.aggregations.includes(item.aggregation)) errors.push(`${field.label} 不支持${AGGREGATIONS[item.aggregation] || item.aggregation}`)
       if (slot === 'measures' && item.axis !== undefined && !['left', 'right'].includes(item.axis)) errors.push('度量轴必须为左轴或右轴')
       if (slot === 'measures' && item.axis === 'right' && !['line', 'bar'].includes(kind)) errors.push('当前图表不支持右轴度量')
       if (slot !== 'measures' && item.granularity && !(field.granularities || ['raw']).includes(item.granularity)) errors.push('当前数据不支持此时间粒度')
@@ -73,6 +74,26 @@ export function aggregateValues(values, aggregation) {
   return null
 }
 
+function aggregateMeasureRows(rows, measure, fields) {
+  if (measure.aggregation !== 'direct' || rows.length <= 1 || String(measure.field).toLowerCase() !== 'value') {
+    return aggregateValues(rows.map(row => row?.[measure.field]), measure.aggregation)
+  }
+  const fieldIds = new Map(fields.map(field => [String(field.id).toLowerCase(), field.id]))
+  const numeratorField = fieldIds.get('numeratorvalue') || fieldIds.get('numerator')
+  const denominatorField = fieldIds.get('denominatorvalue') || fieldIds.get('denominator')
+  if (!numeratorField || !denominatorField) return aggregateValues(rows.map(row => row?.[measure.field]), measure.aggregation)
+  const pairs = rows.map(row => [numericValue(row?.[numeratorField]), numericValue(row?.[denominatorField])])
+  if (pairs.some(([numerator, denominator]) => numerator === null || denominator === null)) {
+    return aggregateValues(rows.map(row => row?.[measure.field]), measure.aggregation)
+  }
+  const numerator = pairs.reduce((sum, pair) => sum + pair[0], 0)
+  const denominator = pairs.reduce((sum, pair) => sum + pair[1], 0)
+  if (denominator === 0) return null
+  const ratio = numerator / denominator
+  const unit = fields.find(field => field.id === measure.field)?.unit
+  return unit === '%' ? ratio * 100 : ratio
+}
+
 // Keep aggregation values numeric for charts and filters. Formatting belongs only
 // to the visible KPI surface so binary floating-point tails never consume a card.
 export function formatDashboardMetric(value, { maximumFractionDigits = 2 } = {}) {
@@ -81,7 +102,38 @@ export function formatDashboardMetric(value, { maximumFractionDigits = 2 } = {})
   if (!Number.isFinite(numeric)) return String(value)
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits }).format(numeric)
 }
+export function normalizeDashboardMetricUnit(unit) {
+  const value = String(unit || '').trim()
+  return value.toUpperCase() === 'PERCENT' || value === '%' ? '%' : value
+}
+export function formatDashboardKpiMetric(value, { unit = '', displayValue } = {}) {
+  const sourceUnit = String(unit || '').trim()
+  const visibleUnit = normalizeDashboardMetricUnit(unit)
+  if (displayValue !== null && displayValue !== undefined && displayValue !== '') {
+    const visible = String(displayValue).trim()
+    if (visible.endsWith('%')) return { value: visible.slice(0, -1).trimEnd(), unit: '%' }
+    return { value: visible, unit: '' }
+  }
+  const numeric = Number(value)
+  if (visibleUnit === '%' && Number.isFinite(numeric)) {
+    const percent = sourceUnit.toUpperCase() === 'PERCENT' ? numeric * 100 : numeric
+    return { value: percent.toFixed(2), unit: '%' }
+  }
+  return { value: formatDashboardMetric(value), unit: visibleUnit }
+}
 const dimensionValue = value => ['string', 'boolean'].includes(typeof value) || (typeof value === 'number' && Number.isFinite(value)) ? value : null
+
+function companionNameField(fieldId, fields = []) {
+  const id = String(fieldId || '')
+  const candidate = /_CODE$/i.test(id) ? id.replace(/_CODE$/i, '_NAME') : /_ID$/i.test(id) ? id.replace(/_ID$/i, '_NAME') : ''
+  if (!candidate) return ''
+  return fields.find(field => String(field.id).toLowerCase() === candidate.toLowerCase())?.id || ''
+}
+
+function visibleDimensionValue(row, dimension, fields, rawValue) {
+  const nameField = companionNameField(dimension.field, fields)
+  return nameField ? dimensionValue(row?.[nameField]) ?? rawValue : rawValue
+}
 
 export function compileWidgetData(kind, binding, dataset) {
   const validation = validateWidgetBinding(kind, binding, dataset?.fields)
@@ -96,11 +148,12 @@ export function compileWidgetData(kind, binding, dataset) {
   for (const row of rows) {
     if (!row || typeof row !== 'object' || Array.isArray(row)) continue
     const tuple = binding.dimensions.map(dimension => dimensionValue(row?.[dimension.field]))
+    const visibleTuple = binding.dimensions.map((dimension, index) => visibleDimensionValue(row, dimension, dataset.fields, tuple[index]))
     const category = binding.dimensions.length ? tuple : ''
     const split = binding.series.length ? dimensionValue(row?.[binding.series[0].field]) : ''
     if (tuple.some(value => value === null || value === '') || split === null || split === '' && binding.series.length) continue
     const categoryKey = JSON.stringify(category), splitKey = JSON.stringify(split)
-    categories.set(categoryKey, category)
+    categories.set(categoryKey, { raw: category, visible: visibleTuple })
     splits.set(splitKey, split)
     const key = JSON.stringify([categoryKey, splitKey])
     if (!groups.has(key)) groups.set(key, [])
@@ -111,14 +164,14 @@ export function compileWidgetData(kind, binding, dataset) {
     const series = [...splits].flatMap(([splitKey, split]) => binding.measures.map(measure => ({
       field: measure.field,
       name: [split, measure.label || dataset.fields.find(field => field.id === measure.field)?.label].filter(value => value !== '').join(' · '),
-      values: categoryKeys.map(key => aggregateValues((groups.get(JSON.stringify([key, splitKey])) || []).map(row => row[measure.field]), measure.aggregation))
+      values: categoryKeys.map(key => aggregateMeasureRows(groups.get(JSON.stringify([key, splitKey])) || [], measure, dataset.fields))
     })))
     if (!series.some(item => item.values.some(value => value !== null))) return { status: 'empty', message: '暂无数据' }
     let order = categoryKeys.map((_, index) => index)
     const sort = binding.sort[0]
     if (sort) {
       const measureSeries = series.find(item => item.field === sort.field)
-      const values = measureSeries?.values || [...categories.values()]
+      const values = measureSeries?.values || [...categories.values()].map(item => item.raw)
       order.sort((a, b) => {
         if (values[a] === null) return values[b] === null ? 0 : 1
         if (values[b] === null) return -1
@@ -126,16 +179,23 @@ export function compileWidgetData(kind, binding, dataset) {
         return compare * (sort.direction === 'desc' ? -1 : 1)
       })
     }
+    if (kind === 'bar') {
+      order = order.filter(index => series.some(item => {
+        const value = item.values[index]
+        return typeof value === 'number' && Number.isFinite(value) && value !== 0
+      }))
+      if (!order.length) return { status: 'empty', message: '当前维度暂无非零数据' }
+    }
     const categoryValues = [...categories.values()]
-    const sortedCategories = order.map(index => Array.isArray(categoryValues[index]) ? categoryValues[index].join(' / ') : String(categoryValues[index]))
+    const sortedCategories = order.map(index => Array.isArray(categoryValues[index].visible) ? categoryValues[index].visible.join(' / ') : String(categoryValues[index].visible))
     const sortedSeries = series.map(item => ({ ...item, values: order.map(index => item.values[index]) }))
     if (kind === 'kpi') return { status: 'ready', value: sortedSeries[0].values[0], label: sortedSeries[0].name, unit: binding.measures[0].aggregation === 'count' ? '' : dataset.fields.find(field => field.id === binding.measures[0].field)?.unit || '' }
-    return { status: 'ready', categories: sortedCategories, dimensionTuples: order.map(index => Object.fromEntries(binding.dimensions.map((dimension, dimensionIndex) => [dimension.field, categoryValues[index][dimensionIndex]]))), series: sortedSeries.map(seriesItem => ({ ...seriesItem, axis: binding.measures.find(measure => measure.field === seriesItem.field)?.axis || 'left' })), items: sortedCategories.map((name, index) => ({ name, value: sortedSeries[0].values[index] })).filter(item => item.value !== null) }
+    return { status: 'ready', categories: sortedCategories, dimensionTuples: order.map(index => Object.fromEntries(binding.dimensions.map((dimension, dimensionIndex) => [dimension.field, categoryValues[index].raw[dimensionIndex]]))), series: sortedSeries.map(seriesItem => ({ ...seriesItem, axis: binding.measures.find(measure => measure.field === seriesItem.field)?.axis || 'left' })), items: sortedCategories.map((name, index) => ({ name, value: sortedSeries[0].values[index] })).filter(item => item.value !== null) }
   } catch (error) { return { status: 'invalid', message: error.message } }
 }
 
 // Chart options are a downstream presentation adapter, not the engine contract.
-export function bindingChartOption(kind, model) {
+export function bindingChartOption(kind, model, options = {}) {
   if (model.status !== 'ready') return {}
   if (kind === 'pie') return { tooltip: { trigger: 'item' }, legend: { bottom: 0 }, series: [{ type: 'pie', data: model.items }] }
   if (kind === 'funnel') return { tooltip: { trigger: 'item' }, series: [{ type: 'funnel', left: '12%', top: 12, bottom: 12, width: '76%', data: model.items }] }
@@ -144,10 +204,19 @@ export function bindingChartOption(kind, model) {
   if (kind === 'scatter') return { tooltip: { trigger: 'item' }, xAxis: { type: 'value' }, yAxis: { type: 'value' }, series: model.series.map(item => ({ name: item.name, type: 'scatter', data: item.values })) }
   if (kind === 'heatmap') {
     const ys = model.series.map(item => item.name)
-    return { tooltip: { position: 'top' }, grid: { top: 38, bottom: 28, left: 12, right: 16, containLabel: true }, xAxis: { type: 'category', data: model.categories }, yAxis: { type: 'category', data: ys }, visualMap: { min: 0, max: Math.max(0, ...model.series.flatMap(item => item.values.filter(value => value !== null))), calculable: true, orient: 'horizontal', left: 'center', bottom: 0 }, series: [{ type: 'heatmap', data: model.series.flatMap((item, y) => item.values.map((value, x) => value === null ? null : [x, y, value]).filter(Boolean)) }] }
+    return { tooltip: { position: 'top' }, grid: { top: 18, bottom: 54, left: 12, right: 16, containLabel: true }, xAxis: { type: 'category', data: model.categories }, yAxis: { type: 'category', data: ys }, visualMap: { min: 0, max: Math.max(0, ...model.series.flatMap(item => item.values.filter(value => value !== null))), calculable: true, orient: 'horizontal', left: 'center', bottom: 0 }, series: [{ type: 'heatmap', data: model.series.flatMap((item, y) => item.values.map((value, x) => value === null ? null : [x, y, value]).filter(Boolean)) }] }
   }
-  if (kind === 'map') return { tooltip: { trigger: 'item' }, grid: { top: 24, bottom: 30, left: 46, right: 18 }, xAxis: { type: 'value', show: false }, yAxis: { type: 'category', data: model.categories, inverse: true }, visualMap: { min: 0, max: Math.max(1, ...model.series[0].values.filter(value => value !== null)), calculable: true, orient: 'horizontal', left: 'center', bottom: 0 }, series: [{ name: model.series[0]?.name || '指标值', type: 'bar', data: model.series[0]?.values || [], itemStyle: { borderRadius: [0, 4, 4, 0] } }] }
+  if (kind === 'map') {
+    if (!options.mapDefinition?.geoJSON) return {}
+    const mapName = options.mapDefinition.name || 'idmp-map'
+    return {
+      __mapDefinition: { name: mapName, geoJSON: options.mapDefinition.geoJSON },
+      tooltip: { trigger: 'item' },
+      visualMap: { min: 0, max: Math.max(1, ...model.series[0].values.filter(value => value !== null)), calculable: true, orient: 'horizontal', left: 'center', bottom: 0 },
+      series: [{ name: model.series[0]?.name || '指标值', type: 'map', map: mapName, roam: true, emphasis: { label: { show: true } }, data: model.categories.map((name, index) => ({ name, value: model.series[0]?.values[index] })) }]
+    }
+  }
   const dualAxis = ['line', 'bar'].includes(kind) && model.series.some(item => item.axis === 'right')
   const categoryColoredBar = kind === 'bar' && model.series.length === 1
-  return { tooltip: { trigger: 'axis' }, legend: { top: 0 }, grid: { top: 38, bottom: 28, left: 12, right: 16, containLabel: true }, xAxis: { type: 'category', data: model.categories }, yAxis: dualAxis ? [{ type: 'value' }, { type: 'value' }] : { type: 'value' }, series: model.series.map(item => ({ name: item.name, type: kind, data: categoryColoredBar ? item.values.map((value, index) => ({ value, id: chartColorKey('category', model.dimensionTuples?.[index] || model.categories[index]) })) : item.values, ...(dualAxis ? { yAxisIndex: item.axis === 'right' ? 1 : 0 } : {}) })) }
+  return { tooltip: { trigger: 'axis' }, legend: { top: 0 }, grid: { top: 38, bottom: 28, left: 12, right: 16, containLabel: true }, xAxis: { type: 'category', data: model.categories }, yAxis: dualAxis ? [{ type: 'value' }, { type: 'value' }] : { type: 'value' }, series: model.series.map(item => ({ name: item.name, type: kind, data: categoryColoredBar ? item.values.map((value, index) => ({ value, id: chartColorKey('category', model.dimensionTuples?.[index] || model.categories[index]), dimensionValues: model.dimensionTuples?.[index] || {} })) : item.values, ...(dualAxis ? { yAxisIndex: item.axis === 'right' ? 1 : 0 } : {}) })) }
 }

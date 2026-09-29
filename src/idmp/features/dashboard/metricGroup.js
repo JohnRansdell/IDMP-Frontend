@@ -1,9 +1,11 @@
 import { clonePersistableValue } from './schema.js'
+import { normalizeKpiVariant } from './kpiVariants.js'
 
 export const METRIC_GROUP_COLUMNS = Object.freeze(['auto', '2', '3', '4'])
 export const METRIC_ITEM_SPANS = Object.freeze([1, 2])
 export const METRIC_ITEM_EMPHASIS = Object.freeze(['normal', 'emphasis', 'hero'])
 export const METRIC_ITEM_ALIGNMENTS = Object.freeze(['left', 'center'])
+export const METRIC_ITEM_TONES = Object.freeze(['mint', 'apricot', 'sky', 'neutral'])
 export const METRIC_GROUP_ITEM_APPEARANCES = Object.freeze(['flat', 'divider', 'tile'])
 
 export const METRIC_GROUP_PRESETS = Object.freeze([
@@ -12,7 +14,8 @@ export const METRIC_GROUP_PRESETS = Object.freeze([
   { id: 'metric-strip', name: '横向指标带', description: '适合看板顶部的紧凑 KPI 带', thumbnail: 'metric-strip' },
   { id: 'left-hero-right-grid', name: '左主右辅', description: '左侧主指标，右侧紧凑指标矩阵', thumbnail: 'left-hero-right-grid' },
   { id: 'minimal', name: '极简数字', description: '弱化边界，突出数字与留白', thumbnail: 'minimal' },
-  { id: 'risk-monitor', name: '风险监控', description: '突出重点风险与状态指标', thumbnail: 'risk-monitor' }
+  { id: 'risk-monitor', name: '风险监控', description: '突出重点风险与状态指标', thumbnail: 'risk-monitor' },
+  { id: 'quality-overview', name: '质量总览', description: '浅色 KPI 卡片与清晰对比层级', thumbnail: 'quality-overview' }
 ])
 
 const plain = value => value && typeof value === 'object' && !Array.isArray(value) ? value : {}
@@ -30,7 +33,7 @@ export function createMetricGroupItem(source = {}, index = 0) {
     label: text(source.name) || `指标 ${index + 1}`,
     sourceCode: text(source.code), sourceName: text(source.name),
     unit: text(source.unit), dataBinding: null,
-    layout: { span: 1 }, emphasis: 'normal', align: 'left'
+    layout: { span: 1 }, emphasis: 'normal', align: 'left', tone: 'neutral', kpiVariant: 'standard'
   }
 }
 
@@ -56,7 +59,9 @@ export function normalizeMetricGroupConfig(value = {}) {
       ...(plain(raw.dataBinding) && Object.keys(plain(raw.dataBinding)).length ? { dataBinding: clonePersistableValue(raw.dataBinding) } : {}),
       layout: { span: METRIC_ITEM_SPANS.includes(Number(plain(raw.layout).span)) ? Number(plain(raw.layout).span) : 1 },
       emphasis: METRIC_ITEM_EMPHASIS.includes(raw.emphasis) ? raw.emphasis : 'normal',
-      align: METRIC_ITEM_ALIGNMENTS.includes(raw.align) ? raw.align : 'left'
+      align: METRIC_ITEM_ALIGNMENTS.includes(raw.align) ? raw.align : 'left',
+      tone: METRIC_ITEM_TONES.includes(raw.tone) ? raw.tone : 'neutral',
+      kpiVariant: normalizeKpiVariant(raw.kpiVariant)
     }
   })
   const layout = plain(source.layout)
@@ -77,7 +82,8 @@ export function applyMetricGroupPreset(config = {}, presetId) {
     'metric-strip': { columns: '4', gap: 8, itemAppearance: 'divider', item: () => ({ span: 1, emphasis: 'normal', align: 'center' }) },
     'left-hero-right-grid': { columns: '4', gap: 10, itemAppearance: 'tile', item: index => index === 0 ? { span: 2, emphasis: 'hero', align: 'left' } : { span: 1, emphasis: 'normal', align: 'center' } },
     minimal: { columns: normalized.items.length > 4 ? '3' : '2', gap: 18, itemAppearance: 'flat', item: () => ({ span: 1, emphasis: 'emphasis', align: 'left' }) },
-    'risk-monitor': { columns: '3', gap: 12, itemAppearance: 'tile', item: index => index === 0 ? { span: 2, emphasis: 'hero', align: 'left' } : { span: 1, emphasis: index === 1 ? 'emphasis' : 'normal', align: 'left' } }
+    'risk-monitor': { columns: '3', gap: 12, itemAppearance: 'tile', item: index => index === 0 ? { span: 2, emphasis: 'hero', align: 'left', tone: 'apricot' } : { span: 1, emphasis: index === 1 ? 'emphasis' : 'normal', align: 'left', tone: 'neutral' } },
+    'quality-overview': { columns: normalized.items.length > 4 ? '4' : '2', gap: 12, itemAppearance: 'tile', item: index => ({ span: 1, emphasis: 'normal', align: 'left', tone: ['mint', 'apricot', 'sky'][index % 3] }) }
   }
   const rule = rules[preset.id]
   return {
@@ -86,7 +92,7 @@ export function applyMetricGroupPreset(config = {}, presetId) {
     itemAppearance: rule.itemAppearance,
     items: normalized.items.map((item, index) => {
       const presentation = rule.item(index)
-      return { ...item, layout: { span: presentation.span }, emphasis: presentation.emphasis, align: presentation.align }
+      return { ...item, layout: { span: presentation.span }, emphasis: presentation.emphasis, align: presentation.align, tone: presentation.tone || item.tone }
     })
   }
 }
@@ -95,7 +101,7 @@ export function metricGroupItemWidget(group, item) {
   return {
     id: `${group.id}::${item.id}`, type: 'kpi', title: item.label,
     sourceCode: item.sourceCode, sourceName: item.sourceName,
-    config: { ...(item.dataBinding ? { dataBinding: item.dataBinding } : {}), query: plain(group.config?.query) }
+    config: { ...(item.dataBinding ? { dataBinding: item.dataBinding } : {}), query: plain(group.config?.query), style: { kpiVariant: normalizeKpiVariant(item.kpiVariant) } }
   }
 }
 

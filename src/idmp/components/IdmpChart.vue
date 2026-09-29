@@ -152,6 +152,9 @@ const renderChart = async () => {
     animation: !reducedMotion,
     ...props.option
   })
+  const mapDefinition = chartOption.__mapDefinition
+  if (mapDefinition?.name && mapDefinition.geoJSON) echarts.registerMap(mapDefinition.name, mapDefinition.geoJSON)
+  delete chartOption.__mapDefinition
   chartOption.aria = { ...chartOption.aria, enabled: false }
   chart.setOption(chartOption, { notMerge: true })
   chartEl.value.setAttribute('aria-label', props.ariaLabel)
@@ -214,7 +217,7 @@ onBeforeUnmount(() => {
 .idmp-chart-frame.is-fit-container .idmp-chart,
 .idmp-chart-frame.is-fit-container .idmp-chart__state {
   flex: 1 1 auto;
-  min-height: 120px;
+  min-height: 0;
 }
 
 .idmp-chart__footer {

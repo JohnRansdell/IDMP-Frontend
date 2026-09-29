@@ -10,6 +10,13 @@ export function nextWidgetSelection(current, widgetId, { additive = false } = {}
   ids.add(id)
   return { ids: [...ids], primaryId: id }
 }
+export function nextMarqueeSelection(current, widgetIds, { additive = false } = {}) {
+  const incoming = [...new Set((widgetIds || []).map(id => String(id || '')).filter(Boolean))]
+  if (!additive) return { ids: incoming, primaryId: incoming.at(-1) || '' }
+  const ids = [...new Set([...(current?.ids || []).map(String).filter(Boolean), ...incoming])]
+  const currentPrimary = String(current?.primaryId || '')
+  return { ids, primaryId: incoming.at(-1) || (ids.includes(currentPrimary) ? currentPrimary : ids.at(-1) || '') }
+}
 export const clearWidgetSelection = () => ({ ids: [], primaryId: '' })
 function valid(layout, columns) { return Number.isInteger(layout.x) && Number.isInteger(layout.y) && Number.isInteger(layout.w) && Number.isInteger(layout.h) && layout.x >= 0 && layout.y >= 0 && layout.w > 0 && layout.h > 0 && layout.x + layout.w <= columns }
 function collides(left, right) { return left.x < right.x + right.w && left.x + left.w > right.x && left.y < right.y + right.h && left.y + left.h > right.y }

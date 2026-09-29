@@ -14,11 +14,24 @@ export const HEATMAP_SCALES = Object.freeze({
   blue: ['#edf6ff', '#1261a6'], blueTeal: ['#e8f7f6', '#187f91'], green: ['#edf8f0', '#357b62'], warm: ['#fff4d6', '#c85d45'], coolWarm: ['#2d6da3', '#edf3e8', '#c85d45']
 })
 
+export const DEFAULT_WIDGET_GRADIENT_COLORS = Object.freeze(['#f8fcff', '#edf9f7'])
+
+export function parseWidgetGradientColors(value) {
+  const colors = typeof value === 'string' ? value.match(/#[0-9a-f]{6}\b/gi) || [] : []
+  return [colors[0] || DEFAULT_WIDGET_GRADIENT_COLORS[0], colors[1] || DEFAULT_WIDGET_GRADIENT_COLORS[1]]
+}
+
+export function createWidgetGradient(colors = DEFAULT_WIDGET_GRADIENT_COLORS) {
+  const safe = colors.map((color, index) => /^#[0-9a-f]{6}$/i.test(color) ? color : DEFAULT_WIDGET_GRADIENT_COLORS[index])
+  return `linear-gradient(135deg,${safe[0]} 0%,${safe[1]} 100%)`
+}
+
 // Presets are intentionally write-only conveniences. They expand into the
 // established style contract, so Viewer, copy, templates and persistence never
 // need a parallel "preset runtime".
 export const WIDGET_STYLE_PRESETS = Object.freeze({
   clinical: Object.freeze({ label: '临床白', style: { background: '#ffffff', borderColor: '#d8e2e7', borderWidth: 1, borderRadius: 10, shadow: 'sm', palettePreset: 'medicalBlue', colors: [], kpi: { valueColor: '#153b5d', titleColor: '#52636c', trendColor: '' }, text: { titleColor: '#153b5d', bodyColor: '#52636c' } } }),
+  mintHospital: Object.freeze({ label: '浅青总览', style: { background: '#ffffff', borderColor: '#cfe8e5', borderWidth: 1, borderRadius: 12, shadow: 'sm', palettePreset: 'blueTeal', colors: [], kpi: { valueColor: '#0b9897', titleColor: '#32464b', trendColor: '#62787d' }, text: { titleColor: '#23484d', bodyColor: '#62787d' } } }),
   blueTeal: Object.freeze({ label: '蓝青医疗', style: { background: '#f2f9fb', backgroundGradient: 'linear-gradient(135deg,#f8fcff 0%,#edf9f7 100%)', borderColor: '#b8d9df', borderWidth: 1, borderRadius: 12, shadow: 'sm', palettePreset: 'blueTeal', colors: [], kpi: { valueColor: '#12616d', titleColor: '#45656c', trendColor: '' }, text: { titleColor: '#12616d', bodyColor: '#45656c' } } }),
   mistBlue: Object.freeze({ label: '清透蓝', style: { background: '#f4f8ff', backgroundGradient: 'linear-gradient(135deg,#f9fbff 0%,#e9f3ff 100%)', borderColor: '#c8dcf2', borderWidth: 1, borderRadius: 12, shadow: 'sm', palettePreset: 'medicalBlue', colors: [], kpi: { valueColor: '#1d5d98', titleColor: '#526b85', trendColor: '' }, text: { titleColor: '#1d5d98', bodyColor: '#526b85' } } }),
   mint: Object.freeze({ label: '薄荷绿', style: { background: '#f2faf6', backgroundGradient: 'linear-gradient(135deg,#f8fdfb 0%,#e8f6ef 100%)', borderColor: '#bfded0', borderWidth: 1, borderRadius: 12, shadow: 'sm', palettePreset: 'green', colors: [], kpi: { valueColor: '#286b53', titleColor: '#55766a', trendColor: '' }, text: { titleColor: '#286b53', bodyColor: '#55766a' } } }),
@@ -30,19 +43,31 @@ export function applyWidgetStylePreset(style = {}, presetId = 'clinical') {
   const preset = WIDGET_STYLE_PRESETS[presetId]
   if (!preset) return { ...record(style) }
   const current = record(style)
-  const next = { ...current, ...preset.style, kpi: { ...record(current.kpi), ...preset.style.kpi }, text: { ...record(current.text), ...preset.style.text } }
-  // A preset is a coherent surface selection, not an accidental image carryover.
-  delete next.backgroundAssetKey
-  delete next.backgroundImage
-  delete next.backgroundOverlay
-  delete next.backgroundSize
-  delete next.backgroundPosition
-  delete next.backgroundMode
-  if (!Object.hasOwn(preset.style, 'backgroundGradient')) delete next.backgroundGradient
-  return next
+  // A theme remains a visibly complete card scheme, but it materializes a
+  // solid surface only. Gradients and images belong to the explicit card
+  // appearance controls and must never be activated implicitly by a theme.
+  const { backgroundGradient, ...themeStyle } = preset.style
+  return {
+    ...current,
+    ...themeStyle,
+    themePreset: presetId,
+    backgroundMode: 'solid',
+    themeAccent: undefined,
+    backgroundGradient: undefined,
+    backgroundAssetKey: undefined,
+    backgroundImage: undefined,
+    backgroundOverlay: undefined,
+    backgroundSize: undefined,
+    backgroundPosition: undefined,
+    kpi: { ...record(current.kpi), ...preset.style.kpi },
+    text: { ...record(current.text), ...preset.style.text }
+  }
 }
 
 export function resolveWidgetBackgroundMode(style = {}) {
+  if (style.backgroundMode === 'none') return 'none'
+  if (style.backgroundMode === 'solid') return 'solid'
+  if (style.backgroundMode === 'gradient') return 'gradient'
   if (style.backgroundMode === 'image') return 'image'
   if (style.backgroundAssetKey || style.backgroundImage) return 'image'
   if (style.backgroundGradient) return 'gradient'
@@ -52,11 +77,11 @@ export function resolveWidgetBackgroundMode(style = {}) {
 
 export function applyWidgetBackgroundMode(style = {}, mode = 'none') {
   const next = { ...record(style) }
-  if (mode === 'solid') { delete next.backgroundMode; delete next.backgroundGradient; delete next.backgroundAssetKey; delete next.backgroundImage; delete next.backgroundOverlay; delete next.backgroundSize; delete next.backgroundPosition; return { ...next, background: next.background || '#ffffff' } }
-  if (mode === 'gradient') { delete next.backgroundMode; delete next.backgroundAssetKey; delete next.backgroundImage; delete next.backgroundOverlay; delete next.backgroundSize; delete next.backgroundPosition; return { ...next, backgroundGradient: next.backgroundGradient || 'linear-gradient(135deg,#f8fcff 0%,#edf9f7 100%)' } }
+  if (mode === 'solid') { delete next.backgroundGradient; delete next.backgroundAssetKey; delete next.backgroundImage; delete next.backgroundOverlay; delete next.backgroundSize; delete next.backgroundPosition; return { ...next, backgroundMode: 'solid', background: next.background || '#ffffff' } }
+  if (mode === 'gradient') { delete next.backgroundAssetKey; delete next.backgroundImage; delete next.backgroundOverlay; delete next.backgroundSize; delete next.backgroundPosition; return { ...next, backgroundMode: 'gradient', backgroundGradient: next.backgroundGradient || 'linear-gradient(135deg,#f8fcff 0%,#edf9f7 100%)' } }
   if (mode === 'image') { delete next.backgroundGradient; return { ...next, backgroundMode: 'image' } }
-  delete next.backgroundMode; delete next.background; delete next.backgroundGradient; delete next.backgroundAssetKey; delete next.backgroundImage; delete next.backgroundOverlay; delete next.backgroundSize; delete next.backgroundPosition
-  return next
+  delete next.backgroundGradient; delete next.backgroundAssetKey; delete next.backgroundImage; delete next.backgroundOverlay; delete next.backgroundSize; delete next.backgroundPosition
+  return { ...next, backgroundMode: 'none', background: '#ffffff' }
 }
 
 export function chartColorKey(type, value) { return `${type}:${typeof value === 'string' ? value : JSON.stringify(value)}` }
@@ -127,9 +152,11 @@ export function widgetPalette(widget) {
 }
 
 export function resetWidgetVisualStyle(style = {}) {
-  const next = { ...record(style) }
-  ;['presentationPreset', 'palettePreset', 'colors', 'colorOverrides', 'common', 'bar', 'line', 'pie', 'scatter', 'radar', 'funnel', 'heatmap', 'gauge', 'map', 'kpi', 'text', 'table'].forEach(key => delete next[key])
-  return next
+  return {
+    background: '#ffffff', backgroundMode: 'none', borderColor: '#d0d5dd',
+    borderWidth: 1, borderStyle: 'solid', borderRadius: 8,
+    shadow: 'none', padding: 0, opacity: 1, kpiVariant: 'standard'
+  }
 }
 
 export const CHART_PRESENTATION_PRESETS = Object.freeze({
@@ -261,7 +288,13 @@ export function applyWidgetVisualStyle(widget, rawOption = {}) {
     const seriesKey = chartColorKey('series', series.id || series.name || index)
     const seriesColor = style.colorOverrides[seriesKey] || color
     if (series.type === 'line') return { ...series, showSymbol: style.line.showSymbol !== false, symbol: style.line.symbol, symbolSize: style.line.symbolSize, lineStyle: { ...series.lineStyle, color: seriesColor, width: style.line.width, type: style.line.type }, itemStyle: { ...series.itemStyle, color: seriesColor }, smooth: style.line.smooth === true, ...(style.line.area ? { areaStyle: { ...series.areaStyle, color: seriesColor, opacity: style.line.areaOpacity } } : { areaStyle: undefined }) }
-    if (series.type === 'pie') return { ...series, radius: style.pie.donut ? [`${style.pie.innerRadius}%`, '70%'] : ['0%', '70%'], label: { ...series.label, show: style.pie.showLabel !== false, position: style.pie.labelPosition === 'inside' ? 'inside' : 'outside' }, data: (series.data || []).map((item, itemIndex) => { const value = item && typeof item === 'object' ? item : { value: item }; const key = value.id || chartColorKey('category', value.name || itemIndex); return { ...value, id: key, itemStyle: { ...value.itemStyle, color: style.colorOverrides[key] || palette[itemIndex % palette.length] } } }) }
+    if (series.type === 'pie') {
+      const innerRadius = Math.min(82, Math.max(0, Number(style.pie.innerRadius) || 0))
+      // A donut must retain a visible band. The minimal preset uses a large
+      // inner radius, so a fixed 70% outer radius would collapse it to zero.
+      const outerRadius = innerRadius >= 64 ? Math.min(92, innerRadius + 12) : 70
+      return { ...series, radius: style.pie.donut ? [`${innerRadius}%`, `${outerRadius}%`] : ['0%', '70%'], label: { ...series.label, show: style.pie.showLabel !== false, position: style.pie.labelPosition === 'inside' ? 'inside' : 'outside' }, data: (series.data || []).map((item, itemIndex) => { const value = item && typeof item === 'object' ? item : { value: item }; const key = value.id || chartColorKey('category', value.name || itemIndex); return { ...value, id: key, itemStyle: { ...value.itemStyle, color: style.colorOverrides[key] || palette[itemIndex % palette.length] } } }) }
+    }
     if (series.type === 'scatter') return { ...series, symbol: style.scatter.symbol, symbolSize: style.scatter.symbolSize, itemStyle: { ...series.itemStyle, color, opacity: style.scatter.opacity } }
     if (series.type === 'radar') return { ...series, symbol: style.radar.showSymbol === false ? 'none' : 'circle', symbolSize: style.radar.symbolSize, lineStyle: { ...series.lineStyle, color, width: style.radar.width }, itemStyle: { ...series.itemStyle, color }, areaStyle: style.radar.area ? { ...series.areaStyle, color, opacity: style.radar.areaOpacity } : undefined }
     if (series.type === 'funnel') return { ...series, gap: style.funnel.gap, label: { ...series.label, show: style.funnel.showLabel !== false, position: style.funnel.labelPosition === 'inside' ? 'inside' : 'outside' } }

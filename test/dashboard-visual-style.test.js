@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { applyWidgetBackgroundMode, applyWidgetStylePreset, applyWidgetVisualStyle, chartColorKey, chartColorTargets, chartPaletteLabels, resetWidgetVisualStyle, resolveWidgetBackgroundMode, resolveWidgetVisualStyle } from '../src/idmp/features/dashboard/visualStyle.js'
+import { applyWidgetBackgroundMode, applyWidgetStylePreset, applyWidgetVisualStyle, chartColorKey, chartColorTargets, chartPaletteLabels, createWidgetGradient, parseWidgetGradientColors, resetWidgetVisualStyle, resolveWidgetBackgroundMode, resolveWidgetVisualStyle } from '../src/idmp/features/dashboard/visualStyle.js'
 import { createPersistableDashboardSnapshot, normalizeDashboardSchema } from '../src/idmp/features/dashboard/schema.js'
 
 const widget = (chartKind, style = {}) => ({ id: `${chartKind}-1`, type: 'chart', chartKind, config: { style } })
@@ -60,6 +60,13 @@ test('bar, pie and map visual styles only alter presentation options', () => {
   assert.equal(map.yAxis.axisLabel.show, false)
 })
 
+test('minimal donut keeps a visible band when its inner radius is 70 percent', () => {
+  const option = applyWidgetVisualStyle({ type: 'chart', chartKind: 'pie', config: { style: { pie: { donut: true, innerRadius: 70, showLabel: false } } } }, { series: [{ type: 'pie', data: [{ name: 'A', value: 3 }, { name: 'B', value: 2 }] }] })
+  assert.deepEqual(option.series[0].radius, ['70%', '82%'])
+  assert.equal(option.series[0].label.show, false)
+  assert.equal(option.series[0].data.length, 2)
+})
+
 test('x axis rotation has explicit and deterministic auto presentation without changing data', () => {
   const data = [12, 14, 18]
   const explicit = applyWidgetVisualStyle(widget('bar', { common: { xAxisLabelRotation: 45 } }), { grid: { bottom: 28 }, xAxis: { type: 'category', data: ['一月', '二月', '三月'] }, series: [{ type: 'bar', data }] })
@@ -110,10 +117,13 @@ test('rotated labels do not reserve a second bottom band or affect horizontal ba
   assert.equal(horizontal.yAxis.axisLabel.rotate, 0)
 })
 
-test('style preset expands into concrete widget style without a second runtime field', () => {
+test('style preset applies a visible solid card scheme without activating gradients or images', () => {
   const applied = applyWidgetStylePreset({ backgroundAssetKey: 'deep-blue', backgroundImage: 'https://example.test/old.png', customNote: 'kept', kpi: { trendColor: '#000000' } }, 'blueTeal')
   assert.equal(applied.background, '#f2f9fb')
+  assert.equal(applied.backgroundMode, 'solid')
   assert.equal(applied.palettePreset, 'blueTeal')
+  assert.equal(applied.themePreset, 'blueTeal')
+  assert.equal(applied.themeAccent, undefined)
   assert.equal(applied.kpi.valueColor, '#12616d')
   assert.equal(applied.backgroundImage, undefined)
   assert.equal(applied.backgroundAssetKey, undefined)
@@ -122,7 +132,30 @@ test('style preset expands into concrete widget style without a second runtime f
   const schema = normalizeDashboardSchema({ version: 1, id: 'preset', widgets: [{ id: 'kpi', type: 'kpi', config: { style: applied } }] })
   const persisted = JSON.parse(JSON.stringify(createPersistableDashboardSnapshot(schema)))
   assert.equal(persisted.widgets[0].config.style.palettePreset, 'blueTeal')
-  assert.equal(persisted.widgets[0].config.style.backgroundGradient, 'linear-gradient(135deg,#f8fcff 0%,#edf9f7 100%)')
+  assert.equal(persisted.widgets[0].config.style.backgroundGradient, undefined)
+  assert.equal(persisted.widgets[0].config.style.backgroundAssetKey, undefined)
+})
+
+test('switching a legacy gradient theme back to clinical restores the default white surface', () => {
+  const legacy = { background: '#f2f9fb', backgroundGradient: 'linear-gradient(135deg,#f8fcff 0%,#edf9f7 100%)', kpi: { valueColor: '#12616d' } }
+  const clinical = applyWidgetStylePreset(legacy, 'clinical')
+  const appliedByInspector = { ...legacy, ...clinical }
+  assert.equal(appliedByInspector.background, '#ffffff')
+  assert.equal(appliedByInspector.backgroundGradient, undefined)
+  assert.equal(resolveWidgetBackgroundMode(appliedByInspector), 'solid')
+  assert.equal(appliedByInspector.kpi.valueColor, '#153b5d')
+})
+
+test('theme presets remain visibly distinct when applied through the inspector patch path', () => {
+  const base = { background: '#ffffff', backgroundMode: 'none' }
+  const clinical = { ...base, ...applyWidgetStylePreset(base, 'clinical') }
+  const mint = { ...base, ...applyWidgetStylePreset(base, 'mintHospital') }
+  const warm = { ...base, ...applyWidgetStylePreset(base, 'warm') }
+  assert.notEqual(clinical.kpi.valueColor, mint.kpi.valueColor)
+  assert.notEqual(mint.kpi.valueColor, warm.kpi.valueColor)
+  assert.notEqual(clinical.palettePreset, warm.palettePreset)
+  assert.equal(resolveWidgetBackgroundMode(mint), 'solid')
+  assert.equal(resolveWidgetBackgroundMode(warm), 'solid')
 })
 
 test('background modes are mutually exclusive while legacy style precedence remains deterministic', () => {
@@ -135,6 +168,13 @@ test('background modes are mutually exclusive while legacy style precedence rema
   assert.equal(image.backgroundGradient, undefined)
   const none = applyWidgetBackgroundMode(image, 'none')
   assert.equal(resolveWidgetBackgroundMode(none), 'none')
+  assert.equal(none.background, '#ffffff')
+})
+
+test('widget gradient colors round trip through the visual picker contract', () => {
+  assert.deepEqual(parseWidgetGradientColors('linear-gradient(135deg,#112233 0%,#aabbcc 100%)'), ['#112233', '#aabbcc'])
+  assert.equal(createWidgetGradient(['#123456', '#abcdef']), 'linear-gradient(135deg,#123456 0%,#abcdef 100%)')
+  assert.deepEqual(parseWidgetGradientColors('invalid'), ['#f8fcff', '#edf9f7'])
 })
 
 test('dashboard and widget visual fields survive the persistence boundary', () => {
@@ -151,10 +191,12 @@ test('legacy widgets resolve existing visuals and reset leaves binding layout an
   const schema = normalizeDashboardSchema({ version: 1, id: 'style-reset', widgets: [{ id: 'line', type: 'chart', chartKind: 'line', layout: { x: 2, y: 3, w: 12, h: 6 }, config: { style: { background: '#fff', line: { width: 5 }, palettePreset: 'warm', presentationPreset: 'area' }, dataBinding: { dataset: 'dual', dimensions: [{ field: 'month' }], measures: [{ field: 'actualValue', aggregation: 'direct' }], series: [], sort: [] }, interaction: { clickAction: 'cross-filter' } } }] })
   const item = schema.widgets[0]
   const style = resetWidgetVisualStyle(item.config.style)
-  assert.equal(style.background, '#fff')
+  assert.equal(style.background, '#ffffff')
+  assert.equal(style.backgroundMode, 'none')
   assert.equal(style.line, undefined)
   assert.equal(style.presentationPreset, undefined)
   assert.equal(style.palettePreset, undefined)
+  assert.equal(style.kpiVariant, 'standard')
   assert.deepEqual(item.layout, { x: 2, y: 3, w: 12, h: 6 })
   assert.equal(item.config.dataBinding.dataset, 'dual')
   assert.equal(item.config.interaction.clickAction, 'cross-filter')

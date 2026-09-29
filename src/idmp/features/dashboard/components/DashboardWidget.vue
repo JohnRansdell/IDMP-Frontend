@@ -16,7 +16,8 @@
     @pointerdown="selectWidget"
   >
     <div class="grid-stack-item-content">
-      <div class="dashboard-widget__chrome" :style="chromeStyle">
+      <div :key="styleRevision" class="dashboard-widget__chrome" :style="chromeStyle">
+        <span v-if="editable && !selected" class="dashboard-widget__hover-hint" aria-hidden="true">点击选择 · 拖动调整</span>
         <div class="dashboard-widget__body">
           <slot :widget="widget" />
         </div>
@@ -43,6 +44,10 @@ const root = ref(null)
 const sizeTier = ref('standard')
 let resizeObserver
 const constraints = computed(() => getWidgetGridConstraints(props.widget))
+// GridStack keeps the outer item DOM node stable. Key only the inner visual
+// subtree so style/theme changes remount their renderer without disturbing
+// GridStack membership, position, resize handles or selection state.
+const styleRevision = computed(() => JSON.stringify(props.widget.config?.style || {}))
 function selectWidget(event) {
   if (event.target instanceof Element && event.target.closest('.ui-resizable-handle')) return
   emit('select', { id: normalizeWidgetSelectionId(props.widget.id), additive: event.ctrlKey || event.metaKey || event.shiftKey })
@@ -104,5 +109,8 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
 .dashboard-widget.is-selected::after { content: ''; position: absolute; z-index: 10; inset: -5px; pointer-events: none; border: 2px solid #409eff; border-radius: calc(var(--widget-radius) + 5px); }
 .dashboard-widget.is-selected:not(.is-primary-selected)::after { border-color:rgba(64,158,255,.55); border-width:1px; }
 .dashboard-widget.is-locked::before { content:'锁定'; position:absolute; z-index:11; top:6px; right:7px; padding:2px 5px; border-radius:4px; color:#475467; background:rgba(255,255,255,.88); font-size:10px; pointer-events:none; }
+.dashboard-widget__hover-hint { position:absolute; z-index:12; top:7px; right:7px; padding:3px 6px; border:1px solid rgba(86,130,146,.22); border-radius:4px; background:rgba(255,255,255,.92); box-shadow:0 2px 7px rgba(32,72,88,.10); color:#526b75; font-size:10px; opacity:0; pointer-events:none; transform:translateY(-3px); transition:opacity .14s ease,transform .14s ease; }
+.dashboard-widget.is-editable:not(.is-selected):hover .dashboard-widget__hover-hint { opacity:1; transform:translateY(0); }
 @media (prefers-reduced-motion: no-preference) { .dashboard-widget:not(.is-editable) .dashboard-widget__chrome { transition:transform .16s ease,box-shadow .16s ease; } .dashboard-widget:not(.is-editable):hover .dashboard-widget__chrome { transform:translateY(-1px); box-shadow:0 6px 18px rgba(31,69,89,.12); } }
+@media (prefers-reduced-motion: reduce) { .dashboard-widget__hover-hint { transition:none; } }
 </style>

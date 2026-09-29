@@ -79,6 +79,13 @@ export function trialFactorVersion(versionId, payload, idempotencyKey) {
   })
 }
 
+export function queryFactorVersion(versionId, payload) {
+  return requestJson(`/factor-versions/${encodeURIComponent(versionId)}/query`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
 export function fetchFactorTrialPeriodRecommendation(versionId) {
   return requestJson(`/factor-versions/${encodeURIComponent(versionId)}/trial-period-recommendation`)
 }

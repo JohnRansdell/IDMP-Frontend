@@ -3,10 +3,14 @@
     ref="gridElement"
     class="grid-stack dashboard-canvas"
     data-testid="dashboard-canvas"
-    :class="{ 'is-editable': editable, 'is-grid-interacting': interaction.active }"
+    :class="{ 'is-editable': editable, 'is-grid-interacting': interaction.active, 'is-marquee-selecting': marquee.active }"
     :style="gridStyle"
     :aria-label="ariaLabel"
-    @click.self="selectWidget('')"
+    @click.self="handleCanvasClick"
+    @pointerdown="startMarqueeSelection"
+    @pointermove="updateMarqueeSelection"
+    @pointerup="finishMarqueeSelection"
+    @pointercancel="cancelMarqueeSelection"
   >
     <div v-if="editable && interaction.active" class="dashboard-grid-guide" :style="guideStyle" aria-hidden="true">
       <span
@@ -21,7 +25,7 @@
       :key="String(widget.id)"
       :widget="widget"
       :editable="editable"
-      :selected="selectedWidgetIds.includes(String(widget.id))"
+      :selected="isWidgetSelected(widget.id)"
       :primary-selected="primarySelectedWidgetId === String(widget.id)"
       @select="selectWidget"
       @remove="$emit('widget-remove', $event)"
@@ -29,6 +33,9 @@
     >
       <template #default="slotProps"><DashboardWidgetBoundary :designer="editable"><slot :widget="slotProps.widget" /></DashboardWidgetBoundary></template>
     </DashboardWidget>
+    <div v-if="editable && marquee.active && marquee.moved" class="dashboard-marquee" :style="marqueeStyle" aria-hidden="true">
+      <span class="dashboard-marquee__count">{{ marqueeHitIds.length }} 个组件</span>
+    </div>
     <output v-if="interaction.active" class="dashboard-canvas__size-feedback" :style="feedbackStyle" aria-live="polite">{{ interaction.w }} × {{ interaction.h }}</output>
   </section>
 </template>
@@ -61,7 +68,11 @@ const grid = ref(null)
 const registeredWidgetIds = new Set()
 const registrationJobs = new Map()
 let disposed = false
+let suppressCanvasClick = false
+let suppressCanvasClickTimer
 const interaction = reactive({ active: false, x: 0, y: 0, w: 0, h: 0 })
+const marquee = reactive({ active: false, moved: false, additive: false, pointerId: null, startX: 0, startY: 0, clientLeft: 0, clientTop: 0, clientRight: 0, clientBottom: 0, x: 0, y: 0, width: 0, height: 0 })
+const marqueeHitIds = ref([])
 const gridGeometry = reactive(getDashboardGridGeometry(props.columns, 0, props.cellHeight, props.margin, 1))
 const gridStyle = computed(() => ({ '--dashboard-guide-height': `${gridGeometry.rows * gridGeometry.cellHeight}px` }))
 const guideStyle = computed(() => ({
@@ -83,11 +94,93 @@ const feedbackStyle = computed(() => ({
   left: `${Math.min((interaction.x + interaction.w) * gridGeometry.cellWidth - 8, gridGeometry.columns * gridGeometry.cellWidth - 8)}px`,
   top: `${interaction.y * gridGeometry.cellHeight + 8}px`
 }))
+const marqueeStyle = computed(() => ({ left: `${marquee.x}px`, top: `${marquee.y}px`, width: `${marquee.width}px`, height: `${marquee.height}px` }))
 let isApplyingSchema = false
 let userInteractionActive = false
 let geometryObserver
 function selectWidget(widgetId) {
   emit('widget-select', widgetId)
+}
+function isWidgetSelected(widgetId) {
+  const id = String(widgetId)
+  if (!marquee.active || !marquee.moved) return props.selectedWidgetIds.includes(id)
+  return marqueeHitIds.value.includes(id) || (marquee.additive && props.selectedWidgetIds.includes(id))
+}
+function handleCanvasClick() {
+  if (!suppressCanvasClick) selectWidget('')
+}
+function isMarqueeOrigin(target) {
+  return target instanceof Element && !target.closest('.dashboard-widget, button, input, select, textarea, a, [contenteditable="true"]')
+}
+function setMarqueeRectangle(clientX, clientY) {
+  const canvasRect = gridElement.value?.getBoundingClientRect()
+  if (!canvasRect) return
+  const currentX = Math.min(Math.max(clientX, canvasRect.left), canvasRect.right)
+  const currentY = Math.min(Math.max(clientY, canvasRect.top), canvasRect.bottom)
+  marquee.clientLeft = Math.min(marquee.startX, currentX)
+  marquee.clientTop = Math.min(marquee.startY, currentY)
+  marquee.clientRight = Math.max(marquee.startX, currentX)
+  marquee.clientBottom = Math.max(marquee.startY, currentY)
+  marquee.x = marquee.clientLeft - canvasRect.left
+  marquee.y = marquee.clientTop - canvasRect.top
+  marquee.width = marquee.clientRight - marquee.clientLeft
+  marquee.height = marquee.clientBottom - marquee.clientTop
+}
+function collectMarqueeHits() {
+  if (!gridElement.value || !marquee.moved) return []
+  return [...gridElement.value.children]
+    .filter(element => element.matches('.dashboard-widget.grid-stack-item'))
+    .filter((element) => {
+      const rect = element.getBoundingClientRect()
+      return marquee.clientLeft < rect.right && marquee.clientRight > rect.left && marquee.clientTop < rect.bottom && marquee.clientBottom > rect.top
+    })
+    .map(element => String(element.dataset.widgetId || ''))
+    .filter(Boolean)
+}
+function startMarqueeSelection(event) {
+  if (!props.editable || interaction.active || event.button !== 0 || event.pointerType === 'touch' || !isMarqueeOrigin(event.target)) return
+  const canvasRect = gridElement.value?.getBoundingClientRect()
+  if (!canvasRect) return
+  marquee.active = true
+  marquee.moved = false
+  marquee.additive = event.ctrlKey || event.metaKey || event.shiftKey
+  marquee.pointerId = event.pointerId
+  marquee.startX = Math.min(Math.max(event.clientX, canvasRect.left), canvasRect.right)
+  marquee.startY = Math.min(Math.max(event.clientY, canvasRect.top), canvasRect.bottom)
+  marqueeHitIds.value = []
+  setMarqueeRectangle(event.clientX, event.clientY)
+  event.currentTarget.setPointerCapture?.(event.pointerId)
+  event.preventDefault()
+}
+function updateMarqueeSelection(event) {
+  if (!marquee.active || event.pointerId !== marquee.pointerId) return
+  setMarqueeRectangle(event.clientX, event.clientY)
+  marquee.moved = marquee.moved || marquee.width >= 4 || marquee.height >= 4
+  marqueeHitIds.value = collectMarqueeHits()
+}
+function resetMarqueeSelection() {
+  marquee.active = false
+  marquee.moved = false
+  marquee.pointerId = null
+  marqueeHitIds.value = []
+}
+function finishMarqueeSelection(event) {
+  if (!marquee.active || event.pointerId !== marquee.pointerId) return
+  const moved = marquee.moved
+  const additive = marquee.additive
+  const ids = [...marqueeHitIds.value]
+  if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  resetMarqueeSelection()
+  if (!moved) return
+  suppressCanvasClick = true
+  clearTimeout(suppressCanvasClickTimer)
+  suppressCanvasClickTimer = setTimeout(() => { suppressCanvasClick = false }, 0)
+  emit('widget-select', { ids, additive, source: 'marquee' })
+}
+function cancelMarqueeSelection(event) {
+  if (!marquee.active || event.pointerId !== marquee.pointerId) return
+  if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  resetMarqueeSelection()
 }
 
 // Vue owns widget membership and content. Save the currently displayed column layout;
@@ -184,6 +277,7 @@ function applySchemaOperation(operation) {
   try { return operation() } finally { isApplyingSchema = false }
 }
 function startGridInteraction(_event, element) {
+  resetMarqueeSelection()
   userInteractionActive = true
   const node = element?.gridstackNode
   interaction.active = true
@@ -260,6 +354,7 @@ watch(() => props.widgets.map((widget) => {
   synchronizeAllWidgetConstraints()
 }, { flush: 'post' })
 watch(() => props.editable, setEditable)
+watch(() => props.editable, value => { if (!value) resetMarqueeSelection() })
 
 onMounted(async () => {
   await nextTick()
@@ -289,6 +384,7 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => {
   disposed = true
+  clearTimeout(suppressCanvasClickTimer)
   geometryObserver?.disconnect()
   grid.value?.destroy(false)
 })
@@ -299,9 +395,11 @@ onBeforeUnmount(() => {
 .dashboard-canvas.is-editable {
   background-color: transparent;
 }
+.dashboard-canvas.is-editable:not(.is-grid-interacting) { cursor: crosshair; }
+.dashboard-canvas.is-marquee-selecting { user-select: none; }
 .dashboard-canvas.dashboard-surface {
   /* Keep Dashboard.vue's image/overlay composition intact on the inner canvas. */
-  background-color: var(--dashboard-background, #f8fafc);
+  background-color: var(--dashboard-background, #ffffff);
 }
 .dashboard-grid-guide {
   position: absolute;
@@ -334,6 +432,9 @@ onBeforeUnmount(() => {
 .dashboard-canvas :deep(> .grid-stack-item) {
   z-index: 1;
 }
+.dashboard-canvas.is-editable :deep(> .dashboard-widget:not(.is-locked)) { cursor: grab; }
+.dashboard-canvas.is-grid-interacting :deep(> .dashboard-widget:not(.is-locked)) { cursor: grabbing; }
+.dashboard-canvas.is-editable :deep(> .dashboard-widget.is-locked) { cursor: pointer; }
 .dashboard-canvas :deep(.dashboard-renderer-card.kpi-card) {
   min-width: 0;
   min-height: 0;
@@ -355,5 +456,28 @@ onBeforeUnmount(() => {
   font-size: 12px;
   pointer-events: none;
   transform: translateX(-100%);
+}
+.dashboard-marquee {
+  position: absolute;
+  z-index: 10002;
+  box-sizing: border-box;
+  border: 1px solid rgba(35, 113, 209, .92);
+  border-radius: 5px;
+  background: rgba(35, 113, 209, .12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .42), 0 4px 14px rgba(35, 113, 209, .12);
+  pointer-events: none;
+}
+.dashboard-marquee__count {
+  position: absolute;
+  right: 0;
+  bottom: -27px;
+  width: max-content;
+  padding: 3px 7px;
+  border-radius: 4px;
+  color: #fff;
+  background: rgba(20, 78, 151, .9);
+  font-size: 12px;
+  line-height: 18px;
+  box-shadow: 0 3px 10px rgba(16, 24, 40, .16);
 }
 </style>

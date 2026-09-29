@@ -91,6 +91,8 @@ test('empty dashboard is valid and survives persistence read back', () => {
   const persisted = JSON.parse(JSON.stringify(schema))
   assert.deepEqual(validateDashboardSchema(persisted), { valid: true, errors: [] })
   assert.equal(persisted.widgets.length, 0)
+  assert.equal(persisted.appearance.background.value, '#ffffff')
+  assert.equal(normalizeDashboardSchema({ version: 1, id: 'legacy-empty-background', appearance: { background: { value: '' } }, widgets: [] }).appearance.background.value, '#ffffff')
   assert.equal(semanticDashboardEquals(schema, persisted), true)
 })
 

@@ -171,7 +171,7 @@ export function createPublishedIndicatorSources(indicators = [], publishedVersio
 export function applyIndicatorAnalysisToSource(source, payload = {}) {
   if (!source) return source
   const comparisons = Array.isArray(payload?.dimensionComparison) ? payload.dimensionComparison : []
-  const overview = comparisons.find(isHospitalOverview) || payload?.overview || null
+  const overview = resolvePrimaryAnalysisOverview(payload)
   const unit = source.unit || payload?.unit || payload?.displayUnit || overview?.unit || overview?.displayUnit || ''
   const hasData = Boolean(payload?.dataAvailable && overview)
   const trend = payload?.dataAvailable && Array.isArray(payload?.trend) ? payload.trend : []
@@ -189,10 +189,15 @@ export function applyIndicatorAnalysisToSource(source, payload = {}) {
       value: normalizeAnalysisNumber(item?.value, unit)
     })).filter((row) => row.value !== null)
     : []
+  const analysisCurrentRows = hasData ? [analysisResultRow(overview, unit)] : []
+  const analysisTrendRows = trend.map((item) => analysisResultRow(item, unit)).filter((row) => row.value !== null)
+  const analysisComparisonRows = payload?.dataAvailable
+    ? comparisons.map((item) => analysisResultRow(item, unit, true)).filter((row) => row.value !== null)
+    : []
 
   return {
     ...source,
-    unit,
+    unit: isPercentUnit(unit) ? '%' : unit,
     yoy: payload?.comparison?.yoy ?? payload?.yoy ?? overview?.yoy ?? source.yoy ?? null,
     mom: payload?.comparison?.mom ?? payload?.mom ?? overview?.mom ?? source.mom ?? null,
     comparisonUnit: payload?.comparison?.unit || payload?.comparisonUnit || source.comparisonUnit || '',
@@ -200,14 +205,40 @@ export function applyIndicatorAnalysisToSource(source, payload = {}) {
     currentValue: hasData ? resolveAnalysisDisplayValue(overview, unit) : null,
     change: hasData ? '当前正式结果' : '暂无正式结果',
     status: hasData ? 'success' : 'info',
-    origin: 'indicator-catalog',
-    originLabel: '已发布指标',
+    origin: source.origin || 'indicator-catalog',
+    originLabel: source.originLabel || '已发布指标',
     trendLabels: trend.map((item) => formatAnalysisPeriod(item, payload?.granularity)),
     trendData: trend.map((item) => normalizeAnalysisNumber(item?.value, unit)),
     departmentData,
     pieData: departmentData.map((item) => ({ ...item })),
-    bindingRows
+    bindingRows,
+    analysisCurrentRows,
+    analysisTrendRows,
+    analysisComparisonRows
   }
+}
+
+function analysisResultRow(item, unit, includeDimensions = false) {
+  const numeric = (value) => {
+    const result = Number(value)
+    return Number.isFinite(result) ? result : null
+  }
+  return {
+    ...(includeDimensions && isRecord(item?.dimensions) ? Object.fromEntries(Object.entries(item.dimensions)
+      .filter(([, value]) => ['string', 'number', 'boolean'].includes(typeof value))) : {}),
+    periodStart: toSourceString(item?.periodStart).slice(0, 10),
+    periodEnd: toSourceString(item?.periodEnd).slice(0, 10),
+    value: normalizeAnalysisNumber(item?.value, unit),
+    displayValue: item?.displayValue ?? null,
+    numeratorValue: numeric(item?.numeratorValue ?? item?.numerator),
+    denominatorValue: numeric(item?.denominatorValue ?? item?.denominator)
+  }
+}
+
+export function resolvePrimaryAnalysisOverview(payload = {}) {
+  if (isRecord(payload?.overview)) return payload.overview
+  const comparisons = Array.isArray(payload?.dimensionComparison) ? payload.dimensionComparison : []
+  return comparisons.find(isHospitalOverview) || null
 }
 
 export function getVisualizationTitle(sourceName, visualType) {
@@ -273,10 +304,10 @@ export function createDashboardChartOption(widget, presetOptions = {}) {
 }
 
 function createVirtualGaugeOption(widget, options) { const source = getWidgetSource(widget, options); return { series: [{ type: 'gauge', data: [{ value: Number(source.currentValue) || 0, name: source.name || '指标值' }] }] } }
-function createVirtualRadarOption(widget, options) { const source = getWidgetSource(widget, options), rows = source.departmentData || []; return { radar: { indicator: rows.map(row => ({ name: row.name, max: Math.max(...rows.map(item => Number(item.value) || 0), 1) })) }, series: [{ type: 'radar', data: [{ value: rows.map(row => Number(row.value) || 0), name: source.name || '指标值' }] }] } }
-function createVirtualFunnelOption(widget, options) { const source = getWidgetSource(widget, options); return { series: [{ type: 'funnel', data: (source.pieData || source.departmentData || []).map(copyChartDataItem) }] } }
-function createVirtualScatterOption(widget, options) { const source = getWidgetSource(widget, options); return { xAxis: { type: 'value' }, yAxis: { type: 'value' }, series: [{ type: 'scatter', data: (source.trendData || []).map((value, index) => [index + 1, Number(value) || 0]) }] } }
-function createVirtualHeatmapOption(widget, options) { const source = getWidgetSource(widget, options), rows = source.departmentData || []; return { xAxis: { type: 'category', data: rows.map(row => row.name) }, yAxis: { type: 'category', data: ['指标值'] }, visualMap: { min: 0, max: Math.max(...rows.map(row => Number(row.value) || 0), 1), calculable: true }, series: [{ type: 'heatmap', data: rows.map((row, index) => [index, 0, Number(row.value) || 0]) }] } }
+function createVirtualRadarOption(widget, options) { const source = getWidgetSource(widget, options), rows = source.departmentData || []; return { radar: { center: ['50%', '52%'], radius: '62%', indicator: rows.map(row => ({ name: row.name, max: Math.max(...rows.map(item => Number(item.value) || 0), 1) })), nameGap: 6 }, series: [{ type: 'radar', data: [{ value: rows.map(row => Number(row.value) || 0), name: source.name || '指标值' }] }] } }
+function createVirtualFunnelOption(widget, options) { const source = getWidgetSource(widget, options); return { series: [{ type: 'funnel', left: '14%', right: '14%', top: 16, bottom: 16, label: { overflow: 'truncate', width: 80 }, data: (source.pieData || source.departmentData || []).map(copyChartDataItem) }] } }
+function createVirtualScatterOption(widget, options) { const source = getWidgetSource(widget, options); return { grid: { top: 18, bottom: 28, left: 12, right: 16, containLabel: true }, xAxis: { type: 'value' }, yAxis: { type: 'value' }, series: [{ type: 'scatter', data: (source.trendData || []).map((value, index) => [index + 1, Number(value) || 0]) }] } }
+function createVirtualHeatmapOption(widget, options) { const source = getWidgetSource(widget, options), rows = source.departmentData || []; return { grid: { top: 18, bottom: 54, left: 12, right: 16, containLabel: true }, xAxis: { type: 'category', data: rows.map(row => row.name) }, yAxis: { type: 'category', data: ['指标值'] }, visualMap: { min: 0, max: Math.max(...rows.map(row => Number(row.value) || 0), 1), calculable: true, orient: 'horizontal', left: 'center', bottom: 0 }, series: [{ type: 'heatmap', data: rows.map((row, index) => [index, 0, Number(row.value) || 0]) }] } }
 // Geo adapter boundary: this intentionally uses named demo regions until a
 // sanctioned GeoJSON source is supplied. It is not presented as hospital GIS.
 function createVirtualMapOption(widget, options) { const source = getWidgetSource(widget, options), rows = source.departmentData || []; return { tooltip: { trigger: 'axis' }, grid: { top: 22, left: 62, right: 22, bottom: 30 }, xAxis: { type: 'value' }, yAxis: { type: 'category', inverse: true, data: rows.map(row => row.name) }, series: [{ name: '演示区域分布', type: 'bar', data: rows.map(row => Number(row.value) || 0), itemStyle: { color: '#4f8583', borderRadius: [0, 4, 4, 0] } }] } }
@@ -360,13 +391,17 @@ function resolveAnalysisDisplayValue(item, unit) {
   }
   const value = normalizeAnalysisNumber(item?.value, unit)
   if (value === null) return null
-  return unit === '%' ? `${value.toFixed(2)}%` : value
+  return isPercentUnit(unit) ? `${value.toFixed(2)}%` : value
 }
 
 function normalizeAnalysisNumber(value, unit) {
   const number = Number(value)
   if (!Number.isFinite(number)) return null
-  return unit === '%' ? Number((number * 100).toFixed(2)) : number
+  return isPercentUnit(unit) ? Number((number * 100).toFixed(2)) : number
+}
+
+function isPercentUnit(unit) {
+  return unit === '%' || String(unit || '').toUpperCase() === 'PERCENT'
 }
 
 function formatAnalysisPeriod(item, granularity) {

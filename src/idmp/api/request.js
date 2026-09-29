@@ -93,7 +93,12 @@ export async function requestJson(path, options = {}) {
   }
 
   if (!payload) {
-    throw new Error('Invalid API response')
+    const error = new Error(/^\s*(?:<!doctype html|<html)/i.test(responseText || '')
+      ? '接口返回了前端 HTML 页面，请检查 API 地址和开发服务器的后端代理配置。'
+      : '接口未返回有效 JSON 数据。')
+    error.path = path
+    error.status = response.status
+    throw error
   }
 
   if (payload && payload.code !== undefined && payload.code !== '0' && payload.code !== 'OK') {

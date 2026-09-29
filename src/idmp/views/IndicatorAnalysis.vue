@@ -66,8 +66,41 @@
             size="default"
           />
         </div>
-        <el-button type="primary" :loading="mortalityChainLoading" @click="applyReportPeriod">查询</el-button>
+        <el-button type="primary" :loading="mortalityChainLoading || runtimeQueryLoading" @click="applyReportPeriod">{{ hasTemporaryIndicatorRuntimeParameters ? '即时查询' : '查询' }}</el-button>
         <el-button @click="showDataDiagnostics = true">数据说明</el-button>
+      </div>
+    </section>
+    <section v-if="indicatorRuntimeParameters.length" class="surface-card runtime-query-panel" aria-label="SQL 即时运行条件">
+      <div class="runtime-query-panel__heading">
+        <div>
+          <h2>即时运行条件</h2>
+          <p>该指标包含 SQL 运行参数。请选择报告期并填写条件，结果将从源数据即时计算，不写入正式分析结果。</p>
+        </div>
+        <el-tag type="warning" effect="plain">临时查询</el-tag>
+      </div>
+      <el-alert
+        v-if="indicatorRuntimeParameterConflicts.length"
+        type="error"
+        show-icon
+        :closable="false"
+        :title="`存在不兼容的同名参数：${indicatorRuntimeParameterConflicts.map(item => item.code).join('、')}`"
+      />
+      <RuntimeParameterFields v-model="indicatorRuntimeParameterValues" :declarations="indicatorRuntimeParameters" @change="clearRuntimeQueryResult" />
+      <div class="runtime-query-panel__actions">
+        <el-button type="primary" :loading="runtimeQueryLoading" :disabled="indicatorRuntimeParameterConflicts.length > 0" @click="runIndicatorRuntimeQuery">即时查询</el-button>
+        <span>日期使用上方“当前报告期”；例如选择 1 月 1 日至 1 月 31 日，实际提交 [1 月 1 日 00:00:00, 2 月 1 日 00:00:00)。</span>
+      </div>
+      <el-alert v-if="runtimeQueryError" type="error" show-icon :closable="false" :title="runtimeQueryError" />
+      <div v-if="runtimeQueryResult" class="runtime-query-result">
+        <div class="runtime-query-result__summary">
+          <el-tag :type="runtimeQueryResult.executionMode === 'AD_HOC_SOURCE' ? 'warning' : 'success'">{{ runtimeQueryExecutionModeLabel }}</el-tag>
+          <span>参数快照：{{ runtimeQueryParameterSnapshot }}</span>
+        </div>
+        <el-table :data="runtimeQueryRows" border max-height="420" empty-text="当前条件没有结果">
+          <el-table-column v-for="column in runtimeQueryColumns" :key="column" :prop="column" :label="column" min-width="140">
+            <template #default="{ row }">{{ formatRuntimeQueryCell(row[column]) }}</template>
+          </el-table-column>
+        </el-table>
       </div>
     </section>
     <section v-if="analysisNotice" class="analysis-state-notice" :class="`is-${analysisAvailability.status.toLowerCase()}`">
@@ -338,9 +371,10 @@ import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import ResultAvailabilityPanel from '@/idmp/components/ResultAvailabilityPanel.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
+import RuntimeParameterFields from '@/idmp/components/RuntimeParameterFields.vue'
 import DrillExplorer from '@/idmp/features/analysis/DrillExplorer.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
-import { fetchIndicatorAnalysis, fetchIndicatorAvailablePeriod, fetchIndicatorFormula, fetchIndicatorScenarioComparison, fetchIndicatorScenarios, fetchIndicators, fetchIndicatorVersion, fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
+import { fetchIndicatorAnalysis, fetchIndicatorAvailablePeriod, fetchIndicatorFormula, fetchIndicatorScenarioComparison, fetchIndicatorScenarios, fetchIndicators, fetchIndicatorVersion, fetchIndicatorVersionList, queryIndicatorVersion } from '@/idmp/api/modules/indicators'
 import { fetchFactorVersion } from '@/idmp/api/modules/factors'
 import { collectFormulaFactorVersionIds, createIndicatorDataExplanation, extractIndicatorFormula } from '@/idmp/api/adapters/indicator'
 import { deriveDrillPathResultIds, reconcileScenarioPointWithRoot } from '@/idmp/api/adapters/drill'
@@ -349,6 +383,8 @@ import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvaila
 import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
 import { getStatusLabel } from '@/idmp/design/status'
 import { periodOptions } from '@/idmp/features/analysis/indicatorProfiles'
+import { resolvePrimaryAnalysisOverview } from '@/idmp/features/dashboard/visualization'
+import { buildSqlRuntimeParameterValues, collectSqlRuntimeParameters, validateSqlRuntimeParameterValues } from '@/idmp/api/adapters/sqlImport'
 
 const route = useRoute()
 const router = useRouter()
@@ -382,12 +418,30 @@ const selectedScenarioForPeriods = ref(null)
 const scenarioPeriodPage = ref(1)
 const scenarioPeriodPageSize = 10
 const selectedDrillDepartment = ref('')
-const drillStartLevel = ref('HOSPITAL')
-const drillParentKeys = ref({})
+const drillStartLevel = ref(String(route.query.drillStartLevel || 'HOSPITAL').toUpperCase())
+const drillParentKeys = ref(parseDrillParentKeys(route.query.drillParentKeys))
 const analysisPeriodRange = ref(initialAnalysisPeriodRange())
 const reportPeriodRange = ref(initialReportPeriodRange())
 const trendPeriodDraft = ref([...analysisPeriodRange.value])
 const showDataDiagnostics = ref(false)
+const indicatorRuntimeParameterValues = ref({})
+const runtimeQueryLoading = ref(false)
+const runtimeQueryResult = ref(null)
+const runtimeQueryError = ref('')
+
+function parseDrillParentKeys(value) {
+  const text = Array.isArray(value) ? value[0] : value
+  if (typeof text !== 'string' || !text.trim()) return {}
+  try {
+    const parsed = JSON.parse(text)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return Object.fromEntries(Object.entries(parsed).flatMap(([key, item]) => (
+      typeof item === 'string' || typeof item === 'number' ? [[key, String(item)]] : []
+    )))
+  } catch {
+    return {}
+  }
+}
 
 const indicatorCode = computed(() => String(route.query.indicator || ''))
 const analysisPeriodOptions = computed(() => periodOptions)
@@ -412,6 +466,16 @@ const currentProfile = computed(() => {
   })
 })
 const backendAnalysisGranularity = computed(() => reportGranularity.value)
+const indicatorRuntimeParameters = computed(() => collectSqlRuntimeParameters(
+  (Array.isArray(backendIndicatorVersion.value?.factorRuntimeParameters) ? backendIndicatorVersion.value.factorRuntimeParameters : [])
+    .map(group => ({ ...group, key: group.factorCode || group.factorVersionId }))
+))
+const indicatorRuntimeParameterConflicts = computed(() => indicatorRuntimeParameters.value.filter(item => item.conflict))
+const hasTemporaryIndicatorRuntimeParameters = computed(() => indicatorRuntimeParameters.value.some(item => item.parameterMode === 'TEMPORARY'))
+const runtimeQueryRows = computed(() => Array.isArray(runtimeQueryResult.value?.rows) ? runtimeQueryResult.value.rows : [])
+const runtimeQueryColumns = computed(() => [...new Set(runtimeQueryRows.value.flatMap(row => Object.keys(row || {})))])
+const runtimeQueryExecutionModeLabel = computed(() => runtimeQueryResult.value?.executionMode === 'AD_HOC_SOURCE' ? '源数据即时重算' : '读取正式结果')
+const runtimeQueryParameterSnapshot = computed(() => JSON.stringify(runtimeQueryResult.value?.parameterSnapshot || {}))
 const trendAnalysisGranularity = computed(() => {
   if (period.value === '日度') return 'DAILY'
   if (period.value === '月度') return 'MONTHLY'
@@ -419,17 +483,7 @@ const trendAnalysisGranularity = computed(() => {
   if (period.value === '季度') return 'QUARTERLY'
   return 'MONTHLY'
 })
-const analysisOverview = computed(() => {
-  const comparisons = Array.isArray(backendAnalysis.value?.dimensionComparison)
-    ? backendAnalysis.value.dimensionComparison
-    : []
-  return comparisons.find((item) => {
-    const dimensions = item?.dimensions || {}
-    return Boolean(dimensions.hospital_code || dimensions.hospital_id) &&
-      !dimensions.out_dept_code && !dimensions.out_dept_id &&
-      !dimensions.department_code && !dimensions.department_id
-  }) || backendAnalysis.value?.overview || null
-})
+const analysisOverview = computed(() => resolvePrimaryAnalysisOverview(backendAnalysis.value))
 const indicatorDataExplanation = computed(() => createIndicatorDataExplanation({
   analysis: backendAnalysis.value || {},
   overview: analysisOverview.value,
@@ -598,9 +652,13 @@ const mortalityChainBatchStatus = computed(() =>
   mortalityChain.value?.calcBatch?.batchStatus ||
   (hasBackendMortalityData.value ? 'READY' : 'DRAFT')
 )
-const drillPathResultIds = computed(() => deriveDrillPathResultIds(backendAnalysis.value || {}))
+const drillPathResultIds = computed(() => {
+  const derived = deriveDrillPathResultIds(backendAnalysis.value || {})
+  const routedResultId = String(route.query.drillResultId || '')
+  return routedResultId ? { ...derived, ORGANIZATION: routedResultId } : derived
+})
 const drillResultId = computed(() => String(
-  drillPathResultIds.value.ORGANIZATION || drillPathResultIds.value.DISEASE ||
+  route.query.drillResultId || drillPathResultIds.value.ORGANIZATION || drillPathResultIds.value.DISEASE ||
   backendAnalysis.value?.overview?.resultId || backendAnalysis.value?.resultContext?.resultId || ''
 ))
 const drillPeriod = computed(() => String(
@@ -1149,7 +1207,60 @@ function applyReportPeriod() {
     delete query.periodEnd
   }
   router.replace({ path: '/analysis', query })
-  refreshMortalityAnalysis()
+  if (hasTemporaryIndicatorRuntimeParameters.value) runIndicatorRuntimeQuery()
+  else refreshMortalityAnalysis()
+}
+
+function clearRuntimeQueryResult() {
+  runtimeQueryResult.value = null
+  runtimeQueryError.value = ''
+}
+
+async function runIndicatorRuntimeQuery() {
+  const versionId = currentIndicatorVersionId.value
+  if (!versionId) return ElMessage.warning('当前指标没有可查询的已发布版本')
+  const parameterMessage = validateSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)
+  if (parameterMessage) return ElMessage.warning(parameterMessage)
+  const temporal = resolveIndicatorCalculationMode(backendIndicatorVersion.value, selectedBackendIndicator.value) !== 'STATIC'
+  if (temporal && !isCompleteDateRange(reportPeriodRange.value)) return ElMessage.warning('请选择完整的报告期范围')
+
+  const payload = {}
+  if (temporal) {
+    payload.periodStart = `${reportPeriodRange.value[0]}T00:00:00`
+    payload.periodEnd = nextDayStart(reportPeriodRange.value[1])
+  }
+  if (indicatorRuntimeParameters.value.length) {
+    payload.parameters = buildSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)
+  }
+
+  runtimeQueryLoading.value = true
+  runtimeQueryError.value = ''
+  runtimeQueryResult.value = null
+  try {
+    runtimeQueryResult.value = await queryIndicatorVersion(versionId, payload)
+    ElMessage.success(runtimeQueryResult.value?.executionMode === 'AD_HOC_SOURCE' ? '已按运行条件从源数据即时计算' : '已读取匹配的正式结果')
+  } catch (error) {
+    const message = String(error?.message || '')
+    const migrationHint = message.includes('SQL业务参数不支持冒号写法')
+      ? '；该指标使用了旧式 SQL 参数，请改为 [[AND 字段 = {{参数名}}]] 后重新导入并发布'
+      : ''
+    runtimeQueryError.value = message ? `即时查询失败：${message}${migrationHint}` : '即时查询失败，请核对运行条件后重试'
+    ElMessage.error(runtimeQueryError.value)
+  } finally {
+    runtimeQueryLoading.value = false
+  }
+}
+
+function nextDayStart(value) {
+  const parts = String(value || '').split('-').map(Number)
+  if (parts.length !== 3 || parts.some(part => !Number.isFinite(part))) return ''
+  const date = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + 1))
+  return `${date.toISOString().slice(0, 10)}T00:00:00`
+}
+
+function formatRuntimeQueryCell(value) {
+  if (value === undefined || value === null || value === '') return '-'
+  return typeof value === 'object' ? JSON.stringify(value) : String(value)
 }
 
 function applyTrendConditions() {
@@ -1377,6 +1488,12 @@ async function refreshMortalityAnalysis() {
     }
     if (calculationMode !== 'STATIC') void loadAvailablePeriod(initialVersionId, refreshSequence)
 
+    if (hasTemporaryIndicatorRuntimeParameters.value) {
+      if (backendIndicatorVersion.value) await loadAnalysisFormulaFactorVersions(backendIndicatorVersion.value, refreshSequence)
+      mortalityChainLoading.value = false
+      return
+    }
+
     const granularity = backendAnalysisGranularity.value
     const backendIndicatorId = String(backendIndicator.id || backendIndicator.indicatorId)
     const mortalityIndicator = isMortalityIndicator(backendIndicator)
@@ -1498,6 +1615,9 @@ watch(indicatorCode, () => {
   scenarioComparisonIdByCode.value = new Map()
   scenarioPeriodDrawerOpen.value = false
   selectedScenarioForPeriods.value = null
+  indicatorRuntimeParameterValues.value = {}
+  runtimeQueryResult.value = null
+  runtimeQueryError.value = ''
   period.value = '月度'
   refreshMortalityAnalysis()
   loadScenarioComparison()
@@ -1595,6 +1715,39 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
 .analysis-error-alert {
   margin-bottom: 16px;
 }
+
+.runtime-query-panel {
+  display: grid;
+  gap: var(--idmp-space-4);
+  margin-bottom: var(--idmp-space-4);
+  padding: var(--idmp-space-5);
+}
+
+.runtime-query-panel__heading,
+.runtime-query-result__summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.runtime-query-panel__heading {
+  align-items: flex-start;
+  padding-bottom: var(--idmp-space-4);
+  border-bottom: 1px solid var(--idmp-border-subtle);
+}
+.runtime-query-panel__heading > div { min-width: 0; }
+.runtime-query-panel__heading h2 { margin: 0 0 var(--idmp-space-1); font-size: 18px; }
+.runtime-query-panel__heading p,
+.runtime-query-panel__actions span,
+.runtime-query-result__summary span { margin: 0; color: var(--idmp-text-helper); font-size: 12px; }
+.runtime-query-panel__heading p { line-height: 20px; }
+.runtime-query-panel__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: var(--idmp-space-3);
+  padding-top: var(--idmp-space-4);
+  border-top: 1px solid var(--idmp-border-subtle);
+}
+.runtime-query-panel__actions span { line-height: 18px; }
+.runtime-query-result { display: grid; gap: 12px; }
+.runtime-query-result__summary { justify-content: flex-start; flex-wrap: wrap; }
 
 .report-context {
   display: grid;
@@ -2477,6 +2630,15 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
 }
 
 @media (max-width: 720px) {
+  .runtime-query-panel {
+    padding: var(--idmp-space-4);
+  }
+
+  .runtime-query-panel__heading {
+    flex-direction: column;
+    gap: var(--idmp-space-2);
+  }
+
   .scene-comparison__head { align-items: flex-start; flex-direction: column; }
   .scenario-result-grid { grid-template-columns: 1fr; }
   .date-range-fields {

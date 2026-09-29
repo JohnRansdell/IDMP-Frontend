@@ -4,6 +4,8 @@ import {
   buildSqlImportCreatePayload,
   buildSqlImportMetadataPayload,
   buildSqlImportTrialPayload,
+  buildSqlRuntimeParameterValues,
+  collectSqlRuntimeParameters,
   canFinalizeSqlImport,
   canSubmitSqlImportMetadata,
   canTrialSqlImport,
@@ -13,7 +15,9 @@ import {
   normalizeSqlImportPreview,
   normalizeSqlImportOperationError,
   normalizeSqlImportTask,
-  shouldPollSqlImport
+  shouldPollSqlImport,
+  validateSqlRuntimeParameterSyntax,
+  validateSqlRuntimeParameterValues
 } from '../src/idmp/api/adapters/sqlImport.js'
 import { resourceConflictEditorPath, resolveResourceConflict } from '../src/idmp/api/adapters/resourceConflict.js'
 
@@ -75,6 +79,32 @@ test('SQL import preview groups top-level mapping candidates and factor time-fie
   assert.deepEqual(preview.factors[0].timeFields, ['v.ADMISSION_TIME'])
 })
 
+test('SQL import preserves rich time-field options and submits the recommended field reference', () => {
+  const preview = normalizeSqlImportPreview({
+    factors: [{
+      key: 'admission_count',
+      timeFieldOptions: [{
+        physicalTable: 'patient_visit', sqlAlias: 'v', columnName: 'ADMISSION_TIME',
+        fieldReference: 'v.ADMISSION_TIME', columnType: 'datetime', comment: '入院时间',
+        priority: 100, recommended: true, recommendationReasons: ['SQL 中已使用日期范围谓词']
+      }, {
+        physicalTable: 'patient_visit', sqlAlias: 'v', columnName: 'DISCHARGE_TIME',
+        fieldReference: 'v.DISCHARGE_TIME', columnType: 'datetime', priority: 20, recommended: false
+      }]
+    }]
+  })
+
+  assert.equal(preview.factors[0].timeFieldOptions[0].fieldReference, 'v.ADMISSION_TIME')
+  assert.equal(preview.factors[0].timeFieldOptions[0].recommended, true)
+  assert.deepEqual(preview.factors[0].timeFieldOptions[0].recommendationReasons, ['SQL 中已使用日期范围谓词'])
+  assert.deepEqual(preview.factors[0].timeFields, ['v.ADMISSION_TIME', 'v.DISCHARGE_TIME'])
+
+  const factors = mergeSqlFactorMetadata([], preview.factors)
+  factors[0].calculationMode = 'TEMPORAL'
+  assert.equal(factors[0].timeField, 'v.ADMISSION_TIME')
+  assert.equal(buildSqlImportMetadataPayload({ scope: 'FACTORS_ONLY', factors }).factors[0].timeField, 'v.ADMISSION_TIME')
+})
+
 test('SQL import separates creation, metadata and trial payloads', () => {
   const factors = mergeSqlFactorMetadata(
     [{ key: 'total', code: 'CUSTOM_TOTAL', name: '自定义总数', description: '说明', missingRowPolicy: 'KEEP_NULL' }],
@@ -103,6 +133,57 @@ test('SQL import separates creation, metadata and trial payloads', () => {
   assert.deepEqual(buildSqlImportTrialPayload([{ calculationMode: 'STATIC' }]), {})
   assert.deepEqual(buildSqlImportTrialPayload([{ calculationMode: 'TEMPORAL' }], ['2026-01-01', '2026-02-01']), { periodStart: '2026-01-01', periodEnd: '2026-02-01' })
   assert.deepEqual(buildSqlImportTrialPayload([{ calculationMode: 'STATIC' }, { calculationMode: 'TEMPORAL' }], ['2026-01-01', '2026-02-01']), { periodStart: '2026-01-01', periodEnd: '2026-02-01' })
+})
+
+test('SQL import submits typed runtime parameter declarations and values', () => {
+  const factors = [{
+    key: 'transfer_count', code: 'TRANSFER_COUNT', name: '转科人次', calculationMode: 'TEMPORAL', timeField: 'b.In_Date',
+    parameters: [
+      { code: 'deptCode', type: 'STRING', required: true, parameterMode: 'TEMPORARY' },
+      { code: 'minimumHours', type: 'INTEGER', required: false, parameterMode: 'TEMPORARY' },
+      { code: 'includeCancelled', type: 'BOOLEAN', required: false, parameterMode: 'TEMPORARY' }
+    ]
+  }]
+  const metadata = buildSqlImportMetadataPayload({ scope: 'FACTORS_ONLY', factors })
+  assert.deepEqual(metadata.factors[0].parameters, factors[0].parameters)
+  assert.deepEqual(buildSqlImportTrialPayload(factors, ['2026-01-01T00:00:00', '2026-02-01T00:00:00'], {
+    deptCode: '4', minimumHours: '48', includeCancelled: 'false', ignored: 'x'
+  }), {
+    periodStart: '2026-01-01T00:00:00', periodEnd: '2026-02-01T00:00:00',
+    parameters: { deptCode: '4', minimumHours: 48, includeCancelled: false }
+  })
+})
+
+test('SQL import rejects legacy colon runtime parameters before creating resources', () => {
+  assert.equal(validateSqlRuntimeParameterSyntax('SELECT 1'), '')
+  assert.equal(validateSqlRuntimeParameterSyntax('SELECT * FROM visit b WHERE 1=1 [[AND b.dept_code = {{deptCode}}]]'), '')
+  assert.match(validateSqlRuntimeParameterSyntax('SELECT * FROM visit b WHERE b.dept_code = :deptCode'), /:deptCode/)
+  assert.match(validateSqlRuntimeParameterSyntax('WHERE a = :deptCode OR b = :deptCode AND c > :minimumHours'), /\{\{minimumHours\}\}/)
+})
+
+test('SQL import reports incompatible declarations sharing one request parameter code', () => {
+  const declarations = collectSqlRuntimeParameters([
+    { key: 'numerator', parameters: [{ code: 'deptCode', type: 'STRING', required: true, parameterMode: 'TEMPORARY' }] },
+    { key: 'denominator', parameters: [{ code: 'deptCode', type: 'INTEGER', required: true, parameterMode: 'TEMPORARY' }] }
+  ])
+  assert.equal(declarations.length, 1)
+  assert.equal(declarations[0].conflict, true)
+  assert.deepEqual(declarations[0].factorKeys, ['numerator', 'denominator'])
+  assert.equal(validateSqlRuntimeParameterValues(declarations, { deptCode: '4' }), '同名参数声明不一致：deptCode')
+})
+
+test('SQL runtime parameter values preserve declared types and validate required values', () => {
+  const declarations = [
+    { code: 'deptCode', type: 'STRING', required: true, parameterMode: 'TEMPORARY' },
+    { code: 'minimumHours', type: 'INTEGER', required: false, parameterMode: 'TEMPORARY' },
+    { code: 'ratio', type: 'DECIMAL', required: false, parameterMode: 'TEMPORARY' },
+    { code: 'enabled', type: 'BOOLEAN', required: false, parameterMode: 'TEMPORARY' }
+  ]
+  assert.equal(validateSqlRuntimeParameterValues(declarations, {}), '请填写必填参数：deptCode')
+  assert.equal(validateSqlRuntimeParameterValues(declarations, { deptCode: '4' }), '')
+  assert.deepEqual(buildSqlRuntimeParameterValues(declarations, {
+    deptCode: '4', minimumHours: '48', ratio: '1.25', enabled: 'false', ignored: 'x'
+  }), { deptCode: '4', minimumHours: 48, ratio: 1.25, enabled: false })
 })
 
 test('SQL import task preserves opaque IDs and only polls running states', () => {

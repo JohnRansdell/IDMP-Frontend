@@ -2,13 +2,14 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { reactive } from 'vue'
 import { createFieldCatalog, createWidgetBindingDatasets, numericValue } from '../src/idmp/features/dashboard/fieldCatalog.js'
-import { aggregateValues, compileWidgetData, validateWidgetBinding, hasDataBinding, bindingChartOption, formatDashboardMetric } from '../src/idmp/features/dashboard/bindingEngine.js'
+import { aggregateValues, compileWidgetData, validateWidgetBinding, hasDataBinding, bindingChartOption, formatDashboardKpiMetric, formatDashboardMetric } from '../src/idmp/features/dashboard/bindingEngine.js'
 import { normalizeDashboardSchema, createPersistableDashboardSnapshot, updateDashboardWidget } from '../src/idmp/features/dashboard/schema.js'
 import { persistDashboardSchema, recoverDashboardSchema } from '../src/idmp/features/dashboard/persistence.js'
 import { createDashboardChartOption } from '../src/idmp/features/dashboard/visualization.js'
 import { dashboardAcceptanceRows } from '../src/idmp/features/dashboard/acceptanceData.js'
 import { applyIndicatorAnalysisToSource, createPublishedIndicatorSources } from '../src/idmp/features/dashboard/visualization.js'
 import { resolveCompatibleGlobalFilterWidgetIds } from '../src/idmp/features/dashboard/globalFilterCompatibility.js'
+import { createDefaultBinding } from '../src/idmp/features/dashboard/smartDefaultBinding.js'
 
 const rows = [
   { month: '1月', departmentName: '内科', value: 2, numerator: 4 },
@@ -72,6 +73,40 @@ test('published indicator binding uses only hydrated analysis rows and exposes o
   assert.deepEqual(resolveCompatibleGlobalFilterWidgetIds({ id: 'department', field: 'out_dept_name', dataType: 'string' }, [widget], getDatasets), ['published-bar'])
   assert.deepEqual(resolveCompatibleGlobalFilterWidgetIds({ id: 'disease', field: 'disease', dataType: 'string' }, [widget], getDatasets), [])
 })
+
+test('dashboard data sources expose separate current, trend and comparison analysis datasets', () => {
+  const hydrated = applyIndicatorAnalysisToSource({
+    code: 'mortality', name: 'Mortality', unit: 'PERCENT', origin: 'dashboard-data-source', originLabel: 'Published indicator'
+  }, {
+    dataAvailable: true,
+    granularity: 'MONTHLY',
+    overview: { periodStart: '2026-02-01', periodEnd: '2026-03-01', value: 0.2, numeratorValue: 2, denominatorValue: 10 },
+    trend: [
+      { periodStart: '2026-01-01', periodEnd: '2026-02-01', value: 0.1, numeratorValue: 1, denominatorValue: 10 },
+      { periodStart: '2026-02-01', periodEnd: '2026-03-01', value: 0.2, numeratorValue: 2, denominatorValue: 10 }
+    ],
+    dimensionComparison: [
+      { dimensions: { out_dept_code: 'A' }, value: 0.1, numeratorValue: 1, denominatorValue: 10 },
+      { dimensions: { out_dept_code: 'A' }, value: 0.3, numeratorValue: 3, denominatorValue: 10 },
+      { dimensions: { out_dept_code: 'B' }, value: 0.5, numeratorValue: 5, denominatorValue: 10 }
+    ]
+  })
+  assert.equal(hydrated.origin, 'dashboard-data-source')
+  assert.equal(hydrated.unit, '%')
+  const datasets = createWidgetBindingDatasets(hydrated)
+  assert.deepEqual(datasets.slice(0, 3).map(item => item.id), ['current', 'trend', 'departments'])
+  assert.deepEqual(datasets.find(item => item.id === 'trend').rows.map(row => row.value), [10, 20])
+
+  const trend = datasets.find(item => item.id === 'trend')
+  const lineBinding = createDefaultBinding('line', datasets)
+  assert.equal(lineBinding.dataset, 'trend')
+  assert.equal(compileWidgetData('line', lineBinding, trend).status, 'ready')
+
+  const departments = datasets.find(item => item.id === 'departments')
+  const barBinding = createDefaultBinding('bar', datasets)
+  assert.equal(barBinding.dataset, 'departments')
+  assert.deepEqual(compileWidgetData('bar', barBinding, departments).series[0].values, [20, 50])
+})
 test('explicit acceptance dataset exposes clinical dimensions and independent measures', () => {
   const source = { code: 'demo-quality', name: '质量指标', currentValue: 1, trendData: [], departmentData: [], pieData: [] }
   const acceptance = createWidgetBindingDatasets(source, { demo: true }).find(item => item.id === 'acceptance')
@@ -91,6 +126,35 @@ test('all explicit aggregations exclude invalid numbers and preserve zero', () =
 test('department grouping and aggregation produce correct values', () => {
   const config = binding(); config.dimensions = [{ field: 'departmentName' }]
   assert.deepEqual(compileWidgetData('bar', config, dataset).series[0].values, [3, 7])
+})
+
+test('bar charts omit categories whose aggregated series are all zero', () => {
+  const fields = createFieldCatalog([
+    { department: '零值科室', value: 0, target: 0 },
+    { department: '保留科室', value: 0, target: 2 },
+    { department: '非零科室', value: 3, target: 0 }
+  ])
+  const source = {
+    fields,
+    rows: [
+      { department: '零值科室', value: 0, target: 0 },
+      { department: '保留科室', value: 0, target: 2 },
+      { department: '非零科室', value: 3, target: 0 }
+    ]
+  }
+  const config = {
+    dataset: 'comparison',
+    dimensions: [{ field: 'department' }],
+    measures: [{ field: 'value', aggregation: 'avg' }, { field: 'target', aggregation: 'avg' }],
+    series: [],
+    sort: []
+  }
+
+  const bar = compileWidgetData('bar', config, source)
+  assert.deepEqual(bar.categories, ['保留科室', '非零科室'])
+  assert.deepEqual(bar.series.map(item => item.values), [[0, 3], [2, 0]])
+  assert.deepEqual(compileWidgetData('line', config, source).categories, ['零值科室', '保留科室', '非零科室'])
+  assert.equal(compileWidgetData('bar', config, { ...source, rows: [{ department: '零值科室', value: 0, target: 0 }] }).status, 'empty')
 })
 
 test('KPI display formatting removes floating-point tails without changing binding values', () => {
@@ -117,7 +181,57 @@ test('capabilities reject wrong types, duplicate slots, unsupported granularity 
   assert.equal(validateWidgetBinding('bar', { ...binding(), dimensions: [] }, dataset.fields).valid, false)
   assert.equal(validateWidgetBinding('bar', { ...binding(), measures: [{ field: 'departmentName', aggregation: 'sum' }] }, dataset.fields).valid, false)
   assert.equal(validateWidgetBinding('line', { ...binding(), dimensions: [{ field: 'month', granularity: 'year' }] }, dataset.fields).valid, false)
+  const backendFields = [{ id: 'value', label: '指标值', semanticType: 'measure', aggregations: ['direct'] }]
+  const backendBinding = { dataset: 'backend', dimensions: [], measures: [{ field: 'value', aggregation: 'avg' }], series: [], sort: [] }
+  assert.match(validateWidgetBinding('kpi', backendBinding, backendFields).errors.join('；'), /不支持平均值/)
+  assert.equal(validateWidgetBinding('kpi', { ...backendBinding, measures: [{ field: 'value', aggregation: 'direct' }] }, backendFields).valid, true)
   for (const bad of [null, {}, { ...binding(), measures: [null] }, { ...binding(), sort: [null] }]) assert.equal(compileWidgetData('line', bad, dataset).status, 'invalid')
+})
+
+test('formal ratio rows with direct values regroup from complete numerator and denominator data', () => {
+  const formal = {
+    fields: [
+      { id: 'OUT_DEPT_NAME', label: '出院科室', semanticType: 'dimension' },
+      { id: 'value', label: '指标值', semanticType: 'measure', unit: 'PERCENT', aggregations: ['direct'] },
+      { id: 'numeratorValue', label: '分子值', semanticType: 'measure' },
+      { id: 'denominatorValue', label: '分母值', semanticType: 'measure' }
+    ],
+    rows: [
+      { OUT_DEPT_NAME: '重症医学科', value: 1, numeratorValue: 1, denominatorValue: 1 },
+      { OUT_DEPT_NAME: '重症医学科', value: 0.2, numeratorValue: 2, denominatorValue: 10 },
+      { OUT_DEPT_NAME: '呼吸内科', value: 0.1, numeratorValue: 1, denominatorValue: 10 }
+    ]
+  }
+  const binding = { dataset: 'backend', dimensions: [{ field: 'OUT_DEPT_NAME' }], measures: [{ field: 'value', aggregation: 'direct', axis: 'left' }], series: [], sort: [] }
+  const model = compileWidgetData('bar', binding, formal)
+  assert.equal(model.status, 'ready')
+  assert.deepEqual(model.categories, ['重症医学科', '呼吸内科'])
+  assert.deepEqual(model.series[0].values, [3 / 11, 0.1])
+})
+
+test('legacy code dimensions display their formal companion names while retaining raw tuples', () => {
+  const formal = {
+    fields: [
+      { id: 'OUT_DEPT_CODE', label: '出院科室', semanticType: 'dimension' },
+      { id: 'OUT_DEPT_NAME', label: '出院科室', semanticType: 'dimension' },
+      { id: 'value', label: '指标值', semanticType: 'measure' }
+    ],
+    rows: [
+      { OUT_DEPT_CODE: '16', OUT_DEPT_NAME: '呼吸与危重症医学科', value: 0.3 },
+      { OUT_DEPT_CODE: '34', OUT_DEPT_NAME: '心血管内科', value: 0.2 }
+    ]
+  }
+  const binding = { dataset: 'backend', dimensions: [{ field: 'OUT_DEPT_CODE' }], measures: [{ field: 'value', aggregation: 'direct' }], series: [], sort: [] }
+  const model = compileWidgetData('bar', binding, formal)
+  assert.deepEqual(model.categories, ['呼吸与危重症医学科', '心血管内科'])
+  assert.deepEqual(model.dimensionTuples, [{ OUT_DEPT_CODE: '16' }, { OUT_DEPT_CODE: '34' }])
+})
+test('KPI display formatting matches analysis percentage semantics and prefers backend displayValue', () => {
+  assert.deepEqual(formatDashboardKpiMetric(0.003, { unit: 'PERCENT' }), { value: '0.30', unit: '%' })
+  assert.deepEqual(formatDashboardKpiMetric(0.2558139535, { unit: '%', displayValue: '25.58%' }), { value: '25.58', unit: '%' })
+  assert.deepEqual(formatDashboardKpiMetric(11, { unit: '%' }), { value: '11.00', unit: '%' })
+  assert.deepEqual(formatDashboardKpiMetric(12, { unit: 'CURRENCY', displayValue: '¥12.00' }), { value: '¥12.00', unit: '' })
+  assert.deepEqual(formatDashboardKpiMetric(1250, { unit: '人次' }), { value: '1,250', unit: '人次' })
 })
 test('empty rows, missing dimensions/measures and illegal numbers do not crash', () => {
   for (const values of [[], [null], [{ value: 2 }], [{ month: '1月' }], [{ month: '1月', value: 'bad' }]]) assert.equal(compileWidgetData('line', binding(), { ...dataset, rows: values }).status, 'empty')
@@ -153,6 +267,13 @@ test('line and bar bindings support two X dimensions and independent left/right 
   assert.deepEqual(bindingChartOption('line', model).yAxis, [{ type: 'value' }, { type: 'value' }])
   assert.deepEqual(bindingChartOption('line', model).series.map(item => item.yAxisIndex), [0, 1])
   assert.equal(validateWidgetBinding('pie', { ...binding, dimensions: [binding.dimensions[0]] }, fields).valid, false)
+})
+test('bar points retain raw dimension codes when the axis displays companion names', () => {
+  const fields = createFieldCatalog([{ OUT_DEPT_CODE: '28', OUT_DEPT_NAME: '神经内科', value: 0.01 }])
+  const binding = { dataset: 'backend', dimensions: [{ field: 'OUT_DEPT_CODE' }], measures: [{ field: 'value', aggregation: 'direct' }], series: [], sort: [] }
+  const model = compileWidgetData('bar', binding, { fields, rows: [{ OUT_DEPT_CODE: '28', OUT_DEPT_NAME: '神经内科', value: 0.01 }] })
+  assert.deepEqual(model.categories, ['神经内科'])
+  assert.deepEqual(bindingChartOption('bar', model).series[0].data[0].dimensionValues, { OUT_DEPT_CODE: '28' })
 })
 test('reactive binding persistence is lossless and updates never touch geometry or style', () => {
   const schema = reactive(normalizeDashboardSchema({ version: 1, id: 'binding-test', widgets: [{ id: 'a', type: 'chart', chartKind: 'line', config: { style: { borderRadius: 12 } }, layout: { x: 0, y: 0, w: 6, h: 4 } }] }))

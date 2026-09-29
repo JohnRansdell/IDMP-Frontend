@@ -136,8 +136,8 @@ test('composer item layout survives dashboard and layout template persistence', 
 })
 
 test('metric group presets are complete, unique, and materialize presentation without changing metric identity or bindings', () => {
-  assert.equal(METRIC_GROUP_PRESETS.length, 6)
-  assert.equal(new Set(METRIC_GROUP_PRESETS.map(preset => preset.id)).size, 6)
+  assert.equal(METRIC_GROUP_PRESETS.length, 7)
+  assert.equal(new Set(METRIC_GROUP_PRESETS.map(preset => preset.id)).size, 7)
   for (const preset of METRIC_GROUP_PRESETS) {
     assert.ok(preset.name)
     assert.ok(preset.description)
@@ -162,6 +162,7 @@ test('metric group presets are complete, unique, and materialize presentation wi
   assert.equal(hero.items[0].emphasis, 'hero')
   assert.equal(applyMetricGroupPreset(base, 'metric-strip').itemAppearance, 'divider')
   assert.equal(applyMetricGroupPreset(base, 'minimal').itemAppearance, 'flat')
+  assert.deepEqual(applyMetricGroupPreset(base, 'quality-overview').items.slice(0, 3).map(item => item.tone), ['mint', 'apricot', 'sky'])
 })
 
 test('metric group presets remain safe for every supported item count and presentation normalization is stable', () => {

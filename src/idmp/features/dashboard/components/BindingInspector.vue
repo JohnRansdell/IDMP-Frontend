@@ -16,7 +16,7 @@
       <p v-if="!binding[slot.id]?.length">点击此槽，再从上方添加字段</p>
       <div v-for="(item, index) in binding[slot.id] || []" :key="item.field" class="binding-chip" :data-testid="`binding-chip-${slot.id}-${item.field}`">
         <span>{{ item.label || item.field }}</span><button type="button" :aria-label="`移除${item.label || item.field}`" @click="remove(slot.id, index)">×</button>
-        <select v-if="slot.id === 'measures'" :aria-label="`${item.label}聚合方式`" :data-testid="`binding-aggregation-${item.field}`" :value="item.aggregation" @change="patchItem(slot.id, index, { aggregation: $event.target.value })"><option v-for="(label, value) in AGGREGATIONS" :key="value" :value="value">{{ label }}</option></select>
+        <select v-if="slot.id === 'measures'" :aria-label="`${item.label}聚合方式`" :data-testid="`binding-aggregation-${item.field}`" :value="item.aggregation" @change="patchItem(slot.id, index, { aggregation: $event.target.value })"><option v-for="value in aggregationOptions(item)" :key="value" :value="value">{{ aggregationLabel(value, item) }}</option></select>
         <label v-if="slot.id === 'measures' && dualAxisSupported" class="binding-axis-select">坐标轴<select :aria-label="`${item.label}坐标轴`" :data-testid="`binding-axis-${item.field}`" :value="item.axis || 'left'" @change="patchItem(slot.id, index, { axis: $event.target.value })"><option value="left">左 Y 轴</option><option value="right">右 Y 轴</option></select></label>
         <span v-if="fields.find(field => field.id === item.field)?.semanticType === 'time'" class="binding-granularity">原始时间粒度（不补造日期）</span>
       </div>
@@ -44,7 +44,7 @@ import { computed, inject, ref, watch } from 'vue'
 import FilterConditionEditor from './FilterConditionEditor.vue'
 import { dashboardFilterCatalog } from '../queryAdapter.js'
 import { AGGREGATIONS, BINDING_CAPABILITIES, bindingKind, compileWidgetData, emptyBinding, hasDataBinding, validateWidgetBinding } from '../bindingEngine.js'
-import { createDefaultBinding, isEmptyDashboardBinding } from '../smartDefaultBinding.js'
+import { createDefaultBinding, isEmptyDashboardBinding, preferredMeasureAggregation } from '../smartDefaultBinding.js'
 import { queryWidgetDatasetWithRuntime } from '../queryAdapter.js'
 const props = defineProps({ widget: { type: Object, required: true }, datasets: { type: Array, default: () => [] } })
 const emit = defineEmits(['change', 'query-change'])
@@ -84,10 +84,19 @@ watch(() => props.widget.id, () => { search.value = ''; pendingDataset.value = '
 watch(slots, value => { if (!value.some(slot => slot.id === target.value)) target.value = 'measures' })
 const icon = field => field.semanticType === 'measure' ? '∑' : field.semanticType === 'time' ? '◷' : '▣'
 function canAdd(field) { return target.value === 'filters' ? field.filterable : (target.value === 'measures') === (field.semanticType === 'measure') && !(binding.value[target.value] || []).some(item => item.field === field.id) }
+function aggregationOptions(item) {
+  const field = fields.value.find(entry => entry.id === item.field)
+  const supported = (field?.aggregations || []).filter(value => Object.hasOwn(AGGREGATIONS, value))
+  return supported.length ? supported : Object.keys(AGGREGATIONS)
+}
+function aggregationLabel(value, item) {
+  const field = fields.value.find(entry => entry.id === item.field)
+  return value === 'direct' && field?.aggregations?.length === 1 ? '指标结果值' : AGGREGATIONS[value]
+}
 function add(field) {
   if (!canAdd(field)) return
   if (target.value === 'filters') { emit('change', { ...binding.value, filters: [...(binding.value.filters || []), { field: field.id, operator: 'isNotEmpty' }] }); return }
-  const item = { field: field.id, label: field.label, ...(target.value === 'measures' ? { aggregation: 'direct', axis: 'left' } : field.semanticType === 'time' ? { granularity: 'raw' } : {}) }
+  const item = { field: field.id, label: field.label, ...(target.value === 'measures' ? { aggregation: preferredMeasureAggregation(field), axis: 'left' } : field.semanticType === 'time' ? { granularity: 'raw' } : {}) }
   const old = binding.value[target.value] || []
   const next = { ...binding.value, [target.value]: capability.value[target.value] === 1 ? [item] : [...old, item] }
   next.sort = (next.sort || []).filter(sort => [...next.dimensions, ...next.measures].some(entry => entry.field === sort.field))
