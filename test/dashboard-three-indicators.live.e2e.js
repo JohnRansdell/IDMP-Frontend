@@ -47,6 +47,12 @@ try {
     await cdp.send('Page.reload', { ignoreCache: true })
   }
 
+  if (process.env.DASHBOARD_SELECT_TEST === '1') {
+    await waitFor(cdp, `document.querySelector('.scene-select .el-select__wrapper')`)
+    await value(cdp, `document.querySelector('.scene-select .el-select__wrapper').click()`)
+    await waitFor(cdp, `Array.from(document.querySelectorAll('.el-select-dropdown__item')).some(item => item.offsetParent && item.innerText.trim() === 'test')`)
+    await value(cdp, `Array.from(document.querySelectorAll('.el-select-dropdown__item')).find(item => item.offsetParent && item.innerText.trim() === 'test').click()`)
+  }
   await waitFor(cdp, `document.body.innerText.includes('住院死亡率') && !document.body.innerText.includes('正在加载质量看板')`, 60000)
   const bodyText = await value(cdp, 'document.body.innerText')
   if (process.env.DASHBOARD_CURRENT_VERSION_SMOKE === '1') {
@@ -134,6 +140,8 @@ async function waitFor(client, expression, timeoutMs = 45000) {
     await delay(150)
   }
   const text = await value(client, 'document.body.innerText').catch(() => '')
+  const diagnostics = await value(client, 'window.dashboardQueryDiagnostics').catch(() => null)
+  if (diagnostics) process.stderr.write(JSON.stringify(diagnostics) + '\n')
   throw new Error(`等待页面条件超时：${expression}\n${String(text).slice(0, 2000)}`)
 }
 
