@@ -50,6 +50,11 @@ export function buildSqlRuntimeParameterValues(declarations, values = {}) {
   }))
 }
 
+export function hasActiveTemporarySqlRuntimeParameters(declarations = [], values = {}) {
+  const submitted = buildSqlRuntimeParameterValues(declarations, values)
+  return declarations.some(item => item.parameterMode === 'TEMPORARY' && Object.hasOwn(submitted, item.code))
+}
+
 export function buildSqlImportCreatePayload({ sql, tableMappings, definitionType = 'SQL' } = {}) {
   const mappings = cleanMappings(tableMappings)
   return { sql: String(sql || '').trim(), ...(Object.keys(mappings).length ? { tableMappings: mappings } : {}), definitionType }

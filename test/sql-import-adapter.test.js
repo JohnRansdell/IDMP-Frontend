@@ -6,6 +6,7 @@ import {
   buildSqlImportTrialPayload,
   buildSqlRuntimeParameterValues,
   collectSqlRuntimeParameters,
+  hasActiveTemporarySqlRuntimeParameters,
   canFinalizeSqlImport,
   canSubmitSqlImportMetadata,
   canTrialSqlImport,
@@ -184,6 +185,21 @@ test('SQL runtime parameter values preserve declared types and validate required
   assert.deepEqual(buildSqlRuntimeParameterValues(declarations, {
     deptCode: '4', minimumHours: '48', ratio: '1.25', enabled: 'false', ignored: 'x'
   }), { deptCode: '4', minimumHours: 48, ratio: 1.25, enabled: false })
+})
+
+test('optional temporary declarations only require runtime query when a value is submitted', () => {
+  const declarations = [
+    { code: 'startDate', type: 'DATETIME', required: false, parameterMode: 'TEMPORARY' },
+    { code: 'patientName', type: 'STRING', required: false, parameterMode: 'TEMPORARY' },
+    { code: 'includeCancelled', type: 'BOOLEAN', required: false, parameterMode: 'TEMPORARY' },
+    { code: 'deptCode', type: 'STRING', required: false, parameterMode: 'DIMENSION' }
+  ]
+  assert.equal(hasActiveTemporarySqlRuntimeParameters(declarations, {}), false)
+  assert.equal(hasActiveTemporarySqlRuntimeParameters(declarations, { startDate: '', patientName: null }), false)
+  assert.equal(hasActiveTemporarySqlRuntimeParameters(declarations, { deptCode: 'A1' }), false)
+  assert.equal(hasActiveTemporarySqlRuntimeParameters(declarations, { patientName: '张' }), true)
+  assert.equal(hasActiveTemporarySqlRuntimeParameters(declarations, { includeCancelled: false }), true)
+  assert.equal(hasActiveTemporarySqlRuntimeParameters([{ code: 'count', type: 'INTEGER', parameterMode: 'TEMPORARY' }], { count: 0 }), true)
 })
 
 test('SQL import task preserves opaque IDs and only polls running states', () => {

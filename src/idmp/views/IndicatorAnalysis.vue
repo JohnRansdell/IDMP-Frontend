@@ -66,7 +66,7 @@
             size="default"
           />
         </div>
-        <el-button type="primary" :loading="mortalityChainLoading || runtimeQueryLoading" @click="applyReportPeriod">{{ hasTemporaryIndicatorRuntimeParameters ? '即时查询' : '查询' }}</el-button>
+        <el-button type="primary" :loading="mortalityChainLoading || runtimeQueryLoading" @click="applyReportPeriod">{{ hasActiveTemporaryRuntimeParameters ? '即时查询' : '查询' }}</el-button>
         <el-button @click="showDataDiagnostics = true">数据说明</el-button>
       </div>
     </section>
@@ -384,7 +384,7 @@ import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
 import { getStatusLabel } from '@/idmp/design/status'
 import { periodOptions } from '@/idmp/features/analysis/indicatorProfiles'
 import { resolvePrimaryAnalysisOverview } from '@/idmp/features/dashboard/visualization'
-import { buildSqlRuntimeParameterValues, collectSqlRuntimeParameters, validateSqlRuntimeParameterValues } from '@/idmp/api/adapters/sqlImport'
+import { buildSqlRuntimeParameterValues, collectSqlRuntimeParameters, hasActiveTemporarySqlRuntimeParameters, validateSqlRuntimeParameterValues } from '@/idmp/api/adapters/sqlImport'
 
 const route = useRoute()
 const router = useRouter()
@@ -471,7 +471,7 @@ const indicatorRuntimeParameters = computed(() => collectSqlRuntimeParameters(
     .map(group => ({ ...group, key: group.factorCode || group.factorVersionId }))
 ))
 const indicatorRuntimeParameterConflicts = computed(() => indicatorRuntimeParameters.value.filter(item => item.conflict))
-const hasTemporaryIndicatorRuntimeParameters = computed(() => indicatorRuntimeParameters.value.some(item => item.parameterMode === 'TEMPORARY'))
+const hasActiveTemporaryRuntimeParameters = computed(() => hasActiveTemporarySqlRuntimeParameters(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value))
 const runtimeQueryRows = computed(() => Array.isArray(runtimeQueryResult.value?.rows) ? runtimeQueryResult.value.rows : [])
 const runtimeQueryColumns = computed(() => [...new Set(runtimeQueryRows.value.flatMap(row => Object.keys(row || {})))])
 const runtimeQueryExecutionModeLabel = computed(() => runtimeQueryResult.value?.executionMode === 'AD_HOC_SOURCE' ? '源数据即时重算' : '读取正式结果')
@@ -1207,8 +1207,11 @@ function applyReportPeriod() {
     delete query.periodEnd
   }
   router.replace({ path: '/analysis', query })
-  if (hasTemporaryIndicatorRuntimeParameters.value) runIndicatorRuntimeQuery()
-  else refreshMortalityAnalysis()
+  if (hasActiveTemporaryRuntimeParameters.value) runIndicatorRuntimeQuery()
+  else {
+    clearRuntimeQueryResult()
+    refreshMortalityAnalysis()
+  }
 }
 
 function clearRuntimeQueryResult() {
@@ -1488,7 +1491,7 @@ async function refreshMortalityAnalysis() {
     }
     if (calculationMode !== 'STATIC') void loadAvailablePeriod(initialVersionId, refreshSequence)
 
-    if (hasTemporaryIndicatorRuntimeParameters.value) {
+    if (hasActiveTemporaryRuntimeParameters.value) {
       if (backendIndicatorVersion.value) await loadAnalysisFormulaFactorVersions(backendIndicatorVersion.value, refreshSequence)
       mortalityChainLoading.value = false
       return
