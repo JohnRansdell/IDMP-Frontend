@@ -23,12 +23,12 @@
 
     <section class="surface-card workflow-card">
       <div class="section-title">
-        <div><h2>接入流程</h2><p class="section-title__description">先确认来源结构，再进入数据域工作台完成语义映射</p></div>
+        <div><h2>接入流程</h2><p class="section-title__description">先确认来源结构，再将物理表接入数据域并映射字段</p></div>
       </div>
       <div class="workflow-steps">
         <div class="workflow-step is-current"><b>1</b><div><strong>同步来源结构</strong><span>读取表、视图和字段</span></div></div>
         <div class="workflow-arrow">→</div>
-        <div class="workflow-step"><b>2</b><div><strong>建立标准模型</strong><span>选择数据域和语义表</span></div></div>
+        <div class="workflow-step"><b>2</b><div><strong>接入物理表</strong><span>选择所属数据域</span></div></div>
         <div class="workflow-arrow">→</div>
         <div class="workflow-step"><b>3</b><div><strong>完成字段映射</strong><span>将物理字段转为业务语义</span></div></div>
       </div>
@@ -81,7 +81,7 @@
       <div class="section-title section-title--toolbar">
         <div>
           <h2>数据表与视图</h2>
-          <p class="section-title__description">选择对象后查看字段详情，并用于创建语义表</p>
+          <p class="section-title__description">选择对象后查看字段详情，并可在数据域工作台接入</p>
         </div>
         <span class="table-count">共 {{ filteredTables.length }} / {{ sourceTables.length }} 个对象</span>
       </div>

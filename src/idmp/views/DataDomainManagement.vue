@@ -3,7 +3,7 @@
     <PageHeader title="数据域管理">
       <template #meta>
         <span class="data-source-badge is-live">真实接口</span>
-        <span class="header-meta">把医院物理表转换为指标可复用的业务语义</span>
+        <span class="header-meta">按业务主题管理数据域及其物理表</span>
       </template>
       <template #actions>
         <el-button :icon="Refresh" :loading="listLoading" @click="loadDomains">刷新列表</el-button>
@@ -21,7 +21,7 @@
       <div class="section-title section-title--toolbar">
         <div>
           <h2>数据域目录</h2>
-          <p class="section-title__description">按主题查找模型，进入工作台维护语义表和字段映射</p>
+          <p class="section-title__description">按主题查找数据域，进入工作台维护物理表和字段映射</p>
         </div>
         <span class="table-count">共 {{ filteredDomains.length }} / {{ domains.length }} 个</span>
       </div>

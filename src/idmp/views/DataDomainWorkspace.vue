@@ -1,969 +1,398 @@
 <template>
   <div class="idmp-page data-domain-workspace">
-      <PageHeader title="数据域工作台">
-      <template #meta>
-        <span class="data-source-badge is-live">真实接口</span>
-        <span class="header-meta">按步骤完成实体接入、字段映射和时间口径配置</span>
-      </template>
+    <PageHeader title="数据域工作台">
+      <template #meta><span class="data-source-badge is-live">真实接口</span></template>
       <template #actions>
-        <el-button @click="router.push({ name: 'DataDomainManagement' })">返回数据域目录</el-button>
-          <el-button :loading="tableLoading" @click="loadSemanticTables">刷新语义表</el-button>
+        <el-button :icon="ArrowLeft" @click="router.push({ name: 'DataDomainManagement' })">返回目录</el-button>
+        <el-button :icon="Refresh" :loading="loading" @click="loadWorkspace">刷新</el-button>
       </template>
     </PageHeader>
 
-    <StatePanel v-if="domainLoading" type="loading" title="正在加载数据域" />
-    <StatePanel v-else-if="domainError" :type="stateTypeForError(domainError)" title="数据域加载失败" :description="domainErrorMessage" />
-    <StatePanel v-else-if="!domain" type="empty" title="数据域不存在" description="请返回数据域目录重新选择。" />
+    <StatePanel v-if="loading" type="loading" title="正在加载数据域" />
+    <StatePanel v-else-if="error" type="error" title="数据域加载失败" :description="errorMessage">
+      <template #actions><el-button @click="loadWorkspace">重试</el-button></template>
+    </StatePanel>
+    <StatePanel v-else-if="!domain" type="empty" title="数据域不存在" />
     <template v-else>
-      <section class="surface-card domain-summary">
-        <div class="summary-heading">
-          <div><span class="eyebrow">数据域</span><CodeTooltip :code="domain.code" label="数据域编码"><h2>{{ domain.name }}</h2></CodeTooltip></div>
-          <StatusBadge :status="domain.status" />
-        </div>
-        <dl class="summary-grid">
-          <div><dt>ID</dt><dd class="mono-data">{{ domain.id }}</dd></div>
-          <div><dt>说明</dt><dd>{{ domain.description || '—' }}</dd></div>
-          <div><dt>创建时间</dt><dd>{{ domain.createdAt || '—' }}</dd></div>
-        </dl>
+      <section class="domain-heading">
+        <div><CodeTooltip :code="domain.code" label="数据域编码"><h2>{{ domain.name }}</h2></CodeTooltip><p>{{ domain.description || '暂无说明' }}</p></div>
+        <StatusBadge :status="domain.status" />
       </section>
 
-      <section class="surface-card model-progress-card">
-        <div class="section-title"><div><h2>模型建设进度</h2><p class="section-title__description">当前阶段先完成来源接入和语义映射，发布与影响分析待后端能力接入</p></div></div>
-        <div class="model-progress-steps">
-          <div class="model-progress-step is-done"><b>1</b><span>数据域</span></div><i>→</i>
-          <div class="model-progress-step is-done"><b>2</b><span>语义表</span></div><i>→</i>
-          <div class="model-progress-step" :class="{ 'is-current': selectedTable }"><b>3</b><span>字段映射</span></div><i>→</i>
-          <div class="model-progress-step"><b>4</b><span>校验发布</span></div>
-        </div>
-      </section>
-
-      <section class="surface-card table-card">
+      <section class="workspace-section">
         <div class="section-title section-title--toolbar">
-          <div>
-            <h2>语义表</h2>
-            <p class="section-title__description">GET /api/v1/meta/data-domains/{domainId}/semantic-tables</p>
-          </div>
-          <div class="toolbar-meta">
-            <span class="table-count">共 {{ semanticTables.length }} 张</span>
-            <el-button type="primary" :icon="Plus" @click="openCreateDialog">新建语义表</el-button>
-          </div>
+          <div><h2>物理表</h2><p class="section-title__description">当前数据域接入的源表和视图</p></div>
+          <div class="toolbar-actions"><span class="table-count">共 {{ physicalTables.length }} 张</span><el-button type="primary" :icon="Plus" @click="openAddDialog">接入物理表</el-button></div>
         </div>
-
-        <StatePanel v-if="tableLoading" type="loading" title="正在加载语义表" />
-        <StatePanel
-          v-else-if="tableError"
-          :type="stateTypeForError(tableError)"
-          title="语义表加载失败"
-          :description="tableErrorMessage"
-        >
-          <template #actions><el-button @click="loadSemanticTables">重试加载</el-button></template>
+        <StatePanel v-if="!physicalTables.length" type="empty" title="尚未接入物理表">
+          <template #actions><el-button type="primary" @click="openAddDialog">接入物理表</el-button></template>
         </StatePanel>
-        <StatePanel
-          v-else-if="!semanticTables.length"
-          type="empty"
-          title="当前数据域没有语义表"
-          description="请从已同步的源表中创建第一张语义表。"
-        >
-          <template #actions><el-button type="primary" @click="openCreateDialog">新建语义表</el-button></template>
-        </StatePanel>
-        <el-table
-          v-else
-          :data="semanticTables"
-          :current-row-key="selectedTable?.id"
-          row-key="id"
-          highlight-current-row
-          table-layout="fixed"
-          @row-click="selectSemanticTable"
-        >
-          <el-table-column label="ID" width="205">
-            <template #default="{ row }"><span class="mono-data">{{ row.id }}</span></template>
-          </el-table-column>
-          <el-table-column prop="name" label="语义表名称" min-width="280" show-overflow-tooltip><template #default="{ row }"><CodeTooltip :code="row.code" label="语义表编码"><span>{{ row.name }}</span></CodeTooltip></template></el-table-column>
-          <el-table-column prop="sourceTableName" label="来源物理表" min-width="220" show-overflow-tooltip />
-          <el-table-column prop="sourceObjectType" label="源对象类型" width="140">
-            <template #default="{ row }">{{ sourceObjectTypeLabel(row.sourceObjectType) || '—' }}</template>
-          </el-table-column>
-          <el-table-column prop="defaultTimeSemanticFieldCode" label="默认时间字段" min-width="180" show-overflow-tooltip>
-            <template #default="{ row }">{{ row.defaultTimeSemanticFieldCode || '未配置' }}</template>
-          </el-table-column>
+        <el-table v-else :data="physicalTables" :current-row-key="selectedTableName" row-key="tableName" highlight-current-row @row-click="selectTable">
+          <el-table-column prop="tableName" label="表名" min-width="220" show-overflow-tooltip />
+          <el-table-column prop="tableComment" label="说明" min-width="180" show-overflow-tooltip><template #default="{ row }">{{ row.tableComment || '—' }}</template></el-table-column>
+          <el-table-column prop="defaultTimeSemanticFieldCode" label="默认时间字段" min-width="160"><template #default="{ row }">{{ row.defaultTimeSemanticFieldCode || '未配置' }}</template></el-table-column>
           <el-table-column label="状态" width="120"><template #default="{ row }"><StatusBadge :status="row.status" /></template></el-table-column>
-          <el-table-column label="操作" width="110" fixed="right">
-            <template #default="{ row }"><el-button link type="primary" @click.stop="selectSemanticTable(row)">查看</el-button></template>
-          </el-table-column>
+          <el-table-column label="操作" width="90" fixed="right"><template #default="{ row }"><el-button link type="primary" @click.stop="selectTable(row)">查看</el-button></template></el-table-column>
         </el-table>
       </section>
 
-      <section class="surface-card selected-table-card">
-        <div class="section-title">
-          <div>
-            <h2>当前语义表上下文</h2>
-            <p class="section-title__description">先选择一张语义表，再在下方完成物理字段到业务字段的映射</p>
-          </div>
-          <span class="selected-context">{{ selectedTable?.code || '未选择语义表' }}</span>
-        </div>
-        <StatePanel
-          v-if="!selectedTable"
-          type="empty"
-          title="请显式选择一张语义表"
-          description="当数据域包含多张语义表时，页面不会自动把第一张表当作数据域字段来源。"
-        />
-        <dl v-else class="selected-grid">
-          <div><dt>编码</dt><dd class="mono-data">{{ selectedTable.code }}</dd></div>
-          <div><dt>名称</dt><dd>{{ selectedTable.name }}</dd></div>
-          <div><dt>来源物理表</dt><dd class="mono-data">{{ selectedTable.sourceTableName || '—' }}</dd></div>
-          <div><dt>默认时间字段</dt><dd class="mono-data">{{ selectedTable.defaultTimeSemanticFieldCode || '未配置' }}</dd></div>
-          <div><dt>状态</dt><dd><StatusBadge :status="selectedTable.status" /></dd></div>
-        </dl>
-      </section>
-
-      <section v-if="selectedTable" class="surface-card relation-card">
-        <div class="section-title section-title--toolbar">
-          <div>
-            <h2>语义表关联关系</h2>
-            <p class="section-title__description">维护当前语义表与其他语义表的连接规则；校验并发布后，才能用于多表因子和 SQL 导入。</p>
-          </div>
-          <div class="toolbar-meta">
-            <span class="table-count">共 {{ relations.length }} 条</span>
-            <el-button :loading="relationLoading" @click="loadRelations">刷新</el-button>
-            <el-button type="primary" :icon="Plus" @click="openRelationDialog">新建关联关系</el-button>
-          </div>
-        </div>
-
-        <div class="relation-overview" aria-label="关联关系概览">
-          <article class="relation-overview__item relation-overview__item--table">
-            <span>新建关系的左表</span>
-            <CodeTooltip :code="selectedTable.code" label="语义表编码"><strong>{{ selectedTable.name || selectedTable.code }}</strong></CodeTooltip>
-          </article>
-          <article class="relation-overview__item">
-            <span>全部关系</span>
-            <strong>{{ relations.length }}</strong>
-            <small>包含草稿和已发布关系</small>
-          </article>
-          <article class="relation-overview__item">
-            <span>已发布可用</span>
-            <strong>{{ publishedRelationCount }}</strong>
-            <small>可被下游计算引用</small>
-          </article>
-          <article class="relation-overview__item">
-            <span>待处理</span>
-            <strong>{{ pendingRelationCount }}</strong>
-            <small>待校验、发布或已停用</small>
-          </article>
-        </div>
-
-        <div class="relation-content">
-          <StatePanel v-if="relationLoading" type="loading" title="正在加载关联关系" />
-          <StatePanel v-else-if="relationError" :type="stateTypeForError(relationError)" title="关联关系加载失败" :description="formatErrorMessage(relationError, '关联关系加载失败')">
-            <template #actions><el-button @click="loadRelations">重试加载</el-button></template>
-          </StatePanel>
-          <StatePanel v-else-if="!relations.length" type="empty" title="当前语义表尚未配置关联关系" description="新建一条同域或跨数据域关系，配置两端关联字段后进行校验和发布。">
-            <template #actions><el-button type="primary" :icon="Plus" @click="openRelationDialog">新建关联关系</el-button></template>
-          </StatePanel>
-          <el-table v-else :data="relations" row-key="id" table-layout="fixed">
-            <el-table-column label="关系" min-width="210">
-              <template #default="{ row }"><div class="relation-name-cell"><strong>{{ row.code }}</strong><small class="mono-data">ID {{ row.id }}</small></div></template>
-            </el-table-column>
-            <el-table-column label="关联目标" min-width="220" show-overflow-tooltip><template #default="{ row }">{{ relationPeerLabel(row) }}</template></el-table-column>
-            <el-table-column label="连接方式" width="130"><template #default="{ row }"><span class="relation-type">{{ row.joinType || '—' }}</span></template></el-table-column>
-            <el-table-column label="关系基数" width="140"><template #default="{ row }">{{ relationCardinalityLabel(relationCardinalityForSelected(row)) }}</template></el-table-column>
-            <el-table-column label="发布状态" width="110"><template #default="{ row }"><StatusBadge :status="row.status" /></template></el-table-column>
-            <el-table-column label="启用状态" width="110"><template #default="{ row }"><StatusBadge :status="row.enableStatus" /></template></el-table-column>
-            <el-table-column label="操作" width="245" fixed="right">
-              <template #default="{ row }">
-                <div class="relation-actions">
-                  <el-button v-if="String(row.leftViewMappingId) === String(selectedViewMappingId())" link type="primary" :loading="relationActionId === row.id" @click="openRelationDialog(row)">编辑</el-button>
-                  <el-button link type="primary" :loading="relationActionId === row.id" @click="validateRelation(row)">校验</el-button>
-                  <el-button link type="success" :loading="relationActionId === row.id" :disabled="row.status === 'PUBLISHED' && row.enableStatus === 'ENABLED'" @click="publishRelation(row)">发布</el-button>
-                  <el-button link type="danger" :loading="relationActionId === row.id" :disabled="row.enableStatus === 'DISABLED'" @click="disableRelation(row)">停用</el-button>
-                </div>
-              </template>
-            </el-table-column>
+      <section class="workspace-section">
+        <div class="section-title section-title--toolbar"><div><h2>字段映射</h2><p class="section-title__description">{{ selectedTable?.tableName || '请选择物理表' }}</p></div><span v-if="selectedTable" class="table-count">已映射 {{ mappedFields.length }} / {{ sourceFields.length }}</span></div>
+        <StatePanel v-if="!selectedTable" type="empty" title="请选择物理表" />
+        <StatePanel v-else-if="fieldLoading" type="loading" title="正在加载字段" />
+        <StatePanel v-else-if="fieldError" type="error" title="字段加载失败" :description="fieldErrorMessage"><template #actions><el-button @click="loadFields">重试</el-button></template></StatePanel>
+        <template v-else>
+          <el-table :data="fieldRows" row-key="columnName" max-height="500">
+            <el-table-column prop="columnName" label="源字段" min-width="180" show-overflow-tooltip />
+            <el-table-column prop="columnType" label="源类型" min-width="110" />
+            <el-table-column prop="comment" label="源注释" min-width="160" show-overflow-tooltip><template #default="{ row }">{{ row.comment || '—' }}</template></el-table-column>
+            <el-table-column prop="mapped.code" label="业务字段" min-width="180"><template #default="{ row }">{{ row.mapped?.name || row.mapped?.code || '未映射' }}<small v-if="row.mapped?.code">{{ row.mapped.code }}</small></template></el-table-column>
+            <el-table-column label="角色" width="110"><template #default="{ row }">{{ roleLabel(row.mapped?.semanticKind) }}</template></el-table-column>
+            <el-table-column label="操作" width="260" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openMappingDialog(row)">{{ row.mapped ? '编辑' : '映射' }}</el-button><template v-if="row.mapped"><el-button link :disabled="!canBindValueSet(row.mapped)" @click="openValueSetBinding(row.mapped)">值集</el-button><el-button link :disabled="!canStandardize(row.mapped)" @click="openStandardization(row.mapped)">标准化</el-button><el-button link :disabled="!row.mapped.sourceFieldMappingId" @click="openFieldProfile(row.mapped)">画像</el-button></template></template></el-table-column>
           </el-table>
-        </div>
-      </section>
-
-      <section v-if="selectedTable" class="surface-card field-mapping-card">
-        <div class="section-title section-title--toolbar">
-          <div>
-            <h2>语义字段映射</h2>
-            <p class="section-title__description">当前语义表：{{ selectedTable.code }} · 已映射 {{ semanticFields.length }} / {{ sourceFields.length }} 个来源字段</p>
-          </div>
-          <StatusBadge v-if="fieldSaveFeedback" :status="fieldSaveFeedback.status" :label="fieldSaveFeedback.label" :tone="fieldSaveFeedback.tone" />
-        </div>
-
-        <div class="field-mapping-grid">
-          <div class="field-pane">
-              <div class="field-pane__heading"><div class="field-pane__heading-main"><strong>来源字段</strong><span>{{ filteredSourceFields.length }} / {{ sourceFields.length }} 个 · 点击一行开始映射</span></div><el-input v-model.trim="sourceFieldKeyword" class="field-search-input" size="small" clearable placeholder="搜索字段名、注释或类型" aria-label="搜索来源字段" /></div>
-            <StatePanel v-if="fieldLoading" type="loading" title="正在加载字段" />
-            <StatePanel v-else-if="fieldError" :type="stateTypeForError(fieldError)" title="物理字段加载失败" :description="fieldErrorMessage" />
-            <StatePanel v-else-if="!sourceFields.length" type="empty" title="暂无物理字段" description="请确认源表元数据已经同步。" />
-            <StatePanel v-else-if="!filteredSourceFields.length" type="empty" title="没有匹配的来源字段" description="请调整搜索关键词或清空搜索条件。" />
-            <div v-else class="mapping-table-scroll">
-            <el-table :data="filteredSourceFields" row-key="columnName" highlight-current-row table-layout="fixed" @row-click="selectSourceField">
-              <el-table-column label="源字段" min-width="230" show-overflow-tooltip>
-                <template #default="{ row }">
-                  <div class="source-field-cell"><small>{{ row.comment || '暂无字段中文注释' }}</small><strong>{{ row.columnName }}</strong></div>
-                </template>
-              </el-table-column>
-              <el-table-column label="物理类型" width="125"><template #default="{ row }">{{ physicalDataTypeLabel(row.columnType) }}</template></el-table-column>
-              <el-table-column label="映射状态" width="120">
-                <template #default="{ row }"><StatusBadge :status="isMapped(row) ? 'MAPPED' : 'UNMAPPED'" :label="isMapped(row) ? '已映射' : '未映射'" :tone="isMapped(row) ? 'success' : 'neutral'" /></template>
-              </el-table-column>
-            </el-table>
-            </div>
-          </div>
-
-          <div class="field-pane">
-              <div class="field-pane__heading"><div class="field-pane__heading-main"><strong>标准业务字段</strong><span>{{ filteredSemanticFields.length }} / {{ semanticFields.length }} 个</span></div><el-input v-model.trim="semanticFieldKeyword" class="field-search-input" size="small" clearable placeholder="搜索字段名称、编码或来源字段" aria-label="搜索标准业务字段" /></div>
-            <StatePanel v-if="fieldLoading" type="loading" title="正在加载语义字段" />
-            <StatePanel v-else-if="fieldError" :type="stateTypeForError(fieldError)" title="语义字段加载失败" :description="fieldErrorMessage" />
-            <StatePanel v-else-if="!semanticFields.length" type="empty" title="暂无语义字段" description="从左侧选择源字段开始建立映射。" />
-            <StatePanel v-else-if="!filteredSemanticFields.length" type="empty" title="没有匹配的标准业务字段" description="请调整搜索关键词或清空搜索条件。" />
-            <div v-else class="mapping-table-scroll">
-            <el-table :data="filteredSemanticFields" row-key="id" table-layout="fixed">
-              <el-table-column prop="sourceFieldName" label="来源字段" min-width="135" show-overflow-tooltip>
-                <template #default="{ row }">{{ row.sourceFieldName || '未返回映射来源' }}</template>
-              </el-table-column>
-              <el-table-column label="标准业务字段" min-width="165" show-overflow-tooltip>
-                <template #default="{ row }"><div class="semantic-field-cell"><CodeTooltip :code="row.code" label="语义字段编码"><strong>{{ row.name || '未命名字段' }}</strong></CodeTooltip></div></template>
-              </el-table-column>
-              <el-table-column label="类型" width="88"><template #default="{ row }">{{ semanticDataTypeLabel(row.dataType) || '未知类型' }}</template></el-table-column>
-              <el-table-column label="业务角色" width="86"><template #default="{ row }">{{ semanticKindLabel(row.semanticKind) || '未配置' }}</template></el-table-column>
-              <el-table-column prop="sensitive" label="敏感" width="58">
-                <template #default="{ row }">{{ row.sensitive ? '是' : '否' }}</template>
-              </el-table-column>
-              <el-table-column label="操作" width="170" fixed="right">
-                <template #default="{ row }">
-                  <div class="field-actions">
-                    <el-button v-if="row.sourceFieldMappingId && isDimensionField(row)" link type="primary" @click="openStandardization(row)">标准化</el-button>
-                    <el-button v-if="row.sourceFieldMappingId && canBindValueSet(row)" link type="primary" @click.stop="openValueSetBinding(row)">绑定值集</el-button>
-                    <el-button v-if="row.sourceFieldMappingId" link type="primary" @click.stop="openFieldProfile(row)">字段画像</el-button>
-                    <span v-if="!row.sourceFieldMappingId" class="field-action-disabled">未建立来源字段映射</span>
-                  </div>
-                </template>
-              </el-table-column>
-            </el-table>
-            </div>
-          </div>
-        </div>
-
-        <div class="mapping-editor">
-          <div class="field-pane__heading"><strong>新增或更新映射</strong><span>{{ selectedSourceField ? `${selectedSourceField.columnName} · ${selectedSourceField.comment || '暂无中文注释'}` : '请先选择左侧源字段' }}</span></div>
-          <el-alert class="semantic-role-alert" type="info" :closable="false" show-icon title="业务角色决定字段用途：维度字段可筛选、分组并绑定值集；度量字段用于数值聚合；属性字段只承载描述信息。数据类型与业务角色需要分别选择。" />
-          <el-form ref="fieldFormRef" :model="fieldForm" :rules="fieldRules" label-position="top" :disabled="!selectedSourceField">
-            <div class="field-form-grid">
-              <el-form-item label="来源字段" prop="sourceFieldName"><el-input v-model="fieldForm.sourceFieldName" readonly /></el-form-item>
-              <el-form-item label="标准字段编码" prop="code"><el-input v-model.trim="fieldForm.code" maxlength="64" show-word-limit placeholder="如 DEATH_DATETIME" /></el-form-item>
-              <el-form-item label="业务名称" prop="name"><el-input v-model.trim="fieldForm.name" placeholder="如 死亡时间" /></el-form-item>
-              <el-form-item label="标准数据类型" prop="dataType"><el-select v-model="fieldForm.dataType" placeholder="选择数据类型"><el-option v-for="item in semanticDataTypes" :key="item" :label="semanticDataTypeLabel(item)" :value="item" /></el-select></el-form-item>
-              <el-form-item label="业务角色" prop="semanticKind"><el-select v-model="fieldForm.semanticKind" placeholder="选择业务角色"><el-option v-for="item in semanticKinds" :key="item" :label="semanticKindOptionLabel(item)" :value="item" /></el-select></el-form-item>
-              <el-form-item label="敏感信息" prop="sensitive"><el-switch v-model="fieldForm.sensitive" active-text="是" inactive-text="否" /></el-form-item>
-            </div>
-            <div class="mapping-actions">
-              <span class="field-help">不接受 SQL 或跨表字段；保存对象始终属于当前语义表。</span>
-              <el-button type="primary" :loading="fieldSaveLoading" :disabled="!selectedSourceField" @click="saveFieldMapping">保存字段映射</el-button>
-            </div>
-          </el-form>
-        </div>
-
-        <div class="default-time-editor">
-          <div><strong>默认时间字段</strong><p>只能选择当前语义表已映射的日期或日期时间字段。</p></div>
-          <el-select v-model="defaultTimeFieldCode" :disabled="!timeFieldOptions.length || defaultTimeLoading" placeholder="未配置默认时间字段">
-            <el-option v-for="item in timeFieldOptions" :key="item.code" :label="`${item.code}（${item.name}）`" :value="item.code" />
-          </el-select>
-          <el-button :loading="defaultTimeLoading" :disabled="!selectedTable || !timeFieldOptions.length" @click="saveDefaultTimeField">保存默认时间字段</el-button>
-        </div>
+          <div class="time-field-control"><label for="default-time-field">默认时间字段</label><el-select id="default-time-field" v-model="defaultTimeFieldCode" :disabled="!timeFieldOptions.length" placeholder="选择已映射的日期字段"><el-option v-for="field in timeFieldOptions" :key="field.code" :label="`${field.name}（${field.code}）`" :value="field.code" /></el-select><el-button type="primary" :loading="timeSaving" :disabled="!defaultTimeFieldCode || defaultTimeFieldCode === selectedTable.defaultTimeSemanticFieldCode" @click="saveDefaultTimeField">保存</el-button></div>
+        </template>
       </section>
     </template>
 
-    <el-dialog v-model="createDialogVisible" title="新建语义表" width="560px" destroy-on-close>
-      <div class="dialog-api-note">POST /api/v1/meta/data-domains/{{ domain?.id }}/semantic-tables</div>
-      <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-position="top">
-        <el-form-item label="来源物理表" prop="sourceTableName">
-          <el-select v-model="createForm.sourceTableName" filterable placeholder="选择已同步源表" :loading="sourceLoading">
-            <el-option v-for="item in sourceTables" :key="item.tableName" :label="sourceTableLabel(item)" :value="item.tableName" />
-          </el-select>
-          <div v-if="!sourceLoading && !sourceTables.length" class="field-help">暂无已同步源表，请先到“来源元数据”页面执行同步。</div>
-        </el-form-item>
-        <el-form-item label="语义表编码" prop="code">
-          <el-input v-model.trim="createForm.code" placeholder="如 INPATIENT_DEATH_RECORD" />
-          <div class="field-help">仅允许大写字母、数字和下划线，且必须以字母开头。</div>
-        </el-form-item>
-        <el-form-item label="语义表名称" prop="name"><el-input v-model.trim="createForm.name" placeholder="请输入语义表名称" /></el-form-item>
-      </el-form>
-      <div v-if="createError" class="create-error"><StatePanel :type="stateTypeForError(createError)" title="语义表创建失败" :description="createErrorMessage" /></div>
-      <template #footer>
-        <el-button @click="createDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="createLoading" :disabled="!sourceTables.length" @click="submitCreate">确认创建</el-button>
-      </template>
+    <el-dialog v-model="addDialogVisible" title="接入物理表" width="520px" destroy-on-close>
+      <el-form label-position="top"><el-form-item label="源表或视图"><el-select v-model="tableToAdd" filterable :loading="sourceLoading" placeholder="选择来源对象"><el-option v-for="table in availableSourceTables" :key="table.tableName" :label="table.comment ? `${table.tableName} · ${table.comment}` : table.tableName" :value="table.tableName" /></el-select></el-form-item></el-form>
+      <StatePanel v-if="sourceError" type="error" title="来源目录加载失败" :description="sourceErrorMessage"><template #actions><el-button @click="loadSourceTables">重试</el-button></template></StatePanel>
+      <template #footer><el-button @click="addDialogVisible = false">取消</el-button><el-button type="primary" :loading="adding" :disabled="!tableToAdd" @click="submitAddTable">确认接入</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="relationDialogVisible" :title="relationEditingId ? '编辑语义表关联关系' : '新建语义表关联关系'" width="min(780px, 92vw)" destroy-on-close>
-      <div class="dialog-api-note">{{ relationEditingId ? 'PATCH /api/v1/meta/semantic-table-relations/{relationId}' : 'POST /api/v1/meta/semantic-table-relations' }}</div>
-      <div class="relation-dialog-context">
-        <span>当前左表</span>
-        <strong>{{ selectedTable?.name || selectedTable?.code }}</strong>
-        <code>{{ domain?.code }} / {{ selectedTable?.code }}</code>
-      </div>
-      <el-form ref="relationFormRef" :model="relationForm" :rules="relationRules" label-position="top" class="relation-form">
-        <section class="relation-form-section">
-          <div class="relation-form-section__heading"><div><h3>基本信息</h3><p>定义关系编码、目标语义表以及连接约束。</p></div><span>1</span></div>
-          <div class="relation-form-grid">
-            <el-form-item label="关系编码" prop="code"><el-input v-model.trim="relationForm.code" :disabled="Boolean(relationEditingId)" placeholder="如 TRANSFER_TO_ADMISSION" /></el-form-item>
-            <el-form-item label="目标语义表（右表）" prop="rightViewMappingId"><el-select v-model="relationForm.rightViewMappingId" filterable :disabled="Boolean(relationEditingId)" :loading="relationCatalogLoading" placeholder="选择已接入语义表" @change="onRelationTargetChange"><el-option v-for="item in relationTargets" :key="item.viewMappingId" :value="item.viewMappingId" :label="item.label" /></el-select></el-form-item>
-            <el-form-item label="连接类型" prop="joinType"><el-select v-model="relationForm.joinType"><el-option label="INNER（两端均匹配）" value="INNER" /><el-option label="LEFT（保留左表全部记录）" value="LEFT" /></el-select></el-form-item>
-            <el-form-item label="从左到右的关系基数" prop="cardinality"><el-select v-model="relationForm.cardinality"><el-option label="一对一" value="ONE_TO_ONE" /><el-option label="多对一" value="MANY_TO_ONE" /></el-select></el-form-item>
-          </div>
-        </section>
-        <section class="relation-form-section">
-          <div class="relation-form-section__heading"><div><h3>关联键配置</h3><p>选择两张语义表中含义一致、数据类型兼容的字段。</p></div><span>2</span></div>
-          <div class="relation-key-grid">
-            <el-form-item label="左表关联字段" prop="leftFieldCode"><el-select v-model="relationForm.leftFieldCode" filterable placeholder="选择当前表字段"><el-option v-for="item in semanticFields" :key="item.code" :label="`${item.code}（${item.name || item.code}）`" :value="item.code" /></el-select></el-form-item>
-            <div class="relation-key-connector"><span>{{ relationForm.joinType || 'JOIN' }}</span></div>
-            <el-form-item label="右表关联字段" prop="rightFieldCode"><el-select v-model="relationForm.rightFieldCode" filterable :loading="relationTargetFieldLoading" :disabled="!relationForm.rightViewMappingId" placeholder="先选择右表，再选择字段"><el-option v-for="item in relationTargetFields" :key="item.code" :label="`${item.code}（${item.name || item.code}）`" :value="item.code" /></el-select></el-form-item>
-          </div>
-        </section>
+    <el-dialog v-model="mappingDialogVisible" :title="`映射字段 · ${mappingForm.sourceFieldName}`" width="560px" destroy-on-close>
+      <el-form ref="mappingFormRef" :model="mappingForm" :rules="mappingRules" label-position="top">
+        <el-form-item label="业务字段编码" prop="code"><el-input v-model.trim="mappingForm.code" :disabled="editingMappedField" /></el-form-item>
+        <el-form-item label="业务字段名称" prop="name"><el-input v-model.trim="mappingForm.name" /></el-form-item>
+        <el-form-item label="数据类型" prop="dataType"><el-select v-model="mappingForm.dataType"><el-option v-for="type in SEMANTIC_DATA_TYPES" :key="type" :label="dataTypeLabel(type)" :value="type" /></el-select></el-form-item>
+        <el-form-item label="业务角色" prop="semanticKind"><el-select v-model="mappingForm.semanticKind"><el-option v-for="item in roleOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
+        <el-form-item><el-checkbox v-model="mappingForm.sensitive">敏感字段</el-checkbox></el-form-item>
       </el-form>
-      <template #footer><div class="relation-dialog-footer"><span>保存后还需在列表中完成校验和发布。</span><div><el-button @click="relationDialogVisible = false">取消</el-button><el-button type="primary" :loading="relationSaving" @click="submitRelation">保存草稿</el-button></div></div></template>
+      <template #footer><el-button @click="mappingDialogVisible = false">取消</el-button><el-button type="primary" :loading="mappingSaving" @click="submitMapping">保存映射</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="valueSetDialogVisible" title="绑定语义字段值集" width="560px" destroy-on-close>
-      <StatePanel v-if="valueSetBindingLoading" type="loading" title="正在加载值集绑定信息" />
-      <template v-else>
-        <p class="field-help">字段：{{ selectedValueSetField?.code || '—' }} · 仅可绑定已发布值集；连续值集可绑定到兼容的数值或日期字段。</p>
-        <el-select v-model="selectedValueSetId" filterable clearable placeholder="选择已发布值集" style="width: 100%" @change="validateSelectedValueSet">
-          <el-option v-for="item in valueSetOptions" :key="item.id" :label="`${item.code} · ${item.name}`" :value="String(item.id)" />
-        </el-select>
-        <div v-if="valueSetBinding" class="binding-summary">当前绑定：{{ valueSetBinding.valueSet?.code || '未绑定' }} · 资源版本 {{ valueSetBinding.semanticField?.resourceVersion ?? selectedValueSetField?.resourceVersion ?? '—' }}</div>
-      </template>
-      <template #footer><el-button @click="valueSetDialogVisible = false">取消</el-button><el-button type="primary" :loading="valueSetBindingSaving" :disabled="!selectedValueSetId" @click="saveValueSetBinding">确认绑定</el-button></template>
+    <el-dialog v-model="valueSetDialogVisible" title="绑定值集" width="500px" destroy-on-close>
+      <el-select v-model="selectedValueSetId" filterable clearable :loading="valueSetLoading" placeholder="选择已发布值集" class="dialog-select" @change="validateSelectedValueSet"><el-option v-for="item in valueSets" :key="item.id" :label="item.name || item.code" :value="String(item.id)" /></el-select>
+      <template #footer><el-button @click="valueSetDialogVisible = false">取消</el-button><el-button type="primary" :loading="valueSetSaving" :disabled="!selectedValueSetId" @click="saveValueSetBinding">保存</el-button></template>
     </el-dialog>
-    <el-dialog v-model="profileDialogVisible" :title="`${profileField?.name || profileField?.code || '字段'}值画像`" width="680px" destroy-on-close><StatePanel v-if="profileLoading" type="loading" title="正在读取源字段画像" /><template v-else><el-descriptions :column="3" border><el-descriptions-item label="总记录数">{{ fieldProfile?.totalCount ?? '—' }}</el-descriptions-item><el-descriptions-item label="空值数">{{ fieldProfile?.nullCount ?? '—' }}</el-descriptions-item><el-descriptions-item label="不同值">{{ fieldProfile?.distinctCount ?? '—' }}</el-descriptions-item></el-descriptions><el-table v-if="profileItems.length" :data="profileItems" max-height="300" style="margin-top:16px"><el-table-column prop="value" label="源值" min-width="220" /><el-table-column prop="count" label="记录数" width="120" /><el-table-column prop="percentage" label="占比" width="120"><template #default="{ row }">{{ row.percentage == null ? '—' : `${Number(row.percentage).toFixed(2)}%` }}</template></el-table-column></el-table><StatePanel v-else type="empty" title="未返回离散值明细" description="仍可根据上方总数和不同值数判断字段覆盖情况。" /></template></el-dialog>
+
+    <el-dialog v-model="profileDialogVisible" :title="`源值画像 · ${profileField?.sourceFieldName || ''}`" width="640px" destroy-on-close>
+      <StatePanel v-if="profileLoading" type="loading" title="正在读取源值画像" />
+      <el-table v-else :data="profileItems" max-height="400" empty-text="暂无源值画像"><el-table-column prop="value" label="源值" min-width="200"><template #default="{ row }">{{ row.nullValue ? '空值' : row.value }}</template></el-table-column><el-table-column prop="count" label="记录数" width="130" /><el-table-column label="占比" width="110"><template #default="{ row }">{{ row.percentage == null ? '—' : `${Number(row.percentage).toFixed(2)}%` }}</template></el-table-column></el-table>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { ArrowLeft, Plus, Refresh } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
-import { createSemanticTable, createSemanticTableRelation, disableSemanticTableRelation, fetchDataDomains, fetchSemanticTableFields, fetchSemanticTableRelations, fetchSemanticTables, fetchSourceTableFields, fetchSourceTables, publishSemanticTableRelation, saveSemanticField, updateDefaultTimeField, updateSemanticTableRelation, validateSemanticTableRelation } from '@/idmp/api/modules/meta'
-import { fetchSemanticFieldValueSet, bindSemanticFieldValueSet, fetchValueSet, fetchValueSets } from '@/idmp/api/modules/valueSets'
+import { addPhysicalTable, bindPhysicalTableField, fetchDataDomains, fetchPhysicalTableFields, fetchPhysicalTables, fetchSourceTableFields, fetchSourceTables, updatePhysicalTableDefaultTimeField } from '@/idmp/api/modules/meta'
+import { adaptDataDomainList, adaptPhysicalTableList, adaptSemanticFieldList, adaptSourceFieldList, adaptSourceTableList } from '@/idmp/api/adapters/meta'
+import { dataTypeLabel } from '@/idmp/features/meta/model'
+import { SEMANTIC_DATA_TYPES } from '@/idmp/utils/validation'
+import { bindSemanticFieldValueSet, fetchSemanticFieldValueSet, fetchValueSet, fetchValueSets } from '@/idmp/api/modules/valueSets'
 import { fetchSourceValueProfile } from '@/idmp/api/modules/transformRules'
-import { adaptDataDomainList, adaptSemanticFieldList, adaptSemanticTableList, adaptSourceFieldList, adaptSourceTableList, normalizeSemanticTable } from '@/idmp/api/adapters/meta'
-import { dataTypeLabel as semanticDataTypeLabel, semanticKindLabel, sourceObjectTypeLabel } from '@/idmp/features/meta'
 
 const route = useRoute()
 const router = useRouter()
 const domain = ref(null)
-const semanticTables = ref([])
+const physicalTables = ref([])
 const sourceTables = ref([])
-const selectedTable = ref(null)
-const selectedTableCode = ref('')
-const selectedSourceField = ref(null)
 const sourceFields = ref([])
-const semanticFields = ref([])
-const sourceFieldKeyword = ref('')
-const semanticFieldKeyword = ref('')
+const mappedFields = ref([])
+const selectedTableName = ref('')
 const defaultTimeFieldCode = ref('')
-const fieldFormRef = ref(null)
-const domainLoading = ref(false)
-const tableLoading = ref(false)
-const sourceLoading = ref(false)
+const loading = ref(false)
 const fieldLoading = ref(false)
-const fieldSaveLoading = ref(false)
-const defaultTimeLoading = ref(false)
-const createLoading = ref(false)
-const domainError = ref(null)
-const tableError = ref(null)
+const sourceLoading = ref(false)
+const adding = ref(false)
+const mappingSaving = ref(false)
+const timeSaving = ref(false)
+const error = ref(null)
 const fieldError = ref(null)
-const fieldSaveFeedback = ref(null)
-const createError = ref(null)
-const createDialogVisible = ref(false)
-const createFormRef = ref(null)
+const sourceError = ref(null)
+const addDialogVisible = ref(false)
+const mappingDialogVisible = ref(false)
+const editingMappedField = ref(false)
 const valueSetDialogVisible = ref(false)
-const valueSetBindingLoading = ref(false)
-const valueSetBindingSaving = ref(false)
+const valueSetLoading = ref(false)
+const valueSetSaving = ref(false)
 const selectedValueSetField = ref(null)
-const valueSetBinding = ref(null)
-const valueSetOptions = ref([])
 const selectedValueSetId = ref('')
+const valueSetBinding = ref(null)
+const valueSets = ref([])
 const profileDialogVisible = ref(false)
 const profileLoading = ref(false)
 const profileField = ref(null)
-const fieldProfile = ref(null)
 const profileItems = ref([])
-const relations = ref([])
-const relationLoading = ref(false)
-const relationError = ref(null)
-const relationActionId = ref('')
-const relationDialogVisible = ref(false)
-const relationSaving = ref(false)
-const relationCatalogLoading = ref(false)
-const relationTargetFieldLoading = ref(false)
-const relationFormRef = ref(null)
-const relationTargets = ref([])
-const relationTargetFields = ref([])
-const relationEditingId = ref('')
-const relationResourceVersion = ref(null)
-const tableRequestVersion = ref(0)
-const fieldRequestVersion = ref(0)
-const createForm = reactive({ sourceTableName: '', code: '', name: '' })
-const fieldForm = reactive({ sourceFieldName: '', code: '', name: '', dataType: '', semanticKind: '', sensitive: false })
-const relationForm = reactive({ code: '', rightViewMappingId: '', joinType: 'INNER', cardinality: 'MANY_TO_ONE', leftFieldCode: '', rightFieldCode: '' })
-const semanticDataTypes = ['STRING', 'INTEGER', 'DECIMAL', 'DATE', 'DATETIME', 'BOOLEAN', 'CODE']
-const semanticKinds = ['DIMENSION', 'MEASURE', 'ATTRIBUTE']
-
-const createRules = {
-  sourceTableName: [{ required: true, message: '请选择已同步源表', trigger: 'change' }],
-  code: [
-    { required: true, message: '请输入语义表编码', trigger: 'blur' },
-    { pattern: /^[A-Z][A-Z0-9_]*$/, message: '编码仅允许大写字母、数字和下划线，且必须以字母开头', trigger: 'blur' }
-  ],
-  name: [{ required: true, message: '请输入语义表名称', trigger: 'blur' }]
-}
-
-const domainErrorMessage = computed(() => formatErrorMessage(domainError.value, '数据域加载失败'))
-const tableErrorMessage = computed(() => formatErrorMessage(tableError.value, '语义表加载失败'))
-const createErrorMessage = computed(() => formatErrorMessage(createError.value, '语义表创建失败'))
-const fieldErrorMessage = computed(() => formatErrorMessage(fieldError.value, '字段加载失败'))
-const timeFieldOptions = computed(() => semanticFields.value.filter((item) => item.dataType === 'DATE' || item.dataType === 'DATETIME'))
-const publishedRelationCount = computed(() => relations.value.filter((item) => String(item.status || '').toUpperCase() === 'PUBLISHED' && String(item.enableStatus || '').toUpperCase() === 'ENABLED').length)
-const pendingRelationCount = computed(() => Math.max(0, relations.value.length - publishedRelationCount.value))
-const filteredSourceFields = computed(() => {
-  const keyword = sourceFieldKeyword.value.trim().toLowerCase()
-  if (!keyword) return sourceFields.value
-  return sourceFields.value.filter((item) => [item.columnName, item.comment, item.columnType].some((value) => String(value || '').toLowerCase().includes(keyword)))
-})
-const filteredSemanticFields = computed(() => {
-  const keyword = semanticFieldKeyword.value.trim().toLowerCase()
-  if (!keyword) return semanticFields.value
-  return semanticFields.value.filter((item) => [item.sourceFieldName, item.code, item.name, item.dataType].some((value) => String(value || '').toLowerCase().includes(keyword)))
-})
-
-const fieldRules = {
-  sourceFieldName: [{ required: true, message: '请选择源字段', trigger: 'change' }],
-  code: [
-    { required: true, message: '请输入语义字段编码', trigger: 'blur' },
-    { pattern: /^[A-Z][A-Z0-9_]{0,63}$/, message: '编码仅允许大写字母、数字和下划线，且长度不超过 64', trigger: 'blur' }
-  ],
-  name: [{ required: true, message: '请输入语义字段名称', trigger: 'blur' }],
-  dataType: [{ required: true, message: '请选择语义数据类型', trigger: 'change' }],
+const tableToAdd = ref('')
+const mappingFormRef = ref(null)
+const mappingForm = reactive({ sourceFieldName: '', code: '', name: '', dataType: '', semanticKind: '', sensitive: false })
+const roleOptions = [
+  { value: 'DIMENSION', label: '维度' }, { value: 'MEASURE', label: '度量' },
+  { value: 'IDENTIFIER', label: '标识' }, { value: 'TIME', label: '时间' },
+  { value: 'ATTRIBUTE', label: '属性' }
+]
+const mappingRules = {
+  code: [{ required: true, message: '请输入字段编码', trigger: 'blur' }, { pattern: /^[A-Z][A-Z0-9_]{0,63}$/, message: '编码应以大写字母开头，最多 64 位', trigger: 'blur' }],
+  name: [{ required: true, message: '请输入字段名称', trigger: 'blur' }, { max: 200, message: '名称最多 200 字', trigger: 'blur' }],
+  dataType: [{ required: true, message: '请选择数据类型', trigger: 'change' }],
   semanticKind: [{ required: true, message: '请选择业务角色', trigger: 'change' }]
 }
-const relationRules = {
-  code: [{ required: true, message: '请输入关系编码', trigger: 'blur' }, { pattern: /^[A-Z][A-Z0-9_]{0,63}$/, message: '编码仅允许大写字母、数字和下划线', trigger: 'blur' }],
-  rightViewMappingId: [{ required: true, message: '请选择右表', trigger: 'change' }],
-  joinType: [{ required: true, message: '请选择连接类型', trigger: 'change' }],
-  cardinality: [{ required: true, message: '请选择基数', trigger: 'change' }],
-  leftFieldCode: [{ required: true, message: '请选择左表关联字段', trigger: 'change' }],
-  rightFieldCode: [{ required: true, message: '请选择右表关联字段', trigger: 'change' }]
-}
+
+const domainId = computed(() => String(route.params.id || ''))
+const selectedTable = computed(() => physicalTables.value.find(table => table.tableName === selectedTableName.value))
+const availableSourceTables = computed(() => sourceTables.value.filter(table => !physicalTables.value.some(bound => bound.tableName === table.tableName)))
+const fieldRows = computed(() => sourceFields.value.map(field => ({
+  ...field, mapped: mappedFields.value.find(mapped => mapped.sourceFieldName === field.columnName)
+})))
+const timeFieldOptions = computed(() => mappedFields.value.filter(field => ['DATE', 'DATETIME'].includes(String(field.dataType).toUpperCase())))
+const errorMessage = computed(() => error.value?.message || '数据域读取失败')
+const fieldErrorMessage = computed(() => fieldError.value?.message || '字段读取失败')
+const sourceErrorMessage = computed(() => sourceError.value?.message || '来源目录读取失败')
 
 onMounted(loadWorkspace)
+watch(domainId, loadWorkspace)
 
 async function loadWorkspace() {
-  await Promise.all([loadDomain(), loadSemanticTables(), loadSourceTables()])
-}
-
-async function loadDomain() {
-  domainLoading.value = true
-  domainError.value = null
+  loading.value = true
+  error.value = null
   try {
-    const id = String(route.params.id || '')
-    domain.value = adaptDataDomainList(await fetchDataDomains()).find((item) => item.id === id) || null
-  } catch (error) {
-    domainError.value = error
-    ElMessage.error(domainErrorMessage.value)
+    const [domains, tables] = await Promise.all([fetchDataDomains(), fetchPhysicalTables(domainId.value)])
+    domain.value = adaptDataDomainList(domains).find(item => item.id === domainId.value) || null
+    physicalTables.value = adaptPhysicalTableList(tables)
+    if (!physicalTables.value.some(table => table.tableName === selectedTableName.value)) selectedTableName.value = ''
+    if (selectedTableName.value) await loadFields()
+    else { sourceFields.value = []; mappedFields.value = []; defaultTimeFieldCode.value = '' }
+  } catch (cause) {
+    error.value = cause
+    domain.value = null
+    physicalTables.value = []
   } finally {
-    domainLoading.value = false
+    loading.value = false
   }
 }
 
-async function loadSemanticTables() {
-  const requestVersion = tableRequestVersion.value + 1
-  tableRequestVersion.value = requestVersion
-  tableLoading.value = true
-  tableError.value = null
+function selectTable(row) {
+  if (!row?.tableName || selectedTableName.value === row.tableName) return
+  selectedTableName.value = row.tableName
+  sourceFields.value = []
+  mappedFields.value = []
+  defaultTimeFieldCode.value = ''
+  void loadFields()
+}
+
+let fieldRequest = 0
+async function loadFields() {
+  const tableName = selectedTableName.value
+  if (!tableName) return
+  const request = ++fieldRequest
+  fieldLoading.value = true
+  fieldError.value = null
   try {
-    const domainId = String(route.params.id || '')
-    const rows = adaptSemanticTableList(await fetchSemanticTables(domainId))
-    if (requestVersion !== tableRequestVersion.value) return
-    semanticTables.value = rows
-    if (selectedTableCode.value) {
-      const current = rows.find((item) => item.code === selectedTableCode.value)
-      selectedTable.value = current || null
-      if (!current) selectedTableCode.value = ''
-    }
-    return true
-  } catch (error) {
-    if (requestVersion !== tableRequestVersion.value) return
-    semanticTables.value = []
-    tableError.value = error
-    ElMessage.error(tableErrorMessage.value)
-    return false
+    const [source, mapped] = await Promise.all([
+      fetchSourceTableFields(tableName), fetchPhysicalTableFields(domainId.value, tableName)
+    ])
+    if (request !== fieldRequest || tableName !== selectedTableName.value) return
+    sourceFields.value = adaptSourceFieldList(source)
+    mappedFields.value = adaptSemanticFieldList(mapped)
+    defaultTimeFieldCode.value = selectedTable.value?.defaultTimeSemanticFieldCode || ''
+  } catch (cause) {
+    if (request !== fieldRequest) return
+    fieldError.value = cause
+    sourceFields.value = []
+    mappedFields.value = []
   } finally {
-    if (requestVersion === tableRequestVersion.value) tableLoading.value = false
+    if (request === fieldRequest) fieldLoading.value = false
   }
 }
 
 async function loadSourceTables() {
   sourceLoading.value = true
+  sourceError.value = null
+  try { sourceTables.value = adaptSourceTableList(await fetchSourceTables()) }
+  catch (cause) { sourceError.value = cause; sourceTables.value = [] }
+  finally { sourceLoading.value = false }
+}
+
+function openAddDialog() {
+  tableToAdd.value = ''
+  addDialogVisible.value = true
+  void loadSourceTables()
+}
+
+async function submitAddTable() {
+  if (!tableToAdd.value || adding.value) return
   try {
-    sourceTables.value = adaptSourceTableList(await fetchSourceTables())
-  } catch (error) {
-    sourceTables.value = []
-    ElMessage.warning(formatErrorMessage(error, '已同步源表加载失败'))
-  } finally {
-    sourceLoading.value = false
-  }
-}
-
-function selectSemanticTable(row) {
-  selectedTableCode.value = row?.code || ''
-  selectedTable.value = row || null
-  selectedSourceField.value = null
-  sourceFields.value = []
-  semanticFields.value = []
-  sourceFieldKeyword.value = ''
-  semanticFieldKeyword.value = ''
-  fieldError.value = null
-  fieldSaveFeedback.value = null
-  defaultTimeFieldCode.value = row?.defaultTimeSemanticFieldCode || ''
-  resetFieldForm()
-  if (row) loadSelectedTableFields(row)
-  if (row) loadRelations()
-}
-
-async function loadRelations() {
-  if (!selectedViewMappingId()) { relations.value = []; return }
-  relationLoading.value = true; relationError.value = null
-  try { relations.value = normalizeRelations(await fetchSemanticTableRelations(selectedViewMappingId())) } catch (error) { relations.value = []; relationError.value = error } finally { relationLoading.value = false }
-}
-
-function normalizeRelations(payload) { return Array.isArray(payload) ? payload : payload?.records || payload?.items || payload?.list || [] }
-function selectedViewMappingId() { return selectedTable.value?.viewMappingId || selectedTable.value?.id || '' }
-function relationPeerLabel(row) {
-  const isLeft = String(row.leftViewMappingId) === String(selectedViewMappingId())
-  return isLeft ? `${row.rightDomainCode || ''} / ${row.rightSemanticTableCode || row.rightViewMappingId}` : `${row.leftDomainCode || ''} / ${row.leftSemanticTableCode || row.leftViewMappingId}`
-}
-function relationCardinalityForSelected(row) {
-  if (String(row.leftViewMappingId) === String(selectedViewMappingId())) return row.cardinality || '—'
-  return ({ ONE_TO_MANY: 'MANY_TO_ONE', MANY_TO_ONE: 'ONE_TO_MANY' })[row.cardinality] || row.cardinality || '—'
-}
-function relationCardinalityLabel(value) {
-  return ({ ONE_TO_ONE: '一对一', ONE_TO_MANY: '一对多', MANY_TO_ONE: '多对一', MANY_TO_MANY: '多对多' })[value] || value || '—'
-}
-async function openRelationDialog(row = null) {
-  if (!selectedViewMappingId()) return
-  relationEditingId.value = row ? String(row.id) : ''; relationResourceVersion.value = row?.resourceVersion ?? null
-  Object.assign(relationForm, { code: row?.code || '', rightViewMappingId: row ? String(row.rightViewMappingId) : '', joinType: row?.joinType || 'INNER', cardinality: row?.cardinality || 'MANY_TO_ONE', leftFieldCode: row?.leftKeySpec?.fieldCode || '', rightFieldCode: row?.rightKeySpec?.fieldCode || '' })
-  relationTargetFields.value = []; relationDialogVisible.value = true; relationCatalogLoading.value = true
+    await ElMessageBox.confirm(`确认将 ${tableToAdd.value} 接入 ${domain.value.name}？`, '接入物理表', { type: 'warning' })
+  } catch { return }
+  adding.value = true
   try {
-    const domainRows = adaptDataDomainList(await fetchDataDomains())
-    const result = await Promise.all(domainRows.map(async item => ({ domain: item, tables: adaptSemanticTableList(await fetchSemanticTables(item.id)) })))
-    relationTargets.value = result.flatMap(({ domain: item, tables }) => tables.filter(table => String(table.viewMappingId || table.id) !== String(selectedViewMappingId())).map(table => ({ viewMappingId: String(table.viewMappingId || table.id), domainId: String(item.id), tableCode: table.code, label: `${item.code} / ${table.code}（${table.name || table.code}）` })))
-    if (row) { const fieldCode = relationForm.rightFieldCode; await onRelationTargetChange(relationForm.rightViewMappingId); relationForm.rightFieldCode = fieldCode }
-  } catch (error) { ElMessage.error(formatErrorMessage(error, '关联表目录加载失败')) } finally { relationCatalogLoading.value = false }
-}
-async function onRelationTargetChange(value) {
-  relationForm.rightFieldCode = ''; relationTargetFields.value = []
-  const target = relationTargets.value.find(item => String(item.viewMappingId) === String(value)); if (!target) return
-  relationTargetFieldLoading.value = true
-  try { relationTargetFields.value = adaptSemanticFieldList(await fetchSemanticTableFields(target.domainId, target.tableCode)) } catch (error) { ElMessage.error(formatErrorMessage(error, '目标表字段加载失败')) } finally { relationTargetFieldLoading.value = false }
-}
-async function submitRelation() {
-  const valid = await relationFormRef.value?.validate().catch(() => false); if (!valid || relationSaving.value) return
-  relationSaving.value = true
-  try {
-    const payload = { joinType: relationForm.joinType, cardinality: relationForm.cardinality, leftKeySpec: { fieldCode: relationForm.leftFieldCode }, rightKeySpec: { fieldCode: relationForm.rightFieldCode }, joinPolicy: null }
-    if (relationEditingId.value) await updateSemanticTableRelation(relationEditingId.value, { ...payload, resourceVersion: relationResourceVersion.value })
-    else await createSemanticTableRelation({ code: relationForm.code, leftViewMappingId: String(selectedViewMappingId()), rightViewMappingId: String(relationForm.rightViewMappingId), ...payload })
-    relationDialogVisible.value = false; ElMessage.success(relationEditingId.value ? '关联关系草稿已更新，请重新校验并发布' : '关联关系草稿已创建，请校验并发布'); await loadRelations()
-  } catch (error) { ElMessage.error(formatErrorMessage(error, '关联关系创建失败')) } finally { relationSaving.value = false }
-}
-async function validateRelation(row) {
-  relationActionId.value = String(row.id)
-  try { const result = await validateSemanticTableRelation(row.id); const diagnostics = result?.diagnostics || []; if (result?.valid === false) ElMessage.warning(diagnostics.map(item => item.message || item.code).join('；') || '关联关系校验未通过'); else ElMessage.success('关联关系校验通过') } catch (error) { ElMessage.error(formatErrorMessage(error, '关联关系校验失败')) } finally { relationActionId.value = '' }
-}
-async function publishRelation(row) {
-  relationActionId.value = String(row.id)
-  try { await publishSemanticTableRelation(row.id, { resourceVersion: row.resourceVersion }); ElMessage.success('关联关系已发布，可用于多表因子'); await loadRelations() } catch (error) { ElMessage.error(formatErrorMessage(error, '关联关系发布失败')) } finally { relationActionId.value = '' }
-}
-async function disableRelation(row) {
-  try { await ElMessageBox.confirm(`停用关系 ${row.code} 后，新的因子不能再引用它。`, '确认停用', { type: 'warning' }) } catch { return }
-  relationActionId.value = String(row.id)
-  try { await disableSemanticTableRelation(row.id, { resourceVersion: row.resourceVersion }); ElMessage.success('关联关系已停用'); await loadRelations() } catch (error) { ElMessage.error(formatErrorMessage(error, '关联关系停用失败')) } finally { relationActionId.value = '' }
+    const tableName = tableToAdd.value
+    await addPhysicalTable(domainId.value, tableName)
+    physicalTables.value = adaptPhysicalTableList(await fetchPhysicalTables(domainId.value))
+    addDialogVisible.value = false
+    selectTable(physicalTables.value.find(table => table.tableName === tableName))
+    ElMessage.success('物理表已接入')
+  } catch (cause) { ElMessage.error(cause?.message || '物理表接入失败') }
+  finally { adding.value = false }
 }
 
-async function loadSelectedTableFields(row) {
-  const requestVersion = fieldRequestVersion.value + 1
-  fieldRequestVersion.value = requestVersion
-  fieldLoading.value = true
-  fieldError.value = null
-  try {
-    const domainId = String(route.params.id || '')
-    const [physicalFields, mappedFields] = await Promise.all([
-      fetchSourceTableFields(row.sourceTableName),
-      fetchSemanticTableFields(domainId, row.code)
-    ])
-    if (requestVersion !== fieldRequestVersion.value || selectedTableCode.value !== row.code) return
-    sourceFields.value = adaptSourceFieldList(physicalFields)
-    semanticFields.value = adaptSemanticFieldList(mappedFields)
-    defaultTimeFieldCode.value = selectedTable.value?.defaultTimeSemanticFieldCode || ''
-  } catch (error) {
-    if (requestVersion !== fieldRequestVersion.value || selectedTableCode.value !== row.code) return
-    sourceFields.value = []
-    semanticFields.value = []
-    fieldError.value = error
-    ElMessage.error(fieldErrorMessage.value)
-  } finally {
-    if (requestVersion === fieldRequestVersion.value) fieldLoading.value = false
-  }
-}
-
-function selectSourceField(row) {
-  selectedSourceField.value = row
-  const existing = semanticFields.value.find((item) => item.sourceFieldName === row.columnName)
-  Object.assign(fieldForm, {
-    sourceFieldName: row.columnName,
-    code: existing?.code || '',
-    name: existing?.name || row.comment || row.columnName,
-    dataType: existing?.dataType || inferSemanticDataType(row.columnType),
-    semanticKind: existing?.semanticKind || '',
-    sensitive: existing?.sensitive || false
+function openMappingDialog(field) {
+  const current = field.mapped
+  editingMappedField.value = Boolean(current)
+  const suggestedCode = String(field.columnName).toUpperCase().replace(/[^A-Z0-9_]/g, '_')
+  Object.assign(mappingForm, {
+    sourceFieldName: field.columnName,
+    code: current?.code || (/^[A-Z]/.test(suggestedCode) ? suggestedCode : `F_${suggestedCode}`).slice(0, 64),
+    name: current?.name || field.comment || field.columnName,
+    dataType: current?.dataType || inferDataType(field.columnType),
+    semanticKind: current?.semanticKind || '', sensitive: current?.sensitive || false
   })
-  fieldSaveFeedback.value = null
+  mappingDialogVisible.value = true
 }
 
-function openStandardization(row) {
-  if (!isDimensionField(row)) {
-    ElMessage.warning('当前字段的业务角色不是“维度”，不能维护枚举值标准化规则；请使用后端已配置的维度字段。')
-    return
-  }
-  router.push({
-    name: 'SourceStandardization',
-      params: { mappingId: row.sourceFieldMappingId },
-      query: { sourceField: row.sourceFieldName || row.code, fieldId: row.id || undefined }
-  })
-}
-
-async function openValueSetBinding(row) {
-  if (!row?.id) return
-  if (!canBindValueSet(row)) {
-    ElMessage.warning('该字段既不是维度字段，也不是可绑定连续值集的数值或日期字段。')
-    return
-  }
-  selectedValueSetField.value = row
+async function openValueSetBinding(field) {
+  if (!field?.id) return
+  selectedValueSetField.value = field
+  selectedValueSetId.value = ''
+  valueSetBinding.value = null
   valueSetDialogVisible.value = true
-  valueSetBindingLoading.value = true
+  valueSetLoading.value = true
   try {
-    const [binding, valueSets] = await Promise.all([
-      fetchSemanticFieldValueSet(row.id),
-      fetchValueSets({ status: 'PUBLISHED', page: 1, size: 200 })
+    const [binding, catalog] = await Promise.all([
+      fetchSemanticFieldValueSet(field.id), fetchValueSets({ status: 'PUBLISHED', page: 1, size: 200 })
     ])
     valueSetBinding.value = binding || null
-    valueSetOptions.value = valueSets?.records || valueSets?.items || []
     selectedValueSetId.value = String(binding?.valueSet?.id || binding?.valueSetId || '')
-  } catch (error) {
-    valueSetBinding.value = null
-    ElMessage.error(formatErrorMessage(error, '值集绑定信息加载失败'))
-  } finally {
-    valueSetBindingLoading.value = false
-  }
+    valueSets.value = catalog?.records || catalog?.items || []
+  } catch (cause) { ElMessage.error(cause?.message || '值集信息读取失败') }
+  finally { valueSetLoading.value = false }
 }
 
 async function saveValueSetBinding() {
-  if (!selectedValueSetField.value || valueSetBindingSaving.value) return
-  valueSetBindingSaving.value = true
+  if (!selectedValueSetField.value || !selectedValueSetId.value || valueSetSaving.value) return
+  valueSetSaving.value = true
   try {
-    const resourceVersion = valueSetBinding.value?.semanticField?.resourceVersion ?? selectedValueSetField.value.resourceVersion
-    await bindSemanticFieldValueSet(selectedValueSetField.value.id, {
-      resourceVersion: resourceVersion ?? 0,
+    const field = selectedValueSetField.value
+    await bindSemanticFieldValueSet(field.id, {
+      resourceVersion: valueSetBinding.value?.semanticField?.resourceVersion ?? field.resourceVersion ?? 0,
       valueSetId: selectedValueSetId.value
     })
     valueSetDialogVisible.value = false
-    ElMessage.success('值集绑定成功')
-    await loadSelectedTableFields(selectedTable.value)
-  } catch (error) {
-    ElMessage.error(formatErrorMessage(error, '值集绑定失败'))
-  } finally {
-    valueSetBindingSaving.value = false
-  }
-}
-
-function isMapped(row) {
-  return semanticFields.value.some((item) => item.sourceFieldName === row.columnName)
-}
-
-function isDimensionField(row) {
-  return String(row?.semanticKind || row?.semanticRole || '').toUpperCase() === 'DIMENSION'
+    await loadFields()
+    ElMessage.success('值集绑定已保存')
+  } catch (cause) { ElMessage.error(cause?.message || '值集绑定失败') }
+  finally { valueSetSaving.value = false }
 }
 
 async function validateSelectedValueSet(valueSetId) {
   if (!valueSetId || !selectedValueSetField.value) return
   try {
     const detail = await fetchValueSet(valueSetId)
-    const candidate = detail?.version || detail?.publishedVersion || null
-    const matchMode = String(candidate?.matchMode || detail?.valueSet?.matchMode || '').toUpperCase()
-    const valueType = String(candidate?.valueType || '').toUpperCase()
-    const fieldType = String(selectedValueSetField.value.dataType || selectedValueSetField.value.valueType || '').toUpperCase()
-    const continuous = matchMode === 'CONTINUOUS'
-    const roleAllowed = continuous ? ['INTEGER', 'DECIMAL', 'DATE', 'DATETIME'].includes(fieldType) : isDimensionField(selectedValueSetField.value)
-    if (!roleAllowed || (valueType && fieldType && valueType !== fieldType)) {
+    const version = detail?.version || detail?.publishedVersion || null
+    const matchMode = String(version?.matchMode || detail?.valueSet?.matchMode || '').toUpperCase()
+    const valueType = String(version?.valueType || '').toUpperCase()
+    const fieldType = String(selectedValueSetField.value.dataType || '').toUpperCase()
+    const compatible = matchMode === 'CONTINUOUS'
+      ? ['INTEGER', 'DECIMAL', 'DATE', 'DATETIME'].includes(fieldType)
+      : selectedValueSetField.value.semanticKind === 'DIMENSION'
+    if (!compatible || (valueType && valueType !== fieldType)) {
       selectedValueSetId.value = ''
-      ElMessage.warning(continuous ? '连续值集仅可绑定类型一致的数值、日期或日期时间字段' : '枚举值集仅可绑定类型一致的维度字段')
+      ElMessage.warning('值集类型与当前字段不兼容')
     }
-  } catch (error) {
+  } catch (cause) {
     selectedValueSetId.value = ''
-    ElMessage.error(formatErrorMessage(error, '值集兼容性校验失败'))
+    ElMessage.error(cause?.message || '值集兼容性校验失败')
   }
 }
 
-async function openFieldProfile(row) {
-  if (!row?.sourceFieldMappingId) return
-  profileField.value = row; profileDialogVisible.value = true; profileLoading.value = true; fieldProfile.value = null; profileItems.value = []
-  try { const data = await fetchSourceValueProfile(row.sourceFieldMappingId, { page: 1, size: 100 }); fieldProfile.value = data || null; profileItems.value = data?.items || data?.topValues || [] } catch (error) { ElMessage.error(formatErrorMessage(error, '字段画像读取失败')) } finally { profileLoading.value = false }
+function canBindValueSet(field) {
+  return field?.semanticKind === 'DIMENSION' || ['INTEGER', 'DECIMAL', 'DATE', 'DATETIME'].includes(String(field?.dataType || '').toUpperCase())
 }
 
-function canBindValueSet(row) {
-  if (isDimensionField(row)) return true
-  return ['INTEGER', 'DECIMAL', 'DATE', 'DATETIME'].includes(String(row?.dataType || row?.valueType || '').toUpperCase())
+function canStandardize(field) {
+  return field?.semanticKind === 'DIMENSION' && Boolean(field.sourceFieldMappingId)
 }
 
-function resetFieldForm() {
-  Object.assign(fieldForm, { sourceFieldName: '', code: '', name: '', dataType: '', semanticKind: '', sensitive: false })
+function openStandardization(field) {
+  if (!canStandardize(field)) return
+  router.push({ name: 'SourceStandardization', params: { mappingId: field.sourceFieldMappingId },
+    query: { sourceField: field.sourceFieldName || field.code, fieldId: field.id || undefined } })
 }
 
-function inferSemanticDataType(columnType) {
-  const type = String(columnType || '').toUpperCase()
-  if (type.includes('DATE') || type.includes('TIME')) return type.includes('TIME') ? 'DATETIME' : 'DATE'
+async function openFieldProfile(field) {
+  if (!field?.sourceFieldMappingId) return
+  profileField.value = field
+  profileItems.value = []
+  profileDialogVisible.value = true
+  profileLoading.value = true
+  try {
+    const profile = await fetchSourceValueProfile(field.sourceFieldMappingId, { page: 1, size: 100 })
+    profileItems.value = profile?.items || profile?.topValues || []
+  } catch (cause) { ElMessage.error(cause?.message || '源值画像读取失败') }
+  finally { profileLoading.value = false }
+}
+
+async function submitMapping() {
+  if (mappingSaving.value || !(await mappingFormRef.value?.validate().catch(() => false))) return
+  mappingSaving.value = true
+  try {
+    await bindPhysicalTableField(domainId.value, selectedTableName.value, { ...mappingForm })
+    await loadFields()
+    mappingDialogVisible.value = false
+    ElMessage.success('字段映射已保存')
+  } catch (cause) { ElMessage.error(cause?.message || '字段映射保存失败') }
+  finally { mappingSaving.value = false }
+}
+
+async function saveDefaultTimeField() {
+  if (!defaultTimeFieldCode.value || timeSaving.value) return
+  timeSaving.value = true
+  try {
+    const updated = await updatePhysicalTableDefaultTimeField(domainId.value, selectedTableName.value, defaultTimeFieldCode.value)
+    physicalTables.value = physicalTables.value.map(table => table.tableName === selectedTableName.value
+      ? adaptPhysicalTableList([updated])[0] : table)
+    ElMessage.success('默认时间字段已保存')
+  } catch (cause) { ElMessage.error(cause?.message || '默认时间字段保存失败') }
+  finally { timeSaving.value = false }
+}
+
+function inferDataType(value) {
+  const type = String(value || '').toUpperCase()
+  if (type.includes('DATETIME') || type.includes('TIMESTAMP')) return 'DATETIME'
+  if (type.includes('DATE')) return 'DATE'
   if (type.includes('BOOL')) return 'BOOLEAN'
-  if (type.includes('DECIMAL') || type.includes('NUMBER') || type.includes('DOUBLE') || type.includes('FLOAT')) return 'DECIMAL'
+  if (['DECIMAL', 'NUMERIC', 'FLOAT', 'DOUBLE'].some(item => type.includes(item))) return 'DECIMAL'
   if (type.includes('INT')) return 'INTEGER'
   return 'STRING'
 }
 
-async function saveFieldMapping() {
-  if (fieldSaveLoading.value || !selectedTable.value || !selectedSourceField.value) return
-  const valid = await fieldFormRef.value?.validate().catch(() => false)
-  if (!valid) return
-  fieldSaveLoading.value = true
-  fieldSaveFeedback.value = { status: 'RUNNING', label: '保存中', message: '正在保存当前源字段映射。' }
-  try {
-    await saveSemanticField(String(route.params.id), selectedTable.value.code, {
-      sourceFieldName: fieldForm.sourceFieldName,
-      code: fieldForm.code,
-      name: fieldForm.name,
-      dataType: fieldForm.dataType,
-      semanticKind: fieldForm.semanticKind,
-      sensitive: fieldForm.sensitive
-    })
-    await loadSelectedTableFields(selectedTable.value)
-    const savedField = semanticFields.value.find((item) => item.sourceFieldName === fieldForm.sourceFieldName)
-    if (String(savedField?.semanticKind || '').toUpperCase() === fieldForm.semanticKind) {
-      fieldSaveFeedback.value = { status: 'SUCCEEDED', label: '保存成功', message: `字段 ${fieldForm.sourceFieldName} 已完成映射，业务角色为 ${semanticKindLabel(fieldForm.semanticKind)}。` }
-      ElMessage.success('语义字段映射保存成功')
-    } else {
-      fieldSaveFeedback.value = { status: 'WARNING', label: '角色未生效', tone: 'warning', message: `字段 ${fieldForm.sourceFieldName} 已映射，但后端返回的业务角色与本次选择不一致。` }
-      ElMessage.warning('字段映射已保存，但业务角色未生效；请刷新后核对接口返回的业务角色。')
-    }
-  } catch (error) {
-    fieldSaveFeedback.value = { status: 'FAILED', label: '保存失败', tone: 'danger', message: formatErrorMessage(error, '语义字段映射保存失败') }
-    ElMessage.error(fieldSaveFeedback.value.message)
-  } finally {
-    fieldSaveLoading.value = false
-  }
-}
-
-async function saveDefaultTimeField() {
-  if (defaultTimeLoading.value || !selectedTable.value) return
-  const option = timeFieldOptions.value.find((item) => item.code === defaultTimeFieldCode.value)
-  if (defaultTimeFieldCode.value && !option) {
-    ElMessage.warning('默认时间字段只能选择当前语义表已映射的日期或日期时间字段')
-    return
-  }
-  defaultTimeLoading.value = true
-  try {
-    await updateDefaultTimeField(String(route.params.id), selectedTable.value.code, { semanticFieldCode: defaultTimeFieldCode.value })
-    const previousCode = selectedTableCode.value
-    await loadSemanticTables()
-    const updated = semanticTables.value.find((item) => item.code === previousCode)
-    if (updated) {
-      selectedTable.value = updated
-      defaultTimeFieldCode.value = updated.defaultTimeSemanticFieldCode || ''
-    }
-    ElMessage.success('默认时间字段保存成功')
-  } catch (error) {
-    ElMessage.error(formatErrorMessage(error, '默认时间字段保存失败'))
-  } finally {
-    defaultTimeLoading.value = false
-  }
-}
-
-async function openCreateDialog() {
-  createError.value = null
-  createForm.sourceTableName = ''
-  createForm.code = ''
-  createForm.name = ''
-  if (!sourceTables.value.length && !sourceLoading.value) await loadSourceTables()
-  createDialogVisible.value = true
-}
-
-async function submitCreate() {
-  if (createLoading.value) return
-  const valid = await createFormRef.value?.validate().catch(() => false)
-  if (!valid) return
-  try {
-    await ElMessageBox.confirm(
-      `确认将源表 ${createForm.sourceTableName} 接入当前数据域，并创建语义表 ${createForm.code}？`,
-      '确认创建语义表',
-      { confirmButtonText: '确认创建', cancelButtonText: '返回修改', type: 'warning' }
-    )
-  } catch {
-    return
-  }
-
-  createLoading.value = true
-  createError.value = null
-  try {
-    const created = normalizeSemanticTable(await createSemanticTable(String(route.params.id), {
-      sourceTableName: createForm.sourceTableName,
-      code: createForm.code,
-      name: createForm.name
-    }))
-    createDialogVisible.value = false
-    const refreshed = await loadSemanticTables()
-    if (!refreshed) throw tableError.value || new Error('语义表创建成功，但列表刷新失败')
-    const createdRow = semanticTables.value.find((item) => item.id === created.id || item.code === created.code)
-    if (createdRow) selectSemanticTable(createdRow)
-    ElMessage.success(`语义表 ${created.code} 创建成功`)
-  } catch (error) {
-    createError.value = error
-    ElMessage.error(createErrorMessage.value)
-  } finally {
-    createLoading.value = false
-  }
-}
-
-function sourceTableLabel(item) {
-  return item.comment ? `${item.tableName}（${item.comment}）` : item.tableName
-}
-
-function physicalDataTypeLabel(value) {
-  return ({ STRING: '文本（STRING）', INTEGER: '整数（INTEGER）', DECIMAL: '小数（DECIMAL）', NUMBER: '数值（NUMBER）', DATE: '日期（DATE）', DATETIME: '日期时间（DATETIME）', BOOLEAN: '布尔（BOOLEAN）', CODE: '编码（CODE）' })[String(value || '').toUpperCase()] || value || '未知类型'
-}
-
-function semanticKindOptionLabel(value) {
-  return ({ DIMENSION: '维度（筛选、分组、值集）', MEASURE: '度量（数值聚合）', ATTRIBUTE: '属性（描述信息）' })[value] || value
-}
-
-function stateTypeForError(error) {
-  if (error?.status === 401 || error?.status === 403) return 'permission'
-  if (error?.status === 404 || error?.status === 501 || error?.status === 503) return 'unavailable'
-  return 'error'
-}
-
-function formatErrorMessage(error, fallback) {
-  if (!error) return fallback
-  const traceId = error.payload?.traceId
-  let message = error.payload?.message || error.message || fallback
-  if (error.status === 409) message = `语义表编码已存在或发生版本冲突：${message}`
-  if (error.status === 403) message = `当前账号无权执行此操作：${message}`
-  return traceId && !String(message).includes(traceId) ? `${message}（traceId: ${traceId}）` : String(message)
+function roleLabel(value) {
+  return roleOptions.find(item => item.value === String(value || '').toUpperCase())?.label || '—'
 }
 </script>
 
 <style scoped lang="scss">
-.data-domain-workspace { display: flex; flex-direction: column; gap: 16px; }
-.model-progress-card { padding: 18px; }
-.model-progress-steps { display: flex; align-items: center; gap: 14px; }
-.model-progress-steps > i { color: var(--idmp-text-helper); font-style: normal; }
-.model-progress-step { display: flex; align-items: center; gap: 8px; color: var(--idmp-text-helper); font-size: 13px; }
-.model-progress-step b { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 50%; background: var(--idmp-layer-02); border: 1px solid var(--idmp-border-subtle); font-weight: 500; }
-.model-progress-step.is-done, .model-progress-step.is-current { color: var(--idmp-text-primary); }
-.model-progress-step.is-done b { background: var(--idmp-brand); border-color: var(--idmp-brand); color: #fff; }
-.model-progress-step.is-current b { border-color: var(--idmp-brand); color: var(--idmp-brand); }
-.domain-summary, .table-card, .selected-table-card, .relation-card { padding: 18px; }
-.summary-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.summary-heading h2 { margin: 4px 0; font-size: 20px; }
-.summary-heading code { color: var(--idmp-text-secondary); font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; }
-.eyebrow { color: var(--idmp-text-helper); font-size: 12px; }
-.summary-grid, .selected-grid { display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 16px; margin: 24px 0 0; padding-top: 16px; border-top: 1px solid var(--idmp-border-subtle); }
-.summary-grid div, .selected-grid div { min-width: 0; }
-.summary-grid dt, .selected-grid dt { color: var(--idmp-text-helper); font-size: 12px; }
-.summary-grid dd, .selected-grid dd { margin: 5px 0 0; color: var(--idmp-text-primary); word-break: break-word; }
-.section-title--toolbar { align-items: center; }
-.toolbar-meta { display: flex; align-items: center; gap: 12px; }
-.selected-context { color: var(--idmp-text-secondary); font-size: 13px; }
-.selected-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 0; padding-top: 0; border-top: 0; }
-.relation-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
-.relation-overview__item { display: flex; min-width: 0; min-height: 94px; flex-direction: column; justify-content: center; gap: 5px; padding: 14px 16px; background: var(--idmp-layer-02); border: 1px solid var(--idmp-border-subtle); }
-.relation-overview__item span { color: var(--idmp-text-secondary); font-size: 12px; }
-.relation-overview__item strong { overflow: hidden; color: var(--idmp-text-primary); font-size: 24px; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
-.relation-overview__item small { overflow: hidden; color: var(--idmp-text-helper); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.relation-overview__item--table strong { font-size: 17px; }
-.relation-content { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--idmp-border-subtle); }
-.relation-name-cell { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
-.relation-name-cell strong, .relation-name-cell small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.relation-name-cell small { color: var(--idmp-text-helper); font-size: 11px; }
-.relation-type { display: inline-flex; min-width: 54px; justify-content: center; padding: 3px 8px; background: var(--idmp-layer-02); border: 1px solid var(--idmp-border-subtle); color: var(--idmp-text-secondary); font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; }
-.relation-actions { display: flex; align-items: center; gap: 8px; }
-.relation-actions :deep(.el-button + .el-button) { margin-left: 0; }
-.relation-dialog-context { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; align-items: center; padding: 14px 16px; background: var(--idmp-layer-02); border-left: 3px solid var(--idmp-brand); }
-.relation-dialog-context span { grid-row: span 2; color: var(--idmp-text-secondary); font-size: 12px; }
-.relation-dialog-context strong { overflow: hidden; color: var(--idmp-text-primary); text-overflow: ellipsis; white-space: nowrap; }
-.relation-dialog-context code { overflow: hidden; color: var(--idmp-text-helper); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.relation-form { margin-top: 16px; }
-.relation-form-section { padding: 16px; background: var(--idmp-layer-02); border: 1px solid var(--idmp-border-subtle); }
-.relation-form-section + .relation-form-section { margin-top: 14px; }
-.relation-form-section__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
-.relation-form-section__heading h3 { margin: 0; color: var(--idmp-text-primary); font-size: 15px; }
-.relation-form-section__heading p { margin: 5px 0 0; color: var(--idmp-text-helper); font-size: 12px; }
-.relation-form-section__heading > span { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: var(--idmp-brand); color: #fff; font-size: 12px; }
-.relation-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
-.relation-key-grid { display: grid; grid-template-columns: minmax(0, 1fr) 72px minmax(0, 1fr); gap: 12px; align-items: end; }
-.relation-key-connector { display: flex; align-items: center; justify-content: center; height: 32px; margin-bottom: 18px; }
-.relation-key-connector::before, .relation-key-connector::after { width: 10px; height: 1px; content: ''; background: var(--idmp-border-strong); }
-.relation-key-connector span { padding: 3px 6px; border: 1px solid var(--idmp-border-subtle); color: var(--idmp-text-helper); font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; }
-.relation-form :deep(.el-select), .relation-form :deep(.el-input) { width: 100%; }
-.relation-dialog-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; }
-.relation-dialog-footer > span { color: var(--idmp-text-helper); font-size: 12px; }
-.field-mapping-card { padding: 18px; }
-.field-mapping-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 16px; align-items: start; }
-.field-pane { min-width: 0; padding: 14px; background: var(--idmp-layer-02); border: 1px solid var(--idmp-border-subtle); }
-.mapping-table-scroll { max-height: 360px; overflow-y: auto; overflow-x: hidden; border: 1px solid var(--idmp-border-subtle); background: var(--idmp-layer-01); }
-.mapping-table-scroll :deep(.el-table) { width: 100%; min-width: 0; }
-.mapping-table-scroll :deep(.el-table__header-wrapper), .mapping-table-scroll :deep(.el-table__body-wrapper) { min-width: 0; }
-.semantic-field-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.semantic-field-cell strong, .semantic-field-cell small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.semantic-field-cell small { color: var(--idmp-text-helper); font: 11px ui-monospace, SFMono-Regular, Consolas, monospace; }
-.field-actions { display: grid; grid-template-columns: repeat(2, max-content); align-items: center; justify-content: start; column-gap: 8px; row-gap: 2px; min-height: 28px; }
-.field-actions :deep(.el-button + .el-button) { margin-left: 0; }
-.field-action-disabled { color: var(--idmp-text-helper); font-size: 12px; }
-.field-pane__heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; color: var(--idmp-text-primary); }
-.field-pane__heading-main { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; }
-.field-pane__heading-main span { color: var(--idmp-text-helper); font-size: 12px; white-space: nowrap; }
-.field-search-input { flex: 0 1 220px; min-width: 150px; }
-.source-field-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.source-field-cell strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.source-field-cell small { order: -1; overflow: hidden; color: var(--idmp-text-helper); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.mapping-editor { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--idmp-border-subtle); }
-.field-form-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
-.field-form-grid :deep(.el-select), .field-form-grid :deep(.el-input) { width: 100%; }
-.mapping-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.default-time-editor { display: grid; grid-template-columns: 1fr 280px auto; gap: 16px; align-items: center; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--idmp-border-subtle); }
-.default-time-editor p { margin: 5px 0 0; color: var(--idmp-text-helper); font-size: 12px; }
-.default-time-editor :deep(.el-select) { width: 100%; }
-.dialog-api-note { margin-bottom: 18px; color: var(--idmp-text-helper); font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; }
-.field-help { margin-top: 5px; color: var(--idmp-text-helper); font-size: 12px; line-height: 18px; }
-.create-error { margin-top: 8px; }
-@media (max-width: 1100px) { .model-progress-steps { gap: 8px; } .selected-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .relation-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); } .field-form-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .default-time-editor { grid-template-columns: 1fr 220px; } .default-time-editor .el-button { grid-column: 2; } }
-@media (max-width: 900px) { .model-progress-steps { align-items: flex-start; flex-direction: column; } .model-progress-steps > i { display: none; } .summary-grid, .selected-grid { grid-template-columns: 1fr; } .toolbar-meta { align-items: flex-end; flex-direction: column; } .field-mapping-grid { grid-template-columns: 1fr; } .field-form-grid { grid-template-columns: 1fr 1fr; } .default-time-editor { grid-template-columns: 1fr; } .default-time-editor .el-button { grid-column: auto; } }
-@media (max-width: 700px) { .relation-overview, .relation-form-grid, .relation-key-grid { grid-template-columns: 1fr; } .relation-key-connector { display: none; } .relation-dialog-footer { align-items: flex-end; flex-direction: column; } }
-@media (max-width: 560px) { .field-pane__heading { align-items: stretch; flex-direction: column; } .field-search-input { flex-basis: auto; min-width: 0; width: 100%; } }
+.data-domain-workspace { display: flex; flex-direction: column; gap: 20px; }
+.domain-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border-bottom: 1px solid var(--idmp-border); padding: 4px 0 18px; }
+.domain-heading h2 { margin: 0 0 6px; font-size: 22px; }
+.domain-heading p { margin: 0; color: var(--idmp-text-secondary); }
+.workspace-section { min-width: 0; }
+.section-title--toolbar, .toolbar-actions, .time-field-control { display: flex; align-items: center; gap: 12px; }
+.section-title--toolbar { justify-content: space-between; margin-bottom: 14px; }
+.toolbar-actions { flex-wrap: wrap; justify-content: flex-end; }
+.time-field-control { flex-wrap: wrap; border-top: 1px solid var(--idmp-border); padding-top: 18px; margin-top: 18px; }
+.time-field-control label { font-weight: 600; }
+.time-field-control .el-select { width: min(360px, 100%); }
+.el-table small { display: block; color: var(--idmp-text-helper); }
+.dialog-select { width: 100%; }
+@media (max-width: 720px) { .section-title--toolbar { align-items: flex-start; flex-direction: column; } .toolbar-actions { justify-content: flex-start; } }
 </style>

@@ -98,6 +98,17 @@ export function normalizeDataDomain(item = {}) {
   }
 }
 
+export function normalizePhysicalTable(item = {}) {
+  return {
+    id: toOpaqueId(item.id),
+    domainId: toOpaqueId(item.domainId),
+    tableName: item.tableName || '',
+    tableComment: item.tableComment || '',
+    defaultTimeSemanticFieldCode: item.defaultTimeSemanticFieldCode || '',
+    status: item.status || ''
+  }
+}
+
 export function normalizeSemanticTable(item = {}) {
   return {
     id: toOpaqueId(item.id),

@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { adaptDataDomainList, adaptSemanticFieldList, adaptSemanticTableList, adaptSourceFieldList } from '../src/idmp/api/adapters/meta.js'
+import { adaptDataDomainList, adaptPhysicalTableList, adaptSemanticFieldList, adaptSemanticTableList, adaptSourceFieldList } from '../src/idmp/api/adapters/meta.js'
 import { dataTypeLabel, matchModeLabel, semanticKindLabel, sourceObjectTypeLabel, transformOptionLabel } from '../src/idmp/features/meta/index.js'
 import { validateSemanticFieldCode, SEMANTIC_DATA_TYPES } from '../src/idmp/utils/validation.js'
 
@@ -12,6 +12,7 @@ test('API adapters preserve BIGINT ids as opaque strings', () => {
   const table = adaptSemanticTableList([{ id, code: 'T' }])[0]
   assert.equal(typeof table.id, 'string')
   assert.equal(table.viewMappingId, id)
+  assert.equal(adaptPhysicalTableList([{ id, domainId: id, tableName: 'visit' }])[0].domainId, id)
 })
 
 test('semantic field adapter exposes stable fields and validates code/type', () => {
@@ -43,14 +44,14 @@ test('metadata enum labels are Chinese and preserve unknown backend codes', () =
   assert.equal(matchModeLabel('REGEX'), 'REGEX')
 })
 
-test('data domain workspace places relation governance directly after the selected table context', async () => {
+test('data domain workspace uses physical tables without legacy semantic-table operations', async () => {
   const file = fileURLToPath(new URL('../src/idmp/views/DataDomainWorkspace.vue', import.meta.url))
   const source = await readFile(file, 'utf8')
-  const contextIndex = source.indexOf('<h2>当前语义表上下文</h2>')
-  const relationIndex = source.indexOf('<h2>语义表关联关系</h2>')
-  const mappingIndex = source.indexOf('<h2>语义字段映射</h2>')
-
-  assert.ok(contextIndex >= 0)
-  assert.ok(relationIndex > contextIndex)
-  assert.ok(mappingIndex > relationIndex)
+  assert.match(source, /fetchPhysicalTables/)
+  assert.match(source, /bindPhysicalTableField/)
+  assert.match(source, /updatePhysicalTableDefaultTimeField/)
+  assert.match(source, /openValueSetBinding/)
+  assert.match(source, /openStandardization/)
+  assert.match(source, /openFieldProfile/)
+  assert.doesNotMatch(source, /fetchSemanticTables|createSemanticTable|semantic-table-relations/)
 })

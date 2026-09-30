@@ -1,6 +1,7 @@
 import {
   normalizeDataDomain,
   normalizeList,
+  normalizePhysicalTable,
   normalizeSemanticField,
   normalizeSemanticTable,
   normalizeSourceField,
@@ -20,6 +21,10 @@ export function adaptDataDomainList(payload) {
   return normalizeList(payload).map(normalizeDataDomain)
 }
 
+export function adaptPhysicalTableList(payload) {
+  return normalizeList(payload).map(normalizePhysicalTable)
+}
+
 export function adaptSemanticTableList(payload) {
   return normalizeList(payload).map(normalizeSemanticTable)
 }
@@ -31,6 +36,7 @@ export function adaptSemanticFieldList(payload) {
 export {
   normalizeDataDomain,
   normalizeList,
+  normalizePhysicalTable,
   normalizeSemanticField,
   normalizeSemanticTable,
   normalizeSourceField,

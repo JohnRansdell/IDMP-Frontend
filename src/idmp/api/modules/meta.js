@@ -11,6 +11,35 @@ export function createDataDomain(payload) {
   })
 }
 
+export function fetchPhysicalTables(domainId) {
+  return requestJson(`/meta/data-domains/${encodeURIComponent(domainId)}/physical-tables`)
+}
+
+export function addPhysicalTable(domainId, tableName) {
+  return requestJson(`/meta/data-domains/${encodeURIComponent(domainId)}/physical-tables`, {
+    method: 'POST',
+    body: JSON.stringify({ tableName })
+  })
+}
+
+export function fetchPhysicalTableFields(domainId, tableName) {
+  return requestJson(`/meta/data-domains/${encodeURIComponent(domainId)}/physical-tables/${encodeURIComponent(tableName)}/semantic-fields`)
+}
+
+export function bindPhysicalTableField(domainId, tableName, payload) {
+  return requestJson(`/meta/data-domains/${encodeURIComponent(domainId)}/physical-tables/${encodeURIComponent(tableName)}/semantic-fields`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export function updatePhysicalTableDefaultTimeField(domainId, tableName, semanticFieldCode) {
+  return requestJson(`/meta/data-domains/${encodeURIComponent(domainId)}/physical-tables/${encodeURIComponent(tableName)}/default-time-field`, {
+    method: 'PATCH',
+    body: JSON.stringify({ semanticFieldCode })
+  })
+}
+
 export function fetchSourceTables(params = {}) {
   return requestJson(withQuery('/meta/source-tables', params))
 }

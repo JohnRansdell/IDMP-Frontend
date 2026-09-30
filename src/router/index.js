@@ -190,7 +190,7 @@ const routes = [
         name: 'DataDomainWorkspace',
         component: () => import('@/idmp/views/DataDomainWorkspace.vue'),
         meta: {
-           title: '数据域工作台',
+          title: '数据域工作台',
           activeMenu: '/data/domains',
            breadcrumb: ['首页', '数据治理', '数据域管理', '数据域工作台']
         }
@@ -242,7 +242,7 @@ const idmpPermissionMetadata = {
   // 后端权限码保持既有契约；页面术语改为面向用户的“数据源管理”。
   DataSourceManagement: { view: 'idmp:source-metadata:read', actions: { sync: 'idmp:source-metadata:sync' } },
   DataDomainManagement: { view: 'idmp:data-domains:read', actions: { create: 'idmp:data-domains:create' } },
-  DataDomainWorkspace: { view: 'idmp:data-domains:read', actions: { createSemanticTable: 'idmp:semantic-tables:create', editSemanticField: 'idmp:semantic-fields:edit' }, compatibility: 'backend-permission-set-optional' }
+  DataDomainWorkspace: { view: 'idmp:data-domains:read' }
 }
 routes[0].children.forEach((route) => {
   if (idmpPermissionMetadata[route.name]) route.meta = { ...route.meta, permissions: idmpPermissionMetadata[route.name] }
