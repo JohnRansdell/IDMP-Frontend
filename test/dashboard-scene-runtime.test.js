@@ -43,7 +43,7 @@ test('dashboard source catalog is initialized before the eager filter watcher re
   const script = readFileSync(new URL('../src/idmp/views/Dashboard.vue', import.meta.url), 'utf8')
   const catalog = script.indexOf('const availableIndicatorSources = computed(')
   const datasets = script.indexOf('const bindingDatasets = computed(')
-  const watcher = script.indexOf('watch([globalFilterDefinitions, filterRuntimeValues, dependentFilterOptions]')
+  const watcher = script.indexOf('watch([globalFilterDefinitions, filterRuntimeValues, currentDependentFilterOptions]')
   assert.ok(catalog !== -1 && datasets !== -1 && watcher !== -1)
   assert.ok(catalog < datasets && datasets < watcher)
 })

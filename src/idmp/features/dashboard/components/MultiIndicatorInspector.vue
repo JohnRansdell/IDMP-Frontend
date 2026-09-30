@@ -29,7 +29,7 @@ function update(value) { emit('change', normalizeIndicatorBindings(value, props.
 function add() {
   const source = props.sources.find(item => item.code === pendingSource.value)
   if (!source) return
-  update([...bindings.value, { sourceCode: source.code, sourceName: source.name, alias: source.name, axis: 'left' }])
+  update([...bindings.value, { sourceCode: source.code, sourceName: source.name, alias: source.name, indicatorVersionId: source.indicatorVersionId || source.analysisIndicatorVersionId, axis: 'left' }])
   pendingSource.value = ''
 }
 function remove(code) { update(bindings.value.filter(item => item.sourceCode !== code)) }

@@ -10,6 +10,7 @@ export function normalizeIndicatorBindings(value = [], primary = {}) {
       sourceCode,
       sourceName: String(item.sourceName || sourceCode),
       alias: String(item.alias || item.sourceName || sourceCode),
+      ...(item.indicatorVersionId ? { indicatorVersionId: String(item.indicatorVersionId) } : {}),
       axis: item.axis === 'right' ? 'right' : 'left',
       order: index
     }]
@@ -20,6 +21,7 @@ export function normalizeIndicatorBindings(value = [], primary = {}) {
       sourceCode: primaryCode,
       sourceName: String(primary.sourceName || primaryCode),
       alias: String(primary.sourceName || primaryCode),
+      ...(primary.config?.analysisIndicatorVersionId ? { indicatorVersionId: String(primary.config.analysisIndicatorVersionId) } : {}),
       axis: 'left',
       order: -1
     })
@@ -79,21 +81,38 @@ export function createMultiIndicatorDataset(widget, datasetsBySource) {
     id: 'multi-indicator', label: '多指标组合', fields: [], rows: [], status: 'ERROR',
     message: '部分指标没有可用于组合的数据集，请检查指标正式结果。'
   }
+  const failed = sources.find(item => item.dataset.status === 'ERROR')
+  if (failed) return {
+    id: 'multi-indicator', label: '多指标组合', fields: [], rows: [], status: 'ERROR',
+    message: failed.dataset.message || '指标查询失败，无法合并结果。'
+  }
 
   const dimensionIds = commonDimensionIds(sources.map(item => item.dataset))
+  if (!dimensionIds.length && sources.some(item => item.dataset.rows?.length > 1)) return {
+    id: 'multi-indicator', label: '多指标组合', fields: [], rows: [], status: 'ERROR',
+    message: '指标没有共同维度，无法对齐多行结果。请配置相同的时间或业务维度。'
+  }
   const rowsByKey = new Map()
+  let duplicateKey = false
   sources.forEach(({ binding, dataset }) => {
     const measure = preferredMeasure(dataset.fields || [])
     if (!measure) return
-    dataset.rows?.forEach((row, index) => {
+    const sourceKeys = new Set()
+    dataset.rows?.forEach((row) => {
       if (!plain(row)) return
-      const keyValues = dimensionIds.length ? dimensionIds.map(id => row[id]) : [index]
+      const keyValues = dimensionIds.map(id => row[id])
       const key = JSON.stringify(keyValues)
+      if (sourceKeys.has(key)) { duplicateKey = true; return }
+      sourceKeys.add(key)
       const merged = rowsByKey.get(key) || Object.fromEntries(dimensionIds.map((id, offset) => [id, keyValues[offset]]))
       merged[multiIndicatorMeasureField(binding.sourceCode)] = row[measure.id]
       rowsByKey.set(key, merged)
     })
   })
+  if (duplicateKey) return {
+    id: 'multi-indicator', label: '多指标组合', fields: [], rows: [], status: 'ERROR',
+    message: '指标在共同维度上有重复结果，无法安全对齐。请补齐组合维度。'
+  }
 
   const firstFields = new Map((sources[0].dataset.fields || []).map(field => [field.id, field]))
   const fields = [
@@ -141,8 +160,13 @@ function preferredMeasure(fields) {
     || fields.find(field => field.semanticType === 'measure')
 }
 
+const technicalFields = new Set(['resultId', 'snapshotId', 'dimensionHash', 'qualityStatus', 'achievementStatus', 'achievementReason'])
 function commonDimensionIds(datasets) {
-  const sets = datasets.map(dataset => new Set((dataset.fields || []).filter(field => ['dimension', 'time'].includes(field.semanticType)).map(field => field.id)))
+  const sets = datasets.map(dataset => new Set((dataset.fields || [])
+    .filter(field => ['dimension', 'time'].includes(field.semanticType))
+    .filter(field => !technicalFields.has(field.id))
+    .filter(field => (dataset.rows || []).every(row => row && Object.hasOwn(row, field.id) && row[field.id] !== null && row[field.id] !== undefined))
+    .map(field => field.id)))
   if (!sets.length) return []
-  return [...sets[0]].filter(id => sets.every(set => set.has(id))).slice(0, 2)
+  return [...sets[0]].filter(id => sets.every(set => set.has(id)))
 }

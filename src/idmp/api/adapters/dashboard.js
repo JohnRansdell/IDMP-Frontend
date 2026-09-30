@@ -123,7 +123,7 @@ export function schemaToDashboardPayload(schema, { resourceVersion, dataSources 
     const config = object(widget.config)
     const indicatorBindings = Array.isArray(config.indicatorBindings) ? config.indicatorBindings : []
     const indicatorVersionIds = indicatorBindings
-      .map(binding => sources.get(binding?.sourceCode)?.indicatorVersionId || sources.get(binding?.sourceCode)?.analysisIndicatorVersionId)
+      .map(binding => binding?.indicatorVersionId || sources.get(binding?.sourceCode)?.indicatorVersionId || sources.get(binding?.sourceCode)?.analysisIndicatorVersionId)
       .map(numericId)
       .filter(Boolean)
     if (widget.type === 'metric-group') {
@@ -138,7 +138,7 @@ export function schemaToDashboardPayload(schema, { resourceVersion, dataSources 
       type: REMOTE_TYPE_BY_FRONTEND[kind] || String(kind || 'KPI').toUpperCase(),
       ...(widget.type === 'text' ? {} : {
         dataSourceCode: widget.sourceCode || null,
-        indicatorVersionId: numericId(source.indicatorVersionId || source.analysisIndicatorVersionId),
+        indicatorVersionId: numericId(config.analysisIndicatorVersionId || source.indicatorVersionId || source.analysisIndicatorVersionId),
         ...(indicatorVersionIds.length > 1 ? { indicatorVersionIds } : {})
       }),
       position: { ...widget.layout }, fieldBindings: config.dataBinding || {},

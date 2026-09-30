@@ -472,6 +472,7 @@ import { bindingKind } from '@/idmp/features/dashboard/bindingEngine.js'
 import { resolveDrillHierarchy } from '@/idmp/features/dashboard/drillDown.js'
 import { createDefaultBinding } from '@/idmp/features/dashboard/smartDefaultBinding.js'
 import { createMultiIndicatorDataset, multiIndicatorMeasureField, normalizeIndicatorBindings } from '@/idmp/features/dashboard/multiIndicator.js'
+import { buildRemoteFilterOptionQuery, buildRemoteWidgetQuery } from '@/idmp/features/dashboard/remoteQuery.js'
 import { buildIndicatorAnalysisPeriodContext, buildIndicatorAnalysisRouteQuery } from '@/idmp/features/dashboard/analysisNavigation.js'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
 import {
@@ -673,6 +674,7 @@ const addWidgetType = ref('kpi')
 const indicatorDataSources = ref(cloneDashboardSources(mockIndicatorDataSources))
 const catalogIndicatorSources = ref([])
 const remoteWidgetDatasets = ref({})
+const remoteMultiIndicatorDatasets = ref({})
 const remoteWidgetPreviewGenerations = new Map()
 const remoteFieldCatalog = ref({})
 const remoteFilterOptions = ref({})
@@ -764,7 +766,8 @@ function getBindingDatasets(widget) {
   const remote = remoteWidgetDatasets.value[String(widget?.id)]
   const indicatorBindings = normalizeIndicatorBindings(widget?.config?.indicatorBindings, widget)
   if (indicatorBindings.length > 1) {
-    const combined = createMultiIndicatorDataset(widget, bindingDatasets.value)
+    if (remote?.status === 'ERROR' && !remoteMultiIndicatorDatasets.value[String(widget?.id)]) return [{ ...remote, id: 'multi-indicator' }]
+    const combined = createMultiIndicatorDataset(widget, remoteMultiIndicatorDatasets.value[String(widget?.id)] || bindingDatasets.value)
     if (combined) return [combined]
   }
   const source = getWidgetSource(widget) || (!widget.sourceCode ? indicatorDataSources.value[0] : null)
@@ -809,21 +812,29 @@ const activeInteractionFilters = computed(() => Object.values(interactionFilterS
 // Widget-local drill position is deliberately runtime-only and never participates
 // in the schema/history/persistence chain.
 const drillRuntimeState = ref({})
-const filterDatasets = computed(() => [...bindingDatasets.value.entries()].flatMap(([sourceCode, datasets]) => datasets.map(dataset => ({ ...dataset, sourceCode }))))
+const filterDatasets = computed(() => [
+  ...[...bindingDatasets.value.entries()].flatMap(([sourceCode, datasets]) => datasets.map(dataset => ({ ...dataset, sourceCode }))),
+  ...Object.entries(remoteFieldCatalog.value).map(([sourceCode, fields]) => ({
+    sourceCode, fields: dashboardFieldsToFrontend(fields), rows: []
+  }))
+])
 const filterCatalog = computed(() => dashboardFilterCatalog(filterDatasets.value))
 const globalFilterOptionSources = computed(() => availableIndicatorSources.value
   .filter(source => filterDatasets.value.some(dataset => dataset.sourceCode === source.code && dataset.fields.some(field => field.filterable)))
   .map(source => ({ code: source.code, name: source.name })))
 const dependentFilterOptions = computed(() => deriveDependentFilterOptions(filterDatasets.value, globalFilterDefinitions.value, filterRuntimeValues.value))
 const filterOptionsById = computed(() => ({ ...Object.fromEntries(dependentFilterOptions.value), ...remoteFilterOptions.value }))
+const currentDependentFilterOptions = computed(() => new Map([...dependentFilterOptions.value, ...Object.entries(remoteFilterOptions.value)]))
 // Only definition/lifecycle changes reinitialize defaults. Runtime selections never
 // write into canonical schema or trigger dirty/persistence.
 watch(() => JSON.stringify(globalFilterDefinitions.value), () => { filterRuntimeValues.value = initialFilterValues(globalFilterDefinitions.value) }, { immediate: true })
-watch([globalFilterDefinitions, filterRuntimeValues, dependentFilterOptions], () => {
-  const normalized = normalizeDependentFilterValues(globalFilterDefinitions.value, filterRuntimeValues.value, dependentFilterOptions.value)
+watch([globalFilterDefinitions, filterRuntimeValues, currentDependentFilterOptions], () => {
+  const readyDefinitions = globalFilterDefinitions.value.filter(definition =>
+    !definition.dependsOn?.length || !definition.optionSourceCode || Object.hasOwn(remoteFilterOptions.value, definition.id))
+  const normalized = normalizeDependentFilterValues(readyDefinitions, filterRuntimeValues.value, currentDependentFilterOptions.value)
   if (JSON.stringify(normalized) !== JSON.stringify(filterRuntimeValues.value)) filterRuntimeValues.value = normalized
 }, { deep: true })
-watch([globalFilterDefinitions, period, () => JSON.stringify(availableIndicatorSources.value)], () => { void loadRemoteFilterOptions() }, { deep: true })
+watch([globalFilterDefinitions, period, remotePeriodRange, filterRuntimeValues, () => JSON.stringify(remoteFieldCatalog.value)], () => { void loadRemoteFilterOptions() }, { deep: true })
 watch(requestedDashboardId, nextDashboardId => { if (nextDashboardId !== activeDashboardId.value) void requestDashboardSwitch(nextDashboardId) })
 watch(selectedDataCode, code => { if (code) void ensureRemoteDataSourceFields(code) })
 const currentDashboardWidgets = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.widgets || [])
@@ -2431,7 +2442,9 @@ async function ensureRemoteDataSourceFields(code, { required = false } = {}) {
   }
 }
 
+let remoteFilterOptionGeneration = 0
 async function loadRemoteFilterOptions() {
+  const generation = ++remoteFilterOptionGeneration
   const definitions = globalFilterDefinitions.value || []
   const widgets = (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.widgets || []
   const next = {}
@@ -2439,19 +2452,20 @@ async function loadRemoteFilterOptions() {
     const sourceCode = definition.optionSourceCode || widgets.find(widget => widget.sourceCode && remoteFieldCatalog.value[widget.sourceCode]?.some(field => field.code === definition.field))?.sourceCode
     if (!sourceCode || !availableIndicatorSources.value.some(source => source.code === sourceCode && source.origin === 'dashboard-data-source')) return
     try {
+      const fields = await ensureRemoteDataSourceFields(sourceCode)
+      if (!fields.some(field => field.filterable && field.code?.toLowerCase() === definition.field?.toLowerCase())) return
       const range = isFormalRemoteDashboard.value
         ? dateRangeForMonths(resolvePublishedDashboardPeriodRange(remotePeriodRange.value, periodOptions.value))
         : dateRangeForMonths(period.value)
-      const rows = await fetchDashboardFilterOptions(sourceCode, {
-        fieldCode: definition.field,
+      const query = buildRemoteFilterOptionQuery(definition, definitions, filterRuntimeValues.value, fields, {
         periodStart: range.periodStart || null,
-        periodEnd: range.periodEnd || null,
-        limit: 500
+        periodEnd: range.periodEnd ? new Date(new Date(`${range.periodEnd}T00:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10) : null
       })
+      const rows = await fetchDashboardFilterOptions(sourceCode, query)
       next[definition.id] = (Array.isArray(rows) ? rows : []).map(item => item.value)
     } catch { /* Invalid/unsupported fields retain locally derived options. */ }
   }))
-  remoteFilterOptions.value = next
+  if (generation === remoteFilterOptionGeneration) remoteFilterOptions.value = next
 }
 
 async function previewRemoteWidget(widget) {
@@ -2469,7 +2483,18 @@ async function previewRemoteWidget(widget) {
       ...(editingDashboardSchema.value || dashboardSchema.value || {}),
       widgets: [widget]
     }, { dataSources: availableIndicatorSources.value }).widgets[0]
-    const { widgetCodes, ...baseQuery } = buildRemoteDashboardQuery({ widgets: [widget] })
+    const range = dateRangeForMonths(resolvePublishedDashboardPeriodRange(remotePeriodRange.value, periodOptions.value))
+    if (normalizeIndicatorBindings(widget.config?.indicatorBindings, widget).length > 1) {
+      const datasets = await queryRemoteMultiIndicatorSources(widget, range)
+      if (remoteWidgetPreviewGenerations.get(widgetId) !== generation) return
+      remoteMultiIndicatorDatasets.value = { ...remoteMultiIndicatorDatasets.value, [widgetId]: datasets }
+      remoteWidgetDatasets.value = { ...remoteWidgetDatasets.value, [widgetId]: createMultiIndicatorDataset(widget, datasets) }
+      return
+    }
+    const planned = buildRemoteWidgetQuery(widget, remoteWidgetQueryContext(range, widget.sourceCode))
+    if (planned.error) throw new Error(planned.error)
+    if (planned.empty) throw new Error('组件范围与看板周期没有交集')
+    const { widgetCodes, ...baseQuery } = planned.query
     const query = buildPublishedIndicatorTrendPreviewQuery(widget, baseQuery)
     const result = await previewDashboardWidget({ widget: payload, ...query })
     if (remoteWidgetPreviewGenerations.get(widgetId) !== generation) return
@@ -2574,10 +2599,16 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
       dashboardDefinition.value = detail
       dashboardQueryResult.value = null
       remoteWidgetDatasets.value = {}
+      remoteMultiIndicatorDatasets.value = {}
       dashboardStatus.value = remoteDashboardMeta.value.currentPublishedVersionId ? 'demo' : 'unpublished'
       return
     }
-    const sourceCodes = [...new Set(rawSchema.widgets.flatMap(widget => [widget.sourceCode, ...metricGroupSourceCodes(widget)]).filter(Boolean))]
+    if (rawSchema.widgets.some(widget => normalizeIndicatorBindings(widget.config?.indicatorBindings, widget).length > 1)) {
+      const sources = await fetchDashboardDataSources({ signal })
+      if (!isCurrentLoad()) return
+      catalogIndicatorSources.value = (Array.isArray(sources) ? sources : []).map(dashboardDataSourceToFrontend)
+    }
+    const sourceCodes = [...new Set(rawSchema.widgets.flatMap(widget => [widget.sourceCode, ...normalizeIndicatorBindings(widget.config?.indicatorBindings, widget).map(binding => binding.sourceCode), ...metricGroupSourceCodes(widget)]).filter(Boolean))]
     const metadataEntries = await Promise.all(sourceCodes.map(async code => {
       const [fields, periods] = await Promise.all([
         fetchDashboardDataSourceFields(code, { signal }).catch(error => {
@@ -2624,11 +2655,13 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
     dashboardDefinition.value = detail
     dashboardQueryResult.value = null
     remoteWidgetDatasets.value = {}
+    remoteMultiIndicatorDatasets.value = {}
     if (!remoteDashboardMeta.value.currentPublishedVersionId) {
       dashboardStatus.value = 'unpublished'
       return
     }
     dashboardQueryResult.value = result
+    remoteMultiIndicatorDatasets.value = result.multiDatasets || {}
     remoteWidgetDatasets.value = Object.fromEntries(schema.widgets.map(widget => [
       String(widget.id),
       widgetResultToDataset(dashboardWidgetResult(result, schema.widgets, widget), remoteFieldCatalog.value[widget.sourceCode], 'backend')
@@ -2644,40 +2677,71 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
   }
 }
 
-function buildRemoteDashboardQuery(schema = dashboardSchema.value) {
-  const boundedRange = resolvePublishedDashboardPeriodRange(remotePeriodRange.value, periodOptions.value)
-  const range = dateRangeForMonths(boundedRange)
-  const filters = Object.fromEntries((globalFilterDefinitions.value || []).flatMap(definition => {
-    const value = filterRuntimeValues.value[definition.id]
-    return value === null || value === undefined || value === '' || Array.isArray(value) && !value.length ? [] : [[definition.field, value]]
-  }))
-  if (department.value) filters.deptCode = department.value
+function remoteWidgetQueryContext(range, sourceCode, schema = isEditing.value ? editingDashboardSchema.value : dashboardSchema.value) {
+  const definitions = schema?.globalFilters || globalFilterDefinitions.value
   return {
-    periodStart: range.periodStart,
-    periodEnd: range.periodEnd,
-    granularity: 'MONTHLY', widgetCodes: uniqueDashboardQueryWidgets(schema).map(widget => String(widget.id)), filters
+    ...range, definitions, values: schema === dashboardSchema.value || schema === editingDashboardSchema.value ? filterRuntimeValues.value : initialFilterValues(definitions),
+    fields: remoteFieldCatalog.value[sourceCode] || [], department: department.value
   }
+}
+
+async function queryRemoteMultiIndicatorSources(widget, range, signal, schema = isEditing.value ? editingDashboardSchema.value : dashboardSchema.value) {
+  const datasets = new Map()
+  const bindings = normalizeIndicatorBindings(widget.config?.indicatorBindings, widget)
+  await Promise.all(bindings.map(async binding => {
+    const source = availableIndicatorSources.value.find(item => item.code === binding.sourceCode)
+    if (source?.origin !== 'dashboard-data-source') {
+      datasets.set(binding.sourceCode, [{ id: 'backend', fields: [], rows: [], status: 'ERROR', message: `指标 ${binding.sourceCode} 不是可查询的正式数据源` }])
+      return
+    }
+    const fields = remoteFieldCatalog.value[binding.sourceCode] || await fetchDashboardDataSourceFields(binding.sourceCode, { signal })
+    remoteFieldCatalog.value = { ...remoteFieldCatalog.value, [binding.sourceCode]: fields }
+    const sourceWidget = { ...widget, sourceCode: binding.sourceCode, config: { ...widget.config, indicatorBindings: [], analysisIndicatorVersionId: binding.indicatorVersionId || source.indicatorVersionId } }
+    const planned = buildRemoteWidgetQuery(sourceWidget, remoteWidgetQueryContext(range, binding.sourceCode, schema))
+    if (planned.error || planned.empty) {
+      datasets.set(binding.sourceCode, [{ id: 'backend', fields: [], rows: [], status: planned.error ? 'ERROR' : 'EMPTY', message: planned.error || '组件范围与看板周期没有交集' }])
+      return
+    }
+    const payload = schemaToDashboardPayload({ ...(editingDashboardSchema.value || dashboardSchema.value || {}), widgets: [sourceWidget] }, { dataSources: availableIndicatorSources.value }).widgets[0]
+    const { widgetCodes, ...query } = planned.query
+    const result = await previewDashboardWidget({ widget: payload, ...query }, { signal })
+    datasets.set(binding.sourceCode, [widgetResultToDataset(result, fields, 'backend')])
+  }))
+  return datasets
 }
 
 async function queryRemoteDashboardByPeriod(schema, signal) {
   const dashboardId = remoteDashboardMeta.value.dashboardId
-  const query = buildRemoteDashboardQuery(schema)
   const [startMonth, endMonth] = resolvePublishedDashboardPeriodRange(remotePeriodRange.value, periodOptions.value)
   const widgets = uniqueDashboardQueryWidgets(schema)
-  const trendWidgets = widgets.filter(widget => String(widget.config?.backendQuery?.resultShape || '').toUpperCase() === 'TREND')
-  const snapshotWidgets = widgets.filter(widget => !trendWidgets.includes(widget))
-  const latestRange = dateRangeForMonths([endMonth, endMonth])
-  const snapshotPromise = snapshotWidgets.length
-    ? queryRemoteDashboardCached(dashboardId, { ...query, ...latestRange, widgetCodes: snapshotWidgets.map(widget => String(widget.id)) }, signal)
-    : Promise.resolve(null)
-  const trendPromise = trendWidgets.length
-    ? queryDashboardTrendMonths(dashboardId, query, trendWidgets, monthsBetween(startMonth, endMonth), signal)
-    : Promise.resolve(null)
-  const parts = (await Promise.all([snapshotPromise, trendPromise])).filter(Boolean)
+  const fullRange = dateRangeForMonths([startMonth, endMonth])
+  const parts = await mapWithConcurrency(widgets, 3, async widget => {
+    const trend = String(widget.config?.backendQuery?.resultShape || '').toUpperCase() === 'TREND'
+    const range = trend ? fullRange : dateRangeForMonths([endMonth, endMonth])
+    if (normalizeIndicatorBindings(widget.config?.indicatorBindings, widget).length > 1) {
+      try {
+        const datasets = await queryRemoteMultiIndicatorSources(widget, range, signal, schema)
+        const combined = createMultiIndicatorDataset(widget, datasets)
+        return { widgets: { [widget.id]: { status: combined.status, message: combined.message, rows: combined.rows } }, multiDatasets: { [String(widget.id)]: datasets } }
+      } catch (error) {
+        if (signal?.aborted) throw error
+        return { widgets: { [widget.id]: { status: 'ERROR', message: error?.message || '多指标查询失败', rows: [] } } }
+      }
+    }
+    const planned = buildRemoteWidgetQuery(widget, remoteWidgetQueryContext(range, widget.sourceCode, schema))
+    if (planned.error || planned.empty) return { widgets: { [widget.id]: { status: planned.error ? 'ERROR' : 'EMPTY', message: planned.error || '组件范围与看板周期没有交集', rows: [] } } }
+    const query = planned.query
+    if (trend && query.granularity === 'MONTHLY') {
+      const months = monthsBetween(query.periodStart.slice(0, 7), new Date(new Date(`${query.periodEnd}T00:00:00Z`).getTime() - 1).toISOString().slice(0, 7))
+      return queryDashboardTrendMonths(dashboardId, query, [widget], months, signal)
+    }
+    return queryRemoteDashboardCached(dashboardId, query, signal)
+  })
   return {
     ...parts[0],
     generatedAt: parts.map(part => part.generatedAt).filter(Boolean).sort().at(-1),
-    widgets: Object.assign({}, ...parts.map(part => part.widgets || {}))
+    widgets: Object.assign({}, ...parts.map(part => part.widgets || {})),
+    multiDatasets: Object.assign({}, ...parts.map(part => part.multiDatasets || {}))
   }
 }
 
@@ -2735,11 +2799,15 @@ function mergeMonthlyDashboardResults(parts) {
 }
 async function queryDashboardTrendMonths(dashboardId, baseQuery, widgets, months, signal) {
   const widgetCodes = widgets.map(widget => String(widget.id))
-  const parts = await mapWithConcurrency(months, 3, month => queryRemoteDashboardCached(dashboardId, {
-    ...baseQuery,
-    ...dateRangeForMonths([month, month]),
-    widgetCodes
-  }, signal))
+  const parts = await mapWithConcurrency(months, 3, month => {
+    const range = dateRangeForMonths([month, month])
+    return queryRemoteDashboardCached(dashboardId, {
+      ...baseQuery,
+      periodStart: baseQuery.periodStart > range.periodStart ? baseQuery.periodStart : range.periodStart,
+      periodEnd: baseQuery.periodEnd < range.periodEnd ? baseQuery.periodEnd : range.periodEnd,
+      widgetCodes
+    }, signal)
+  })
   return mergeMonthlyDashboardResults(parts)
 }
 
@@ -2760,6 +2828,7 @@ async function refreshRemoteDashboardData() {
     const result = await queryRemoteDashboardByPeriod(schema, controller.signal)
     if (controller.signal.aborted || !isCurrentLoad()) return
     dashboardQueryResult.value = result
+    remoteMultiIndicatorDatasets.value = result.multiDatasets || {}
     remoteWidgetDatasets.value = Object.fromEntries(schema.widgets.map(widget => [
       String(widget.id),
       widgetResultToDataset(dashboardWidgetResult(result, schema.widgets, widget), remoteFieldCatalog.value[widget.sourceCode], 'backend')
@@ -2779,13 +2848,16 @@ function dashboardWidgetQuerySignature(widget = {}) {
     sourceCode: widget.sourceCode || '',
     indicatorVersionId: widget.config?.analysisIndicatorVersionId || '',
     dataBinding: widget.config?.dataBinding || {},
-    backendQuery: widget.config?.backendQuery || {}
+    backendQuery: widget.config?.backendQuery || {},
+    query: widget.config?.query || {},
+    indicatorBindings: widget.config?.indicatorBindings || []
   })
 }
 
 function uniqueDashboardQueryWidgets(schema = {}) {
   const signatures = new Set()
   return (schema?.widgets || []).filter(widget => {
+    if (normalizeIndicatorBindings(widget.config?.indicatorBindings, widget).length > 1) return true
     const signature = dashboardWidgetQuerySignature(widget)
     if (signatures.has(signature)) return false
     signatures.add(signature)

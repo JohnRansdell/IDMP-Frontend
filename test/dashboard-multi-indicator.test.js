@@ -34,6 +34,36 @@ test('multiple independent indicator sources align by a shared dimension without
   ])
 })
 
+test('multiple indicators never align unrelated rows by array position', () => {
+  const datasets = new Map([
+    ['A', [{ id: 'analysis', fields: [{ id: 'department', semanticType: 'dimension' }, measure], rows: [{ department: '外科', value: 1 }, { department: '内科', value: 2 }] }]],
+    ['B', [{ id: 'analysis', fields: [{ id: 'disease', semanticType: 'dimension' }, measure], rows: [{ disease: '甲', value: 10 }, { disease: '乙', value: 20 }] }]]
+  ])
+  const widget = { sourceCode: 'A', config: { indicatorBindings: [{ sourceCode: 'A' }, { sourceCode: 'B' }] } }
+  const result = createMultiIndicatorDataset(widget, datasets)
+  assert.equal(result.status, 'ERROR')
+  assert.deepEqual(result.rows, [])
+})
+
+test('multiple indicators reject duplicate shared keys instead of overwriting a result', () => {
+  const datasets = new Map([
+    ['A', [{ id: 'analysis', fields: [dimension, measure], rows: [{ month: '2026-01', value: 1 }, { month: '2026-01', value: 2 }] }]],
+    ['B', [{ id: 'analysis', fields: [dimension, measure], rows: [{ month: '2026-01', value: 10 }] }]]
+  ])
+  const result = createMultiIndicatorDataset({ sourceCode: 'A', config: { indicatorBindings: [{ sourceCode: 'A' }, { sourceCode: 'B' }] } }, datasets)
+  assert.equal(result.status, 'ERROR')
+})
+
+test('result and snapshot ids are not treated as cross-indicator join keys', () => {
+  const technical = [{ id: 'periodStart', semanticType: 'time' }, { id: 'snapshotId', semanticType: 'dimension' }, measure]
+  const datasets = new Map([
+    ['A', [{ id: 'backend', fields: technical, rows: [{ periodStart: '2026-01-01', snapshotId: '101', value: 1 }] }]],
+    ['B', [{ id: 'backend', fields: technical, rows: [{ periodStart: '2026-01-01', snapshotId: '202', value: 2 }] }]]
+  ])
+  const result = createMultiIndicatorDataset({ sourceCode: 'A', config: { indicatorBindings: [{ sourceCode: 'A' }, { sourceCode: 'B' }] } }, datasets)
+  assert.deepEqual(result.rows, [{ periodStart: '2026-01-01', [multiIndicatorMeasureField('A')]: 1, [multiIndicatorMeasureField('B')]: 2 }])
+})
+
 test('multi-indicator and component fixed scopes reject incomplete saved configuration', () => {
   assert.deepEqual(validateIndicatorBindings([{ sourceCode: 'A', alias: 'A', axis: 'left' }, { sourceCode: 'A', alias: '', axis: 'right' }], 'pie'), [
     'indicatorBindings[1].sourceCode is duplicated',
@@ -88,4 +118,19 @@ test('multiple indicators and component query scope persist through the backend 
   assert.deepEqual(restored.widgets[0].config.indicatorBindings, indicatorBindings)
   assert.equal(restored.widgets[0].config.backendQuery.scenarioMode, 'FIXED')
   assert.deepEqual(restored.widgets[0].config.backendQuery.scenarioVersionIds, ['301'])
+})
+
+test('a multi-indicator binding retains its selected published version', () => {
+  const widget = {
+    id: 'multi', type: 'chart', chartKind: 'line', title: '趋势', sourceCode: 'A', layout: { x: 0, y: 0, w: 12, h: 4 },
+    config: { indicatorBindings: [
+      { sourceCode: 'A', alias: 'A', indicatorVersionId: '101' },
+      { sourceCode: 'B', alias: 'B', indicatorVersionId: '202' }
+    ] }
+  }
+  const schema = { name: '测试', dashboardType: 'topic', scope: 'hospital', layout: { columns: 24, float: false }, widgets: [widget] }
+  const payload = schemaToDashboardPayload(schema, { dataSources: [{ code: 'A', indicatorVersionId: '301' }, { code: 'B', indicatorVersionId: '302' }] })
+  assert.deepEqual(payload.widgets[0].indicatorVersionIds, ['101', '202'])
+  const restored = dashboardDetailToSchema({ dashboard: { id: 'test', name: '测试' }, version: { layout: payload.layout, widgets: payload.widgets } })
+  assert.equal(restored.widgets[0].config.indicatorBindings[1].indicatorVersionId, '202')
 })
