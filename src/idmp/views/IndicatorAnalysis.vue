@@ -251,10 +251,10 @@
           <div class="table-heading">
             <div>
               <h2>科室指标排名</h2>
-              <p v-if="hasBackendRankData">后端维度对比数据，按 {{ currentProfile.name }} 由高到低排列。</p>
+              <p v-if="hasBackendRankData">科室下钻正式结果，按 {{ currentProfile.name }} 由高到低排列。</p>
               <p v-else>当前指标暂无正式科室维度结果。</p>
             </div>
-            <StatusBadge :status="hasBackendRankData ? 'ACTIVE' : 'NO_DATA'" :label="hasBackendRankData ? '后端维度数据' : '暂无正式数据'" tone="neutral" />
+            <StatusBadge :status="hasBackendRankData ? 'ACTIVE' : 'NO_DATA'" :label="hasBackendRankData ? '科室正式结果' : '暂无正式数据'" tone="neutral" />
           </div>
           <div class="table-scroll rank-table-scroll">
             <el-table
@@ -512,7 +512,7 @@ const analysisNotice = computed(() => {
   return { title, message: availability.message }
 })
 const backendDepartmentComparisons = computed(() =>
-  (Array.isArray(backendAnalysis.value?.dimensionComparison) ? backendAnalysis.value.dimensionComparison : [])
+  (Array.isArray(backendAnalysis.value?.departmentComparison) ? backendAnalysis.value.departmentComparison : [])
     .filter((item) => item?.dimensions?.out_dept_code || item?.dimensions?.out_dept_id)
 )
 const backendDimensionResults = computed(() =>
@@ -587,8 +587,8 @@ const rankTableData = computed(() => {
       departmentKey: item.dimensions?.out_dept_code || item.dimensions?.out_dept_id || `DEPT_${index + 1}`,
       department: item.dimensions?.out_dept_name || item.dimensions?.out_dept_code || `科室${index + 1}`,
       rate: item.displayValue || (item.value != null ? String(item.value) : '-'),
-      numerator: '-',
-      denominator: '-',
+      numerator: item.numeratorValue == null ? '-' : formatCount(item.numeratorValue),
+      denominator: item.denominatorValue == null ? '-' : formatCount(item.denominatorValue),
       change: '-',
       status: item.qualityStatus === 'PASSED' ? '达标' : '预警'
     }))
