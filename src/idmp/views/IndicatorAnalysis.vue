@@ -217,6 +217,7 @@
           </div>
           <IdmpChart
             :option="trendOption"
+            :loading="trendLoading"
             :empty="!trendTableRows.length"
             height="338px"
             :updated-at="analysisUpdatedAt"
@@ -393,10 +394,12 @@ const period = ref('月度')
 const reportGranularity = ref(String(route.query.granularity || 'MONTHLY').toUpperCase())
 const backendAnalysis = ref(null)
 const trendBackendAnalysis = ref(null)
+const trendLoading = ref(false)
 const backendIndicatorVersion = ref(null)
 const formulaFactorVersions = ref({})
 const availablePeriod = ref(null)
 let analysisRefreshSequence = 0
+let trendRefreshSequence = 0
 const analysisErrorMessage = ref('')
 const mortalityChain = ref(null)
 const mortalityChainLoading = ref(false)
@@ -1284,7 +1287,31 @@ function applyTrendConditions() {
 }
 
 function applyTrendGranularity() {
-  refreshMortalityAnalysis()
+  refreshTrendAnalysis()
+}
+
+async function refreshTrendAnalysis() {
+  const backendIndicator = selectedBackendIndicator.value
+  if (!backendIndicator || hasActiveTemporaryRuntimeParameters.value) return
+  const requestSequence = ++trendRefreshSequence
+  const analysisSequence = analysisRefreshSequence
+  const granularity = backendAnalysisGranularity.value === 'STATIC' ? 'STATIC' : trendAnalysisGranularity.value
+  const params = buildAnalysisParams(analysisPeriodRange.value, currentIndicatorVersionId.value, granularity)
+  trendLoading.value = true
+  try {
+    const result = await fetchIndicatorAnalysis(String(backendIndicator.id || backendIndicator.indicatorId), params)
+    if (requestSequence === trendRefreshSequence && analysisSequence === analysisRefreshSequence) {
+      trendBackendAnalysis.value = result
+    }
+  } catch (error) {
+    if (requestSequence === trendRefreshSequence && analysisSequence === analysisRefreshSequence) {
+      ElMessage.warning(error?.message ? `趋势结果暂不可用：${error.message}` : '趋势结果暂不可用')
+    }
+  } finally {
+    if (requestSequence === trendRefreshSequence && analysisSequence === analysisRefreshSequence) {
+      trendLoading.value = false
+    }
+  }
 }
 
 function clearTrendPeriod() {
@@ -1458,6 +1485,8 @@ function isMortalityIndicator(indicator) {
 
 async function refreshMortalityAnalysis() {
   const refreshSequence = ++analysisRefreshSequence
+  const trendSequence = ++trendRefreshSequence
+  trendLoading.value = false
   mortalityChainLoading.value = true
   backendAnalysis.value = null
   trendBackendAnalysis.value = null
@@ -1511,7 +1540,7 @@ async function refreshMortalityAnalysis() {
       mortalityIndicator ? fetchMortalityReadonlyChain() : Promise.resolve(null)
     ])
 
-    if (trendResult.status === 'fulfilled') trendBackendAnalysis.value = trendResult.value
+    if (trendSequence === trendRefreshSequence && trendResult.status === 'fulfilled') trendBackendAnalysis.value = trendResult.value
     if (analysisData.status === 'rejected') throw analysisData.reason
     if (analysisData?.status === 'fulfilled' && analysisData?.value) {
       backendAnalysis.value = analysisData.value
