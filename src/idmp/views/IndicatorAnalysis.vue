@@ -35,8 +35,6 @@
             </el-option>
           </el-select>
           <el-button type="primary" @click="switchIndicatorAnalysis">查看分析</el-button>
-          <el-button :icon="Connection" @click="scrollToSceneComparison">场景对比</el-button>
-          <el-button :icon="Download" @click="showUnavailable('PDF 导出')">导出PDF</el-button>
         </div>
       </template>
     </PageHeader>
@@ -49,12 +47,16 @@
       :closable="false"
       :title="analysisErrorMessage || rangeSummaryErrorMessage"
     />
-    <section v-if="selectedBackendIndicator && backendAnalysisGranularity !== 'STATIC'" class="surface-card report-context" aria-label="当前报告期">
-      <div class="report-context__title">
-        <span>源数据可用范围：<strong>{{ availablePeriodText || '暂未获取' }}</strong></span>
-        <small>选择时间范围后从源数据计算该报告期指标值</small>
+    <div class="instant-query-export">
+      <el-button :icon="Download" @click="showUnavailable('PDF 导出')">导出PDF</el-button>
+    </div>
+    <section v-if="selectedBackendIndicator && (backendAnalysisGranularity !== 'STATIC' || indicatorRuntimeParameters.length)" class="surface-card instant-query-panel" aria-label="即时查询条件">
+      <div class="instant-query-panel__heading">
+        <h2>查询条件</h2>
+        <span v-if="backendAnalysisGranularity !== 'STATIC'">源数据可用范围：<strong>{{ availablePeriodText || '暂未获取' }}</strong></span>
       </div>
-      <div class="report-context__controls">
+      <div v-if="backendAnalysisGranularity !== 'STATIC'" class="instant-query-panel__period">
+        <label>报告期</label>
         <div class="date-range-fields report-period-picker" aria-label="报告期范围">
           <el-date-picker
             v-model="reportPeriodRange"
@@ -65,33 +67,25 @@
             start-placeholder="开始日期"
             end-placeholder="结束日期"
             size="default"
+            @change="clearInstantQueryResult"
           />
         </div>
-        <el-button type="primary" :loading="mortalityChainLoading || rangeSummaryLoading || runtimeQueryLoading" @click="applyReportPeriod">即时查询</el-button>
-        <el-button @click="showDataDiagnostics = true">数据说明</el-button>
       </div>
-    </section>
-    <section v-if="indicatorRuntimeParameters.length" class="surface-card runtime-query-panel" aria-label="SQL 即时运行条件">
-      <div class="runtime-query-panel__heading">
-        <div>
-          <h2>即时运行条件</h2>
-          <p>该指标包含 SQL 运行参数。请选择报告期并填写条件，结果将从源数据即时计算，不写入正式分析结果。</p>
-        </div>
-        <el-tag type="warning" effect="plain">临时查询</el-tag>
+      <template v-if="indicatorRuntimeParameters.length">
+        <div class="instant-query-panel__parameter-title">运行参数</div>
+        <el-alert
+          v-if="indicatorRuntimeParameterConflicts.length"
+          type="error"
+          show-icon
+          :closable="false"
+          :title="`存在不兼容的同名参数：${indicatorRuntimeParameterConflicts.map(item => item.code).join('、')}`"
+        />
+        <RuntimeParameterFields v-model="indicatorRuntimeParameterValues" :declarations="indicatorRuntimeParameters" :show-metadata="false" @change="clearInstantQueryResult" />
+      </template>
+      <div class="instant-query-panel__actions">
+        <el-button type="primary" :loading="rangeSummaryLoading" :disabled="indicatorRuntimeParameterConflicts.length > 0" @click="applyReportPeriod">查询</el-button>
+        <el-button v-if="backendAnalysisGranularity !== 'STATIC'" @click="showDataDiagnostics = true">数据说明</el-button>
       </div>
-      <el-alert
-        v-if="indicatorRuntimeParameterConflicts.length"
-        type="error"
-        show-icon
-        :closable="false"
-        :title="`存在不兼容的同名参数：${indicatorRuntimeParameterConflicts.map(item => item.code).join('、')}`"
-      />
-      <RuntimeParameterFields v-model="indicatorRuntimeParameterValues" :declarations="indicatorRuntimeParameters" @change="clearRuntimeQueryResult" />
-      <div class="runtime-query-panel__actions">
-        <el-button type="primary" :loading="runtimeQueryLoading" :disabled="indicatorRuntimeParameterConflicts.length > 0" @click="runIndicatorRuntimeQuery">即时查询</el-button>
-        <span>日期使用上方“当前报告期”；例如选择 1 月 1 日至 1 月 31 日，实际提交 [1 月 1 日 00:00:00, 2 月 1 日 00:00:00)。</span>
-      </div>
-      <el-alert v-if="runtimeQueryError" type="error" show-icon :closable="false" :title="runtimeQueryError" />
       <div v-if="runtimeQueryResult" class="runtime-query-result">
         <div class="runtime-query-result__summary">
           <el-tag :type="runtimeQueryResult.executionMode === 'AD_HOC_SOURCE' ? 'warning' : 'success'">{{ runtimeQueryExecutionModeLabel }}</el-tag>
@@ -387,7 +381,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Connection, Download } from '@element-plus/icons-vue'
+import { Download } from '@element-plus/icons-vue'
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
@@ -454,9 +448,7 @@ const trendGrainDraft = ref({})
 const trendGrainApplied = ref({})
 const showDataDiagnostics = ref(false)
 const indicatorRuntimeParameterValues = ref({})
-const runtimeQueryLoading = ref(false)
 const runtimeQueryResult = ref(null)
-const runtimeQueryError = ref('')
 
 function parseDrillParentKeys(value) {
   const text = Array.isArray(value) ? value[0] : value
@@ -1315,51 +1307,59 @@ function switchIndicatorAnalysis() {
 }
 
 async function applyReportPeriod() {
-  if (!validateOptionalDateRange(reportPeriodRange.value, '报告期')) return
-  if (!isCompleteDateRange(reportPeriodRange.value)) {
-    return ElMessage.warning('请选择完整的报告期范围')
+  if (!currentIndicatorVersionId.value) return ElMessage.warning('当前指标没有可查询的已发布版本')
+  const temporal = backendAnalysisGranularity.value !== 'STATIC'
+  if (temporal) {
+    if (!validateOptionalDateRange(reportPeriodRange.value, '报告期')) return
+    if (!isCompleteDateRange(reportPeriodRange.value)) return ElMessage.warning('请选择完整的报告期范围')
   }
   const parameterMessage = validateSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)
   if (parameterMessage) return ElMessage.warning(parameterMessage)
-  const query = { ...route.query }
-  if (isCompleteDateRange(reportPeriodRange.value)) {
-    query.periodStart = reportPeriodRange.value[0]
-    query.periodEnd = reportPeriodRange.value[1]
-  } else {
-    delete query.periodStart
-    delete query.periodEnd
+  if (temporal && (route.query.periodStart !== reportPeriodRange.value[0] || route.query.periodEnd !== reportPeriodRange.value[1])) {
+    await router.replace({ path: '/analysis', query: {
+      ...route.query,
+      periodStart: reportPeriodRange.value[0],
+      periodEnd: reportPeriodRange.value[1]
+    } })
   }
-  await router.replace({ path: '/analysis', query })
-  clearRuntimeQueryResult()
   void loadRangeSummary()
 }
 
 function reportQueryPayload() {
-  return {
-    periodStart: `${reportPeriodRange.value[0]}T00:00:00`,
-    periodEnd: nextDayStart(reportPeriodRange.value[1]),
-    parameters: buildSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value),
-    summaryOnly: true
+  const payload = { summaryOnly: true }
+  if (backendAnalysisGranularity.value !== 'STATIC') {
+    payload.periodStart = `${reportPeriodRange.value[0]}T00:00:00`
+    payload.periodEnd = nextDayStart(reportPeriodRange.value[1])
   }
+  if (indicatorRuntimeParameters.value.length) {
+    payload.parameters = buildSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)
+  }
+  return payload
 }
 
 async function loadRangeSummary() {
   const versionId = currentIndicatorVersionId.value
-  if (!versionId || !isCompleteDateRange(reportPeriodRange.value)) return
+  if (!versionId || (backendAnalysisGranularity.value !== 'STATIC' && !isCompleteDateRange(reportPeriodRange.value))) return
   const requestSequence = ++rangeSummaryRequestSequence
   rangeSummary.value = null
+  runtimeQueryResult.value = null
   rangeSummaryErrorMessage.value = ''
   rangeSummaryLoading.value = true
-  const [periodStart, periodEnd] = reportPeriodRange.value
+  const [periodStart, periodEnd] = backendAnalysisGranularity.value === 'STATIC' ? ['', ''] : reportPeriodRange.value
   const payload = reportQueryPayload()
   try {
     const result = await queryIndicatorVersion(versionId, payload)
     if (requestSequence === rangeSummaryRequestSequence) {
       rangeSummary.value = normalizeIndicatorInstantSummary(result, periodStart, periodEnd)
+      if (indicatorRuntimeParameters.value.length) runtimeQueryResult.value = result
     }
   } catch (error) {
     if (requestSequence === rangeSummaryRequestSequence) {
-      rangeSummaryErrorMessage.value = error?.message || '指定区间即时查询失败'
+      const message = String(error?.message || '')
+      const migrationHint = message.includes('SQL业务参数不支持冒号写法')
+        ? '；该指标使用了旧式 SQL 参数，请改为 [[AND 字段 = {{参数名}}]] 后重新导入并发布'
+        : ''
+      rangeSummaryErrorMessage.value = message ? `即时查询失败：${message}${migrationHint}` : '即时查询失败，请核对查询条件后重试'
       ElMessage.warning(rangeSummaryErrorMessage.value)
     }
   } finally {
@@ -1367,44 +1367,12 @@ async function loadRangeSummary() {
   }
 }
 
-function clearRuntimeQueryResult() {
+function clearInstantQueryResult() {
+  ++rangeSummaryRequestSequence
+  rangeSummary.value = null
+  rangeSummaryErrorMessage.value = ''
+  rangeSummaryLoading.value = false
   runtimeQueryResult.value = null
-  runtimeQueryError.value = ''
-}
-
-async function runIndicatorRuntimeQuery() {
-  const versionId = currentIndicatorVersionId.value
-  if (!versionId) return ElMessage.warning('当前指标没有可查询的已发布版本')
-  const parameterMessage = validateSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)
-  if (parameterMessage) return ElMessage.warning(parameterMessage)
-  const temporal = resolveIndicatorCalculationMode(backendIndicatorVersion.value, selectedBackendIndicator.value) !== 'STATIC'
-  if (temporal && !isCompleteDateRange(reportPeriodRange.value)) return ElMessage.warning('请选择完整的报告期范围')
-
-  const payload = { summaryOnly: true }
-  if (temporal) {
-    payload.periodStart = `${reportPeriodRange.value[0]}T00:00:00`
-    payload.periodEnd = nextDayStart(reportPeriodRange.value[1])
-  }
-  if (indicatorRuntimeParameters.value.length) {
-    payload.parameters = buildSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)
-  }
-
-  runtimeQueryLoading.value = true
-  runtimeQueryError.value = ''
-  runtimeQueryResult.value = null
-  try {
-    runtimeQueryResult.value = await queryIndicatorVersion(versionId, payload)
-    ElMessage.success(runtimeQueryResult.value?.executionMode === 'AD_HOC_SOURCE' ? '已按运行条件从源数据即时计算' : '已读取匹配的正式结果')
-  } catch (error) {
-    const message = String(error?.message || '')
-    const migrationHint = message.includes('SQL业务参数不支持冒号写法')
-      ? '；该指标使用了旧式 SQL 参数，请改为 [[AND 字段 = {{参数名}}]] 后重新导入并发布'
-      : ''
-    runtimeQueryError.value = message ? `即时查询失败：${message}${migrationHint}` : '即时查询失败，请核对运行条件后重试'
-    ElMessage.error(runtimeQueryError.value)
-  } finally {
-    runtimeQueryLoading.value = false
-  }
 }
 
 function nextDayStart(value) {
@@ -1441,7 +1409,10 @@ function applyTrendConditions() {
     delete query.trendEnd
     forgetAnalysisPeriod(indicatorCode.value, currentIndicatorVersionId.value)
   }
-  router.replace({ path: '/analysis', query })
+  if (String(route.query.trendStart || '') !== String(query.trendStart || '')
+    || String(route.query.trendEnd || '') !== String(query.trendEnd || '')) {
+    router.replace({ path: '/analysis', query })
+  }
   if (JSON.stringify(previousRange) === JSON.stringify(analysisPeriodRange.value)) refreshTrendAnalysis()
   else refreshMortalityAnalysis({ preserveRangeSummary: true })
 }
@@ -1701,6 +1672,7 @@ async function refreshMortalityAnalysis({ preserveRangeSummary = false } = {}) {
     const backendIndicatorId = String(backendIndicator.id || backendIndicator.indicatorId)
     const mortalityIndicator = isMortalityIndicator(backendIndicator)
     const useRangeSummary = !preserveRangeSummary && calculationMode !== 'STATIC' && isCompleteDateRange(reportPeriodRange.value)
+      && !validateSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)
     if (useRangeSummary) void loadRangeSummary()
 
     const analysisParams = buildAnalysisParams(analysisPeriodRange.value)
@@ -1831,7 +1803,6 @@ watch(indicatorCode, () => {
   selectedScenarioForPeriods.value = null
   indicatorRuntimeParameterValues.value = {}
   runtimeQueryResult.value = null
-  runtimeQueryError.value = ''
   period.value = '月度'
   refreshMortalityAnalysis()
   loadScenarioComparison()
@@ -1930,27 +1901,26 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
   margin-bottom: 16px;
 }
 
-.runtime-query-panel {
+.instant-query-panel {
   display: grid;
   gap: var(--idmp-space-4);
   margin-bottom: var(--idmp-space-4);
   padding: var(--idmp-space-5);
 }
 
-.runtime-query-panel__heading,
+.instant-query-panel__heading,
 .runtime-query-result__summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.runtime-query-panel__heading {
-  align-items: flex-start;
+.instant-query-panel__heading {
   padding-bottom: var(--idmp-space-4);
   border-bottom: 1px solid var(--idmp-border-subtle);
 }
-.runtime-query-panel__heading > div { min-width: 0; }
-.runtime-query-panel__heading h2 { margin: 0 0 var(--idmp-space-1); font-size: 18px; }
-.runtime-query-panel__heading p,
-.runtime-query-panel__actions span,
+.instant-query-panel__heading h2 { margin: 0; font-size: 18px; }
+.instant-query-panel__heading span,
 .runtime-query-result__summary span { margin: 0; color: var(--idmp-text-helper); font-size: 12px; }
-.runtime-query-panel__heading p { line-height: 20px; }
-.runtime-query-panel__actions {
+.instant-query-panel__period { display: grid; gap: var(--idmp-space-2); }
+.instant-query-panel__period label,
+.instant-query-panel__parameter-title { color: var(--idmp-text-primary); font-size: 14px; font-weight: 600; }
+.instant-query-panel__actions {
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -1959,50 +1929,9 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
   padding-top: var(--idmp-space-4);
   border-top: 1px solid var(--idmp-border-subtle);
 }
-.runtime-query-panel__actions span { line-height: 18px; }
 .runtime-query-result { display: grid; gap: 12px; }
 .runtime-query-result__summary { justify-content: flex-start; flex-wrap: wrap; }
-
-.report-context {
-  display: grid;
-  grid-template-columns: minmax(240px, 1fr) auto;
-  grid-template-areas: 'title controls';
-  align-items: center;
-  column-gap: 24px;
-  margin-bottom: 16px;
-  padding: 14px 18px;
-  background: var(--idmp-surface-subtle, #f8fafc);
-}
-
-.report-context__title {
-  display: grid;
-  grid-area: title;
-  gap: 4px;
-}
-
-.report-context__title > span {
-  color: var(--idmp-text-primary);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.report-context__title > span strong {
-  color: var(--idmp-text-secondary, #475467);
-  font-weight: 600;
-}
-
-.report-context__title > small {
-  color: var(--idmp-text-secondary, #667085);
-  font-size: 12px;
-}
-
-.report-context__controls {
-  display: flex;
-  grid-area: controls;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-}
+.runtime-query-result__summary span { overflow-wrap: anywhere; }
 
 .report-period-picker {
   width: 310px;
@@ -2142,6 +2071,12 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
     color: var(--idmp-text-helper);
     font-size: 12px;
   }
+}
+
+.instant-query-export {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--idmp-space-2);
 }
 
 .metric-overview {
@@ -2842,18 +2777,6 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
 }
 
 @media (max-width: 1180px) {
-  .report-context {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      'title'
-      'controls';
-  }
-
-  .report-context__controls {
-    justify-content: flex-start;
-    flex-wrap: wrap;
-  }
-
   .metric-overview {
     grid-template-columns: 1fr;
   }
@@ -2873,12 +2796,13 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
 }
 
 @media (max-width: 720px) {
-  .runtime-query-panel {
+  .instant-query-panel {
     padding: var(--idmp-space-4);
   }
 
-  .runtime-query-panel__heading {
+  .instant-query-panel__heading {
     flex-direction: column;
+    align-items: flex-start;
     gap: var(--idmp-space-2);
   }
 

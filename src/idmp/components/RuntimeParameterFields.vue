@@ -3,7 +3,7 @@
     <div v-for="parameter in declarations" :key="parameter.code" class="runtime-parameter-field">
       <label>
         <span>{{ parameter.code }}<em v-if="parameter.required">*</em></span>
-        <small>{{ typeLabel(parameter.type) }} · {{ parameter.parameterMode === 'TEMPORARY' ? '临时重算' : '结果维度' }}</small>
+        <small v-if="showMetadata">{{ typeLabel(parameter.type) }} · {{ parameter.parameterMode === 'TEMPORARY' ? '临时重算' : '结果维度' }}</small>
       </label>
       <el-select v-if="parameter.type === 'BOOLEAN'" :model-value="modelValue[parameter.code]" clearable placeholder="请选择" @update:model-value="value => updateValue(parameter.code, value)"><el-option label="是" :value="true" /><el-option label="否" :value="false" /></el-select>
       <el-input-number v-else-if="parameter.type === 'INTEGER'" :model-value="modelValue[parameter.code]" :precision="0" :controls="false" placeholder="请输入整数" @update:model-value="value => updateValue(parameter.code, value)" />
@@ -18,7 +18,8 @@
 <script setup>
 const props = defineProps({
   declarations: { type: Array, default: () => [] },
-  modelValue: { type: Object, default: () => ({}) }
+  modelValue: { type: Object, default: () => ({}) },
+  showMetadata: { type: Boolean, default: true }
 })
 const emit = defineEmits(['update:modelValue', 'change'])
 function updateValue(code, value) {
