@@ -18,18 +18,15 @@
     </div>
 
     <template v-if="!isFactorTraceMode">
-    <div class="drill-breadcrumb" aria-label="下钻面包屑">
-      <button
-        v-for="(item, index) in result.breadcrumb"
-        :key="`${item.level}-${item.key}`"
-        type="button"
-        class="drill-breadcrumb__item"
-        :class="{ 'is-current': index === result.breadcrumb.length - 1 }"
-        @click="goToBreadcrumb(index)"
-      >
-        {{ item.label }}<span v-if="index < result.breadcrumb.length - 1" class="drill-breadcrumb__separator">/</span>
-      </button>
-    </div>
+    <nav class="drill-breadcrumb" aria-label="下钻层级">
+      <template v-for="(item, index) in result.breadcrumb" :key="`${item.level}-${item.key}`">
+        <button type="button" class="drill-breadcrumb__item" @click="goToBreadcrumb(index)">
+          {{ item.label }}
+        </button>
+        <span class="drill-breadcrumb__separator" aria-hidden="true">/</span>
+      </template>
+      <span class="drill-breadcrumb__current" aria-current="location">{{ currentLevelLabel }}</span>
+    </nav>
 
     <div class="drill-summary-strip" aria-label="当前层汇总">
       <div><span>指标值</span><strong>{{ result.summary.displayValue || result.summary.indicatorValue || '-' }}</strong></div>
@@ -282,7 +279,7 @@ function showFactorTrace() {
 
 function goToBreadcrumb(index) {
   const item = result.value.breadcrumb[index]
-  if (!item || index === result.value.breadcrumb.length - 1) return
+  if (!item) return
   currentLevel.value = item.level
   const nextKeys = {}
   result.value.breadcrumb.slice(0, index).forEach((ancestor) => {
@@ -429,9 +426,9 @@ onMounted(loadDrill)
   font-size: 13px;
 }
 
-.drill-breadcrumb__item.is-current {
+.drill-breadcrumb__current {
   color: var(--idmp-text-primary);
-  cursor: default;
+  font-size: 13px;
 }
 
 .drill-breadcrumb__separator {
