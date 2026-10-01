@@ -130,6 +130,8 @@ function normalizeColumn(item = {}) {
 }
 
 export function deriveDrillPathResultIds(analysis = {}) {
+  const departmentAnchor = (Array.isArray(analysis.departmentComparison) ? analysis.departmentComparison : [])
+    .find((item) => item?.resultId)
   const candidates = [analysis.overview, ...(Array.isArray(analysis.dimensionComparison) ? analysis.dimensionComparison : [])]
     .filter((item) => item?.resultId)
   const selected = {}
@@ -165,6 +167,9 @@ export function deriveDrillPathResultIds(analysis = {}) {
   // 响应解析出真正的全院 resultId。
   if (hasOrganizationTarget && hasDiseaseTarget && organizationSpecificCandidate) {
     selected.ORGANIZATION = organizationSpecificCandidate.resultId
+  }
+  if (departmentAnchor) {
+    selected.ORGANIZATION = toOpaqueId(departmentAnchor.resultId)
   }
   if (hasDiseaseTarget && !selected.DISEASE) {
     selected.DISEASE = toOpaqueId(analysis.overview?.resultId || analysis.resultContext?.resultId)

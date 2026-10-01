@@ -77,6 +77,25 @@ test('multi-path analysis uses an organization-specific anchor and the overview 
   })
 })
 
+test('department ranking provides the organization drill anchor instead of a BASE combination', () => {
+  const pathResultIds = deriveDrillPathResultIds({
+    overview: { resultId: null, dimensions: {} },
+    dimensionComparison: [
+      { resultId: 'base-combination', dimensions: { out_dept_code: 'D001', in_icd10: 'A00' } }
+    ],
+    departmentComparison: [
+      { resultId: 'department-drill', dimensions: { hospital_code: 'H001', out_dept_code: 'D001' } }
+    ],
+    calculationTargets: [
+      { targetCode: 'BASE' },
+      { targetCode: 'DRILL:ORGANIZATION:HOSPITAL' },
+      { targetCode: 'DRILL:ORGANIZATION:OUT_DEPT' }
+    ]
+  })
+
+  assert.deepEqual(pathResultIds, { ORGANIZATION: 'department-drill' })
+})
+
 test('scenario comparison point is replaced by the canonical root result', () => {
   const point = { resultId: 'department-result', value: 0, displayValue: '0.00%', qualityStatus: 'PASSED' }
   const resolved = reconcileScenarioPointWithRoot(point, {

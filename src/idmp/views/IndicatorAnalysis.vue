@@ -420,7 +420,6 @@ const scenarioPeriodDrawerOpen = ref(false)
 const selectedScenarioForPeriods = ref(null)
 const scenarioPeriodPage = ref(1)
 const scenarioPeriodPageSize = 10
-const selectedDrillDepartment = ref('')
 const drillStartLevel = ref(String(route.query.drillStartLevel || 'HOSPITAL').toUpperCase())
 const drillParentKeys = ref(parseDrillParentKeys(route.query.drillParentKeys))
 const analysisPeriodRange = ref(initialAnalysisPeriodRange())
@@ -586,6 +585,8 @@ const rankTableData = computed(() => {
       rank: index + 1,
       departmentKey: item.dimensions?.out_dept_code || item.dimensions?.out_dept_id || `DEPT_${index + 1}`,
       department: item.dimensions?.out_dept_name || item.dimensions?.out_dept_code || `科室${index + 1}`,
+      hospitalCode: item.dimensions?.hospital_code || item.dimensions?.HOSPITAL_CODE || '',
+      departmentCode: item.dimensions?.out_dept_code || item.dimensions?.OUT_DEPT_CODE || '',
       rate: item.displayValue || (item.value != null ? String(item.value) : '-'),
       numerator: item.numeratorValue == null ? '-' : formatCount(item.numeratorValue),
       denominator: item.denominatorValue == null ? '-' : formatCount(item.denominatorValue),
@@ -1059,11 +1060,16 @@ function toCalculationDateTime(value) {
 }
 
 const openDepartmentDrill = (row) => {
-  selectedDrillDepartment.value = row.department
+  const canShowDoctors = ['ATTENDING_DOCTOR', 'DOCTOR'].includes(
+    String(drillMaxLevels.value.ORGANIZATION || '').toUpperCase()
+  )
+  drillStartLevel.value = canShowDoctors && row.hospitalCode && row.departmentCode
+    ? 'ATTENDING_DOCTOR'
+    : 'HOSPITAL'
+  drillParentKeys.value = drillStartLevel.value === 'ATTENDING_DOCTOR'
+    ? { HOSPITAL_CODE: row.hospitalCode, OUT_DEPT_CODE: row.departmentCode }
+    : {}
   activeTab.value = 'drill'
-  // 分析接口只保证返回维度结果，不一定携带上级组织键；从医院层开始由后端返回的路径快照驱动下钻。
-  drillStartLevel.value = 'HOSPITAL'
-  drillParentKeys.value = {}
 }
 
 function formatCount(value) {
