@@ -187,6 +187,29 @@ test('SQL runtime parameter values preserve declared types and validate required
   }), { deptCode: '4', minimumHours: 48, ratio: 1.25, enabled: false })
 })
 
+test('SQL import carries inferred parameter types from preview through metadata and trial', () => {
+  const preview = normalizeSqlImportPreview({
+    factors: [{
+      key: 'admission_count', suggestedCode: 'ADMISSION_COUNT', suggestedName: '入院人次',
+      dsl: { parameters: [
+        { code: 'startDate', type: 'DATETIME', required: false, parameterMode: 'TEMPORARY' },
+        { code: 'minimumAge', type: 'INTEGER', required: false, parameterMode: 'TEMPORARY' },
+        { code: 'patientName', type: 'STRING', required: false, parameterMode: 'TEMPORARY' }
+      ] }
+    }]
+  })
+  const factors = mergeSqlFactorMetadata([], preview.factors)
+  assert.deepEqual(factors[0].parameters.map(item => item.type), ['DATETIME', 'INTEGER', 'STRING'])
+
+  const metadata = buildSqlImportMetadataPayload({ scope: 'FACTORS_ONLY', factors })
+  assert.deepEqual(metadata.factors[0].parameters, factors[0].parameters)
+  assert.deepEqual(buildSqlImportTrialPayload(factors, [], {
+    startDate: '2026-01-01T00:00:00', minimumAge: '18', patientName: '张'
+  }).parameters, {
+    startDate: '2026-01-01T00:00:00', minimumAge: 18, patientName: '张'
+  })
+})
+
 test('optional temporary declarations only require runtime query when a value is submitted', () => {
   const declarations = [
     { code: 'startDate', type: 'DATETIME', required: false, parameterMode: 'TEMPORARY' },
