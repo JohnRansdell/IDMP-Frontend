@@ -209,6 +209,10 @@
             </div>
             <div class="trend-controls">
               <div class="date-range-fields trend-period-picker" aria-label="趋势时间范围"><el-date-picker v-model="trendPeriodDraft" type="daterange" unlink-panels format="YYYY-MM-DD" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" size="small" /></div>
+              <div v-for="code in trendGrainFields" :key="code" class="trend-grain-field">
+                <label :for="`trend-grain-${code}`">{{ code }}</label>
+                <el-input :id="`trend-grain-${code}`" v-model.trim="trendGrainDraft[code]" clearable placeholder="全部" size="small" />
+              </div>
               <el-button size="small" type="primary" @click="applyTrendConditions">应用</el-button>
               <el-button size="small" :disabled="!trendPeriodDraft.some(Boolean) && !analysisPeriodRange.some(Boolean)" @click="clearTrendPeriod">全部时间</el-button>
               <el-radio-group v-model="period" size="small" aria-label="趋势统计粒度" @change="applyTrendGranularity">
@@ -430,6 +434,8 @@ const drillParentKeys = ref(parseDrillParentKeys(route.query.drillParentKeys))
 const analysisPeriodRange = ref(initialAnalysisPeriodRange())
 const reportPeriodRange = ref(initialReportPeriodRange())
 const trendPeriodDraft = ref([...analysisPeriodRange.value])
+const trendGrainDraft = ref({})
+const trendGrainApplied = ref({})
 const showDataDiagnostics = ref(false)
 const indicatorRuntimeParameterValues = ref({})
 const runtimeQueryLoading = ref(false)
@@ -489,6 +495,8 @@ const trendAnalysisGranularity = computed(() => {
   if (period.value === '季度') return 'QUARTERLY'
   return 'MONTHLY'
 })
+const trendGrainFields = computed(() => Array.isArray(backendIndicatorVersion.value?.dimensionGrain)
+  ? backendIndicatorVersion.value.dimensionGrain.map(String).filter(Boolean) : [])
 const analysisOverview = computed(() => resolvePrimaryAnalysisOverview(backendAnalysis.value))
 const indicatorDataExplanation = computed(() => createIndicatorDataExplanation({
   analysis: backendAnalysis.value || {},
@@ -1356,6 +1364,15 @@ function formatRuntimeQueryCell(value) {
 
 function applyTrendConditions() {
   if (!validateOptionalDateRange(trendPeriodDraft.value, '趋势时间')) return
+  const selectedGrain = Object.fromEntries(trendGrainFields.value
+    .map(code => [code, String(trendGrainDraft.value[code] || '').trim()])
+    .filter(([, value]) => value))
+  if (Object.keys(selectedGrain).length && Object.keys(selectedGrain).length !== trendGrainFields.value.length) {
+    ElMessage.warning('请填写全部组合粒度字段，或全部留空以查看整体趋势')
+    return
+  }
+  trendGrainApplied.value = selectedGrain
+  const previousRange = [...analysisPeriodRange.value]
   analysisPeriodRange.value = isCompleteDateRange(trendPeriodDraft.value) ? [...trendPeriodDraft.value] : []
   const query = { ...route.query }
   if (isCompleteDateRange(analysisPeriodRange.value)) {
@@ -1368,7 +1385,8 @@ function applyTrendConditions() {
     forgetAnalysisPeriod(indicatorCode.value, currentIndicatorVersionId.value)
   }
   router.replace({ path: '/analysis', query })
-  refreshMortalityAnalysis({ preserveRangeSummary: true })
+  if (JSON.stringify(previousRange) === JSON.stringify(analysisPeriodRange.value)) refreshTrendAnalysis()
+  else refreshMortalityAnalysis({ preserveRangeSummary: true })
 }
 
 function applyTrendGranularity() {
@@ -1381,8 +1399,9 @@ async function refreshTrendAnalysis() {
   const requestSequence = ++trendRefreshSequence
   const analysisSequence = analysisRefreshSequence
   const granularity = backendAnalysisGranularity.value === 'STATIC' ? 'STATIC' : trendAnalysisGranularity.value
-  const params = buildAnalysisParams(analysisPeriodRange.value, currentIndicatorVersionId.value, granularity)
+  const params = buildTrendAnalysisParams(analysisPeriodRange.value, currentIndicatorVersionId.value, granularity)
   trendLoading.value = true
+  trendBackendAnalysis.value = { dataAvailable: false, trend: [] }
   try {
     const result = await fetchIndicatorAnalysis(String(backendIndicator.id || backendIndicator.indicatorId), params)
     if (requestSequence === trendRefreshSequence && analysisSequence === analysisRefreshSequence) {
@@ -1390,6 +1409,7 @@ async function refreshTrendAnalysis() {
     }
   } catch (error) {
     if (requestSequence === trendRefreshSequence && analysisSequence === analysisRefreshSequence) {
+      trendBackendAnalysis.value = { dataAvailable: false, trend: [] }
       ElMessage.warning(error?.message ? `趋势结果暂不可用：${error.message}` : '趋势结果暂不可用')
     }
   } finally {
@@ -1529,6 +1549,15 @@ function buildAnalysisParams(range = [], versionId = currentIndicatorVersionId.v
   return params
 }
 
+function buildTrendAnalysisParams(range, versionId, granularity) {
+  const params = buildAnalysisParams(range, versionId, granularity)
+  if (trendGrainFields.value.length && granularity !== 'STATIC') {
+    params.grainSelection = Object.keys(trendGrainApplied.value).length ? 'EXACT' : 'ALL'
+    Object.entries(trendGrainApplied.value).forEach(([code, value]) => { params[`filter.${code}`] = value })
+  }
+  return params
+}
+
 function emptyTrend() {
   return { labels: [], actual: [], peer: [] }
 }
@@ -1620,7 +1649,7 @@ async function refreshMortalityAnalysis({ preserveRangeSummary = false } = {}) {
     const analysisParams = buildAnalysisParams(analysisPeriodRange.value)
     const trendParams = backendAnalysisGranularity.value === 'STATIC'
       ? buildAnalysisParams([], currentIndicatorVersionId.value, 'STATIC')
-      : buildAnalysisParams(analysisPeriodRange.value, currentIndicatorVersionId.value, trendAnalysisGranularity.value)
+      : buildTrendAnalysisParams(analysisPeriodRange.value, currentIndicatorVersionId.value, trendAnalysisGranularity.value)
     const [analysisData, trendResult, chain] = await Promise.allSettled([
       granularity ? fetchIndicatorAnalysis(backendIndicatorId, analysisParams) : Promise.resolve(null),
       fetchIndicatorAnalysis(backendIndicatorId, trendParams),
@@ -1628,7 +1657,8 @@ async function refreshMortalityAnalysis({ preserveRangeSummary = false } = {}) {
     ])
 
     if (refreshSequence !== analysisRefreshSequence) return
-    if (trendSequence === trendRefreshSequence && trendResult.status === 'fulfilled') trendBackendAnalysis.value = trendResult.value
+    if (trendSequence === trendRefreshSequence) trendBackendAnalysis.value = trendResult.status === 'fulfilled'
+      ? trendResult.value : { dataAvailable: false, trend: [] }
     if (analysisData.status === 'rejected') {
       analysisErrorMessage.value = analysisData.reason?.message
         ? `指定周期正式结果暂不可用：${analysisData.reason.message}`
@@ -1733,6 +1763,8 @@ watch(indicatorCode, () => {
   selectedIndicatorCode.value = indicatorCode.value
   analysisPeriodRange.value = initialAnalysisPeriodRange()
   trendPeriodDraft.value = [...analysisPeriodRange.value]
+  trendGrainDraft.value = {}
+  trendGrainApplied.value = {}
   reportPeriodRange.value = initialReportPeriodRange()
   scenarioComparisonSelectedIds.value = []
   scenarioComparisonPeriodRange.value = []
@@ -2519,8 +2551,32 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
   gap: 8px;
   min-width: 0;
   flex: 1 1 auto;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   padding-right: 4px;
+}
+
+.trend-grain-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 170px;
+  max-width: 230px;
+  flex: 1 1 170px;
+  font-size: 12px;
+  color: var(--idmp-text-secondary);
+}
+
+.trend-grain-field label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trend-grain-field :deep(.el-input) {
+  min-width: 80px;
+  flex: 1 1 110px;
 }
 
 .trend-period-picker {

@@ -166,6 +166,20 @@ test('indicator analysis query normalizes runtime datetimes to API date values',
   })
 })
 
+test('indicator analysis query preserves exact grain selection filters', () => {
+  assert.deepEqual(normalizeIndicatorAnalysisParams({
+    granularity: 'MONTHLY',
+    grainSelection: 'EXACT',
+    'filter.OUT_DEPT_CODE': 'D1',
+    'filter.SURGERY_DOCTOR': 'U1'
+  }), {
+    granularity: 'MONTHLY',
+    grainSelection: 'EXACT',
+    'filter.OUT_DEPT_CODE': 'D1',
+    'filter.SURGERY_DOCTOR': 'U1'
+  })
+})
+
 test('indicator version payload always includes the selected drill path', () => {
   const payload = buildIndicatorVersionPayload({
     copyFromVersionId: 901,
