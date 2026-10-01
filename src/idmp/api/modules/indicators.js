@@ -1,5 +1,5 @@
 import { requestJson } from '@/idmp/api/request'
-import { normalizeIndicatorAnalysisParams } from '@/idmp/api/adapters/indicator'
+import { normalizeIndicatorAnalysisParams, normalizeIndicatorRangeSummaryParams } from '@/idmp/api/adapters/indicator'
 
 export function fetchIndicators(params = {}) {
   return requestJson(withQuery('/indicators', params))
@@ -105,6 +105,7 @@ export function trialIndicatorVersion(versionId, payload, idempotencyKey) {
 export function queryIndicatorVersion(versionId, payload) {
   return requestJson(`/indicator-versions/${encodeURIComponent(versionId)}/query`, {
     method: 'POST',
+    timeoutMs: 120000,
     body: JSON.stringify(payload)
   })
 }
@@ -134,6 +135,13 @@ export function fetchIndicatorAnalysis(indicatorId, params = {}) {
   return requestJson(withQuery(
     `/analysis/indicators/${indicatorId}/analysis`,
     normalizeIndicatorAnalysisParams(params)
+  ))
+}
+
+export function fetchIndicatorRangeSummary(indicatorId, params = {}) {
+  return requestJson(withQuery(
+    `/analysis/indicators/${encodeURIComponent(indicatorId)}/range-summary`,
+    normalizeIndicatorRangeSummaryParams(params)
   ))
 }
 

@@ -278,6 +278,34 @@ export function normalizeIndicatorAnalysisParams(params = {}) {
   return normalized
 }
 
+export function normalizeIndicatorRangeSummaryParams(params = {}) {
+  return normalizeIndicatorAnalysisParams({
+    indicatorVersionId: params.indicatorVersionId,
+    periodStart: params.periodStart,
+    periodEnd: params.periodEnd
+  })
+}
+
+export function normalizeIndicatorInstantSummary(result, periodStart, periodEnd) {
+  if (result?.grainFieldCodes?.length || !Array.isArray(result?.rows) || result.rows.length > 1) {
+    throw new Error('即时查询未返回单条全院汇总结果')
+  }
+  const row = result.rows[0]
+  return {
+    indicatorVersionId: result.indicatorVersionId,
+    periodStart,
+    periodEnd,
+    status: !row ? 'NO_DATA' : row.value == null ? 'VALUE_NOT_CALCULABLE' : 'READY',
+    message: !row ? '该报告期没有符合条件的数据' : null,
+    executionMode: result.executionMode,
+    value: row?.value ?? null,
+    displayValue: row?.displayValue ?? null,
+    numeratorValue: row?.numeratorValue ?? null,
+    denominatorValue: row?.denominatorValue ?? null,
+    qualityStatus: row?.qualityFlag ?? null
+  }
+}
+
 function toApiDate(value) {
   const text = String(value || '').trim()
   return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : text

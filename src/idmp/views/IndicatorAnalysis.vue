@@ -7,7 +7,8 @@
     >
       <template #meta>
         <span>报告期 <strong>{{ reportPeriodLabel }}</strong></span>
-        <span>统计粒度 <strong>{{ period }}</strong></span>
+        <span v-if="rangeSummary">查询方式 <strong>即时计算</strong></span>
+        <span v-else>统计粒度 <strong>{{ period }}</strong></span>
         <span>更新时间 <strong>{{ analysisUpdatedAt }}</strong></span>
       </template>
       <template #actions>
@@ -41,17 +42,17 @@
     </PageHeader>
 
     <el-alert
-      v-if="analysisErrorMessage"
+      v-if="analysisErrorMessage || rangeSummaryErrorMessage"
       class="analysis-error-alert"
       type="warning"
       show-icon
       :closable="false"
-      :title="analysisErrorMessage"
+      :title="analysisErrorMessage || rangeSummaryErrorMessage"
     />
     <section v-if="selectedBackendIndicator && backendAnalysisGranularity !== 'STATIC'" class="surface-card report-context" aria-label="当前报告期">
       <div class="report-context__title">
         <span>源数据可用范围：<strong>{{ availablePeriodText || '暂未获取' }}</strong></span>
-        <small>选择时间范围后，更新本期指标值、排名和下钻结果</small>
+        <small>选择时间范围后从源数据计算该报告期指标值</small>
       </div>
       <div class="report-context__controls">
         <div class="date-range-fields report-period-picker" aria-label="报告期范围">
@@ -66,7 +67,7 @@
             size="default"
           />
         </div>
-        <el-button type="primary" :loading="mortalityChainLoading || runtimeQueryLoading" @click="applyReportPeriod">{{ hasActiveTemporaryRuntimeParameters ? '即时查询' : '查询' }}</el-button>
+        <el-button type="primary" :loading="mortalityChainLoading || rangeSummaryLoading || runtimeQueryLoading" @click="applyReportPeriod">即时查询</el-button>
         <el-button @click="showDataDiagnostics = true">数据说明</el-button>
       </div>
     </section>
@@ -377,7 +378,7 @@ import DrillExplorer from '@/idmp/features/analysis/DrillExplorer.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
 import { fetchIndicatorAnalysis, fetchIndicatorAvailablePeriod, fetchIndicatorFormula, fetchIndicatorScenarioComparison, fetchIndicatorScenarios, fetchIndicators, fetchIndicatorVersion, fetchIndicatorVersionList, queryIndicatorVersion } from '@/idmp/api/modules/indicators'
 import { fetchFactorVersion } from '@/idmp/api/modules/factors'
-import { collectFormulaFactorVersionIds, createIndicatorDataExplanation, extractIndicatorFormula } from '@/idmp/api/adapters/indicator'
+import { collectFormulaFactorVersionIds, createIndicatorDataExplanation, extractIndicatorFormula, normalizeIndicatorInstantSummary } from '@/idmp/api/adapters/indicator'
 import { deriveDrillPathResultIds, reconcileScenarioPointWithRoot } from '@/idmp/api/adapters/drill'
 import { searchResultDrill } from '@/idmp/api/modules/drill'
 import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
@@ -385,7 +386,7 @@ import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
 import { getStatusLabel } from '@/idmp/design/status'
 import { periodOptions } from '@/idmp/features/analysis/indicatorProfiles'
 import { resolvePrimaryAnalysisOverview } from '@/idmp/features/dashboard/visualization'
-import { buildSqlRuntimeParameterValues, collectSqlRuntimeParameters, hasActiveTemporarySqlRuntimeParameters, validateSqlRuntimeParameterValues } from '@/idmp/api/adapters/sqlImport'
+import { buildSqlRuntimeParameterValues, collectSqlRuntimeParameters, validateSqlRuntimeParameterValues } from '@/idmp/api/adapters/sqlImport'
 
 const route = useRoute()
 const router = useRouter()
@@ -393,6 +394,10 @@ const activeTab = ref('trend')
 const period = ref('月度')
 const reportGranularity = ref(String(route.query.granularity || 'MONTHLY').toUpperCase())
 const backendAnalysis = ref(null)
+const rangeSummary = ref(null)
+const rangeSummaryLoading = ref(false)
+const rangeSummaryErrorMessage = ref('')
+let rangeSummaryRequestSequence = 0
 const trendBackendAnalysis = ref(null)
 const trendLoading = ref(false)
 const backendIndicatorVersion = ref(null)
@@ -473,7 +478,6 @@ const indicatorRuntimeParameters = computed(() => collectSqlRuntimeParameters(
     .map(group => ({ ...group, key: group.factorCode || group.factorVersionId }))
 ))
 const indicatorRuntimeParameterConflicts = computed(() => indicatorRuntimeParameters.value.filter(item => item.conflict))
-const hasActiveTemporaryRuntimeParameters = computed(() => hasActiveTemporarySqlRuntimeParameters(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value))
 const runtimeQueryRows = computed(() => Array.isArray(runtimeQueryResult.value?.rows) ? runtimeQueryResult.value.rows : [])
 const runtimeQueryColumns = computed(() => [...new Set(runtimeQueryRows.value.flatMap(row => Object.keys(row || {})))])
 const runtimeQueryExecutionModeLabel = computed(() => runtimeQueryResult.value?.executionMode === 'AD_HOC_SOURCE' ? '源数据即时重算' : '读取正式结果')
@@ -493,9 +497,16 @@ const indicatorDataExplanation = computed(() => createIndicatorDataExplanation({
   factorVersions: formulaFactorVersions.value
 }))
 const hasBackendAnalysisData = computed(() => Boolean(backendAnalysis.value?.dataAvailable && analysisOverview.value))
-const hasLiveAnalysisResponse = computed(() => Boolean(backendAnalysis.value && selectedBackendIndicator.value))
-const analysisAvailability = computed(() => backendAnalysis.value ? resolveResultAvailability(backendAnalysis.value) : null)
-const reportPeriodLabel = computed(() => formatAnalysisPeriod(analysisOverview.value) || formatRange(reportPeriodRange.value) || '由最新正式结果确定')
+const hasLiveAnalysisResponse = computed(() => Boolean((backendAnalysis.value || rangeSummary.value) && selectedBackendIndicator.value))
+const rangeSummaryPeriodLabel = computed(() => rangeSummary.value
+  ? formatRange([rangeSummary.value.periodStart, rangeSummary.value.periodEnd]) : '')
+const analysisAvailability = computed(() => rangeSummary.value
+  ? {
+      status: rangeSummary.value.status === 'READY' ? 'ACTIVE_RESULT' : rangeSummary.value.status,
+      message: rangeSummary.value.message || (rangeSummary.value.status === 'READY' ? '已按指定报告期即时计算' : '指定报告期未取得可用的即时结果')
+    }
+  : backendAnalysis.value ? resolveResultAvailability(backendAnalysis.value) : null)
+const reportPeriodLabel = computed(() => rangeSummaryPeriodLabel.value || formatAnalysisPeriod(analysisOverview.value) || formatRange(reportPeriodRange.value) || '由最新正式结果确定')
 const analysisNotice = computed(() => {
   const availability = analysisAvailability.value
   if (!availability || availability.status === 'ACTIVE_RESULT') return null
@@ -506,6 +517,10 @@ const analysisNotice = computed(() => {
     INCOMPLETE_DATA: '该报告期缺少部分依赖数据，暂时无法计算',
     NOT_CALCULABLE: '该报告期的数据不满足计算条件',
     CALCULATION_ERROR: '该报告期的指标计算未完成',
+    COVERAGE_INCOMPLETE: '正式结果未覆盖整个报告期',
+    UNSUPPORTED_ROLLUP: '现有正式结果无法精确汇总',
+    RESULT_LIMIT_EXCEEDED: '报告期内正式结果过多',
+    VALUE_NOT_CALCULABLE: '该报告期的指标值无法计算',
     UNKNOWN: '暂时无法确认该报告期是否可计算'
   }[availability.status] || '该报告期暂无可展示结果'
   return { title, message: availability.message }
@@ -524,6 +539,18 @@ const currentTrend = computed(() => backendTrend.value || emptyTrend())
 // 同级医院均值必须来自正式分析接口；后端接入 peerTrend 后再由适配层填充 backendTrend.peer。
 const hasPeerTrend = computed(() => Boolean(backendTrend.value?.peer?.some(isChartNumber)))
 const primaryMetric = computed(() => {
+  if (rangeSummary.value) {
+    const result = rangeSummary.value
+    const ready = result.status === 'READY'
+    return {
+      label: `${rangeSummaryPeriodLabel.value}指标值`,
+      value: ready ? (isUsableDisplayValue(result.displayValue) ? result.displayValue : formatMetricValue(result.value, currentProfile.value.unit)) : '-',
+      tone: ready && result.qualityStatus === 'PASSED' ? 'success' : 'neutral',
+      status: ready ? 'ACTIVE' : result.status,
+      statusLabel: ready ? '即时计算' : '区间结果不可用',
+      periodLabel: rangeSummaryPeriodLabel.value
+    }
+  }
   const overview = analysisOverview.value
   if (hasBackendAnalysisData.value) {
     return {
@@ -540,10 +567,22 @@ const primaryMetric = computed(() => {
 })
 const summaryMetrics = computed(() => {
   if (selectedBackendIndicator.value) {
+    if (rangeSummary.value) {
+      const result = rangeSummary.value
+      if (result.status !== 'READY') return [
+        { label: '即时计算', value: '不可用', description: result.message || '源数据未返回可用结果' }
+      ]
+      return [
+        { label: '分子', value: result.numeratorValue == null ? '-' : formatCount(result.numeratorValue), description: '计入事件数' },
+        { label: '分母', value: result.denominatorValue == null ? '-' : formatCount(result.denominatorValue), description: '统计对象总量' },
+        { label: '质量状态', value: displayStatus(result.qualityStatus), tone: result.qualityStatus === 'PASSED' ? 'success' : 'warning' },
+        { label: '结果来源', value: result.executionMode === 'AD_HOC_SOURCE' ? '源数据即时计算' : '正式结果复用' }
+      ]
+    }
     const metrics = []
     if (!backendAnalysis.value) {
       return [
-        { label: '分析状态', value: mortalityChainLoading.value ? '正在读取' : '暂无正式结果', description: analysisErrorMessage.value || '后端尚未返回可展示的指标结果' },
+        { label: '分析状态', value: mortalityChainLoading.value || rangeSummaryLoading.value ? '正在读取' : '暂无正式结果', description: analysisErrorMessage.value || '后端尚未返回可展示的指标结果' },
         { label: '分子 / 分母', value: '-', description: '后端结果未返回' },
         { label: '维度分析', value: '-', description: '后端维度结果未返回' }
       ]
@@ -604,7 +643,9 @@ const hasBackendMortalityData = computed(() => Boolean(
   mortalityChain.value?.calcBatch
 ))
 const showMortalityChainPanel = computed(() => isMortalityIndicator(selectedBackendIndicator.value) && hasBackendMortalityData.value)
-const analysisSourceLabel = computed(() => hasBackendAnalysisData.value ? '已发布结果' : hasBackendMortalityData.value ? '计算链路摘要' : '暂无正式结果')
+const analysisSourceLabel = computed(() => rangeSummary.value
+  ? rangeSummary.value.status === 'READY' ? '即时计算' : '区间结果不可用'
+  : hasBackendAnalysisData.value ? '已发布结果' : hasBackendMortalityData.value ? '计算链路摘要' : '暂无正式结果')
 const availablePeriodText = computed(() => {
   const value = availablePeriod.value
   if (!value) return ''
@@ -626,18 +667,21 @@ const analysisMetadata = computed(() => {
   const config = chain?.config || {}
   const context = backendAnalysis.value?.resultContext || {}
   return {
-    version: hasBackendAnalysisData.value
+    version: rangeSummary.value ? String(rangeSummary.value.indicatorVersionId || currentIndicatorVersionId.value || '-')
+      : hasBackendAnalysisData.value
       ? String(backendAnalysis.value.indicatorVersionId || currentIndicatorVersionId.value || '后端未返回')
       : selectedBackendIndicator.value
         ? String(currentIndicatorVersionId.value || '未激活结果')
       : hasBackendMortalityData.value ? String(config.indicatorVersionId || '后端未返回') : '-',
-    batch: hasBackendAnalysisData.value
+    batch: rangeSummary.value ? '-'
+      : hasBackendAnalysisData.value
       ? String(context.batchId || '后端未返回')
       : hasBackendMortalityData.value ? String(config.indicatorBatchId || '后端未返回') : '-',
-    watermark: resolveChainWatermark(chain),
+    watermark: rangeSummary.value ? '-' : resolveChainWatermark(chain),
   }
 })
 const analysisUpdatedAt = computed(() => {
+  if (rangeSummary.value) return '后端未返回更新时间'
   const chain = mortalityChain.value
   const context = backendAnalysis.value?.resultContext || {}
   if (hasBackendAnalysisData.value) {
@@ -1205,8 +1249,13 @@ function switchIndicatorAnalysis() {
   })
 }
 
-function applyReportPeriod() {
+async function applyReportPeriod() {
   if (!validateOptionalDateRange(reportPeriodRange.value, '报告期')) return
+  if (!isCompleteDateRange(reportPeriodRange.value)) {
+    return ElMessage.warning('请选择完整的报告期范围')
+  }
+  const parameterMessage = validateSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)
+  if (parameterMessage) return ElMessage.warning(parameterMessage)
   const query = { ...route.query }
   if (isCompleteDateRange(reportPeriodRange.value)) {
     query.periodStart = reportPeriodRange.value[0]
@@ -1215,11 +1264,41 @@ function applyReportPeriod() {
     delete query.periodStart
     delete query.periodEnd
   }
-  router.replace({ path: '/analysis', query })
-  if (hasActiveTemporaryRuntimeParameters.value) runIndicatorRuntimeQuery()
-  else {
-    clearRuntimeQueryResult()
-    refreshMortalityAnalysis()
+  await router.replace({ path: '/analysis', query })
+  clearRuntimeQueryResult()
+  void loadRangeSummary()
+}
+
+function reportQueryPayload() {
+  return {
+    periodStart: `${reportPeriodRange.value[0]}T00:00:00`,
+    periodEnd: nextDayStart(reportPeriodRange.value[1]),
+    parameters: buildSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value),
+    summaryOnly: true
+  }
+}
+
+async function loadRangeSummary() {
+  const versionId = currentIndicatorVersionId.value
+  if (!versionId || !isCompleteDateRange(reportPeriodRange.value)) return
+  const requestSequence = ++rangeSummaryRequestSequence
+  rangeSummary.value = null
+  rangeSummaryErrorMessage.value = ''
+  rangeSummaryLoading.value = true
+  const [periodStart, periodEnd] = reportPeriodRange.value
+  const payload = reportQueryPayload()
+  try {
+    const result = await queryIndicatorVersion(versionId, payload)
+    if (requestSequence === rangeSummaryRequestSequence) {
+      rangeSummary.value = normalizeIndicatorInstantSummary(result, periodStart, periodEnd)
+    }
+  } catch (error) {
+    if (requestSequence === rangeSummaryRequestSequence) {
+      rangeSummaryErrorMessage.value = error?.message || '指定区间即时查询失败'
+      ElMessage.warning(rangeSummaryErrorMessage.value)
+    }
+  } finally {
+    if (requestSequence === rangeSummaryRequestSequence) rangeSummaryLoading.value = false
   }
 }
 
@@ -1236,7 +1315,7 @@ async function runIndicatorRuntimeQuery() {
   const temporal = resolveIndicatorCalculationMode(backendIndicatorVersion.value, selectedBackendIndicator.value) !== 'STATIC'
   if (temporal && !isCompleteDateRange(reportPeriodRange.value)) return ElMessage.warning('请选择完整的报告期范围')
 
-  const payload = {}
+  const payload = { summaryOnly: true }
   if (temporal) {
     payload.periodStart = `${reportPeriodRange.value[0]}T00:00:00`
     payload.periodEnd = nextDayStart(reportPeriodRange.value[1])
@@ -1289,7 +1368,7 @@ function applyTrendConditions() {
     forgetAnalysisPeriod(indicatorCode.value, currentIndicatorVersionId.value)
   }
   router.replace({ path: '/analysis', query })
-  refreshMortalityAnalysis()
+  refreshMortalityAnalysis({ preserveRangeSummary: true })
 }
 
 function applyTrendGranularity() {
@@ -1298,7 +1377,7 @@ function applyTrendGranularity() {
 
 async function refreshTrendAnalysis() {
   const backendIndicator = selectedBackendIndicator.value
-  if (!backendIndicator || hasActiveTemporaryRuntimeParameters.value) return
+  if (!backendIndicator) return
   const requestSequence = ++trendRefreshSequence
   const analysisSequence = analysisRefreshSequence
   const granularity = backendAnalysisGranularity.value === 'STATIC' ? 'STATIC' : trendAnalysisGranularity.value
@@ -1489,12 +1568,18 @@ function isMortalityIndicator(indicator) {
   return /MORTALITY|DEATH/i.test(code) || name.includes('住院死亡率')
 }
 
-async function refreshMortalityAnalysis() {
+async function refreshMortalityAnalysis({ preserveRangeSummary = false } = {}) {
   const refreshSequence = ++analysisRefreshSequence
+  if (!preserveRangeSummary) ++rangeSummaryRequestSequence
   const trendSequence = ++trendRefreshSequence
   trendLoading.value = false
   mortalityChainLoading.value = true
   backendAnalysis.value = null
+  if (!preserveRangeSummary) {
+    rangeSummary.value = null
+    rangeSummaryLoading.value = false
+    rangeSummaryErrorMessage.value = ''
+  }
   trendBackendAnalysis.value = null
   backendIndicatorVersion.value = null
   formulaFactorVersions.value = {}
@@ -1526,28 +1611,29 @@ async function refreshMortalityAnalysis() {
     }
     if (calculationMode !== 'STATIC') void loadAvailablePeriod(initialVersionId, refreshSequence)
 
-    if (hasActiveTemporaryRuntimeParameters.value) {
-      if (backendIndicatorVersion.value) await loadAnalysisFormulaFactorVersions(backendIndicatorVersion.value, refreshSequence)
-      mortalityChainLoading.value = false
-      return
-    }
-
     const granularity = backendAnalysisGranularity.value
     const backendIndicatorId = String(backendIndicator.id || backendIndicator.indicatorId)
     const mortalityIndicator = isMortalityIndicator(backendIndicator)
+    const useRangeSummary = !preserveRangeSummary && calculationMode !== 'STATIC' && isCompleteDateRange(reportPeriodRange.value)
+    if (useRangeSummary) void loadRangeSummary()
 
-    const reportParams = buildAnalysisParams(reportPeriodRange.value)
+    const analysisParams = buildAnalysisParams(analysisPeriodRange.value)
     const trendParams = backendAnalysisGranularity.value === 'STATIC'
       ? buildAnalysisParams([], currentIndicatorVersionId.value, 'STATIC')
       : buildAnalysisParams(analysisPeriodRange.value, currentIndicatorVersionId.value, trendAnalysisGranularity.value)
     const [analysisData, trendResult, chain] = await Promise.allSettled([
-      granularity ? fetchIndicatorAnalysis(backendIndicatorId, reportParams) : Promise.resolve(null),
+      granularity ? fetchIndicatorAnalysis(backendIndicatorId, analysisParams) : Promise.resolve(null),
       fetchIndicatorAnalysis(backendIndicatorId, trendParams),
       mortalityIndicator ? fetchMortalityReadonlyChain() : Promise.resolve(null)
     ])
 
+    if (refreshSequence !== analysisRefreshSequence) return
     if (trendSequence === trendRefreshSequence && trendResult.status === 'fulfilled') trendBackendAnalysis.value = trendResult.value
-    if (analysisData.status === 'rejected') throw analysisData.reason
+    if (analysisData.status === 'rejected') {
+      analysisErrorMessage.value = analysisData.reason?.message
+        ? `指定周期正式结果暂不可用：${analysisData.reason.message}`
+        : '指定周期尚无已激活正式结果，请先生成正式计算批次。'
+    }
     if (analysisData?.status === 'fulfilled' && analysisData?.value) {
       backendAnalysis.value = analysisData.value
       if (!trendBackendAnalysis.value) trendBackendAnalysis.value = analysisData.value
@@ -1577,6 +1663,7 @@ async function refreshMortalityAnalysis() {
     mortalityChain.value = mortalityIndicator && chain.status === 'fulfilled' ? chain.value : null
     mortalityChainLoading.value = false
   } catch (error) {
+    if (refreshSequence !== analysisRefreshSequence) return
     mortalityChain.value = null
     mortalityChainLoading.value = false
     if (selectedBackendIndicator.value) {

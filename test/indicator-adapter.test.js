@@ -14,10 +14,37 @@ import {
   normalizeDrillPaths,
   normalizeIndicatorTrialResults,
   normalizeIndicatorAnalysisParams,
+  normalizeIndicatorRangeSummaryParams,
+  normalizeIndicatorInstantSummary,
   selectDefaultIndicatorTrialTarget,
   selectIndicatorSummaryRecord,
   validateDrillSelection
 } from '../src/idmp/api/adapters/indicator.js'
+
+test('range summary only sends inclusive dates and optional published version', () => {
+  assert.deepEqual(normalizeIndicatorRangeSummaryParams({
+    periodStart: '2026-04-01T00:00:00', periodEnd: '2026-05-08T00:00:00',
+    indicatorVersionId: '102027642461313071', granularity: 'MONTHLY'
+  }), {
+    periodStart: '2026-04-01', periodEnd: '2026-05-08',
+    indicatorVersionId: '102027642461313071'
+  })
+})
+
+test('instant summary displays only an ungrouped source result for the exact selected dates', () => {
+  assert.deepEqual(normalizeIndicatorInstantSummary({
+    indicatorVersionId: '9', executionMode: 'AD_HOC_SOURCE', grainFieldCodes: [],
+    rows: [{ dimensions: {}, value: 0.003, displayValue: '0.30%', numeratorValue: 3,
+      denominatorValue: 1000, qualityFlag: 'PASSED' }]
+  }, '2026-02-05', '2026-03-05'), {
+    indicatorVersionId: '9', periodStart: '2026-02-05', periodEnd: '2026-03-05',
+    status: 'READY', message: null, executionMode: 'AD_HOC_SOURCE', value: 0.003,
+    displayValue: '0.30%', numeratorValue: 3, denominatorValue: 1000, qualityStatus: 'PASSED'
+  })
+  assert.throws(() => normalizeIndicatorInstantSummary({
+    grainFieldCodes: ['OUT_DEPT_CODE'], rows: [{ value: 1 }]
+  }, '2026-02-05', '2026-03-05'), /单条全院汇总/)
+})
 
 test('indicator trial adapter keeps every returned time target and defaults to month', () => {
   const payload = {
