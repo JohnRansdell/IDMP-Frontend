@@ -68,13 +68,17 @@
     </header>
 
     <main class="idmp-main">
-      <RouterView />
+      <RouterView v-slot="{ Component, route: currentRoute }">
+        <KeepAlive :include="['Dashboard', 'AlertCenter']" :max="2">
+          <component :is="Component" :key="currentRoute.path" />
+        </KeepAlive>
+      </RouterView>
     </main>
   </div>
 </template>
 
 <script setup>
-import { computed, markRaw, onMounted, ref, watch } from 'vue'
+import { computed, KeepAlive, markRaw, onMounted, ref, watch } from 'vue'
 import { dashboardCatalogRevision, dashboardRequestedId, designerImmersive } from './shellState.js'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import {

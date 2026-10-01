@@ -429,7 +429,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -1804,12 +1804,12 @@ async function startDashboardEdit() {
   dashboardEditLoading.value = true
   try {
     const detail = await fetchDashboardDefinition(targetDashboardId)
-    if (targetDashboardId !== activeDashboardId.value || isEditing.value) return
+    if (route.name !== 'Dashboard' || targetDashboardId !== activeDashboardId.value || isEditing.value) return
     const meta = dashboardDetailMeta(detail)
     let versions = []
     if (meta.workingVersionId && String(detail?.version?.id || '') !== meta.workingVersionId) {
       versions = await fetchDashboardVersions(meta.dashboardId || targetDashboardId)
-      if (targetDashboardId !== activeDashboardId.value || isEditing.value) return
+      if (route.name !== 'Dashboard' || targetDashboardId !== activeDashboardId.value || isEditing.value) return
     }
     const workingDetail = { ...detail, version: selectDashboardVersion(detail, versions, { editing: true }) }
     remoteDashboardMeta.value = dashboardDetailMeta(workingDetail)
@@ -3036,7 +3036,41 @@ function onDesignerGlobalKeydown(event) {
   }
 }
 
+function addDashboardListeners() {
+  document.addEventListener('fullscreenchange', syncFullscreenState)
+  window.addEventListener('beforeunload', onDashboardBeforeUnload)
+  window.addEventListener('keydown', onDesignerGlobalKeydown)
+  window.addEventListener('resize', syncViewerViewport, { passive: true })
+}
+
+function removeDashboardListeners() {
+  document.removeEventListener('fullscreenchange', syncFullscreenState)
+  window.removeEventListener('beforeunload', onDashboardBeforeUnload)
+  window.removeEventListener('keydown', onDesignerGlobalKeydown)
+  window.removeEventListener('resize', syncViewerViewport)
+}
+
+let dashboardDeactivatedAt = 0
+onDeactivated(() => {
+  dashboardDeactivatedAt = Date.now()
+  designerImmersive.value = false
+  globalThis.clearTimeout(remoteFilterReloadTimer)
+  removeDashboardListeners()
+})
+onActivated(() => {
+  if (!dashboardDeactivatedAt) return
+  addDashboardListeners()
+  designerImmersive.value = isEditing.value
+  if (Date.now() - dashboardDeactivatedAt > 30_000 && isFormalRemoteDashboard.value) {
+    remoteDashboardQueryCache.clear()
+    globalThis.setTimeout(() => { void refreshRemoteDashboardData() }, 0)
+  }
+  dashboardDeactivatedAt = 0
+})
+
 onMounted(async () => {
+  addDashboardListeners()
+  if (!isEditing.value) designerImmersive.value = false
   try {
     refreshLocalLayoutTemplates()
     if (!managedDashboardId.value) {
@@ -3068,20 +3102,13 @@ onMounted(async () => {
     dashboardStatus.value = 'error'
     dashboardLoadMessage.value = formatDashboardLoadError(error)
   }
-  document.addEventListener('fullscreenchange', syncFullscreenState)
-  window.addEventListener('beforeunload', onDashboardBeforeUnload)
-  window.addEventListener('keydown', onDesignerGlobalKeydown)
-  window.addEventListener('resize', syncViewerViewport, { passive: true })
 })
 
 onBeforeUnmount(() => {
   designerImmersive.value = false
   dashboardAbortController?.abort()
   globalThis.clearTimeout(remoteFilterReloadTimer)
-  document.removeEventListener('fullscreenchange', syncFullscreenState)
-  window.removeEventListener('beforeunload', onDashboardBeforeUnload)
-  window.removeEventListener('keydown', onDesignerGlobalKeydown)
-  window.removeEventListener('resize', syncViewerViewport)
+  removeDashboardListeners()
 })
 </script>
 

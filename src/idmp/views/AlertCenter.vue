@@ -30,7 +30,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onActivated, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
@@ -105,6 +105,13 @@ async function readAllNotifications() { try { await markAllNotificationsRead(); 
 
 watch(activeTab, (tab) => { if (tab === 'notifications' && !notifications.value.length) void loadNotifications() })
 watch(() => ruleForm.indicatorVersionId, () => { if (ruleDialogOpen.value) void loadRuleScenarioOptions() })
+let deactivatedAt = 0
+onDeactivated(() => { deactivatedAt = Date.now() })
+onActivated(() => {
+  if (!deactivatedAt) return
+  if (Date.now() - deactivatedAt > 10_000) void refreshCurrent()
+  deactivatedAt = 0
+})
 onMounted(bootstrap)
 </script>
 
