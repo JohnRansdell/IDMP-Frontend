@@ -12,6 +12,13 @@ export function canApplyDashboardLoad({ generation, latestGeneration, targetDash
   return generation === latestGeneration && targetDashboardId === activeDashboardId
 }
 
+export function canRefreshRemoteDashboard({ activeDashboardId, schemaDashboardId, metadataDashboardId, publishedVersionId, isMock, isLoading } = {}) {
+  const id = String(activeDashboardId || '')
+  return Boolean(id && publishedVersionId && !isMock && !isLoading
+    && id === String(schemaDashboardId || '')
+    && id === String(metadataDashboardId || ''))
+}
+
 export function createDashboardSelectorOptions(scenes = [], catalog = []) {
   const systemIds = new Set(scenes.map(item => item.dashboardId))
   return [

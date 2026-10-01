@@ -6,6 +6,15 @@ const organizationFields = {
 
 const hasValue = value => value !== null && value !== undefined && value !== '' && (!Array.isArray(value) || value.length > 0)
 
+export function resolveDashboardQueryState(result, expectedWidgetCount = 0) {
+  const widgets = Object.values(result?.widgets || {})
+  if (widgets.some(widget => widget?.status === 'READY')) return { status: 'ready', message: '' }
+  const failure = widgets.find(widget => widget?.status === 'ERROR')
+  if (failure) return { status: 'error', message: failure.message || '看板组件查询失败，请重新加载。' }
+  if (expectedWidgetCount > 0 && !widgets.length) return { status: 'error', message: '看板组件没有返回结果，请重新加载。' }
+  return { status: 'empty', message: '' }
+}
+
 function matchingField(fields, code) {
   return fields.find(field => field.filterable && String(field.code || field.id).toLowerCase() === String(code).toLowerCase())
 }

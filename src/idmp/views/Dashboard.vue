@@ -472,7 +472,7 @@ import { bindingKind } from '@/idmp/features/dashboard/bindingEngine.js'
 import { resolveDrillHierarchy } from '@/idmp/features/dashboard/drillDown.js'
 import { createDefaultBinding } from '@/idmp/features/dashboard/smartDefaultBinding.js'
 import { createMultiIndicatorDataset, multiIndicatorMeasureField, normalizeIndicatorBindings } from '@/idmp/features/dashboard/multiIndicator.js'
-import { buildRemoteFilterOptionQuery, buildRemoteWidgetQuery } from '@/idmp/features/dashboard/remoteQuery.js'
+import { buildRemoteFilterOptionQuery, buildRemoteWidgetQuery, resolveDashboardQueryState } from '@/idmp/features/dashboard/remoteQuery.js'
 import { buildIndicatorAnalysisPeriodContext, buildIndicatorAnalysisRouteQuery } from '@/idmp/features/dashboard/analysisNavigation.js'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
 import {
@@ -501,7 +501,7 @@ import {
   widgetTypeOptions
 } from '@/idmp/features/dashboard/constants'
 import { LOCAL_SCENE_DASHBOARDS, findLocalSceneByDashboardId, shouldConfirmDashboardSceneSwitch } from '@/idmp/features/dashboard/sceneRegistry.js'
-import { canApplyDashboardLoad, createDashboardSelectorOptions, shouldSkipRemoteDashboardBootstrap } from '@/idmp/features/dashboard/dashboardIdentity.js'
+import { canApplyDashboardLoad, canRefreshRemoteDashboard, createDashboardSelectorOptions, shouldSkipRemoteDashboardBootstrap } from '@/idmp/features/dashboard/dashboardIdentity.js'
 import { dashboardDemoPolicy, shouldUseDashboardDemoFallback } from '@/idmp/features/dashboard/demoPolicy.js'
 import { createDashboardEditingSnapshot } from '@/idmp/features/dashboard/editSession.js'
 import { buildPublishedIndicatorAnalysisQuery, buildPublishedIndicatorTrendPreviewQuery, createPublishedDashboardPeriodOptions, dateRangeForMonths, resolvePublishedDashboardPeriod, resolvePublishedDashboardPeriodRange, schemaPublishedIndicatorSourceCodes } from '@/idmp/features/dashboard/publishedIndicatorRuntime.js'
@@ -680,7 +680,9 @@ const remoteFieldCatalog = ref({})
 const remoteFilterOptions = ref({})
 const remoteDashboardMeta = ref(null)
 const remoteDashboardIsMock = ref(false)
-const isFormalRemoteDashboard = computed(() => Boolean(remoteDashboardMeta.value) && !remoteDashboardIsMock.value)
+const isFormalRemoteDashboard = computed(() => Boolean(remoteDashboardMeta.value?.dashboardId)
+  && String(remoteDashboardMeta.value.dashboardId) === String(activeDashboardId.value)
+  && !remoteDashboardIsMock.value)
 const remoteCatalogIsEmpty = computed(() => localDashboardCatalog.value.length === 0)
 // The eager filter watcher evaluates bindingDatasets during setup, so this source catalog must exist first.
 const availableIndicatorSources = computed(() => {
@@ -691,6 +693,14 @@ const indicatorCatalogLoading = ref(false)
 const indicatorHydrationRequests = new Map()
 const dashboardStatus = ref('select')
 const dashboardLoadMessage = ref('')
+const canRefreshCurrentRemoteDashboard = computed(() => canRefreshRemoteDashboard({
+  activeDashboardId: activeDashboardId.value,
+  schemaDashboardId: dashboardSchema.value?.id,
+  metadataDashboardId: remoteDashboardMeta.value?.dashboardId,
+  publishedVersionId: remoteDashboardMeta.value?.currentPublishedVersionId,
+  isMock: remoteDashboardIsMock.value,
+  isLoading: dashboardStatus.value === 'loading'
+}))
 const editingDashboardSchema = ref(null)
 const dashboardHistory = ref([])
 const dashboardHistoryIndex = ref(-1)
@@ -2642,7 +2652,7 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
       }
     }
     const result = remoteDashboardMeta.value.currentPublishedVersionId
-      ? await queryRemoteDashboardByPeriod(rawSchema, signal)
+      ? await queryRemoteDashboardByPeriod(rawSchema, signal, targetDashboardId)
       : null
     if (!isCurrentLoad()) return
     const schema = applyDefaultDashboardBindings(rawSchema, remoteFieldCatalog.value)
@@ -2666,7 +2676,9 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
       String(widget.id),
       widgetResultToDataset(dashboardWidgetResult(result, schema.widgets, widget), remoteFieldCatalog.value[widget.sourceCode], 'backend')
     ]))
-    dashboardStatus.value = Object.values(result?.widgets || {}).some(item => item?.status === 'READY') ? 'ready' : 'empty'
+    const queryState = resolveDashboardQueryState(result, schema.widgets.length)
+    dashboardStatus.value = queryState.status
+    dashboardLoadMessage.value = queryState.message
     if (isEditing.value) {
       for (const widget of schema.widgets.filter(widget => bindingKind(widget) === 'line' && widget.sourceCode)) void previewRemoteWidget(widget)
     }
@@ -2710,8 +2722,7 @@ async function queryRemoteMultiIndicatorSources(widget, range, signal, schema = 
   return datasets
 }
 
-async function queryRemoteDashboardByPeriod(schema, signal) {
-  const dashboardId = remoteDashboardMeta.value.dashboardId
+async function queryRemoteDashboardByPeriod(schema, signal, dashboardId) {
   const [startMonth, endMonth] = resolvePublishedDashboardPeriodRange(remotePeriodRange.value, periodOptions.value)
   const widgets = uniqueDashboardQueryWidgets(schema)
   const fullRange = dateRangeForMonths([startMonth, endMonth])
@@ -2746,15 +2757,21 @@ async function queryRemoteDashboardByPeriod(schema, signal) {
 }
 
 const remoteDashboardQueryCache = new Map()
+const REMOTE_DASHBOARD_QUERY_CACHE_TTL_MS = 30_000
 function remoteDashboardQueryCacheKey(dashboardId, query) {
   return `${dashboardId}:${remoteDashboardMeta.value.currentPublishedVersionId || ''}:${JSON.stringify(query)}`
 }
 async function queryRemoteDashboardCached(dashboardId, query, signal) {
   const key = remoteDashboardQueryCacheKey(dashboardId, query)
-  if (remoteDashboardQueryCache.has(key)) return remoteDashboardQueryCache.get(key)
-  const result = await queryDashboard(dashboardId, query, { signal })
-  remoteDashboardQueryCache.set(key, result)
-  while (remoteDashboardQueryCache.size > 64) remoteDashboardQueryCache.delete(remoteDashboardQueryCache.keys().next().value)
+  const cached = remoteDashboardQueryCache.get(key)
+  if (cached && cached.expiresAt > Date.now()) return cached.result
+  remoteDashboardQueryCache.delete(key)
+  const result = await queryDashboard(dashboardId, query, { signal, cache: 'no-store' })
+  const widgets = Object.values(result?.widgets || {})
+  if (!signal?.aborted && widgets.length && widgets.every(widget => widget?.status === 'READY')) {
+    remoteDashboardQueryCache.set(key, { result, expiresAt: Date.now() + REMOTE_DASHBOARD_QUERY_CACHE_TTL_MS })
+    while (remoteDashboardQueryCache.size > 64) remoteDashboardQueryCache.delete(remoteDashboardQueryCache.keys().next().value)
+  }
   return result
 }
 function monthsBetween(startMonth, endMonth) {
@@ -2814,9 +2831,7 @@ async function queryDashboardTrendMonths(dashboardId, baseQuery, widgets, months
 async function refreshRemoteDashboardData() {
   const schema = dashboardSchema.value
   const targetDashboardId = activeDashboardId.value
-  if (!schema || !isRemoteDashboard(targetDashboardId) || remoteDashboardIsMock.value || !remoteDashboardMeta.value.currentPublishedVersionId) {
-    return loadDashboard(targetDashboardId)
-  }
+  if (!isRemoteDashboard(targetDashboardId) || !canRefreshCurrentRemoteDashboard.value) return
   dashboardAbortController?.abort()
   const controller = new AbortController()
   dashboardAbortController = controller
@@ -2825,7 +2840,7 @@ async function refreshRemoteDashboardData() {
   remoteQueryLoading.value = true
   dashboardLoadMessage.value = ''
   try {
-    const result = await queryRemoteDashboardByPeriod(schema, controller.signal)
+    const result = await queryRemoteDashboardByPeriod(schema, controller.signal, targetDashboardId)
     if (controller.signal.aborted || !isCurrentLoad()) return
     dashboardQueryResult.value = result
     remoteMultiIndicatorDatasets.value = result.multiDatasets || {}
@@ -2833,7 +2848,9 @@ async function refreshRemoteDashboardData() {
       String(widget.id),
       widgetResultToDataset(dashboardWidgetResult(result, schema.widgets, widget), remoteFieldCatalog.value[widget.sourceCode], 'backend')
     ]))
-    dashboardStatus.value = Object.values(result?.widgets || {}).some(item => item?.status === 'READY') ? 'ready' : 'empty'
+    const queryState = resolveDashboardQueryState(result, schema.widgets.length)
+    dashboardStatus.value = queryState.status
+    dashboardLoadMessage.value = queryState.message
   } catch (error) {
     if (controller.signal.aborted || !isCurrentLoad()) return
     dashboardStatus.value = 'error'
@@ -2881,6 +2898,13 @@ async function performDashboardSwitch(nextDashboardId, previousDashboardId) {
       if (action !== 'cancel') { requestedDashboardId.value = previousDashboardId; return }
     }
   }
+  globalThis.clearTimeout(remoteFilterReloadTimer)
+  dashboardAbortController?.abort()
+  dashboardLoadGeneration += 1
+  remoteQueryLoading.value = false
+  dashboardStatus.value = 'loading'
+  remoteDashboardMeta.value = null
+  remoteDashboardIsMock.value = false
   filterRuntimeValues.value = {}
   interactionFilterState.value = {}
   drillRuntimeState.value = {}
@@ -3020,9 +3044,11 @@ watch([remotePeriodRange, department], () => {
 watch(activeWidgetId, () => { selectedMetricItemId.value = '' })
 let remoteFilterReloadTimer
 watch(filterRuntimeValues, () => {
-  if (!isEditing.value && isRemoteDashboard() && !remoteDashboardIsMock.value) {
+  if (!isEditing.value && isRemoteDashboard() && canRefreshCurrentRemoteDashboard.value) {
     globalThis.clearTimeout(remoteFilterReloadTimer)
-    remoteFilterReloadTimer = globalThis.setTimeout(() => { void refreshRemoteDashboardData() }, 180)
+    remoteFilterReloadTimer = globalThis.setTimeout(() => {
+      if (canRefreshCurrentRemoteDashboard.value) void refreshRemoteDashboardData()
+    }, 180)
   }
 }, { deep: true })
 

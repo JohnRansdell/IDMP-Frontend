@@ -7,7 +7,7 @@ import { BUILT_IN_LAYOUT_TEMPLATES } from '../src/idmp/features/dashboard/layout
 import { dashboardAcceptanceDrillRows, dashboardAcceptanceDualAxisRows, dashboardAcceptanceKpis, dashboardAcceptanceMapRows, dashboardAcceptanceRows, dashboardAcceptanceSources } from '../src/idmp/features/dashboard/acceptanceData.js'
 import { aggregateValues, bindingChartOption, compileWidgetData } from '../src/idmp/features/dashboard/bindingEngine.js'
 import { createWidgetBindingDatasets } from '../src/idmp/features/dashboard/fieldCatalog.js'
-import { canApplyDashboardLoad, createDashboardSelectorOptions, dashboardOrigin, shouldSkipRemoteDashboardBootstrap } from '../src/idmp/features/dashboard/dashboardIdentity.js'
+import { canApplyDashboardLoad, canRefreshRemoteDashboard, createDashboardSelectorOptions, dashboardOrigin, shouldSkipRemoteDashboardBootstrap } from '../src/idmp/features/dashboard/dashboardIdentity.js'
 import { LOCAL_SCENE_DASHBOARDS } from '../src/idmp/features/dashboard/sceneRegistry.js'
 
 const storage = () => { const values = new Map(); return { getItem: key => values.has(key) ? values.get(key) : null, setItem: (key, value) => values.set(key, String(value)), removeItem: key => values.delete(key) } }
@@ -115,5 +115,17 @@ test('FR-M8 acceptance: stale dashboard loads cannot apply after canonical ident
   assert.equal(canApplyDashboardLoad({ generation: 4, latestGeneration: 4, targetDashboardId: 'quality-overview-quality-safety', activeDashboardId: 'quality-overview-quality-safety' }), true)
   assert.equal(canApplyDashboardLoad({ generation: 3, latestGeneration: 4, targetDashboardId: 'quality-overview-quality-safety', activeDashboardId: 'uat-local' }), false)
   assert.equal(canApplyDashboardLoad({ generation: 4, latestGeneration: 4, targetDashboardId: 'quality-overview-quality-safety', activeDashboardId: 'uat-local' }), false)
+})
+test('formal dashboard refresh cannot use metadata or schema from the previous board', () => {
+  const current = {
+    activeDashboardId: 'live-board', schemaDashboardId: 'live-board', metadataDashboardId: 'live-board',
+    publishedVersionId: 'version-1', isMock: false, isLoading: false
+  }
+  assert.equal(canRefreshRemoteDashboard(current), true)
+  assert.equal(canRefreshRemoteDashboard({ ...current, metadataDashboardId: 'mock-board' }), false)
+  assert.equal(canRefreshRemoteDashboard({ ...current, schemaDashboardId: 'mock-board' }), false)
+  assert.equal(canRefreshRemoteDashboard({ ...current, isMock: true }), false)
+  assert.equal(canRefreshRemoteDashboard({ ...current, isLoading: true }), false)
+  assert.equal(canRefreshRemoteDashboard({ ...current, publishedVersionId: '' }), false)
 })
 function seriesOrder(month, direction) { return [...new Set(dashboardAcceptanceRows.map(row => row.department))].map(department => [department, aggregateValues(dashboardAcceptanceRows.filter(row => row.month === month && row.department === department).map(row => row.indicatorValue), 'avg')]).sort((a,b) => (a[1] - b[1]) * (direction === 'asc' ? 1 : -1)).map(item => item[0]) }
