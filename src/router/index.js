@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import IdmpLayout from '@/idmp/layout/IdmpLayout.vue'
+import { scrollBehavior } from './scrollBehavior'
 
 const routes = [
   {
@@ -261,9 +262,7 @@ routes.splice(1, 0, { path: '/login', redirect: '/dashboard' })
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
-  scrollBehavior() {
-    return { top: 0 }
-  }
+  scrollBehavior
 })
 
 export default router
