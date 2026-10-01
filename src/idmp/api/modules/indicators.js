@@ -138,6 +138,13 @@ export function fetchIndicatorAnalysis(indicatorId, params = {}) {
   ))
 }
 
+export function fetchIndicatorGrainOptions(indicatorId, params = {}) {
+  return requestJson(withQuery(
+    `/analysis/indicators/${encodeURIComponent(indicatorId)}/grain-options`,
+    normalizeIndicatorAnalysisParams(params)
+  ))
+}
+
 export function fetchIndicatorRangeSummary(indicatorId, params = {}) {
   return requestJson(withQuery(
     `/analysis/indicators/${encodeURIComponent(indicatorId)}/range-summary`,

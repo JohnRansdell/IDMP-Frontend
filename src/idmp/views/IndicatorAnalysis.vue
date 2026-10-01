@@ -211,7 +211,23 @@
               <div class="date-range-fields trend-period-picker" aria-label="趋势时间范围"><el-date-picker v-model="trendPeriodDraft" type="daterange" unlink-panels format="YYYY-MM-DD" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" size="small" /></div>
               <div v-for="code in trendGrainFields" :key="code" class="trend-grain-field">
                 <label :for="`trend-grain-${code}`">{{ code }}</label>
-                <el-input :id="`trend-grain-${code}`" v-model.trim="trendGrainDraft[code]" clearable placeholder="全部" size="small" />
+                <el-autocomplete
+                  :id="`trend-grain-${code}`"
+                  v-model="trendGrainDraft[code]"
+                  :fetch-suggestions="(query, callback) => loadTrendGrainSuggestions(code, query, callback)"
+                  :trigger-on-focus="true"
+                  :debounce="350"
+                  clearable
+                  placeholder="全部"
+                  size="small"
+                  @input="clearFollowingTrendGrain(code)"
+                  @select="item => selectTrendGrainOption(code, item)"
+                >
+                  <template #default="{ item }">
+                    <span>{{ item.label }}</span>
+                    <small v-if="item.label !== item.value" class="trend-grain-option-code">{{ item.value }}</small>
+                  </template>
+                </el-autocomplete>
               </div>
               <el-button size="small" type="primary" @click="applyTrendConditions">应用</el-button>
               <el-button size="small" :disabled="!trendPeriodDraft.some(Boolean) && !analysisPeriodRange.some(Boolean)" @click="clearTrendPeriod">全部时间</el-button>
@@ -380,7 +396,7 @@ import StatePanel from '@/idmp/components/StatePanel.vue'
 import RuntimeParameterFields from '@/idmp/components/RuntimeParameterFields.vue'
 import DrillExplorer from '@/idmp/features/analysis/DrillExplorer.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
-import { fetchIndicatorAnalysis, fetchIndicatorAvailablePeriod, fetchIndicatorFormula, fetchIndicatorScenarioComparison, fetchIndicatorScenarios, fetchIndicators, fetchIndicatorVersion, fetchIndicatorVersionList, queryIndicatorVersion } from '@/idmp/api/modules/indicators'
+import { fetchIndicatorAnalysis, fetchIndicatorAvailablePeriod, fetchIndicatorFormula, fetchIndicatorGrainOptions, fetchIndicatorScenarioComparison, fetchIndicatorScenarios, fetchIndicators, fetchIndicatorVersion, fetchIndicatorVersionList, queryIndicatorVersion } from '@/idmp/api/modules/indicators'
 import { fetchFactorVersion } from '@/idmp/api/modules/factors'
 import { collectFormulaFactorVersionIds, createIndicatorDataExplanation, extractIndicatorFormula, normalizeIndicatorInstantSummary } from '@/idmp/api/adapters/indicator'
 import { deriveDrillPathResultIds, reconcileScenarioPointWithRoot } from '@/idmp/api/adapters/drill'
@@ -497,6 +513,47 @@ const trendAnalysisGranularity = computed(() => {
 })
 const trendGrainFields = computed(() => Array.isArray(backendIndicatorVersion.value?.dimensionGrain)
   ? backendIndicatorVersion.value.dimensionGrain.map(String).filter(Boolean) : [])
+let grainOptionWarningField = ''
+
+async function loadTrendGrainSuggestions(code, search, callback) {
+  const indicator = selectedBackendIndicator.value
+  const versionId = currentIndicatorVersionId.value
+  if (!indicator || !versionId) return callback([])
+  const index = trendGrainFields.value.indexOf(code)
+  if (index < 0) return callback([])
+  const params = { indicatorVersionId: versionId, fieldCode: code, search, limit: 30 }
+  if (isCompleteDateRange(trendPeriodDraft.value)) {
+    params.periodStart = trendPeriodDraft.value[0]
+    params.periodEnd = trendPeriodDraft.value[1]
+  }
+  trendGrainFields.value.slice(0, index).forEach(field => {
+    const value = String(trendGrainDraft.value[field] || '').trim()
+    if (value) params[`filter.${field}`] = value
+  })
+  try {
+    const options = await fetchIndicatorGrainOptions(String(indicator.id || indicator.indicatorId), params)
+    grainOptionWarningField = ''
+    callback((Array.isArray(options) ? options : []).map(item => ({
+      value: String(item.value || ''), label: String(item.label || item.value || '')
+    })).filter(item => item.value))
+  } catch {
+    callback([])
+    if (grainOptionWarningField !== code) {
+      grainOptionWarningField = code
+      ElMessage.warning('组合粒度候选值暂不可用，可继续输入确切取值')
+    }
+  }
+}
+
+function clearFollowingTrendGrain(code) {
+  const index = trendGrainFields.value.indexOf(code)
+  trendGrainFields.value.slice(index + 1).forEach(field => { trendGrainDraft.value[field] = '' })
+}
+
+function selectTrendGrainOption(code, item) {
+  trendGrainDraft.value[code] = item.value
+  clearFollowingTrendGrain(code)
+}
 const analysisOverview = computed(() => resolvePrimaryAnalysisOverview(backendAnalysis.value))
 const indicatorDataExplanation = computed(() => createIndicatorDataExplanation({
   analysis: backendAnalysis.value || {},
@@ -2574,9 +2631,14 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
   white-space: nowrap;
 }
 
-.trend-grain-field :deep(.el-input) {
+.trend-grain-field :deep(.el-autocomplete) {
   min-width: 80px;
   flex: 1 1 110px;
+}
+
+.trend-grain-option-code {
+  margin-left: 8px;
+  color: var(--idmp-text-helper);
 }
 
 .trend-period-picker {

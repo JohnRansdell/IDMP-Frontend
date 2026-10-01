@@ -180,6 +180,24 @@ test('indicator analysis query preserves exact grain selection filters', () => {
   })
 })
 
+test('grain option query preserves search and dependent selections', () => {
+  assert.deepEqual(normalizeIndicatorAnalysisParams({
+    indicatorVersionId: '102027642461313071',
+    fieldCode: 'IN_ICD10',
+    search: 'J38',
+    periodStart: '2026-03-01T00:00:00',
+    periodEnd: '2026-03-31T00:00:00',
+    'filter.OUT_DEPT_CODE': '8'
+  }), {
+    indicatorVersionId: '102027642461313071',
+    fieldCode: 'IN_ICD10',
+    search: 'J38',
+    periodStart: '2026-03-01',
+    periodEnd: '2026-03-31',
+    'filter.OUT_DEPT_CODE': '8'
+  })
+})
+
 test('indicator version payload always includes the selected drill path', () => {
   const payload = buildIndicatorVersionPayload({
     copyFromVersionId: 901,
