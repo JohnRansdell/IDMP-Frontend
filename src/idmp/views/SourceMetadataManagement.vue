@@ -26,7 +26,7 @@
         <div><h2>接入流程</h2><p class="section-title__description">先确认来源结构，再将物理表接入数据域并映射字段</p></div>
       </div>
       <div class="workflow-steps">
-        <div class="workflow-step is-current"><b>1</b><div><strong>同步来源结构</strong><span>读取表、视图和字段</span></div></div>
+        <div class="workflow-step"><b>1</b><div><strong>同步来源结构</strong><span>读取表、视图和字段</span></div></div>
         <div class="workflow-arrow">→</div>
         <div class="workflow-step"><b>2</b><div><strong>接入物理表</strong><span>选择所属数据域</span></div></div>
         <div class="workflow-arrow">→</div>
@@ -372,10 +372,8 @@ function formatErrorMessage(error, fallback) {
 .overview-card small { overflow: hidden; color: var(--idmp-text-helper); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .workflow-card { padding: 18px; }
 .workflow-steps { display: flex; align-items: center; gap: 14px; }
-.workflow-step { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; padding: 10px 12px; border: 1px solid var(--idmp-border-subtle); background: var(--idmp-layer-02); }
-.workflow-step b { display: grid; width: 26px; height: 26px; flex: 0 0 26px; place-items: center; border-radius: 50%; background: var(--idmp-border-subtle); color: var(--idmp-text-secondary); }
-.workflow-step.is-current { border-color: var(--idmp-brand); }
-.workflow-step.is-current b { background: var(--idmp-brand); color: #fff; }
+.workflow-step { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; padding: 10px 12px; border: 1px solid var(--idmp-interactive); background: var(--idmp-layer-02); }
+.workflow-step b { display: grid; width: 26px; height: 26px; flex: 0 0 26px; place-items: center; border-radius: 50%; background: var(--idmp-interactive); color: #fff; }
 .workflow-step strong, .workflow-step span { display: block; }
 .workflow-step strong { color: var(--idmp-text-primary); font-size: 13px; }
 .workflow-step span { margin-top: 3px; color: var(--idmp-text-helper); font-size: 12px; }
