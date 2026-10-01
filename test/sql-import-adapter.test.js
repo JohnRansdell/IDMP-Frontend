@@ -17,6 +17,9 @@ import {
   normalizeSqlImportOperationError,
   normalizeSqlImportTask,
   shouldPollSqlImport,
+  sqlImportResourceTypeLabel,
+  sqlImportStatusLabel,
+  sqlImportStepLabel,
   validateSqlRuntimeParameterSyntax,
   validateSqlRuntimeParameterValues
 } from '../src/idmp/api/adapters/sqlImport.js'
@@ -185,6 +188,44 @@ test('SQL runtime parameter values preserve declared types and validate required
   assert.deepEqual(buildSqlRuntimeParameterValues(declarations, {
     deptCode: '4', minimumHours: '48', ratio: '1.25', enabled: 'false', ignored: 'x'
   }), { deptCode: '4', minimumHours: 48, ratio: 1.25, enabled: false })
+})
+
+test('SQL import hides parser internals and explains JSON pasted into the SQL editor', () => {
+  const raw = 'SQL语法解析失败: Encountered unexpected token: "{" "{" at line 1, column 1. Was expecting one of: SELECT'
+  const preview = normalizeSqlImportPreview({
+    normalizedSql: '{"sql":"SELECT 1"}',
+    diagnostics: [{ severity: 'ERROR', code: 'SQL-IMPORT-004', message: raw, suggestion: '请按MySQL 8 SELECT语法修正SQL' }]
+  })
+  assert.match(preview.diagnostics[0].message, /JSON 配置/)
+  assert.match(preview.diagnostics[0].suggestion, /SELECT 或 WITH/)
+  assert.doesNotMatch(preview.diagnostics[0].message, /unexpected token/)
+
+  const sqlPreview = normalizeSqlImportPreview({
+    normalizedSql: 'SELECT COUNT( FROM visit',
+    diagnostics: [{ code: 'SQL-IMPORT-004', message: raw }]
+  })
+  assert.match(sqlPreview.diagnostics[0].message, /SQL 语句格式有误/)
+  assert.match(normalizeSqlImportOperationError({ message: raw }).message, /SQL 语句格式有误/)
+  assert.match(normalizeSqlImportTask({ error: raw }).error, /SQL 语句格式有误/)
+})
+
+test('SQL import replaces legacy task and compile errors with actionable Chinese text', () => {
+  const task = normalizeSqlImportTask({
+    status: 'FAILED', step: 'FACTOR_TRIAL:total',
+    error: 'total trial failed (batch 123): java.sql.SQLException: Unknown column',
+    resources: [{ key: 'total', type: 'FACTOR', diagnostics: [
+      { code: 'SQL-FACTOR-005', message: 'Encountered unexpected token: FROM at line 1, column 10' }
+    ] }]
+  })
+  assert.match(task.error, /因子“total”试算失败/)
+  assert.match(task.error, /批次编号 123/)
+  assert.doesNotMatch(task.error, /SQLException/)
+  assert.match(task.resources[0].diagnostics[0].message, /SQL 语句格式有误/)
+  assert.equal(sqlImportStatusLabel(task.status), '失败')
+  assert.equal(sqlImportStepLabel(task.step), '正在试算因子')
+  assert.equal(sqlImportStepLabel('CREATE_FACTORS'), '正在创建因子')
+  assert.equal(sqlImportResourceTypeLabel(task.resources[0].type), '因子')
+  assert.equal(normalizeSqlImportOperationError({ message: 'Failed to fetch' }, '解析失败').message, '解析失败')
 })
 
 test('SQL import carries inferred parameter types from preview through metadata and trial', () => {

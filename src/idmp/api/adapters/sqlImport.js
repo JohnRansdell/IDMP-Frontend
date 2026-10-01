@@ -70,6 +70,53 @@ export function validateSqlRuntimeParameterSyntax(sql = '') {
   return `SQL 业务参数不支持冒号写法 ${legacyParameters}。请把完整筛选条件写成可选模板，例如 [[AND 字段 = {{${uniqueCodes[0]}}}]]；参数占位符为 ${templateParameters}`
 }
 
+const PARSER_ERROR = /Encountered unexpected token|Was expecting one of|JSQLParser|ParseException|SQL语法解析失败[:：]|SQLSyntaxErrorException|You have an error in your SQL syntax/i
+const TECHNICAL_ERROR = /\b(?:[A-Za-z]+Exception|SQLSTATE|jdbc:|HTTP \d{3}|Failed to fetch|NetworkError|TypeError)\b|at line \d+, column \d+|Communications link failure/i
+
+function readableSqlImportError(message, sql = '', fallback = '导入操作失败') {
+  const raw = String(message || '')
+  if (!raw) return null
+  if (PARSER_ERROR.test(raw)) {
+    return String(sql || '').trim().startsWith('{') || String(sql || '').trim().startsWith('[')
+      ? { message: '这里需要填写 SQL 查询语句，当前内容看起来是 JSON 配置', suggestion: '请粘贴以 SELECT 或 WITH 开头的完整查询 SQL，不要粘贴解析结果或请求 JSON。' }
+      : { message: 'SQL 语句格式有误，暂时无法解析', suggestion: '请检查 SELECT 或 WITH、括号、引号和逗号是否完整，然后重新解析。' }
+  }
+  const factorCompile = raw.match(/^Factor compilation failed:\s*(.+)$/i)
+  if (factorCompile) return { message: `因子“${factorCompile[1]}”编译未通过，请查看资源诊断并修改 SQL 或元数据` }
+  if (/^Indicator compilation failed$/i.test(raw)) return { message: '指标编译未通过，请查看资源诊断并修改公式或因子配置' }
+  const trial = raw.match(/^(.+?) trial failed \(batch (\d+)\):/i)
+  if (trial) return { message: `${trial[1] === 'indicator' ? '指标' : `因子“${trial[1]}”`}试算失败，请检查 SQL、时间范围和源数据；排查时可提供批次编号 ${trial[2]}` }
+  if (TECHNICAL_ERROR.test(raw) || !/[\u3400-\u9fff]/.test(raw)) return { message: fallback }
+  return null
+}
+
+const SQL_IMPORT_STATUS_LABELS = {
+  AWAITING_METADATA: '待确认元数据', READY_FOR_TRIAL: '待试算', TRIAL_SUCCEEDED: '试算已通过',
+  RUNNING: '处理中', ABANDONING: '清理中', ABANDONED: '已放弃', CLEANUP_FAILED: '清理失败',
+  SUCCEEDED: '已完成', SUCCESS: '已完成', FAILED: '失败', QUEUED: '排队中', CANCELLED: '已取消',
+  CANCELED: '已取消', PARTIAL_SUCCEEDED: '部分成功'
+}
+
+export function sqlImportStatusLabel(status) {
+  return SQL_IMPORT_STATUS_LABELS[String(status || '').toUpperCase()] || '状态待确认'
+}
+
+export function sqlImportStepLabel(step) {
+  const raw = String(step || '')
+  const key = raw.split(':')[0].toUpperCase()
+  return ({ PARSED: '等待确认元数据', METADATA_SUBMITTED: '元数据已确认',
+    CREATE_FACTORS: '正在创建因子', CREATE_FACTOR: '正在创建因子', COMPILE_FACTOR: '正在编译因子', FACTOR_TRIAL: '正在试算因子',
+    WAIT_FACTOR_TRIALS: '正在等待因子试算', PUBLISH_FACTOR: '正在发布因子', CREATE_INDICATOR: '正在创建指标',
+    CREATE_INDICATOR_VERSION: '正在创建指标版本', COMPILE_INDICATOR: '正在编译指标',
+    INDICATOR_TRIAL: '正在试算指标', FINALIZING: '正在完成发布', PREFLIGHT_PUBLICATION: '正在检查发布条件',
+    CANCEL_TRIALS: '正在取消试算', CLEANUP_INDICATOR: '正在清理指标',
+    PUBLISH_INDICATOR: '正在发布指标', AWAITING_FINALIZE: '等待确认发布', COMPLETE: '已完成' })[key] || '等待操作'
+}
+
+export function sqlImportResourceTypeLabel(type) {
+  return ({ FACTOR: '因子', INDICATOR: '指标' })[String(type || '').toUpperCase()] || '资源'
+}
+
 export function normalizeSqlImportPreview(payload = {}) {
   const preview = payload?.preview || payload || {}
   const tableRows = normalizePreviewTableRows(preview)
@@ -97,10 +144,13 @@ export function normalizeSqlImportPreview(payload = {}) {
       }
     }) : [],
     formula: preview.formula ? { template: preview.formula.template || preview.formula, displayText: String(preview.formula.displayText || '') } : null,
-    diagnostics: Array.isArray(preview.diagnostics) ? preview.diagnostics.map((item) => ({
-      severity: String(item.severity || 'ERROR').toUpperCase(), code: String(item.code || ''), path: String(item.path || ''),
-      message: String(item.message || ''), suggestion: String(item.suggestion || '')
-    })) : []
+    diagnostics: Array.isArray(preview.diagnostics) ? preview.diagnostics.map((item) => {
+      const readable = readableSqlImportError(String(item.message || ''), preview.normalizedSql, 'SQL 解析失败，请检查查询语句后重试')
+      return {
+        severity: String(item.severity || 'ERROR').toUpperCase(), code: String(item.code || ''), path: String(item.path || ''),
+        message: readable?.message || String(item.message || ''), suggestion: readable?.suggestion || String(item.suggestion || '')
+      }
+    }) : []
   }
 }
 
@@ -229,13 +279,18 @@ export const SQL_IMPORT_TERMINAL_STATUSES = new Set(['SUCCEEDED', 'ABANDONED', '
 
 export function normalizeSqlImportTask(payload = {}) {
   const data = payload?.data || payload || {}
+  const rawError = data.error == null ? null : String(data.error?.message || data.error)
   return {
     importId: toOpaqueId(data.importId), status: String(data.status || 'AWAITING_METADATA').toUpperCase(), step: String(data.step || ''), statusUrl: String(data.statusUrl || ''),
-    preview: normalizeSqlImportPreview(data.preview || {}), error: data.error == null ? null : String(data.error?.message || data.error),
+    preview: normalizeSqlImportPreview(data.preview || {}), error: rawError == null ? null : readableSqlImportError(rawError, data.preview?.normalizedSql, '导入任务失败，请保留导入会话编号并联系管理员排查')?.message || rawError,
     resources: Array.isArray(data.resources) ? data.resources.map((resource) => ({
       key: String(resource.key || ''), type: String(resource.type || ''), resourceId: toOpaqueId(resource.resourceId), versionId: toOpaqueId(resource.versionId),
       artifactId: toOpaqueId(resource.artifactId), compiled: resource.compiled === true, published: resource.published === true,
-      diagnostics: Array.isArray(resource.diagnostics) ? resource.diagnostics : [], trial: resource.trial || null
+      diagnostics: Array.isArray(resource.diagnostics) ? resource.diagnostics.map((diagnostic) => {
+        const raw = typeof diagnostic === 'string' ? diagnostic : String(diagnostic?.message || '')
+        const message = readableSqlImportError(raw, '', '编译未通过，请检查 SQL 和元数据配置')?.message || raw
+        return typeof diagnostic === 'string' ? { message } : { ...diagnostic, message }
+      }) : [], trial: resource.trial || null
     })) : [],
     result: data.result ? {
       ...data.result,
@@ -263,12 +318,18 @@ export function nextSqlImportCode(value) {
   return `${match[1]}_R${String(Number(match[2]) + 1).padStart(width, '0')}`
 }
 
-export function normalizeSqlImportOperationError(error = {}) {
+export function normalizeSqlImportOperationError(error = {}, fallback = '导入操作失败') {
   const payload = error?.payload || {}
   const data = payload?.data && typeof payload.data === 'object' ? payload.data : {}
-  const message = String(payload?.message || error?.message || 'SQL 导入操作失败')
+  const rawMessage = String(payload?.message || error?.message || 'SQL 导入操作失败')
   const code = String(payload?.code || error?.code || '')
   const status = Number(error?.status || payload?.status || 0)
+  const message = status === 401 ? '登录状态已失效，请重新登录'
+    : status === 403 ? '当前账号无权执行此操作'
+      : status === 404 ? '导入会话不存在或已失效，请重新开始导入'
+        : status === 408 || code === 'REQUEST_TIMEOUT' ? '请求超时，请稍后重试'
+          : status >= 500 && !/[\u3400-\u9fff]/.test(rawMessage) ? '服务暂时不可用，请稍后重试'
+            : readableSqlImportError(rawMessage, '', fallback)?.message || rawMessage
   const conflict = status === 409 || /409/.test(code) || /(因子|指标|资源).*(编码|名称).*(存在|重复|占用)|code.*(exist|duplicate|conflict)/i.test(message)
   const candidate = data.existingResource || data.resource || data.conflictResource || (data.id || data.resourceId ? data : null)
   const resource = candidate && typeof candidate === 'object' ? {
