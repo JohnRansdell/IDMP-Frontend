@@ -1,4 +1,4 @@
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
+export const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL || '/api/v1'
 const AUTH_TOKEN_STORAGE_KEY = 'idmp_access_token'
 let sessionRecoveryHandler = null
 
@@ -67,6 +67,13 @@ export async function requestJson(path, options = {}) {
       timeoutError.path = path
       throw timeoutError
     }
+    if (error instanceof TypeError) {
+      const networkError = new Error('无法连接服务，请检查网络后重试。')
+      networkError.code = 'NETWORK_ERROR'
+      networkError.path = path
+      networkError.cause = error
+      throw networkError
+    }
     throw error
   } finally {
     if (timeoutId) globalThis.clearTimeout(timeoutId)
@@ -94,8 +101,8 @@ export async function requestJson(path, options = {}) {
 
   if (!payload) {
     const error = new Error(/^\s*(?:<!doctype html|<html)/i.test(responseText || '')
-      ? '接口返回了前端 HTML 页面，请检查 API 地址和开发服务器的后端代理配置。'
-      : '接口未返回有效 JSON 数据。')
+      ? '服务暂时无法返回数据，请稍后重试；若持续出现请联系管理员。'
+      : '服务返回的数据暂时无法读取，请稍后重试。')
     error.path = path
     error.status = response.status
     throw error
@@ -109,7 +116,18 @@ export async function requestJson(path, options = {}) {
 }
 
 export function createApiError(status, payload = {}, path = '') {
-  const message = payload?.message || payload?.error || `HTTP ${status}`
+  const serverMessage = typeof payload?.message === 'string' ? payload.message
+    : typeof payload?.error === 'string' ? payload.error : ''
+  const technicalMessage = /Encountered unexpected token|Was expecting one of|JSQLParser|SQLSTATE|Communications link failure|\b(?:[A-Za-z]+Exception|TypeError|NetworkError)\b|\bat [\w.$]+\([^)]*\.java:\d+\)|^\s*(?:Bad Gateway|Gateway Timeout|Internal Server Error|Service Unavailable|Whitelabel Error Page)\s*$/i
+  const message = serverMessage && /[\u3400-\u9fff]/.test(serverMessage) && !technicalMessage.test(serverMessage)
+    ? serverMessage
+    : technicalMessage.test(serverMessage) && /SQL|token|parse/i.test(serverMessage) ? 'SQL 语句格式有误，请检查语法后重试。'
+      : status === 401 ? '登录状态已失效，请重新登录。'
+      : status === 403 ? '当前账号没有权限执行此操作。'
+        : status === 404 ? '请求的内容不存在或已失效。'
+          : status === 408 || status === 504 ? '请求超时，请稍后重试。'
+            : status === 429 ? '请求过于频繁，请稍后重试。'
+              : status >= 500 ? '服务暂时不可用，请稍后重试。' : '请求未能完成，请检查输入后重试。'
   const traceId = payload?.traceId || payload?.traceID || payload?.requestId || ''
   const error = new Error(traceId ? `${message} (traceId: ${traceId})` : message)
   error.status = Number(status) || 0
@@ -117,6 +135,7 @@ export function createApiError(status, payload = {}, path = '') {
   error.traceId = traceId
   error.path = path
   error.payload = payload
+  error.rawMessage = serverMessage
   return error
 }
 
