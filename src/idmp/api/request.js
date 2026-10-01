@@ -1,6 +1,67 @@
 export const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL || '/api/v1'
 const AUTH_TOKEN_STORAGE_KEY = 'idmp_access_token'
+const QUERY_CACHE_MAX_ENTRIES = 80
+const QUERY_CACHE_MAX_CHARS = 24_000_000
+const QUERY_CACHE_MAX_ENTRY_CHARS = 1_000_000
+const queryCache = new Map()
+let queryCacheChars = 0
+let queryCacheGeneration = 0
 let sessionRecoveryHandler = null
+
+function clearQueryCache() {
+  queryCache.clear()
+  queryCacheChars = 0
+  queryCacheGeneration += 1
+}
+
+function cacheTtl(path, method) {
+  if (/^\/(?:auth|async-tasks|calc|compile-artifacts|sql-imports)(?:\/|\?|$)/.test(path)
+    || /^\/me\/notifications(?:\/|\?|$)/.test(path)
+    || /^\/analysis\/warnings(?:\/|\?|$)/.test(path)
+    || /\/trials(?:\/|\?|$)/.test(path)
+    || /\/oauth\/callback(?:\?|$)/.test(path)) return 0
+  if (method === 'GET') return 30_000
+  if (method === 'POST' && /^\/analysis\/dashboards\/[^/]+\/query$/.test(path)) return 30_000
+  if (method === 'POST' && /^\/(?:factor|indicator)-versions\/[^/]+\/query$/.test(path)) return 30_000
+  return 0
+}
+
+function isReadOnlyPost(path) {
+  return /^\/analysis\/dashboards\/[^/]+\/query$/.test(path)
+    || /^\/(?:factor|indicator)-versions\/[^/]+\/query$/.test(path)
+    || /^\/analysis\/dashboard-(?:query\/preview|data-sources\/[^/]+\/filter-options)$/.test(path)
+    || /^\/analysis\/results\/[^/]+\/drill\/search$/.test(path)
+    || /^\/transform-rule-versions\/[^/]+\/preview$/.test(path)
+    || /^\/indicator-versions\/drill-capabilities$/.test(path)
+}
+
+function readQueryCache(key) {
+  const entry = queryCache.get(key)
+  if (!entry) return undefined
+  if (entry.expiresAt <= Date.now()) {
+    queryCache.delete(key)
+    queryCacheChars -= entry.size
+    return undefined
+  }
+  queryCache.delete(key)
+  queryCache.set(key, entry)
+  return structuredClone(entry.value)
+}
+
+function saveQueryCache(key, value, size, ttl) {
+  if (size > QUERY_CACHE_MAX_ENTRY_CHARS) return
+  const previous = queryCache.get(key)
+  if (previous) queryCacheChars -= previous.size
+  queryCache.delete(key)
+  queryCache.set(key, { value: structuredClone(value), size, expiresAt: Date.now() + ttl })
+  queryCacheChars += size
+  while (queryCache.size > QUERY_CACHE_MAX_ENTRIES || queryCacheChars > QUERY_CACHE_MAX_CHARS) {
+    const oldestKey = queryCache.keys().next().value
+    const oldest = queryCache.get(oldestKey)
+    queryCacheChars -= oldest.size
+    queryCache.delete(oldestKey)
+  }
+}
 
 export function setSessionRecoveryHandler(handler) {
   sessionRecoveryHandler = typeof handler === 'function' ? handler : null
@@ -11,6 +72,7 @@ export function getAccessToken() {
 }
 
 export function setAccessToken(token) {
+  clearQueryCache()
   if (token) {
     localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token)
   } else {
@@ -19,6 +81,7 @@ export function setAccessToken(token) {
 }
 
 export function clearAccessToken() {
+  clearQueryCache()
   localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
 }
 
@@ -36,6 +99,16 @@ export async function requestJson(path, options = {}) {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...optionHeaders
   }
+  const method = String(fetchOptions.method || 'GET').toUpperCase()
+  const ttl = cacheTtl(path, method)
+  const cacheable = ttl > 0 && !['no-store', 'reload'].includes(fetchOptions.cache)
+    && !Object.keys(optionHeaders || {}).length
+  const cacheKey = cacheable ? `${method}:${path}:${fetchOptions.body || ''}` : ''
+  if (cacheable && !externalSignal?.aborted) {
+    const cached = readQueryCache(cacheKey)
+    if (cached !== undefined) return cached
+  }
+  const cacheGeneration = queryCacheGeneration
 
   const controller = typeof AbortController === 'undefined' ? null : new AbortController()
   let didTimeout = false
@@ -112,7 +185,13 @@ export async function requestJson(path, options = {}) {
     throw createApiError(Number(payload.status || 422), payload, path)
   }
 
-  return payload?.data ?? payload
+  const result = payload?.data ?? payload
+  if (cacheable && queryCacheGeneration === cacheGeneration) {
+    saveQueryCache(cacheKey, result, responseText.length, ttl)
+  } else if (!cacheable && method !== 'GET' && !path.startsWith('/auth/') && !isReadOnlyPost(path)) {
+    clearQueryCache()
+  }
+  return result
 }
 
 export function createApiError(status, payload = {}, path = '') {
