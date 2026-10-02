@@ -19,7 +19,7 @@
         <el-form label-position="top" class="binding-grid">
           <el-form-item v-for="code in requiredFields" :key="code" :label="fieldLabels[code] || code" :data-field-code="code">
             <el-select :model-value="factor.dimensionBindings?.[code] || ''" filterable clearable :aria-label="`${factor.name || factor.key} ${fieldLabels[code] || code} 物理字段`" placeholder="选择对应的物理字段" @update:model-value="value => updateBinding(factor, code, value)">
-              <el-option v-for="field in optionsFor(factor)" :key="field.fieldReference" :value="field.fieldReference" :label="fieldLabel(field)" />
+              <el-option v-for="field in optionsFor(factor)" :key="field.fieldReference" :value="field.fieldReference" :label="fieldLabel(field, factor)" />
             </el-select>
           </el-form-item>
         </el-form>
@@ -32,12 +32,13 @@ import { computed } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import DimensionGrainEditor from './DimensionGrainEditor.vue'
 import { sqlImportGroupingFields, sqlImportGroupingFieldLabels } from '../features/indicator/grouping.js'
+import { sqlPhysicalFieldLabel } from '../features/indicator/sqlImportFields.js'
 const props = defineProps({ dimensionGrain: { type: Array, default: () => [] }, drillPaths: { type: Array, default: () => [] }, factors: { type: Array, default: () => [] }, drafts: { type: Array, default: () => [] }, catalog: { type: Array, default: () => [] }, loading: Boolean, error: String })
 const emit = defineEmits(['update:dimensionGrain', 'update:drillPaths', 'update:factors', 'reload'])
 const requiredFields = computed(() => { try { return sqlImportGroupingFields(props.drillPaths, props.dimensionGrain, props.catalog) } catch { return [] } })
 const fieldLabels = computed(() => { try { return sqlImportGroupingFieldLabels(props.drillPaths, props.dimensionGrain, props.catalog) } catch { return {} } })
 function optionsFor(factor) { return props.drafts.find(draft => draft.key === factor.key)?.dimensionFieldOptions || [] }
-function fieldLabel(field) { return [field.fieldReference, field.comment, field.columnType].filter(Boolean).join(' · ') }
+function fieldLabel(field, factor) { return sqlPhysicalFieldLabel(field, optionsFor(factor)) }
 function isSelected(row) { return props.drillPaths.some(path => String(path.pathVersionId) === String(row.version.id)) }
 function selectedLevel(row) { return props.drillPaths.find(path => String(path.pathVersionId) === String(row.version.id))?.maxLevel || '' }
 function togglePath(row, checked) {

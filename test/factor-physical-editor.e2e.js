@@ -71,6 +71,12 @@ function mockBackend() {
     else if (p === '/factors/2/versions' || p === '/factors/3/versions') data = [{ id: p.includes('/2/') ? '4' : '5', publicationStatus: 'DRAFT' }]
     else if (p === '/factor-versions/4') data = { id: '4', dsl: legacyDsl, publicationStatus: 'DRAFT' }
     else if (p === '/factor-versions/5') data = { id: '5', dsl: { definitionType: 'SQL', sqlTemplate: 'SELECT COUNT(*) FROM visit', calculationMode: 'STATIC' }, publicationStatus: 'DRAFT' }
+    else if (p === '/factors/4') data = { id: '4', code: 'SQL_TEMPORAL', name: 'SQL时序因子', currentPublishedVersionId: '6', status: 'PUBLISHED' }
+    else if (p === '/factors/4/versions') data = [{ id: '6', versionNo: 1, status: 'PUBLISHED' }]
+    else if (p === '/factor-versions/6') data = { id: '6', currentArtifactId: '22', status: 'PUBLISHED', dsl: { definitionType: 'SQL', sqlTemplate: 'SELECT COUNT(*) FROM visit b JOIN diagnosis d ON b.id=d.visit_id', periodColumn: 'd.diagnosis_time', calculationMode: 'TEMPORAL' } }
+    else if (p === '/compile-artifacts/22') data = { logicalPlan: { periodBinding: { tableAlias: 'd', physicalTable: 'diagnosis', physicalColumn: 'diagnosis_time', expression: 'd.diagnosis_time' } } }
+    else if (p === '/factor-versions/6/compile') data = { artifactId: '22', status: 'VALID' }
+    else if (p === '/factor-versions/6/trial-period-recommendation') data = { availabilityStatus: 'NO_DATA' }
     return new Response(JSON.stringify({ code: '0', data }), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }
 }
@@ -155,7 +161,7 @@ try {
   await choose(`document.querySelector('.form-block .el-select')`, '住院数据域')
   await choose(`document.querySelectorAll('.form-block .el-select')[1]`, '住院记录')
   await waitFor(()=>evaluate(`window.__factorFixture.fields.length===3`))
-  assert.match(await evaluate(`document.querySelector('.time-binding').textContent`), /入院时间（in_date）/)
+  assert.match(await evaluate(`document.querySelector('.time-binding').textContent`), /visit\.in_date/)
   assert.deepEqual(await evaluate(`window.__factorFixture.fields.map(f=>[f.code,f.kind])`), [['in_date','DATETIME'],['dept_code','VALUE_SET'],['fee','NUMBER']])
   await evaluate(`window.__factorFixture.basicForm.name='单表测试'`)
   await click(button('保存因子定义'))
@@ -169,8 +175,9 @@ try {
   await click(button('添加关联表'))
   await choose(`document.querySelector('.join-row .el-select')`, 'diagnosis（LEFT')
   await waitFor(()=>evaluate(`window.__factorFixture.fields.length===6`))
-  await choose(`document.querySelector('.time-binding .el-select')`, '诊断时间（diagnosis_time）')
+  await choose(`document.querySelector('.time-binding .el-select')`, 'diagnosis.diagnosis_time')
   assert.equal(await evaluate(`window.__factorFixture.dslForm.periodColumn`), 'join1.diagnosis_time')
+  assert.doesNotMatch(await evaluate(`document.querySelector('.time-binding .el-select').textContent`), /join1\./)
   await click(`Array.from(document.querySelectorAll('.measure-card')).find(el=>el.textContent.includes('去重计数'))`)
   await choose(`document.querySelector('.measure-field .el-select')`, '住院号（visit_id）')
   assert.equal(await evaluate(`window.__factorFixture.dslForm.fieldCode`), 'join1.visit_id')
@@ -216,6 +223,22 @@ try {
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${appPort}/factor/edit/3` })
   await waitFor(()=>evaluate(`document.querySelector('.editor-alert')?.textContent.includes('该因子使用 SQL')`))
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('button')).find(el=>el.textContent.trim()==='保存修改').disabled`), true)
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${appPort}/factor/edit/4` })
+  await waitFor(()=>evaluate(`document.querySelector('.time-binding input')?.value==='diagnosis.diagnosis_time'`)); await fixture()
+  assert.equal(await evaluate(`window.__factorFixture.dslForm.periodColumn`), 'd.diagnosis_time')
+  assert.equal(await evaluate(`document.querySelector('.time-binding input').readOnly`), true)
+  assert.equal(await evaluate(`window.__factorRequests.filter(r=>r.path==='/compile-artifacts/22').length`), 1)
+  await evaluate(`window.__factorFixture.nativePeriodBinding=null;window.__factorFixture.workflow.published=false`)
+  await waitFor(()=>evaluate(`document.querySelector('.time-binding input')?.value.includes('尚未确认物理表')`))
+  await evaluate(`window.__factorFixture.compileCurrentVersion()`)
+  assert.equal(await evaluate(`document.querySelector('.time-binding input').value`), 'diagnosis.diagnosis_time')
+  assert.equal(await evaluate(`window.__factorFixture.dslForm.periodColumn`), 'd.diagnosis_time')
+  for (const viewport of [{ width:1440,height:1000,mobile:false }, { width:390,height:844,mobile:true }]) {
+    await cdp.send('Emulation.setDeviceMetricsOverride', { ...viewport, deviceScaleFactor:1 })
+    await evaluate(`document.querySelector('.time-binding').scrollIntoView({block:'center',behavior:'instant'})`)
+    await delay(100)
+    await writeFile(`.tmp/factor-physical-browser/sql-period-${viewport.mobile?'mobile':'desktop'}.png`, Buffer.from((await cdp.send('Page.captureScreenshot', {format:'png'})).data,'base64'))
+  }
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${appPort}/indicator/edit/new` })
   await waitFor(()=>evaluate(`!!document.querySelector('.editor-page')`))
   await evaluate(`(() => {let c=document.querySelector('.editor-page').__vueParentComponent;while(c&&c.type.__name!=='IndicatorEditor')c=c.parent;window.__indicator=c.setupState;window.__indicator.numeratorFactors=[{code:'SQL_FACTOR',name:'SQL 因子',versionId:'10',dsl:{definitionType:'SQL',periodColumn:'b.in_date'}}];window.__indicator.indicatorWorkflow.versionId='11'})()`)
