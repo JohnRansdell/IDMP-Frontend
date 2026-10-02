@@ -319,7 +319,15 @@
               <MetricGroupInspector v-if="activeDesignerWidget.type === 'metric-group'" :widget="activeDesignerWidget" :sources="availableIndicatorSources" :get-datasets="getBindingDatasets" :selected-item-id="selectedMetricItemId" @change="updateMetricGroupConfig" @select-item="selectedMetricItemId = $event" />
               <WarningWidgetInspector v-else-if="activeDesignerWidget.type === 'warnings'" :model-value="activeDesignerWidget.config?.warning" @update:model-value="updateWarningWidgetConfig" />
               <dl v-else class="dashboard-property-list"><dt>指标</dt><dd>{{ activeDesignerWidget.sourceName || activeDesignerWidget.sourceCode || '未绑定' }}</dd><dt>展示类型</dt><dd>{{ activeDesignerWidget.chartKind || activeDesignerWidget.type }}</dd></dl>
-              <section class="dashboard-precise-layout"><h3>位置与尺寸</h3><label>X<input :value="activeDesignerWidget.layout.x" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ x: $event.target.value })" /></label><label>Y<input :value="activeDesignerWidget.layout.y" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ y: $event.target.value })" /></label><label>宽度<input :value="activeDesignerWidget.layout.w" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ w: $event.target.value })" /></label><label>高度<input :value="activeDesignerWidget.layout.h" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ h: $event.target.value })" /></label><label>宽度（%）<input :value="gridWidthToPercentage(activeDesignerWidget.layout.w)" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ w: percentageToGridWidth($event.target.value) })" /></label><small>实际尺寸约 {{ precisePixelSize.width }} × {{ precisePixelSize.height }} px；仅作显示，不保存。</small></section>
+              <section class="dashboard-precise-layout">
+                <h3>位置与尺寸</h3>
+                <label>X<input :value="activeDesignerWidget.layout.x" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ x: $event.target.value })" /></label>
+                <label>Y<input :value="activeDesignerWidget.layout.y" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ y: $event.target.value })" /></label>
+                <label>宽度<input :value="activeDesignerWidget.layout.w" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ w: $event.target.value })" /></label>
+                <label>高度<input :value="activeDesignerWidget.layout.h" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ h: $event.target.value })" /></label>
+                <label>宽度（%）<input :value="gridWidthToPercentage(activeDesignerWidget.layout.w, editingDashboardSchema.layout.columns)" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ w: percentageToGridWidth($event.target.value, editingDashboardSchema.layout.columns) })" /></label>
+                <small>实际尺寸约 {{ precisePixelSize.width }} × {{ precisePixelSize.height }} px；仅作显示，不保存。</small>
+              </section>
               <MultiIndicatorInspector
                 v-if="activeDesignerWidget.type === 'chart' && ['line', 'bar', 'table', 'radar'].includes(activeDesignerWidget.chartKind)"
                 :widget="activeDesignerWidget"
@@ -531,7 +539,7 @@ import { DASHBOARD_UNSAVED_MESSAGE, handleDashboardBeforeUnload, shouldProtectDa
 import { getWidgetGridConstraints, legacyPixelLayoutToGrid } from '@/idmp/features/dashboard/gridLayout'
 import { clearWidgetSelection, nextWidgetSelection, nextMarqueeSelection, alignSelectedLayout, distributeSelectedLayout } from '@/idmp/features/dashboard/layoutOperations.js'
 import { dashboardBreakpointForWidth, deriveResponsiveLayout, responsiveColumns } from '@/idmp/features/dashboard/responsiveLayout.js'
-import { gridWidthToPercentage, percentageToGridWidth, validatePreciseLayout } from '@/idmp/features/dashboard/preciseLayout.js'
+import { applyWidgetLayoutToCanvas, gridWidthToPercentage, percentageToGridWidth, validatePreciseLayout } from '@/idmp/features/dashboard/preciseLayout.js'
 import { BUILT_IN_LAYOUT_TEMPLATES, applyLayoutTemplateToDashboard, createLayoutTemplateFromDashboard, deleteLocalLayoutTemplate, readLocalLayoutTemplates, saveLocalLayoutTemplate, validateLayoutTemplate } from '@/idmp/features/dashboard/layoutTemplates.js'
 import {
   createDefaultLayout,
@@ -1654,9 +1662,7 @@ async function applySelectedLayoutOperation(mode) {
   if (!result.ok) { ElMessage.warning(result.reason || '当前选择无法进行等间距分布'); return }
   await runDashboardHistoryTransaction(async () => {
     editingDashboardSchema.value = { ...editingDashboardSchema.value, widgets: result.widgets }
-    await nextTick()
-    designerCanvasRef.value?.applyLayout(result.widgets.map(widget => ({ id: widget.id, ...widget.layout })))
-    syncDesignerLayout(designerCanvasRef.value?.getLayout() || [], true)
+    await applyDesignerWidgetsLayout(result.widgets)
   })
 }
 
@@ -1748,14 +1754,18 @@ function updateDesignerWidget(partialOrUpdater) {
 async function commitPreciseLayout(patch) {
   const widget = activeDesignerWidget.value
   if (!widget || !editingDashboardSchema.value) return
-  const result = validatePreciseLayout(designerWidgets.value, widget.id, { ...widget.layout, ...patch })
+  const result = validatePreciseLayout(designerWidgets.value, widget.id, { ...widget.layout, ...patch }, editingDashboardSchema.value.layout.columns)
   if (!result.ok) { ElMessage.warning(result.reason); return }
   await runDashboardHistoryTransaction(async () => {
     editingDashboardSchema.value = { ...editingDashboardSchema.value, widgets: result.widgets }
-    await nextTick()
-    designerCanvasRef.value?.applyLayout(result.widgets.map(item => ({ id: item.id, ...item.layout })))
-    syncDesignerLayout(designerCanvasRef.value?.getLayout() || [], true)
+    await applyDesignerWidgetsLayout(result.widgets)
   })
+}
+
+async function applyDesignerWidgetsLayout(widgets) {
+  await nextTick()
+  const appliedLayout = await applyWidgetLayoutToCanvas(designerCanvasRef.value, widgets)
+  syncDesignerLayout(appliedLayout, true)
 }
 
 function syncDesignerLayout(layout, userInitiated = false) {
@@ -3185,6 +3195,13 @@ onBeforeUnmount(() => {
 .dashboard-style-form label { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--idmp-text-secondary, #475467); font-size: 13px; }
 .dashboard-style-form input[type='number'], .dashboard-style-form select { width: 110px; padding: 5px 6px; border: 1px solid #d0d5dd; border-radius: 4px; }
 .dashboard-style-form input[type='color'] { width: 44px; height: 28px; padding: 0; border: 0; background: transparent; }
+.dashboard-precise-layout { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px 12px; margin-top:16px; padding-top:16px; border-top:1px solid var(--db-border); }
+.dashboard-precise-layout h3,.dashboard-precise-layout small { grid-column:1 / -1; margin:0; }
+.dashboard-precise-layout h3 { color:var(--db-text); font-size:13px; font-weight:600; }
+.dashboard-precise-layout label { display:grid; align-content:start; gap:5px; min-width:0; color:var(--db-secondary); font-size:12px; }
+.dashboard-precise-layout label:nth-of-type(5) { grid-column:1 / -1; }
+.dashboard-precise-layout input { box-sizing:border-box; width:100%; min-width:0; height:32px; padding:4px 8px; border:1px solid var(--db-border); border-radius:var(--idmp-radius-md,3px); background:var(--db-elevated); color:var(--db-text); }
+.dashboard-precise-layout small { color:var(--db-muted); font-size:11px; line-height:1.5; }
 .studio-inspector-heading { align-items:flex-start !important; gap:10px; padding-bottom:12px; margin-bottom:4px; border-bottom:1px solid var(--db-border,#e3e9eb); }.studio-inspector-heading h2 { margin:0 !important; color:var(--db-text,#25343b); }.studio-inspector-heading p { margin:3px 0 0; color:var(--db-muted,#667780); font-size:11px; line-height:1.4; }.studio-inspector-heading__actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:4px; }.studio-library-group + .studio-library-group { margin-top:16px; padding-top:12px; border-top:1px solid var(--db-border,#e3e9eb); }.studio-library-group h3 { margin:0 0 8px !important; }.studio-library-item.is-current::after { content:'✓'; margin-left:auto; color:var(--db-accent,#1261a6); font-weight:700; }.studio-library-item:focus-visible,.studio-template-item:focus-visible { outline:2px solid var(--db-accent,#1261a6); outline-offset:2px; }
 .style-section { display:grid; gap:8px; }.style-section h3,.style-section p { margin:0; }.style-section p { color:#667780; font-size:11px; line-height:1.5; }.style-section--separated { margin-top:4px; padding:12px; border:1px solid var(--db-border,#e3e9eb); border-radius:7px; background:#f8fafb; }.gradient-color-controls { display:grid; gap:7px; padding:9px; border:1px solid var(--db-border,#e3e9eb); border-radius:6px; background:#f8fbfc; }.background-mode { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; }.background-mode button { border:1px solid #d0d5dd; border-radius:5px; padding:6px 3px; background:#fff; color:#475467; font-size:11px; cursor:pointer; }.background-mode button.is-active { border-color:#1261a6; background:#edf6ff; color:#1261a6; font-weight:600; }
 .dashboard-page.is-presentation-mode { position: fixed; inset: 0; z-index: 3000; min-height: 100vh; overflow: auto; padding: 24px; color: var(--idmp-text-primary, #101828); }
