@@ -60,9 +60,9 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 
-const props = defineProps({ template: { type: Object, default: null }, widgetItem: { type: Object, default: null } })
+const props = defineProps({ template: { type: Object, default: null }, widgetItem: { type: Object, default: null }, disabled: { type: Boolean, default: false } })
 const root = ref(null)
 const visible = ref(false)
 const position = reactive({ left: 8, top: 8 })
@@ -101,9 +101,10 @@ function placePanel() {
   position.left = window.innerWidth - rect.right >= width + 14 ? rect.right + 12 : Math.max(8, rect.left - width - 12)
   position.top = Math.max(8, Math.min(window.innerHeight - height - 8, rect.top - 16))
 }
-function openImmediately() { clearTimer(); placePanel(); visible.value = true }
-function scheduleOpen() { clearTimer(); timer = window.setTimeout(openImmediately, 180) }
+function openImmediately() { clearTimer(); if (props.disabled) return; placePanel(); visible.value = true }
+function scheduleOpen() { clearTimer(); if (!props.disabled) timer = window.setTimeout(openImmediately, 180) }
 function scheduleClose() { clearTimer(); timer = window.setTimeout(() => { visible.value = false }, 120) }
+watch(() => props.disabled, value => { if (value) { clearTimer(); visible.value = false } })
 onBeforeUnmount(clearTimer)
 </script>
 

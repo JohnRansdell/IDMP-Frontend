@@ -211,8 +211,8 @@
         <p v-if="dashboardStatus === 'demo'" class="dashboard-demo-source" role="status">演示数据：用于功能预览，不是医院真实业务数据。</p>
         <section v-for="group in groupedWidgetLibrary" :key="group.name" class="studio-library-group" :aria-label="group.name">
           <h3>{{ group.name }}</h3>
-          <StudioHoverPreview v-for="item in group.items" :key="item.type" :widget-item="item">
-            <button :data-testid="`dashboard-library-${item.type}`" class="studio-library-item" :class="{ 'is-current': addWidgetType === item.type }" @click="addWidgetType = item.type">
+          <StudioHoverPreview v-for="item in group.items" :key="item.type" :widget-item="item" :disabled="drawPlacementMode || Boolean(pendingLibraryWidget)">
+            <button :data-testid="`dashboard-library-${item.type}`" class="studio-library-item" :class="{ 'is-current': addWidgetType === item.type }" @click="selectLibraryWidget(item.type)">
               <span class="studio-library-icon" aria-hidden="true">{{ item.icon }}</span><span><strong>{{ item.name }}</strong><small>{{ item.hint }}</small></span>
             </button>
           </StudioHoverPreview>
@@ -238,7 +238,7 @@
         <div class="studio-canvas-scroll">
         <DashboardFilterBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" @change="filterRuntimeValues = $event" />
         <DashboardContextBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :interactions="activeInteractionFilters" :drill-states="drillRuntimeState" :widgets="designerWidgets" @clear-filters="filterRuntimeValues = initialFilterValues(globalFilterDefinitions)" @clear-interactions="clearAllInteractionFilters" @clear-drills="clearAllWidgetDrills" />
-        <div v-if="!designerWidgets.length" class="studio-empty">
+        <div v-if="!designerWidgets.length && !pendingLibraryWidget" class="studio-empty">
           <span aria-hidden="true">▦</span><h2>创建你的第一个看板组件</h2><p>从左侧选择指标与组件，开始构建分析看板。</p>
           <el-button :disabled="!selectedDataSource" @click="addWidgetType = 'kpi'; addDashboardWidget()">添加 KPI</el-button>
         </div>
@@ -250,13 +250,17 @@
         :widgets="designerWidgets"
         :editable="true"
         :columns="editingDashboardSchema?.layout?.columns || 24"
-        :float="false"
+        :float="editingDashboardSchema?.layout?.float === true"
         :selected-widget-id="activeWidgetId"
         :selected-widget-ids="selectedWidgetIds"
         :primary-selected-widget-id="primarySelectedWidgetId"
+        :placement-mode="drawPlacementMode"
+        :pending-widget="pendingLibraryWidget"
         aria-label="GridStack 指标看板设计器"
         @widget-select="selectDesignerWidgets($event)"
         @layout-change="syncDesignerLayout($event, true)"
+        @widget-place="placeDesignerWidget"
+        @placement-cancel="cancelDrawPlacement"
       >
         <template #default="{ widget }">
           <WidgetRenderer
@@ -388,7 +392,7 @@
         <DashboardFilterBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" @change="filterRuntimeValues = $event" />
         <DashboardContextBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :interactions="activeInteractionFilters" :drill-states="drillRuntimeState" :widgets="designerWidgets" @clear-filters="filterRuntimeValues = initialFilterValues(globalFilterDefinitions)" @clear-interactions="clearAllInteractionFilters" @clear-drills="clearAllWidgetDrills" />
         <div class="dashboard-preview-frame">
-        <DashboardCanvas v-if="studioPreview" :style="dashboardCanvasStyle" :widgets="previewWidgets" :columns="24" :editable="false">
+        <DashboardCanvas v-if="studioPreview" :style="dashboardCanvasStyle" :widgets="previewWidgets" :columns="24" :float="editingDashboardSchema?.layout?.float === true" :editable="false">
           <template #default="{ widget }"><WidgetRenderer :widget="widget" :primary-kpi="visibleKpis[0]" :supporting-kpis="visibleKpis.slice(1)" :warnings="getWidgetWarnings(widget)" :warning-state="getWarningWidgetState(widget)" :ranking="departmentRanking" :department="department" :updated-at="dashboardQueryLabel" interactive :get-widget-kpi="getWidgetKpi" :get-title="getWidgetTitle" :get-description="getWidgetDescription" :get-icon="getWidgetIcon" :get-chart-option="getWidgetChartOption" :is-chart-empty="isChartEmpty" :get-chart-aria-label="getWidgetChartAriaLabel" :get-table-columns="getWidgetTableColumns" :get-table-rows="getWidgetTableRows" :get-pie-drill-targets="getWidgetPieDrillTargets" :get-pie-drill-source="getWidgetPieDrillSource" @chart-click="handleWidgetChartClick" /></template>
         </DashboardCanvas>
         </div>
@@ -665,6 +669,9 @@ const isEditing = ref(false)
 const dashboardEditLoading = ref(false)
 const selectedWidgetIds = ref([])
 const primarySelectedWidgetId = ref('')
+const drawPlacementMode = ref(false)
+const pendingLibraryWidget = ref(null)
+let libraryPlacementGeneration = 0
 // Selection is a Designer affordance only. It is deliberately not written to the schema.
 const selectedMetricItemId = ref('')
 const activeWidgetId = computed({
@@ -1553,11 +1560,14 @@ function addDashboardWidget() {
 }
 
 let designerWidgetSequence = 0
-async function addDesignerWidget() {
+async function prepareDesignerWidget(type = addWidgetType.value) {
   let source = selectedDataSource.value
-  if (!source && !['text', 'metric-group', 'warnings'].includes(addWidgetType.value)) return
+  if (!source && !['text', 'metric-group', 'warnings'].includes(type)) {
+    ElMessage.warning('请先选择指标数据')
+    return null
+  }
   try {
-    if (source && !['metric-group', 'warnings'].includes(addWidgetType.value)) {
+    if (source && !['text', 'metric-group', 'warnings'].includes(type)) {
       await ensureRemoteDataSourceFields(source.code, { required: source.origin === 'dashboard-data-source' })
       source = await hydrateIndicatorSource(source)
     }
@@ -1565,7 +1575,6 @@ async function addDesignerWidget() {
     ElMessage.warning(error?.message || '指标数据字段暂不可用，请稍后重试')
     return
   }
-  const type = addWidgetType.value
   let id
   do { id = `dashboard-widget-${Date.now()}-${++designerWidgetSequence}` } while (designerWidgets.value.some(widget => String(widget.id) === id))
   const metadata = type === 'metric-group'
@@ -1580,6 +1589,32 @@ async function addDesignerWidget() {
   const normalizedMetadata = normalizeWidgetMetadata(metadata)
   const dataBinding = !['text', 'metric-group', 'warnings'].includes(type) ? createDefaultBinding(bindingKind(normalizedMetadata), getBindingDatasets(normalizedMetadata)) : null
   const widget = { ...normalizedMetadata, ...(dataBinding ? { config: { ...normalizedMetadata.config, dataBinding } } : {}), layout: metadata.layout }
+  return widget
+}
+
+function cancelDrawPlacement() {
+  libraryPlacementGeneration++
+  pendingLibraryWidget.value = null
+  drawPlacementMode.value = false
+}
+
+async function selectLibraryWidget(type) {
+  cancelDrawPlacement()
+  addWidgetType.value = type
+  const generation = libraryPlacementGeneration
+  const widget = await prepareDesignerWidget(type)
+  if (!widget || generation !== libraryPlacementGeneration || !isEditing.value) return
+  activeWidgetId.value = ''
+  pendingLibraryWidget.value = widget
+  await nextTick()
+  if (generation === libraryPlacementGeneration && isEditing.value) drawPlacementMode.value = true
+}
+
+async function addDesignerWidget() {
+  cancelDrawPlacement()
+  const widget = await prepareDesignerWidget()
+  if (!widget || !isEditing.value) return
+  const id = widget.id
   editingDashboardSchema.value = { ...editingDashboardSchema.value, widgets: [...designerWidgets.value, widget] }
   markDashboardDirty()
   await nextTick()
@@ -1587,7 +1622,7 @@ async function addDesignerWidget() {
   syncDesignerLayout(designerCanvasRef.value?.getLayout() || [], false)
   activeWidgetId.value = id
   markDashboardDirty()
-  if (source?.origin === 'dashboard-data-source') void previewRemoteWidget(widget)
+  if (availableIndicatorSources.value.find(source => source.code === widget.sourceCode)?.origin === 'dashboard-data-source') void previewRemoteWidget(widget)
 }
 
 function deleteActiveWidget() {
@@ -1760,6 +1795,20 @@ async function commitPreciseLayout(patch) {
     editingDashboardSchema.value = { ...editingDashboardSchema.value, widgets: result.widgets }
     await applyDesignerWidgetsLayout(result.widgets)
   })
+}
+
+async function placeDesignerWidget({ id, layout }) {
+  const pending = pendingLibraryWidget.value
+  if (!isEditing.value || !pending || String(pending.id) !== String(id)) return
+  const result = validatePreciseLayout([...designerWidgets.value, pending], pending.id, layout, editingDashboardSchema.value.layout.columns)
+  if (!result.ok) { ElMessage.warning(result.reason); return }
+  cancelDrawPlacement()
+  await runDashboardHistoryTransaction(async () => {
+    editingDashboardSchema.value = { ...editingDashboardSchema.value, layout: { ...editingDashboardSchema.value.layout, float: true }, widgets: result.widgets }
+    await applyDesignerWidgetsLayout(result.widgets)
+  })
+  activeWidgetId.value = pending.id
+  if (availableIndicatorSources.value.find(source => source.code === pending.sourceCode)?.origin === 'dashboard-data-source') void previewRemoteWidget(result.widgets.find(item => item.id === pending.id))
 }
 
 async function applyDesignerWidgetsLayout(widgets) {
@@ -3052,6 +3101,8 @@ watch([remotePeriodRange, department], () => {
   else void loadDashboard()
 })
 watch(activeWidgetId, () => { selectedMetricItemId.value = '' })
+watch(selectedDataCode, cancelDrawPlacement)
+watch(isEditing, value => { if (!value) cancelDrawPlacement() })
 let remoteFilterReloadTimer
 watch(filterRuntimeValues, () => {
   if (!isEditing.value && isRemoteDashboard() && canRefreshCurrentRemoteDashboard.value) {

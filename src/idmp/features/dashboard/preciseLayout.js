@@ -5,6 +5,21 @@ const integer = value => Math.round(Number(value))
 export const percentageToGridWidth = (percent, columns = 24) => Math.round(Number(percent) * columns / 100)
 export const gridWidthToPercentage = (width, columns = 24) => Math.round(Number(width) / columns * 100)
 
+export function drawnRectangleToGridLayout(start, end, geometry, constraints = { minW: 1, minH: 1 }) {
+  const { columns, rows, cellWidth, cellHeight } = geometry
+  if (cellWidth <= 0 || cellHeight <= 0 || columns < 1 || rows < 1) return null
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
+  const minW = Math.min(columns, constraints.minW)
+  const minH = Math.min(rows, constraints.minH)
+  const x = clamp(Math.floor(Math.min(start.x, end.x) / cellWidth), 0, columns - minW)
+  const y = clamp(Math.floor(Math.min(start.y, end.y) / cellHeight), 0, rows - minH)
+  return {
+    x, y,
+    w: clamp(Math.ceil(Math.max(start.x, end.x) / cellWidth) - x, minW, columns - x),
+    h: clamp(Math.ceil(Math.max(start.y, end.y) / cellHeight) - y, minH, rows - y)
+  }
+}
+
 export async function applyWidgetLayoutToCanvas(canvas, widgets) {
   const requestedLayout = widgets.map(widget => ({ id: widget.id, ...widget.layout }))
   const appliedLayout = await canvas?.applyLayout(requestedLayout)

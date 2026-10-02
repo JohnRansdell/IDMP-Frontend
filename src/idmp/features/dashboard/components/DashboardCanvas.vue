@@ -3,7 +3,7 @@
     ref="gridElement"
     class="grid-stack dashboard-canvas"
     data-testid="dashboard-canvas"
-    :class="{ 'is-editable': editable, 'is-grid-interacting': interaction.active, 'is-marquee-selecting': marquee.active }"
+    :class="{ 'is-editable': editable, 'is-grid-interacting': interaction.active, 'is-marquee-selecting': marquee.active, 'is-drawing-placement': marquee.kind === 'placement' && marquee.active }"
     :style="gridStyle"
     :aria-label="ariaLabel"
     @click.self="handleCanvasClick"
@@ -11,8 +11,9 @@
     @pointermove="updateMarqueeSelection"
     @pointerup="finishMarqueeSelection"
     @pointercancel="cancelMarqueeSelection"
+    @lostpointercapture="cancelMarqueeSelection"
   >
-    <div v-if="editable && interaction.active" class="dashboard-grid-guide" :style="guideStyle" aria-hidden="true">
+    <div v-if="editable && (interaction.active || placementMode || (marquee.active && marquee.kind === 'placement'))" class="dashboard-grid-guide" :style="guideStyle" aria-hidden="true">
       <span
         v-for="cell in guideCells"
         :key="cell.index"
@@ -33,15 +34,19 @@
     >
       <template #default="slotProps"><DashboardWidgetBoundary :designer="editable"><slot :widget="slotProps.widget" /></DashboardWidgetBoundary></template>
     </DashboardWidget>
-    <div v-if="editable && marquee.active && marquee.moved" class="dashboard-marquee" :style="marqueeStyle" aria-hidden="true">
+    <div v-if="editable && placementMode && placementWidget" class="dashboard-draw-surface" data-testid="dashboard-draw-surface" />
+    <div v-if="editable && marquee.active && marquee.moved && marquee.kind === 'selection'" class="dashboard-marquee" :style="marqueeStyle" aria-hidden="true">
       <span class="dashboard-marquee__count">{{ marqueeHitIds.length }} 个组件</span>
+    </div>
+    <div v-if="editable && marquee.active && marquee.moved && placementPreview" class="dashboard-placement-preview" :class="{ 'is-invalid': !placementPreview.ok }" :style="placementStyle" data-testid="dashboard-placement-preview" aria-hidden="true">
+      <span class="dashboard-placement-preview__label">{{ placementPreview.ok ? `${placementPreview.layout.w} × ${placementPreview.layout.h}` : placementPreview.reason }}</span>
     </div>
     <output v-if="interaction.active" class="dashboard-canvas__size-feedback" :style="feedbackStyle" aria-live="polite">{{ interaction.w }} × {{ interaction.h }}</output>
   </section>
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { GridStack } from 'gridstack'
 import 'gridstack/dist/gridstack.min.css'
 import DashboardWidget from './DashboardWidget.vue'
@@ -49,6 +54,7 @@ import DashboardWidgetBoundary from './DashboardWidgetBoundary.vue'
 import { compareDashboardGridMembership, gridWidgetId } from '../gridMembership.js'
 import { getWidgetGridConstraints, serializeGridLayout } from '../gridLayout.js'
 import { getDashboardGridGeometry, normalizeWidgetSelectionId } from '../widgetCapabilities.js'
+import { drawnRectangleToGridLayout, validatePreciseLayout } from '../preciseLayout.js'
 
 const props = defineProps({
   widgets: { type: Array, default: () => [] },
@@ -60,19 +66,34 @@ const props = defineProps({
   ariaLabel: { type: String, default: 'Dashboard Grid' },
   selectedWidgetId: { type: String, default: '' },
   selectedWidgetIds: { type: Array, default: () => [] },
-  primarySelectedWidgetId: { type: String, default: '' }
+  primarySelectedWidgetId: { type: String, default: '' },
+  placementMode: { type: Boolean, default: false },
+  pendingWidget: { type: Object, default: null }
 })
-const emit = defineEmits(['widget-select', 'widget-remove', 'widget-configure', 'layout-change'])
+const emit = defineEmits(['widget-select', 'widget-remove', 'widget-configure', 'layout-change', 'widget-place', 'placement-cancel'])
 const gridElement = ref()
-const grid = ref(null)
+// GridStack's drag handlers compare instance identity against DOM-owned nodes.
+const grid = shallowRef(null)
 const registeredWidgetIds = new Set()
 const registrationJobs = new Map()
 let disposed = false
 let suppressCanvasClick = false
 let suppressCanvasClickTimer
 const interaction = reactive({ active: false, x: 0, y: 0, w: 0, h: 0 })
-const marquee = reactive({ active: false, moved: false, additive: false, pointerId: null, startX: 0, startY: 0, clientLeft: 0, clientTop: 0, clientRight: 0, clientBottom: 0, x: 0, y: 0, width: 0, height: 0 })
+const marquee = reactive({ active: false, moved: false, kind: 'selection', widgetId: '', additive: false, pointerId: null, startX: 0, startY: 0, lastClientX: 0, lastClientY: 0, clientLeft: 0, clientTop: 0, clientRight: 0, clientBottom: 0, x: 0, y: 0, width: 0, height: 0 })
 const marqueeHitIds = ref([])
+const placementWidget = computed(() => props.pendingWidget)
+const placementPreview = computed(() => {
+  if (!marquee.active || marquee.kind !== 'placement') return null
+  const widget = placementWidget.value
+  if (String(widget?.id) !== marquee.widgetId) return null
+  if (!widget) return null
+  const layout = drawnRectangleToGridLayout(
+    { x: marquee.x, y: marquee.y }, { x: marquee.x + marquee.width, y: marquee.y + marquee.height },
+    gridGeometry, getWidgetGridConstraints(widget))
+  const widgets = props.pendingWidget ? [...props.widgets, props.pendingWidget] : props.widgets
+  return layout ? { ...validatePreciseLayout(widgets, widget.id, layout, gridGeometry.columns), layout } : null
+})
 const gridGeometry = reactive(getDashboardGridGeometry(props.columns, 0, props.cellHeight, props.margin, 1))
 const gridStyle = computed(() => ({ '--dashboard-guide-height': `${gridGeometry.rows * gridGeometry.cellHeight}px` }))
 const guideStyle = computed(() => ({
@@ -87,7 +108,10 @@ const guideCells = computed(() => Array.from({ length: gridGeometry.columns * gr
   const y = Math.floor(index / gridGeometry.columns)
   return {
     index,
-    targeted: interaction.active && x >= interaction.x && x < interaction.x + interaction.w && y >= interaction.y && y < interaction.y + interaction.h
+    targeted: (() => {
+      const target = placementPreview.value?.layout || (interaction.active ? interaction : null)
+      return target && x >= target.x && x < target.x + target.w && y >= target.y && y < target.y + target.h
+    })()
   }
 }))
 const feedbackStyle = computed(() => ({
@@ -95,6 +119,10 @@ const feedbackStyle = computed(() => ({
   top: `${interaction.y * gridGeometry.cellHeight + 8}px`
 }))
 const marqueeStyle = computed(() => ({ left: `${marquee.x}px`, top: `${marquee.y}px`, width: `${marquee.width}px`, height: `${marquee.height}px` }))
+const placementStyle = computed(() => {
+  const layout = placementPreview.value?.layout
+  return layout ? { left: `${layout.x * gridGeometry.cellWidth}px`, top: `${layout.y * gridGeometry.cellHeight}px`, width: `${layout.w * gridGeometry.cellWidth}px`, height: `${layout.h * gridGeometry.cellHeight}px` } : {}
+})
 let isApplyingSchema = false
 let userInteractionActive = false
 let geometryObserver
@@ -103,11 +131,12 @@ function selectWidget(widgetId) {
 }
 function isWidgetSelected(widgetId) {
   const id = String(widgetId)
-  if (!marquee.active || !marquee.moved) return props.selectedWidgetIds.includes(id)
+  if (!marquee.active || !marquee.moved || marquee.kind === 'placement') return props.selectedWidgetIds.includes(id)
   return marqueeHitIds.value.includes(id) || (marquee.additive && props.selectedWidgetIds.includes(id))
 }
 function handleCanvasClick() {
-  if (!suppressCanvasClick) selectWidget('')
+  if (!suppressCanvasClick && !props.placementMode) selectWidget('')
+  suppressCanvasClick = false
 }
 function isMarqueeOrigin(target) {
   return target instanceof Element && !target.closest('.dashboard-widget, button, input, select, textarea, a, [contenteditable="true"]')
@@ -115,16 +144,20 @@ function isMarqueeOrigin(target) {
 function setMarqueeRectangle(clientX, clientY) {
   const canvasRect = gridElement.value?.getBoundingClientRect()
   if (!canvasRect) return
-  const currentX = Math.min(Math.max(clientX, canvasRect.left), canvasRect.right)
-  const currentY = Math.min(Math.max(clientY, canvasRect.top), canvasRect.bottom)
-  marquee.clientLeft = Math.min(marquee.startX, currentX)
-  marquee.clientTop = Math.min(marquee.startY, currentY)
-  marquee.clientRight = Math.max(marquee.startX, currentX)
-  marquee.clientBottom = Math.max(marquee.startY, currentY)
-  marquee.x = marquee.clientLeft - canvasRect.left
-  marquee.y = marquee.clientTop - canvasRect.top
-  marquee.width = marquee.clientRight - marquee.clientLeft
-  marquee.height = marquee.clientBottom - marquee.clientTop
+  const scaleX = canvasRect.width / gridElement.value.offsetWidth || 1
+  const scaleY = canvasRect.height / gridElement.value.offsetHeight || 1
+  const currentX = Math.min(Math.max((clientX - canvasRect.left) / scaleX, 0), gridElement.value.clientWidth)
+  const currentY = Math.min(Math.max((clientY - canvasRect.top) / scaleY, 0), gridElement.value.clientHeight)
+  marquee.lastClientX = clientX
+  marquee.lastClientY = clientY
+  marquee.x = Math.min(marquee.startX, currentX)
+  marquee.y = Math.min(marquee.startY, currentY)
+  marquee.width = Math.abs(currentX - marquee.startX)
+  marquee.height = Math.abs(currentY - marquee.startY)
+  marquee.clientLeft = canvasRect.left + marquee.x * scaleX
+  marquee.clientTop = canvasRect.top + marquee.y * scaleY
+  marquee.clientRight = marquee.clientLeft + marquee.width * scaleX
+  marquee.clientBottom = marquee.clientTop + marquee.height * scaleY
 }
 function collectMarqueeHits() {
   if (!gridElement.value || !marquee.moved) return []
@@ -138,15 +171,18 @@ function collectMarqueeHits() {
     .filter(Boolean)
 }
 function startMarqueeSelection(event) {
-  if (!props.editable || interaction.active || event.button !== 0 || event.pointerType === 'touch' || !isMarqueeOrigin(event.target)) return
+  if (!props.editable || interaction.active || marquee.active || event.button !== 0 || event.pointerType === 'touch' || !isMarqueeOrigin(event.target)) return
   const canvasRect = gridElement.value?.getBoundingClientRect()
   if (!canvasRect) return
+  suppressCanvasClick = false
   marquee.active = true
   marquee.moved = false
   marquee.additive = event.ctrlKey || event.metaKey || event.shiftKey
+  marquee.kind = props.placementMode && placementWidget.value ? 'placement' : 'selection'
+  marquee.widgetId = marquee.kind === 'placement' ? String(placementWidget.value.id) : ''
   marquee.pointerId = event.pointerId
-  marquee.startX = Math.min(Math.max(event.clientX, canvasRect.left), canvasRect.right)
-  marquee.startY = Math.min(Math.max(event.clientY, canvasRect.top), canvasRect.bottom)
+  marquee.startX = Math.min(Math.max(event.clientX - canvasRect.left, 0), canvasRect.width) * (gridElement.value.offsetWidth / canvasRect.width || 1)
+  marquee.startY = Math.min(Math.max(event.clientY - canvasRect.top, 0), canvasRect.height) * (gridElement.value.offsetHeight / canvasRect.height || 1)
   marqueeHitIds.value = []
   setMarqueeRectangle(event.clientX, event.clientY)
   event.currentTarget.setPointerCapture?.(event.pointerId)
@@ -156,31 +192,51 @@ function updateMarqueeSelection(event) {
   if (!marquee.active || event.pointerId !== marquee.pointerId) return
   setMarqueeRectangle(event.clientX, event.clientY)
   marquee.moved = marquee.moved || marquee.width >= 4 || marquee.height >= 4
-  marqueeHitIds.value = collectMarqueeHits()
+  if (marquee.kind === 'selection') marqueeHitIds.value = collectMarqueeHits()
 }
 function resetMarqueeSelection() {
   marquee.active = false
   marquee.moved = false
   marquee.pointerId = null
+  marquee.widgetId = ''
   marqueeHitIds.value = []
 }
 function finishMarqueeSelection(event) {
   if (!marquee.active || event.pointerId !== marquee.pointerId) return
+  updateMarqueeSelection(event)
   const moved = marquee.moved
   const additive = marquee.additive
   const ids = [...marqueeHitIds.value]
-  if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  const placement = marquee.kind === 'placement' && placementPreview.value
+    ? { id: marquee.widgetId, layout: { ...placementPreview.value.layout } } : null
   resetMarqueeSelection()
+  if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
   if (!moved) return
   suppressCanvasClick = true
   clearTimeout(suppressCanvasClickTimer)
   suppressCanvasClickTimer = setTimeout(() => { suppressCanvasClick = false }, 0)
-  emit('widget-select', { ids, additive, source: 'marquee' })
+  if (placement) emit('widget-place', placement)
+  else emit('widget-select', { ids, additive, source: 'marquee' })
 }
 function cancelMarqueeSelection(event) {
   if (!marquee.active || event.pointerId !== marquee.pointerId) return
-  if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  cancelCanvasGesture()
+}
+function cancelCanvasGesture() {
+  const pointerId = marquee.pointerId
+  if (marquee.active) suppressCanvasClick = true
   resetMarqueeSelection()
+  if (gridElement.value?.hasPointerCapture?.(pointerId)) gridElement.value.releasePointerCapture(pointerId)
+}
+function onCanvasKeydown(event) {
+  if (event.key !== 'Escape' || (!marquee.active && !props.placementMode)) return
+  cancelCanvasGesture()
+  emit('placement-cancel')
+  event.preventDefault()
+  event.stopPropagation()
+}
+function refreshCanvasGesture() {
+  if (marquee.active) updateMarqueeSelection({ pointerId: marquee.pointerId, clientX: marquee.lastClientX, clientY: marquee.lastClientY })
 }
 
 // Vue owns widget membership and content. Save the currently displayed column layout;
@@ -312,13 +368,14 @@ function synchronizeWidgetConstraint(widgetId) {
   const locked = widget.config?.locked === true
   // Explicit false values are required when a previously locked node is unlocked:
   // GridStack retains omitted node flags from the prior update.
-  const constraints = { ...getWidgetGridConstraints(widget), noMove: locked, noResize: locked }
+  const movable = !locked && !props.placementMode
+  const constraints = { ...getWidgetGridConstraints(widget), noMove: !movable, noResize: !movable }
   applySchemaOperation(() => {
     grid.value.update(element, constraints)
     // GridStack's node flags alone do not always update the live DD handlers.
     // Update both APIs so a persisted lock immediately disables drag and resize.
-    grid.value.movable(element, !locked)
-    grid.value.resizable(element, !locked)
+    grid.value.movable(element, movable)
+    grid.value.resizable(element, movable)
   })
 }
 function synchronizeAllWidgetConstraints() {
@@ -354,9 +411,15 @@ watch(() => props.widgets.map((widget) => {
   synchronizeAllWidgetConstraints()
 }, { flush: 'post' })
 watch(() => props.editable, setEditable)
-watch(() => props.editable, value => { if (!value) resetMarqueeSelection() })
+watch(() => props.float, value => { applySchemaOperation(() => grid.value?.float(value)); refreshGridGeometry() })
+watch(() => props.editable, value => { if (!value) cancelCanvasGesture() })
+watch(() => props.placementMode, () => { cancelCanvasGesture(); synchronizeAllWidgetConstraints() })
+watch(() => placementWidget.value?.id, cancelCanvasGesture)
 
 onMounted(async () => {
+  window.addEventListener('keydown', onCanvasKeydown, true)
+  window.addEventListener('scroll', refreshCanvasGesture, true)
+  window.addEventListener('blur', cancelCanvasGesture)
   await nextTick()
   if (disposed) return
   grid.value = GridStack.init({
@@ -384,6 +447,10 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => {
   disposed = true
+  cancelCanvasGesture()
+  window.removeEventListener('keydown', onCanvasKeydown, true)
+  window.removeEventListener('scroll', refreshCanvasGesture, true)
+  window.removeEventListener('blur', cancelCanvasGesture)
   clearTimeout(suppressCanvasClickTimer)
   geometryObserver?.disconnect()
   grid.value?.destroy(false)
@@ -397,6 +464,12 @@ onBeforeUnmount(() => {
 }
 .dashboard-canvas.is-editable:not(.is-grid-interacting) { cursor: crosshair; }
 .dashboard-canvas.is-marquee-selecting { user-select: none; }
+.dashboard-canvas.is-drawing-placement { touch-action: none; }
+.dashboard-draw-surface { position: absolute; inset: 0; z-index: 10000; cursor: crosshair; touch-action: none; }
+.dashboard-placement-preview { position: absolute; z-index: 10002; box-sizing: border-box; border: 2px solid #1261a6; background: rgba(18, 97, 166, .12); pointer-events: none; }
+.dashboard-placement-preview.is-invalid { border-color: #b4232c; background: rgba(180, 35, 44, .1); }
+.dashboard-placement-preview__label { position: absolute; left: 4px; top: 4px; max-width: max(100%, 180px); padding: 3px 7px; border-radius: 3px; color: #fff; background: #1261a6; font-size: 12px; line-height: 18px; }
+.is-invalid .dashboard-placement-preview__label { background: #b4232c; }
 .dashboard-canvas.dashboard-surface {
   /* Keep Dashboard.vue's image/overlay composition intact on the inner canvas. */
   background-color: var(--dashboard-background, #ffffff);
