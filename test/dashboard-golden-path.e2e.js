@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runBindingGoldenPath } from './dashboard-binding-golden-path.js'
 import { runMembershipGoldenPath } from './dashboard-membership-golden-path.js'
+import { runDrawPlacementGoldenPath } from './dashboard-draw-placement-golden-path.js'
 
 class Cdp {
   constructor(url) {
@@ -46,6 +47,7 @@ class Cdp {
 const appPort = 41739
 const debugPort = 41740
 const previewSmokeMode = process.env.VITE_DASHBOARD_PREVIEW_MODE === '1'
+const placementOnlyMode = process.env.DASHBOARD_PLACEMENT_ONLY === '1'
 // Preview mode provides data fallbacks, but it does not select a populated
 // dashboard. Select the existing quality-safety scene through its supported
 // managed-dashboard route rather than relying on an empty default catalog.
@@ -103,7 +105,9 @@ try {
   }
 
   const initialCount = await value(cdp, `document.querySelectorAll('[data-testid="dashboard-canvas"] .grid-stack-item').length`)
-  if (previewSmokeMode) {
+  if (placementOnlyMode) {
+    await runDrawPlacementGoldenPath(cdp, { click, value, waitFor, delay, gridNode })
+  } else if (previewSmokeMode) {
     const firstWidget = await value(cdp, `(() => { const widget = document.querySelector('[data-testid="dashboard-canvas"] .grid-stack-item'); return { id: widget?.getAttribute('data-widget-id') || '', type: widget?.querySelector('[data-widget-type]')?.getAttribute('data-widget-type') || widget?.querySelector('[class*="widget"]')?.className || '' }; })()`)
     assert.ok(initialCount > 0, 'preview smoke dashboard must render at least one widget')
     await click(cdp, '[data-testid="dashboard-canvas"] .grid-stack-item')
@@ -293,6 +297,7 @@ async function value(cdp, expression) {
 
 async function click(cdp, selector) {
   const point = await rect(cdp, selector)
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y })
   await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', clickCount: 1 })
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', clickCount: 1 })
   await delay(150)
