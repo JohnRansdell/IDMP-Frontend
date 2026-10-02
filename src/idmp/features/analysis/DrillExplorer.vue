@@ -188,6 +188,25 @@ function emptyResult() {
   return { context: {}, breadcrumb: [], summary: {}, columns: [], records: [], nextLevels: [], pageInfo: { total: 0 }, dataSource: 'live' }
 }
 
+function getReportSnapshot() {
+  if (isFactorTraceMode.value) return {
+    loading: factorTraceLoading.value,
+    section: { title: '当前因子结果追溯', description: errorMessage.value || '',
+      columns: ['公式角色', '因子', '因子版本', '结果匹配', '结果值', '质量状态'],
+      rows: (factorTrace.value?.factors || []).map(item => [formulaRoleLabel(item.formulaRole), item.factorName,
+        item.factorVersionId, item.resultMatched ? '已匹配' : '未匹配', item.result?.displayValue ?? item.result?.value,
+        item.result?.qualityStatus ? getStatusLabel(item.result.qualityStatus) : '-'].map(value => String(value ?? '-'))) }
+  }
+  const columns = visibleColumns.value
+  return { loading: loading.value, section: {
+    title: `当前下钻结果：${currentLevelLabel.value}`,
+    description: errorMessage.value || `${resolvedPeriod.value}；路径：${result.value.breadcrumb.map(item => item.label).join(' / ')}；已加载 ${memberRecords.value.length} 条 / 共 ${result.value.pageInfo.total || 0} 条`,
+    columns: columns.length ? columns.map(column => column.label) : ['结果'],
+    rows: columns.length ? memberRecords.value.map(row => columns.map(column => String(row[column.field] ?? '-'))) : []
+  } }
+}
+defineExpose({ getReportSnapshot })
+
 function formulaRoleLabel(role) {
   return { NUMERATOR: '分子', DENOMINATOR: '分母' }[String(role || '').toUpperCase()] || role || '-'
 }

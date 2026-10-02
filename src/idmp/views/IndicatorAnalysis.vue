@@ -48,7 +48,7 @@
       :title="analysisErrorMessage || rangeSummaryErrorMessage"
     />
     <div class="instant-query-export">
-      <el-button :icon="Download" @click="showUnavailable('PDF 导出')">导出PDF</el-button>
+      <el-button :icon="Download" :loading="pdfExportLoading" :disabled="!canExportPdf" @click="exportAnalysisPdf">导出PDF</el-button>
     </div>
     <section v-if="selectedBackendIndicator && (backendAnalysisGranularity !== 'STATIC' || indicatorRuntimeParameters.length)" class="surface-card instant-query-panel" aria-label="即时查询条件">
       <div class="instant-query-panel__heading">
@@ -322,6 +322,7 @@
 
         <el-tab-pane label="下钻分析" name="drill">
           <DrillExplorer
+            ref="drillExplorerRef"
             v-if="drillResultId"
             :result-id="drillResultId"
             :path-result-ids="drillPathResultIds"
@@ -401,6 +402,8 @@ import { getStatusLabel } from '@/idmp/design/status'
 import { periodOptions } from '@/idmp/features/analysis/indicatorProfiles'
 import { resolvePrimaryAnalysisOverview } from '@/idmp/features/dashboard/visualization'
 import { buildSqlRuntimeParameterValues, collectSqlRuntimeParameters, validateSqlRuntimeParameterValues } from '@/idmp/api/adapters/sqlImport'
+import { exportIndicatorAnalysisPdf } from '@/idmp/api/modules/indicators'
+import { analysisPdfFilename, buildAnalysisPdfReport, downloadAnalysisPdf, renderAnalysisChartPng } from '@/idmp/features/analysis/pdfReport'
 
 const route = useRoute()
 const router = useRouter()
@@ -449,6 +452,12 @@ const trendGrainApplied = ref({})
 const showDataDiagnostics = ref(false)
 const indicatorRuntimeParameterValues = ref({})
 const runtimeQueryResult = ref(null)
+const reportParameterSnapshot = ref({})
+const scenarioComparisonAppliedRange = ref([])
+const drillExplorerRef = ref()
+const pdfExportLoading = ref(false)
+const canExportPdf = computed(() => Boolean(selectedBackendIndicator.value && currentIndicatorVersionId.value)
+  && !mortalityChainLoading.value && !rangeSummaryLoading.value && !trendLoading.value && !scenarioComparisonLoading.value)
 
 function parseDrillParentKeys(value) {
   const text = Array.isArray(value) ? value[0] : value
@@ -953,8 +962,51 @@ const metricToneClass = (tone) => {
   return ''
 }
 
-const showUnavailable = (capability) => {
-  ElMessage.info(`${capability}尚未接入真实接口。`)
+async function exportAnalysisPdf() {
+  if (!canExportPdf.value || pdfExportLoading.value) return
+  pdfExportLoading.value = true
+  try {
+    const drill = activeTab.value === 'drill' ? drillExplorerRef.value?.getReportSnapshot() : null
+    if (drill?.loading) throw new Error('下钻结果仍在加载，请稍后再导出。')
+    const indicatorId = String(selectedBackendIndicator.value.id || selectedBackendIndicator.value.indicatorId)
+    const versionId = currentIndicatorVersionId.value
+    const filename = analysisPdfFilename(currentProfile.value.name, versionId)
+    const scenarios = scenarioComparisonScenarios.value.flatMap(scene => {
+      const name = scene.scenarioName || scene.name || scene.scenarioCode || '-'
+      return scene.points?.length ? scene.points.map(point => [name,
+        formatPeriodLabel(point.periodStart, point.periodEnd), scenePointValue(point), point.numeratorValue,
+        point.denominatorValue, displayStatus(point.outcomeStatus || point.qualityStatus), point.resultId, point.snapshotId])
+        : [[name, '-', '-', '-', '-', displayStatus(scene.resultAvailability), '-', '-']]
+    })
+    const overview = analysisOverview.value || {}
+    const report = buildAnalysisPdfReport({
+      versionId, primaryMetric: primaryMetric.value, summaryMetrics: summaryMetrics.value,
+      metadata: [
+        ['报告期', reportPeriodLabel.value], ['结果来源', analysisSourceLabel.value],
+        ['运行参数', rangeSummary.value ? JSON.stringify(reportParameterSnapshot.value) : '未执行即时查询'],
+        ['趋势时间', formatRange(analysisPeriodRange.value) || '全部已加载正式周期'],
+        ['趋势统计粒度', backendAnalysisGranularity.value === 'STATIC' ? '静态' : period.value],
+        ['组合粒度筛选', Object.keys(trendGrainApplied.value).length ? JSON.stringify(trendGrainApplied.value) : '全部'],
+        ['场景对比时间', formatRange(scenarioComparisonAppliedRange.value) || '全部已加载正式周期']
+      ],
+      trendRows: trendTableRows.value, hasPeerTrend: hasPeerTrend.value, unit: currentProfile.value.unit,
+      trendDescription: `统计粒度：${backendAnalysisGranularity.value === 'STATIC' ? '静态' : period.value}；时间范围：${formatRange(analysisPeriodRange.value) || '全部已加载正式周期'}`,
+      chartPng: trendTableRows.value.length ? renderAnalysisChartPng(trendOption.value) : null,
+      rankRows: rankTableData.value, scenarioRows: scenarios,
+      scenarioDescription: scenarioComparisonError.value || '各场景保留各自原始统计周期，不跨场景合并。',
+      provenance: [
+        ['计算公式', indicatorDataExplanation.value.formulaText],
+        ...indicatorDataExplanation.value.operands.map(item => [item.role === 'NUMERATOR' ? '分子因子版本' : item.role === 'DENOMINATOR' ? '分母因子版本' : '参与因子版本', item.factorVersionIds.join('、')]),
+        ['正式分析结果 ID', overview.resultId], ['正式分析快照 ID', overview.snapshotId],
+        ['计算批次', analysisMetadata.value.batch], ['数据更新时间', analysisUpdatedAt.value],
+        ['结果说明', analysisErrorMessage.value || rangeSummaryErrorMessage.value || analysisNotice.value?.message || '结果可用']
+      ], drillSection: drill?.section
+    })
+    const blob = await exportIndicatorAnalysisPdf(indicatorId, report)
+    downloadAnalysisPdf(blob, filename)
+    ElMessage.success('PDF 已导出')
+  } catch (error) { ElMessage.error(error?.message || 'PDF 导出失败，请稍后重试。') }
+  finally { pdfExportLoading.value = false }
 }
 
 const scrollToSceneComparison = () => {
@@ -979,6 +1031,7 @@ async function loadScenarioComparison() {
   scenarioComparisonLoaded.value = false
   if (!target) return
   scenarioComparisonLoading.value = true
+  const appliedRange = [...scenarioComparisonPeriodRange.value]
   try {
     const response = await fetchIndicatorScenarioComparison(target.indicatorId, {
       indicatorVersionId: target.indicatorVersionId,
@@ -990,6 +1043,7 @@ async function loadScenarioComparison() {
     const result = await reconcileScenarioComparisonRoots(response)
     if (sequence !== scenarioComparisonSequence) return
     scenarioComparison.value = result
+    scenarioComparisonAppliedRange.value = appliedRange
     mergeScenarioComparisonOptions(result?.scenarios)
     void loadScenarioComparisonOptions(target)
     scenarioComparisonLoaded.value = true
@@ -1351,6 +1405,7 @@ async function loadRangeSummary() {
     const result = await queryIndicatorVersion(versionId, payload)
     if (requestSequence === rangeSummaryRequestSequence) {
       rangeSummary.value = normalizeIndicatorInstantSummary(result, periodStart, periodEnd)
+      reportParameterSnapshot.value = result.parameterSnapshot || payload.parameters || {}
       if (indicatorRuntimeParameters.value.length) runtimeQueryResult.value = result
     }
   } catch (error) {
@@ -2796,6 +2851,31 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
 }
 
 @media (max-width: 720px) {
+  :deep(.page-heading) {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  :deep(.page-heading__main),
+  :deep(.page-heading__actions) {
+    width: 100%;
+  }
+
+  :deep(.page-heading h1) {
+    font-size: 20px;
+    overflow-wrap: anywhere;
+    letter-spacing: 0;
+  }
+
+  .page-toolbar {
+    width: 100%;
+  }
+
+  .header-indicator-select {
+    width: 100%;
+    min-width: 0;
+  }
+
   .instant-query-panel {
     padding: var(--idmp-space-4);
   }

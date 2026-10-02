@@ -216,6 +216,44 @@ export function createApiError(status, payload = {}, path = '') {
   return error
 }
 
+export async function requestPdf(path, body, { timeoutMs = 60000, skipSessionRecovery = false } = {}) {
+  const controller = new AbortController()
+  let didTimeout = false
+  const timer = setTimeout(() => { didTimeout = true; controller.abort() }, timeoutMs)
+  try {
+    const token = getAccessToken()
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      method: 'POST', credentials: 'include', signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', Accept: 'application/pdf', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(body)
+    })
+    const contentType = response.headers.get('Content-Type') || ''
+    if (!response.ok || !contentType.toLowerCase().startsWith('application/pdf')) {
+      const text = await response.text()
+      const payload = parseJsonPreservingLargeIntegers(text) || {
+        message: response.status === 413 ? '导出内容过大，请缩小分析时间范围后重试。' : 'PDF 导出失败，请稍后重试。'
+      }
+      if (response.status === 401) {
+        if (!skipSessionRecovery && sessionRecoveryHandler && await sessionRecoveryHandler()) {
+          return requestPdf(path, body, { timeoutMs, skipSessionRecovery: true })
+        }
+        clearAccessToken()
+        if (!skipSessionRecovery && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('idmp:unauthorized', { detail: { path } }))
+      }
+      throw createApiError(response.ok ? 422 : response.status, payload, path)
+    }
+    const blob = await response.blob()
+    if (!blob.size || blob.size > 20_000_000 || await blob.slice(0, 5).text() !== '%PDF-') {
+      throw new Error('服务未返回有效的 PDF 文件，请稍后重试。')
+    }
+    return blob
+  } catch (error) {
+    if (error?.name === 'AbortError' && didTimeout) throw new Error('PDF 导出超时，请缩小分析范围后重试。')
+    if (error instanceof TypeError) throw new Error('无法连接服务，请检查网络后重试。')
+    throw error
+  } finally { clearTimeout(timer) }
+}
+
 function parseJsonPreservingLargeIntegers(text) {
   if (!text) return null
 

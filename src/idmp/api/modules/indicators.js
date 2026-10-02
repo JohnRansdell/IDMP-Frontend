@@ -1,4 +1,4 @@
-import { requestJson } from '@/idmp/api/request'
+import { requestJson, requestPdf } from '@/idmp/api/request'
 import { normalizeIndicatorAnalysisParams, normalizeIndicatorRangeSummaryParams } from '@/idmp/api/adapters/indicator'
 
 export function fetchIndicators(params = {}) {
@@ -136,6 +136,10 @@ export function fetchIndicatorAnalysis(indicatorId, params = {}) {
     `/analysis/indicators/${indicatorId}/analysis`,
     normalizeIndicatorAnalysisParams(params)
   ))
+}
+
+export function exportIndicatorAnalysisPdf(indicatorId, report) {
+  return requestPdf(`/analysis/indicators/${encodeURIComponent(indicatorId)}/export/pdf`, report)
 }
 
 export function fetchIndicatorGrainOptions(indicatorId, params = {}) {
