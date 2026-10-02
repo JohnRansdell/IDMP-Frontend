@@ -16,7 +16,7 @@
 
     <section class="surface-card editor-card">
       <el-alert title="通过表单定义可复用因子的技术边界。系统会自动生成模板 DSL；业务人员后续只能填写“模板参数”中标记为暴露的项目。" type="info" :closable="false" />
-      <el-form ref="formRef" :model="form" :rules="rules" label-position="top" :disabled="!editable && !isCreate">
+      <el-form ref="formRef" :model="form" :rules="rules" label-position="top" :disabled="!editable && !isCreate" @submit.prevent>
         <div class="step-title"><span>1</span><div><h2>基本信息</h2><p>描述模板的业务用途和适用范围。</p></div></div>
         <div class="grid">
           <el-form-item label="模板编码" prop="code"><el-input v-model.trim="form.code" :disabled="!isCreate" placeholder="例如 COUNT_BY_DOMAIN" /></el-form-item>
@@ -26,14 +26,17 @@
         <el-form-item label="模板说明"><el-input v-model="form.description" type="textarea" :rows="2" placeholder="说明模板适用的指标口径和使用边界" /></el-form-item>
 
         <el-divider />
-        <div class="step-title"><span>2</span><div><h2>数据语义与计算定义</h2><p>只选择已发布的数据域、语义表和语义字段，不录入物理表名或 SQL。</p></div></div>
+        <div class="step-title"><span>2</span><div><h2>数据来源与计算定义</h2></div></div>
         <div class="grid">
           <el-form-item label="主数据域" prop="domainCode"><el-select v-model="designer.domainCode" filterable :loading="loading.domains" placeholder="请选择已发布数据域" @change="handleDomainChange"><el-option v-for="domain in domains" :key="domain.id || domain.code" :label="optionLabel(domain)" :value="domain.code" /></el-select></el-form-item>
-          <el-form-item label="语义表"><el-select v-model="designer.tableCode" filterable clearable :disabled="!designer.domainCode" :loading="loading.tables" placeholder="可选：选择数据域中的语义表" @change="loadFields"><el-option v-for="table in tables" :key="table.code" :label="optionLabel(table)" :value="table.code" /></el-select></el-form-item>
+          <el-form-item label="物理表" required><el-select v-model="designer.tableName" filterable :disabled="!designer.domainCode" :loading="loading.tables" placeholder="请选择数据域中的物理表" @change="handleTableChange"><el-option v-for="table in tables" :key="table.tableName" :label="optionLabel({ name: table.tableComment, code: table.tableName })" :value="table.tableName" /></el-select></el-form-item>
           <el-form-item label="聚合方式" prop="aggregation"><el-select v-model="designer.aggregation"><el-option v-for="item in aggregationOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
         </div>
-        <el-form-item label="聚合字段"><el-select v-model="designer.fieldCode" filterable clearable :disabled="!designer.tableCode" placeholder="COUNT 可留空统计记录数；其他聚合方式需选择字段"><el-option v-for="field in aggregatableFields" :key="field.code" :label="optionLabel({ name: field.label, code: field.code })" :value="field.code" /></el-select></el-form-item>
-        <el-alert v-if="designer.aggregation !== 'COUNT' && !designer.fieldCode" type="warning" :closable="false" title="除记录计数外，其他聚合方式应选择一个语义字段。" />
+        <el-form-item label="聚合字段"><el-select v-model="designer.fieldCode" filterable clearable :disabled="!designer.tableName" placeholder="COUNT 可留空统计记录数；其他聚合方式需选择字段"><el-option v-for="field in aggregatableFields" :key="field.code" :label="optionLabel({ name: field.label, code: field.code })" :value="field.code" /></el-select></el-form-item>
+        <div class="grid">
+          <el-form-item label="计算模式"><el-radio-group v-model="designer.calculationMode"><el-radio value="TEMPORAL">时序</el-radio><el-radio value="STATIC">静态</el-radio></el-radio-group></el-form-item>
+          <el-form-item v-if="designer.calculationMode === 'TEMPORAL'" label="周期时间字段" required><el-select v-model="designer.periodFieldCode" filterable :disabled="!designer.tableName" placeholder="请选择日期或时间字段"><el-option v-for="field in timeFields" :key="field.code" :label="optionLabel({ name: field.label, code: field.code })" :value="field.code" /></el-select></el-form-item>
+        </div>
 
         <el-divider />
         <div class="step-title"><span>3</span><div><h2>输出、粒度与下钻</h2><p>定义模板产出的值类型，以及业务人员可选的时间粒度和下钻路径。</p></div></div>
@@ -51,7 +54,7 @@
           <el-table-column label="参数编码" min-width="150"><template #default="{ row }"><el-input v-model.trim="row.code" placeholder="例如 COUNT_FIELD" /></template></el-table-column>
           <el-table-column label="业务名称" min-width="150"><template #default="{ row }"><el-input v-model.trim="row.displayName" placeholder="例如 计数字段" /></template></el-table-column>
           <el-table-column label="类型" width="150"><template #default="{ row }"><el-select v-model="row.dataType"><el-option label="标准编码（CODE）" value="CODE" /><el-option label="字段引用" value="FIELD_REF" /><el-option label="值集" value="VALUE_SET" /><el-option label="文本" value="STRING" /><el-option label="数值" value="DECIMAL" /><el-option label="日期时间" value="DATETIME" /><el-option label="布尔" value="BOOLEAN" /></el-select></template></el-table-column>
-          <el-table-column label="默认值" min-width="130"><template #default="{ row }"><el-input v-model="row.defaultValue" /></template></el-table-column>
+          <el-table-column label="默认值" min-width="130"><template #default="{ row }"><el-input-number v-if="['DECIMAL', 'NUMBER', 'INTEGER'].includes(row.dataType)" v-model="row.defaultValue" :precision="row.dataType === 'INTEGER' ? 0 : undefined" /><el-select v-else-if="row.dataType === 'BOOLEAN'" v-model="row.defaultValue" clearable><el-option label="是" :value="true" /><el-option label="否" :value="false" /></el-select><el-input v-else v-model="row.defaultValue" /></template></el-table-column>
           <el-table-column label="值来源" min-width="150"><template #default="{ row }"><el-select v-model="row.valueSourceType"><el-option label="固定枚举" value="FIXED" /><el-option label="手工输入" value="MANUAL" /><el-option label="语义字段" value="SEMANTIC_FIELD" /><el-option label="值集" value="VALUE_SET" /><el-option label="枚举" value="ENUM" /></el-select><el-input v-if="row.valueSourceType !== 'MANUAL' && row.valueSourceType !== 'FIXED'" v-model.trim="row.valueSourceRef" class="source-ref" placeholder="来源编码或数据域" /></template></el-table-column>
           <el-table-column label="可选标准值" min-width="190"><template #default="{ row }"><el-select v-model="row.validation.enum" multiple filterable allow-create default-first-option placeholder="输入标准编码，如 MALE、FEMALE"><el-option v-for="item in row.validation.enum || []" :key="item" :label="item" :value="item" /></el-select></template></el-table-column>
           <el-table-column label="必填" width="70"><template #default="{ row }"><el-switch v-model="row.required" /></template></el-table-column>
@@ -60,10 +63,10 @@
         </el-table>
 
         <el-divider />
-        <div class="step-title"><span>5</span><div><h2>参数化筛选条件</h2><p>选择一个语义字段，并将其筛选值绑定为模板参数。女性出院病案示例：PATIENT_SEX 等于 SEX_ITEM_CODE。</p></div></div>
+        <div class="step-title"><span>5</span><div><h2>参数化筛选条件</h2></div></div>
         <el-switch v-model="designer.templateFilter.enabled" active-text="使用参数化筛选条件" inactive-text="不设置筛选条件" />
         <div v-if="designer.templateFilter.enabled" class="grid filter-grid">
-          <el-form-item label="筛选语义字段"><el-select v-model="designer.templateFilter.fieldCode" filterable :disabled="!designer.tableCode" placeholder="请选择语义字段"><el-option v-for="field in fields" :key="field.code" :label="optionLabel({ name: field.label, code: field.code })" :value="field.code" /></el-select></el-form-item>
+          <el-form-item label="筛选物理字段"><el-select v-model="designer.templateFilter.fieldCode" filterable :disabled="!designer.tableName" placeholder="请选择物理字段"><el-option v-for="field in fields" :key="field.code" :label="optionLabel({ name: field.label, code: field.code })" :value="field.code" /></el-select></el-form-item>
           <el-form-item label="判断方式"><el-select v-model="designer.templateFilter.operator"><el-option label="等于（EQ）" value="EQ" /></el-select></el-form-item>
           <el-form-item label="值来自模板参数"><el-select v-model="designer.templateFilter.parameterCode" placeholder="请选择上方定义的参数"><el-option v-for="parameter in designer.parameters" :key="parameter.code" :label="parameter.displayName ? `${parameter.displayName}（${parameter.code}）` : parameter.code" :value="parameter.code" /></el-select></el-form-item>
         </div>
@@ -103,12 +106,15 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
 import { useRoute, useRouter } from 'vue-router'
 import PageHeader from '@/idmp/components/PageHeader.vue'
-import { fetchDataDomains, fetchSemanticTableFields, fetchSemanticTables } from '@/idmp/api/modules/meta'
+import { fetchDataDomains, fetchPhysicalTableFields, fetchPhysicalTables, fetchSourceTableFields } from '@/idmp/api/modules/meta'
+import { adaptPhysicalTableList, adaptSemanticFieldList, adaptSourceFieldList } from '@/idmp/api/adapters/meta'
+import { adaptFactorPhysicalFields } from '@/idmp/api/adapters/factorMetadata'
+import { buildFactorTemplateDefinition, templatePeriodField } from '@/idmp/utils/factorTemplateDefinition'
 import { createFactorTemplate, createFactorTemplateVersion, fetchFactorTemplateInstances, fetchFactorTemplateVersion, publishFactorTemplateVersion, updateFactorTemplateVersion, validateFactorTemplateVersion } from '@/idmp/api/modules/factors'
 
 const route = useRoute()
@@ -132,15 +138,18 @@ const domains = ref([])
 const tables = ref([])
 const fields = ref([])
 const form = reactive({ code: '', name: '', description: '', factorTypeScope: 'AGGREGATE' })
-const designer = reactive({ domainCode: '', domainId: '', tableCode: '', aggregation: 'COUNT', fieldCode: '', output: { valueType: 'DECIMAL', unit: 'PERSON_TIME', precision: 30, scale: 10 }, allowedGrains: ['MONTHLY', 'YEARLY'], drillPathVersionIds: [], parameters: [], filters: { nodeType: 'TRUE' }, templateFilter: { enabled: false, fieldCode: '', operator: 'EQ', parameterCode: '' }, extraDefinition: {} })
+const designer = reactive({ domainCode: '', domainId: '', tableName: '', primaryOptions: {}, calculationMode: 'TEMPORAL', periodFieldCode: '', aggregation: 'COUNT', fieldCode: '', groupBy: [], runtimeParameters: [], output: { valueType: 'DECIMAL', unit: 'PERSON_TIME', precision: 30, scale: 10 }, allowedGrains: ['MONTHLY', 'YEARLY'], drillPathVersionIds: [], parameters: [], filters: { nodeType: 'TRUE' }, templateFilter: { enabled: false, fieldCode: '', operator: 'EQ', parameterCode: '' }, extraDefinition: {} })
+let metadataRequestVersion = 0
 const rules = { code: [{ required: true, message: '请输入模板编码', trigger: 'blur' }], name: [{ required: true, message: '请输入模板名称', trigger: 'blur' }], factorTypeScope: [{ required: true, message: '请选择因子类型范围', trigger: 'change' }] }
 const aggregationOptions = [{ value: 'COUNT', label: '记录计数' }, { value: 'COUNT_DISTINCT', label: '去重计数' }, { value: 'SUM', label: '数值求和' }, { value: 'AVG', label: '平均值' }, { value: 'MIN', label: '最小值' }, { value: 'MAX', label: '最大值' }]
 const editable = computed(() => isCreate.value || (version.publicationStatus || version.status) !== 'PUBLISHED')
 // 当前为产品演示环境：开放模板生命周期入口，服务端仍负责最终权限校验。
 const canManageTemplates = computed(() => true)
 const aggregatableFields = computed(() => fields.value.filter(field => field.aggregatable !== false))
+const timeFields = computed(() => fields.value.filter(field => ['DATE', 'DATETIME'].includes(field.dataType)))
 
 onMounted(async () => { await loadDomains(); if (!isCreate.value) await load() })
+watch(() => route.params.versionId, (id, previous) => { if (id && id !== previous) load() })
 
 async function loadDomains() {
   loading.domains = true
@@ -160,47 +169,66 @@ async function load() {
 async function handleDomainChange(code) {
   const domain = domains.value.find(item => item.code === code)
   designer.domainId = domain?.id || ''
-  designer.tableCode = ''
+  metadataRequestVersion++
+  designer.tableName = ''
   designer.fieldCode = ''
+  designer.periodFieldCode = ''
+  designer.templateFilter.fieldCode = ''
   fields.value = []
   await loadTables()
 }
 async function loadTables() {
   if (!designer.domainId) { tables.value = []; return }
   loading.tables = true
-  try { tables.value = normalizeList(await fetchSemanticTables(designer.domainId)) } catch (error) { ElMessage.error(error?.message || '语义表读取失败') } finally { loading.tables = false }
+  const requestId = ++metadataRequestVersion
+  try { const result = adaptPhysicalTableList(await fetchPhysicalTables(designer.domainId)); if (requestId === metadataRequestVersion) tables.value = result.filter(table => !table.status || table.status === 'PUBLISHED') } catch (error) { if (requestId === metadataRequestVersion) ElMessage.error(error?.message || '物理表读取失败') } finally { if (requestId === metadataRequestVersion) loading.tables = false }
 }
+async function handleTableChange() { designer.fieldCode = ''; designer.periodFieldCode = ''; designer.templateFilter.fieldCode = ''; await loadFields() }
 async function loadFields() {
-  if (!designer.domainId || !designer.tableCode) { fields.value = []; return }
+  fields.value = []
+  if (!designer.domainId || !designer.tableName) return
   loading.fields = true
-  try { fields.value = normalizeList(await fetchSemanticTableFields(designer.domainId, designer.tableCode)) } catch (error) { ElMessage.error(error?.message || '语义字段读取失败') } finally { loading.fields = false }
+  const requestId = ++metadataRequestVersion
+  try {
+    const [mapped, source] = await Promise.all([fetchPhysicalTableFields(designer.domainId, designer.tableName), fetchSourceTableFields(designer.tableName)])
+    if (requestId !== metadataRequestVersion) return
+    fields.value = adaptFactorPhysicalFields(adaptSemanticFieldList(mapped), adaptSourceFieldList(source), { isBase: true })
+    const physicalCode = code => fields.value.find(field => field.code === code || field.semanticFieldCode === code)?.code || code
+    designer.fieldCode = physicalCode(designer.fieldCode)
+    designer.templateFilter.fieldCode = physicalCode(designer.templateFilter.fieldCode)
+    const table = tables.value.find(table => table.tableName === designer.tableName)
+    designer.periodFieldCode = physicalCode(designer.periodFieldCode || table?.defaultTimeSemanticFieldCode || '')
+  } catch (error) { if (requestId === metadataRequestVersion) ElMessage.error(error?.message || '物理字段读取失败') } finally { if (requestId === metadataRequestVersion) loading.fields = false }
 }
 function addParameter() { designer.parameters.push({ code: '', displayName: '', dataType: 'CODE', required: false, exposed: true, defaultValue: '', valueSourceType: 'FIXED', valueSourceRef: '', validation: { enum: [] }, displayOrder: designer.parameters.length }) }
 function buildDefinition() {
-  const primaryDomain = { domainCode: designer.domainCode }
-  if (designer.tableCode) primaryDomain.semanticTableCode = designer.tableCode
-  const aggregation = { function: designer.aggregation }
-  if (designer.fieldCode) aggregation.fieldCode = designer.fieldCode
-  return { ...designer.extraDefinition, schemaVersion: '1.0', dslType: 'FACTOR', primaryDomain, filters: buildTemplateFilters(), aggregation, groupBy: [], parameters: [], output: { valueType: designer.output.valueType, semanticKind: 'MEASURE', dimension: designer.aggregation === 'COUNT' ? 'COUNT' : 'VALUE', unit: designer.output.unit, nullable: false, precision: Number(designer.output.precision || 30), scale: Number(designer.output.scale || 10), grain: [] }, applicableDomains: designer.domainCode ? [{ domainCode: designer.domainCode }] : [], allowedGrains: designer.allowedGrains, drillPathVersionIds: designer.drillPathVersionIds.map(Number).filter(Number.isFinite) }
+  return buildFactorTemplateDefinition(designer)
 }
-function buildTemplateFilters() { if (!designer.templateFilter.enabled) return designer.filters || { nodeType: 'TRUE' }; return { nodeType: 'PREDICATE', fieldCode: designer.templateFilter.fieldCode, operator: designer.templateFilter.operator, value: { parameterRef: designer.templateFilter.parameterCode } } }
 function applyDefinition(definition, parameters) {
   const primary = definition.primaryDomain || {}
   designer.domainCode = primary.domainCode || ''
   designer.domainId = domains.value.find(item => item.code === designer.domainCode)?.id || ''
-  designer.tableCode = primary.semanticTableCode || ''
+  designer.tableName = primary.tableName || primary.semanticTableCode || ''
+  const { domainCode, tableName, semanticTableCode, ...primaryOptions } = primary
+  designer.primaryOptions = primaryOptions
+  designer.calculationMode = definition.calculationMode || 'TEMPORAL'
+  designer.periodFieldCode = templatePeriodField(definition.filters)
+  designer.groupBy = definition.groupBy || []
+  designer.runtimeParameters = definition.parameters || []
   designer.aggregation = definition.aggregation?.function || 'COUNT'
   designer.fieldCode = typeof definition.aggregation?.fieldCode === 'string' ? definition.aggregation.fieldCode : ''
-  designer.output = { valueType: definition.output?.valueType || 'DECIMAL', unit: definition.output?.unit || 'PERSON_TIME', precision: definition.output?.precision || 30, scale: definition.output?.scale || 10 }
+  designer.output = { valueType: definition.output?.valueType || 'DECIMAL', unit: definition.output?.unit || 'PERSON_TIME', precision: definition.output?.precision || 30, scale: definition.output?.scale ?? 10 }
   designer.allowedGrains = definition.allowedGrains || []
   designer.drillPathVersionIds = (definition.drillPathVersionIds || []).map(String)
   designer.filters = definition.filters || { nodeType: 'TRUE' }
-  const predicate = definition.filters?.nodeType === 'PREDICATE' ? definition.filters : null
+  const children = definition.filters?.children || []
+  const businessChildren = children.filter(node => node.nodeType !== 'TRUE' && node.parameter !== 'period')
+  const predicate = definition.filters?.nodeType === 'PREDICATE' ? definition.filters : businessChildren.length === 1 ? businessChildren[0] : null
   const parameterRef = predicate?.value?.parameterRef
   designer.templateFilter = { enabled: Boolean(predicate && parameterRef), fieldCode: predicate?.fieldCode || '', operator: predicate?.operator || 'EQ', parameterCode: parameterRef || '' }
   designer.parameters = parameters.map((item, index) => ({ ...item, required: Boolean(item.required), exposed: item.exposed !== false, displayOrder: item.displayOrder ?? index, validation: { ...(item.validation || {}), enum: Array.isArray(item.validation?.enum) ? item.validation.enum : [] } }))
-  const { schemaVersion, dslType, primaryDomain, filters, aggregation, groupBy, parameters: ignored, output, applicableDomains, allowedGrains, drillPathVersionIds, ...extra } = definition
-  designer.extraDefinition = extra
+  const { schemaVersion, dslType, calculationMode, primaryDomain, filters, aggregation, groupBy, parameters: ignored, output, applicableDomains, allowedGrains, drillPathVersionIds, ...extra } = definition
+  designer.extraDefinition = { ...extra, aggregationField: typeof aggregation?.fieldCode === 'object' ? { fieldCode: aggregation.fieldCode } : aggregation?.fieldRef ? { fieldRef: aggregation.fieldRef } : undefined }
   if (designer.domainId) loadTables().then(loadFields)
 }
 function refreshAdvancedJson() { advancedJson.value = json(buildDefinition()); ElMessage.success('已从表单生成 JSON 预览') }
@@ -208,13 +236,19 @@ function applyAdvancedJson() { try { const definition = JSON.parse(advancedJson.
 async function payload(includeCode = false) {
   if (!(await formRef.value?.validate().catch(() => false))) return null
   if (!designer.domainCode) { ElMessage.warning('请选择主数据域'); return null }
-  if (designer.aggregation !== 'COUNT' && !designer.fieldCode) { ElMessage.warning('请选择聚合字段'); return null }
+  if (!designer.tableName) { ElMessage.warning('请选择物理表'); return null }
+  if (designer.calculationMode === 'TEMPORAL' && !timeFields.value.some(field => field.code === designer.periodFieldCode)) { ElMessage.warning('请选择有效的周期时间字段'); return null }
+  if (designer.aggregation !== 'COUNT' && !designer.fieldCode && !designer.extraDefinition.aggregationField) { ElMessage.warning('请选择聚合字段'); return null }
   const duplicate = designer.parameters.find((item, index) => !item.code || designer.parameters.some((other, otherIndex) => otherIndex < index && other.code === item.code))
   if (duplicate) { ElMessage.warning('模板参数编码不能为空且不能重复'); return null }
-  const invalidDefault = designer.parameters.find(item => Array.isArray(item.validation?.enum) && item.validation.enum.length && item.defaultValue !== '' && item.defaultValue !== null && !item.validation.enum.includes(item.defaultValue))
+  const invalidDefault = designer.parameters.find(item => Array.isArray(item.validation?.enum) && item.validation.enum.length && item.defaultValue !== '' && item.defaultValue != null && !item.validation.enum.includes(item.defaultValue))
   if (invalidDefault) { ElMessage.warning(`参数“${invalidDefault.displayName || invalidDefault.code}”的默认值必须属于可选标准值`); return null }
   if (designer.templateFilter.enabled && (!designer.templateFilter.fieldCode || !designer.templateFilter.parameterCode)) { ElMessage.warning('请完整选择参数化筛选字段和对应模板参数'); return null }
-  const parameters = designer.parameters.map((item, index) => ({ ...item, displayOrder: index, defaultValue: item.defaultValue === '' ? null : item.defaultValue, valueSourceRef: item.valueSourceRef || null }))
+  const parameters = designer.parameters.map((item, index) => {
+    const validation = { ...item.validation }
+    if (!validation.enum?.length) delete validation.enum
+    return { ...item, validation, displayOrder: index, defaultValue: item.defaultValue === '' ? null : item.defaultValue, valueSourceRef: item.valueSourceRef || null }
+  })
   const data = { resourceVersion: version.resourceVersion, name: form.name, description: form.description, factorTypeScope: form.factorTypeScope, templateDefinition: buildDefinition(), outputDescriptor: { valueType: designer.output.valueType, unit: designer.output.unit }, parameters }
   return includeCode ? { code: form.code, ...data } : data
 }
