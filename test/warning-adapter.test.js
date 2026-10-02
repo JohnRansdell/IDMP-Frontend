@@ -48,6 +48,10 @@ test('scenario difference requires an explicit published baseline scenario', () 
 })
 
 test('warning capabilities distinguish draft publishing and published enablement', () => {
+  assert.equal(warningLabel('ENABLED'), '已启用')
+  assert.equal(warningLabel('DISABLED'), '未启用')
+  assert.equal(warningLabel('DRAFT'), '未发布')
+  assert.equal(warningLabel('PUBLISHED'), '已发布')
   assert.equal(warningRuleCapabilities({ version: { id: '1', publicationStatus: 'DRAFT' } }).canPublish, true)
   assert.equal(warningRuleCapabilities({ enableStatus: 'DISABLED', version: { publicationStatus: 'PUBLISHED' } }).canEnable, true)
   assert.equal(warningRuleCapabilities({ enableStatus: 'ENABLED', version: { publicationStatus: 'PUBLISHED' } }).canDisable, true)
@@ -65,6 +69,21 @@ test('warning rule normalization exposes actions for summary response variants',
 
   const actionResponse = normalizeWarningRule({ id: '10', enableStatus: 'ENABLED', resourceVersion: 3 })
   assert.equal(Object.hasOwn(actionResponse.version, 'publicationStatus'), false)
+})
+
+test('warning list version preserves draft metadata and publication actions', () => {
+  const draft = normalizeWarningRule({
+    id: '408390314040246553', enableStatus: 'DISABLED', currentPublishedVersionId: null,
+    version: { id: '4531077215463426812', publicationStatus: 'DRAFT', warningType: 'THRESHOLD', resourceVersion: 1 }
+  })
+  assert.equal(warningLabel(draft.version.publicationStatus), '未发布')
+  assert.equal(draft.version.resourceVersion, 1)
+  assert.deepEqual(warningRuleCapabilities(draft), {
+    canEdit: true, canPublish: true, canEnable: false, canDisable: false
+  })
+  const missingVersion = normalizeWarningRule({ id: '10', currentPublishedVersionId: null, version: null })
+  assert.equal(warningLabel(missingVersion.version.publicationStatus), '-')
+  assert.equal(warningRuleCapabilities(missingVersion).canPublish, false)
 })
 
 test('warning page response normalizes current server pagination shape', () => {

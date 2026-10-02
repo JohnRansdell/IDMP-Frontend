@@ -79,7 +79,7 @@
 
 <script setup>
 import { computed, KeepAlive, markRaw, onMounted, ref, watch } from 'vue'
-import { dashboardCatalogRevision, dashboardRequestedId, designerImmersive } from './shellState.js'
+import { dashboardCatalogRevision, dashboardRequestedId, designerImmersive, notificationReadRevision } from './shellState.js'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import {
   Aim,
@@ -128,8 +128,15 @@ async function refreshRemoteDashboardOptions() {
     remoteDashboardOptions.value = []
   }
 }
+let unreadRequestId = 0
 async function loadUnreadCount() {
-  try { unreadCount.value = Number((await fetchUnreadNotificationCount())?.unreadCount || 0) } catch { unreadCount.value = 0 }
+  const requestId = ++unreadRequestId
+  try {
+    const count = Number((await fetchUnreadNotificationCount())?.unreadCount || 0)
+    if (requestId === unreadRequestId) unreadCount.value = count
+  } catch {
+    // Preserve the last confirmed count when a refresh fails.
+  }
 }
 
 const navGroups = [
@@ -189,5 +196,6 @@ const displayBreadcrumbs = computed(() => {
 })
 
 watch(dashboardCatalogRevision, () => { void refreshRemoteDashboardOptions() })
+watch(notificationReadRevision, () => { void loadUnreadCount() })
 onMounted(() => { loadUnreadCount(); void refreshRemoteDashboardOptions() })
 </script>

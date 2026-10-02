@@ -12,3 +12,5 @@ export const dashboardRequestedId = ref('')
 // Catalog writes bump this value so the Shell can refresh local options without reload.
 export const dashboardCatalogRevision = ref(0)
 export function notifyDashboardCatalogChanged() { dashboardCatalogRevision.value += 1 }
+export const notificationReadRevision = ref(0)
+export function notifyNotificationsRead() { notificationReadRevision.value += 1 }

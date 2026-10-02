@@ -16,7 +16,7 @@ const LABELS = {
   OPEN: '待处理', ACKNOWLEDGED: '已确认', CLOSED: '已关闭',
   DAILY: '日', MONTHLY: '月', QUARTERLY: '季', YEARLY: '年',
   GT: '大于（>）', GTE: '大于等于（≥）', LT: '小于（<）', LTE: '小于等于（≤）', EQ: '等于（=）', NE: '不等于（≠）',
-  ENABLED: '已启用', DISABLED: '已停用', DRAFT: '草稿', PUBLISHED: '已发布'
+  ENABLED: '已启用', DISABLED: '未启用', DRAFT: '未发布', PUBLISHED: '已发布'
 }
 
 export function warningLabel(value) {
