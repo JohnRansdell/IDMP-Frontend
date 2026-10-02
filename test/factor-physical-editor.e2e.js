@@ -113,6 +113,45 @@ try {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false })
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${appPort}/factor/edit/new` })
   await waitFor(()=>evaluate(`!!document.querySelector('.factor-editor')`)); await fixture()
+  for (const [templateId, versionId] of [['', ''], ['', '3'], ['10', ''], ['10', '3']]) {
+    await evaluate(`window.__factorFixture.template.templateId=${JSON.stringify(templateId)};window.__factorFixture.workflow.versionId=${JSON.stringify(versionId)}`)
+    await delay(30)
+    const numbers = await evaluate(`Array.from(document.querySelectorAll('.factor-editor > .editor-section > .section-title > span:first-child')).map(el=>el.textContent.trim())`)
+    assert.deepEqual(numbers, Array.from({ length: numbers.length }, (_, i) => String(i + 1)), `Section numbering: template=${templateId}, version=${versionId}`)
+    const modeNumber = await evaluate(`Array.from(document.querySelectorAll('.factor-editor > .editor-section')).find(el=>el.querySelector('h2')?.textContent==='计算模式').querySelector('.section-title > span').textContent.trim()`)
+    assert.equal(modeNumber, String(5 + Number(Boolean(templateId)) + Number(Boolean(versionId))))
+  }
+  await mkdir('.tmp/factor-physical-browser', { recursive: true })
+  for (const viewport of [{ width: 1440, height: 1000, mobile: false }, { width: 390, height: 844, mobile: true }]) {
+    await cdp.send('Emulation.setDeviceMetricsOverride', { ...viewport, deviceScaleFactor: 1 })
+    for (const status of ['DRAFT', 'PUBLISHED']) {
+      await evaluate(`window.__factorFixture.template.templateId='';window.__factorFixture.workflow.versionId='3';window.__factorFixture.workflow.status=${JSON.stringify(status)};window.__factorFixture.workflow.published=${status === 'PUBLISHED'}`)
+      await waitFor(() => evaluate(`(() => { const tag=document.querySelector('.workflow-section .section-title .el-tag'); return !!tag && !Array.from(tag.classList).some(name=>name.includes('enter-')) })()`))
+      const header = await evaluate(`(() => {
+        const heading = document.querySelector('.workflow-section .section-title');
+        const number = heading.querySelector('.section-number');
+        const tag = heading.querySelector('.el-tag');
+        const style = getComputedStyle(tag), bounds = tag.getBoundingClientRect(), circle = number.getBoundingClientRect();
+        return { text: tag.textContent.trim(), type: tag.className, background: style.backgroundColor,
+          radius: style.borderRadius, width: bounds.width, height: bounds.height,
+          circleWidth: circle.width, circleHeight: circle.height, circleBackground: getComputedStyle(number).backgroundColor,
+          overlap: bounds.left < circle.right, overflow: document.documentElement.scrollWidth > innerWidth };
+      })()`)
+      assert.equal(header.text, status === 'PUBLISHED' ? '已发布' : '草稿')
+      assert.match(header.type, status === 'PUBLISHED' ? /el-tag--success/ : /el-tag--info/)
+      assert.notEqual(header.background, header.circleBackground)
+      assert.notEqual(header.radius, '50%')
+      assert.ok(header.width > 28, JSON.stringify(header))
+      assert.equal(header.circleWidth, 28)
+      assert.equal(header.circleHeight, 28)
+      assert.equal(header.overlap, false)
+      assert.equal(header.overflow, false)
+    }
+    await evaluate(`document.querySelector('.workflow-section').scrollIntoView({block:'start',behavior:'instant'});window.scrollBy(0,-90)`)
+    await writeFile(`.tmp/factor-physical-browser/workflow-${viewport.mobile ? 'mobile' : 'desktop'}.png`, Buffer.from((await cdp.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'))
+  }
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false })
+  await evaluate(`window.__factorFixture.template.templateId='';window.__factorFixture.workflow.versionId='';window.__factorFixture.workflow.status='DRAFT';window.__factorFixture.workflow.published=false`)
   await choose(`document.querySelector('.form-block .el-select')`, '住院数据域')
   await choose(`document.querySelectorAll('.form-block .el-select')[1]`, '住院记录')
   await waitFor(()=>evaluate(`window.__factorFixture.fields.length===3`))
