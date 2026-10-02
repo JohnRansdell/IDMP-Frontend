@@ -769,6 +769,7 @@ import {
 import { getStatusLabel } from '@/idmp/design/status'
 import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
 import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
+import { factorCalculationMode } from '@/idmp/utils/factorPeriod'
 import RuntimeParameterFields from '@/idmp/components/RuntimeParameterFields.vue'
 import DimensionGrainSelect from '@/idmp/components/DimensionGrainSelect.vue'
 import { normalizeDimensionGrain } from '@/idmp/features/indicator/grouping'
@@ -863,13 +864,10 @@ const selectedFormulaFactors = computed(() => [
   ...denominatorFactors.value
 ])
 const indicatorCalculationMode = computed(() => {
-  const modes = new Set(selectedFormulaFactors.value.map((factor) => String(factor?.calculationMode || factor?.dsl?.calculationMode || (hasPeriodPredicate(factor?.dsl) ? 'TEMPORAL' : 'STATIC')).toUpperCase()))
+  const modes = new Set(selectedFormulaFactors.value.map((factor) => String(factor?.calculationMode || factorCalculationMode(factor?.dsl || {})).toUpperCase()))
   return modes.size === 1 ? [...modes][0] : ''
 })
 const isStaticIndicator = computed(() => indicatorCalculationMode.value === 'STATIC')
-const missingPeriodFactors = computed(() =>
-  isStaticIndicator.value ? [] : selectedFormulaFactors.value.filter((factor) => factor?.dsl && !hasPeriodPredicate(factor.dsl))
-)
 const selectedIndicatorTrialTarget = computed(() =>
   indicatorTrialTargets.value.find((target) => target.key === selectedIndicatorTrialTargetKey.value) || null
 )
@@ -889,8 +887,7 @@ const indicatorTrialHasDenominator = computed(() =>
 const canPublishIndicatorVersion = computed(() =>
   Boolean(
     indicatorWorkflow.versionId &&
-    !indicatorWorkflow.published &&
-    !missingPeriodFactors.value.length
+    !indicatorWorkflow.published
   )
 )
 
@@ -899,9 +896,6 @@ const publishPanelDescription = computed(() => {
     return `后端已返回发布结果，版本 ${indicatorWorkflow.publishedVersionId || indicatorWorkflow.versionId} 可用于分析查询。`
   }
   if (!indicatorWorkflow.versionId) return '请先创建指标版本。'
-  if (missingPeriodFactors.value.length) {
-    return `依赖因子缺少统计周期范围过滤：${missingPeriodFactors.value.map((item) => item.versionId || item.code).join('、')}。请重新创建并发布带统计周期过滤的因子，再回到公式中选择新因子版本。`
-  }
   if (!indicatorWorkflow.compiled) return '发布按钮已开放；若公式尚未编译通过，后端发布接口会返回具体原因。'
   if (!hasIndicatorTrialResults.value) return '发布按钮已开放；建议先试算并查看结果，最终是否允许发布以后端校验为准。'
   return '发布接口已就绪，点击按钮会写入后端发布状态。'
@@ -1468,20 +1462,6 @@ function createFormulaFactorPlaceholder(label, versionId) {
     versionId: toOpaqueId(versionId),
     dsl: null
   }
-}
-
-function hasPeriodPredicate(node) {
-  if (!node || typeof node !== 'object') return false
-  if (
-    node.nodeType === 'PREDICATE' &&
-    node.operator === 'BETWEEN' &&
-    node.parameter === 'period' &&
-    node.fieldCode
-  ) {
-    return true
-  }
-  if (Array.isArray(node.children) && node.children.some(hasPeriodPredicate)) return true
-  return hasPeriodPredicate(node.filters)
 }
 
 let nextConditionId = 3

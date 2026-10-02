@@ -1,11 +1,7 @@
-export function templatePeriodField(node) {
-  if (!node || typeof node !== 'object') return ''
-  if (node.nodeType === 'PREDICATE' && node.parameter === 'period') return node.fieldCode || ''
-  for (const child of Object.values(node)) {
-    const field = templatePeriodField(child)
-    if (field) return field
-  }
-  return ''
+import { factorPeriodColumn, withoutLegacyPeriod } from './factorPeriod.js'
+
+export function templatePeriodField(definition) {
+  return definition?.nodeType ? factorPeriodColumn({ filters: definition }) : factorPeriodColumn(definition)
 }
 
 export function buildFactorTemplateDefinition(designer) {
@@ -17,24 +13,11 @@ export function buildFactorTemplateDefinition(designer) {
   const filter = designer.templateFilter?.enabled
     ? { nodeType: 'PREDICATE', fieldCode: designer.templateFilter.fieldCode, operator: designer.templateFilter.operator, value: { parameterRef: designer.templateFilter.parameterCode } }
     : designer.filters || { nodeType: 'TRUE' }
-  const stripPeriod = node => {
-    if (!node || typeof node !== 'object') return node
-    if (node.nodeType === 'PREDICATE' && node.parameter === 'period') return { nodeType: 'TRUE' }
-    if (Array.isArray(node)) return node.map(stripPeriod)
-    const result = Object.fromEntries(Object.entries(node).map(([key, value]) => [key, stripPeriod(value)]))
-    if (result.nodeType === 'AND') {
-      result.children = (result.children || []).filter(child => child?.nodeType !== 'TRUE')
-      if (!result.children.length) return { nodeType: 'TRUE' }
-    }
-    return result
-  }
-  const businessFilter = stripPeriod(filter)
-  const filters = mode === 'TEMPORAL'
-    ? { nodeType: 'AND', children: [...(businessFilter.nodeType === 'TRUE' ? [] : [businessFilter]), { nodeType: 'PREDICATE', fieldCode: designer.periodFieldCode, operator: 'BETWEEN', parameter: 'period' }] }
-    : businessFilter
-  const { aggregationField, ...extra } = designer.extraDefinition || {}
+  const filters = withoutLegacyPeriod(filter)
+  const { aggregationField, periodColumn, ...extra } = designer.extraDefinition || {}
   return {
     ...extra, schemaVersion: '1.0', dslType: 'FACTOR', calculationMode: mode, primaryDomain,
+    ...(mode === 'TEMPORAL' && designer.periodFieldCode ? { periodColumn: designer.periodFieldCode } : {}),
     filters, aggregation, groupBy: designer.groupBy || [], parameters: designer.runtimeParameters || [],
     output: { valueType: designer.output.valueType, semanticKind: 'MEASURE', dimension: designer.aggregation === 'COUNT' ? 'COUNT' : 'VALUE', unit: designer.output.unit, nullable: false, precision: Number(designer.output.precision || 30), scale: Number(designer.output.scale ?? 10), grain: [] },
     applicableDomains: designer.domainCode ? [{ domainCode: designer.domainCode }] : [],

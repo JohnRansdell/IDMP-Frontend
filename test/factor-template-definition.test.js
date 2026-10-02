@@ -17,18 +17,20 @@ test('templates emit physical table and fields, preserve bigint ids and zero sca
 test('temporal templates keep business filters and add explicit period binding', () => {
   const form = designer(); form.calculationMode = 'TEMPORAL'
   const dsl = buildFactorTemplateDefinition(form)
-  assert.equal(dsl.filters.children[0].fieldCode, 'surgery_level')
-  assert.equal(templatePeriodField(dsl.filters), 'operation_date')
+  assert.equal(dsl.filters.fieldCode, 'surgery_level')
+  assert.equal(dsl.periodColumn, 'operation_date')
+  assert.equal(templatePeriodField(dsl), 'operation_date')
 })
 test('no TRUE children are generated inside AND and imported period is not duplicated', () => {
   const form = designer(); form.templateFilter.enabled = false; form.calculationMode = 'TEMPORAL'
   const period = { nodeType: 'PREDICATE', fieldCode: 'old_time', operator: 'BETWEEN', parameter: 'period' }
   form.filters = { nodeType: 'AND', children: [{ nodeType: 'TRUE' }, period] }
   const dsl = buildFactorTemplateDefinition(form)
-  assert.equal(dsl.filters.children.length, 1)
-  assert.equal(dsl.filters.children[0].fieldCode, 'operation_date')
+  assert.deepEqual(dsl.filters, { nodeType: 'TRUE' })
+  assert.equal(dsl.periodColumn, 'operation_date')
   form.calculationMode = 'STATIC'
   assert.deepEqual(buildFactorTemplateDefinition(form).filters, { nodeType: 'TRUE' })
+  assert.equal('periodColumn' in buildFactorTemplateDefinition(form), false)
 })
 test('advanced definition retains governed join aliases, grouping, and parameterized aggregation', () => {
   const form = designer(); form.primaryOptions = { sourceAlias: 'source' }; form.groupBy = ['surgery_level']

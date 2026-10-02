@@ -38,7 +38,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { factorCalculationMode } from '@/idmp/utils/factorPeriod'; import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
 import { useRoute, useRouter } from 'vue-router'
@@ -63,8 +63,7 @@ async function refreshTrialStatus() { if (!workflow.taskId || loading.status) re
 async function loadTrialResults() { if (!workflow.versionId || !workflow.batchId || loading.result) return; loading.result = true; try { const result = await fetchFactorTrialResults(workflow.versionId, workflow.batchId, 1, 100); const payload = result?.data || result || {}; trialRows.value = payload?.results?.records || payload?.records || []; workflow.resultsLoaded = String(payload?.batchStatus || payload?.status || 'SUCCEEDED').toUpperCase() === 'SUCCEEDED'; workflow.qualityStatus = payload?.qualityStatus || ''; workflow.message = trialRows.value.length ? `试算完成，共 ${trialRows.value.length} 条结果。` : '试算完成：该时间范围内没有匹配源数据。'; workflow.messageType = 'success' } catch (error) { workflow.message = error?.message || '试算结果读取失败'; workflow.messageType = 'error'; ElMessage.error(workflow.message) } finally { loading.result = false } }
 async function publishCurrentVersion() { if (!canPublish.value) return; try { await ElMessageBox.confirm(`确认发布因子版本 ${workflow.versionId}？`, '发布因子版本', { type: 'warning' }) } catch { return } loading.publish = true; try { const result = await publishFactorVersion(workflow.versionId); workflow.status = result?.status || result?.publicationStatus || 'PUBLISHED'; workflow.published = true; workflow.message = `因子版本 ${workflow.versionId} 已发布，可供指标引用。`; workflow.messageType = 'success'; ElMessage.success('因子版本已发布') } catch (error) { workflow.message = error?.message || '因子版本发布失败'; workflow.messageType = 'error'; ElMessage.error(workflow.message) } finally { loading.publish = false } }
 function formatDiagnostics(diagnostics) { return (diagnostics || []).map(item => item.message || item.code).filter(Boolean).join('；') } function formatDimensions(row) { const dimensions = row?.dimensions || row?.dimensionValues || {}; return Object.keys(dimensions).length ? Object.entries(dimensions).map(([key, value]) => `${key}=${value}`).join('，') : '总体' } function resultValue(row) { return row?.displayValue ?? row?.valueDecimal ?? row?.resultValue ?? row?.value ?? '-' }
-function resolveCalculationMode(dsl = {}) { const explicit = String(dsl?.calculationMode || '').toUpperCase(); if (['STATIC', 'TEMPORAL'].includes(explicit)) return explicit; return hasPeriodParameter(dsl?.filters) ? 'TEMPORAL' : 'STATIC' }
-function hasPeriodParameter(node) { return Boolean(node && ((node.nodeType === 'PREDICATE' && node.parameter === 'period') || (node.children || []).some(hasPeriodParameter) || hasPeriodParameter(node.child) || hasPeriodParameter(node.filters))) }
+function resolveCalculationMode(dsl = {}) { return factorCalculationMode(dsl) }
 </script>
 
 <style scoped lang="scss">

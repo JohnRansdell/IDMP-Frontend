@@ -212,7 +212,7 @@ function applyDefinition(definition, parameters) {
   const { domainCode, tableName, semanticTableCode, ...primaryOptions } = primary
   designer.primaryOptions = primaryOptions
   designer.calculationMode = definition.calculationMode || 'TEMPORAL'
-  designer.periodFieldCode = templatePeriodField(definition.filters)
+  designer.periodFieldCode = templatePeriodField(definition)
   designer.groupBy = definition.groupBy || []
   designer.runtimeParameters = definition.parameters || []
   designer.aggregation = definition.aggregation?.function || 'COUNT'

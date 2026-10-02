@@ -26,6 +26,10 @@ export function fetchPhysicalTableFields(domainId, tableName) {
   return requestJson(`/meta/data-domains/${encodeURIComponent(domainId)}/physical-tables/${encodeURIComponent(tableName)}/semantic-fields`)
 }
 
+export function fetchPhysicalTableRelations(physicalTableBindingId, params = {}) {
+  return requestJson(withQuery('/meta/physical-table-relations', { physicalTableBindingId, ...params }))
+}
+
 export function bindPhysicalTableField(domainId, tableName, payload) {
   return requestJson(`/meta/data-domains/${encodeURIComponent(domainId)}/physical-tables/${encodeURIComponent(tableName)}/semantic-fields`, {
     method: 'POST',

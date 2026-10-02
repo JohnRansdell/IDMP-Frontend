@@ -27,9 +27,9 @@ test('COUNT supports optional field semantics for COUNT(field) and COUNT(*)', ()
 test('explicit period filter is complete without a literal value', () => {
   const filters = { nodeType: 'AND', children: [{ nodeType: 'PREDICATE', fieldCode: 'OUT_DATE', operator: 'BETWEEN', parameter: 'period', value: '' }] }
   assert.deepEqual(validateFilterNode(filters), [])
-  assert.deepEqual(buildFactorDsl({ domainCode: 'D', semanticTableCode: 'T', aggregation: 'COUNT', filters }).filters.children[0], {
-    nodeType: 'PREDICATE', fieldCode: 'OUT_DATE', operator: 'BETWEEN', parameter: 'period'
-  })
+  const dsl = buildFactorDsl({ domainCode: 'D', semanticTableCode: 'T', aggregation: 'COUNT', filters })
+  assert.equal(dsl.periodColumn, 'OUT_DATE')
+  assert.deepEqual(dsl.filters, { nodeType: 'TRUE' })
   assert.deepEqual(buildFactorDsl({ domainCode: 'D', semanticTableCode: 'T', aggregation: 'COUNT', filters }).parameters, [
     { code: 'period', type: 'PERIOD', source: 'RUNTIME' }
   ])
@@ -129,4 +129,12 @@ test('existing missing-row policy is preserved when the visual editor saves a fa
   })
   assert.equal(hasUnsupportedFactorDslExpressions({ missingRowPolicy: 'KEEP_NULL' }), false)
   assert.equal(dsl.missingRowPolicy, 'KEEP_NULL')
+})
+test('physical table DSL emits tableName and physical alias-qualified columns', () => {
+  const dsl = buildFactorDsl({ domainCode: 'VISIT', tableName: 'visit', semanticTableCode: 'OLD_TABLE', aggregation: 'COUNT_DISTINCT', fieldCode: 'join1.visit_id', groupBy: ['dept_code', 'join1.diagnosis'], joins: [{ relationId: '100', fromAlias: 'base', sourceAlias: 'join1' }], filters: { nodeType: 'PREDICATE', fieldCode: 'in_date', operator: 'BETWEEN', parameter: 'period' } })
+  assert.deepEqual(dsl.primaryDomain, { domainCode: 'VISIT', tableName: 'visit', sourceAlias: 'base' })
+  assert.deepEqual(dsl.aggregation.fieldRef, { sourceAlias: 'join1', fieldCode: 'visit_id' })
+  assert.deepEqual(dsl.groupBy, ['dept_code', { sourceAlias: 'join1', fieldCode: 'diagnosis' }])
+  assert.equal(dsl.periodColumn, 'in_date')
+  assert.deepEqual(dsl.filters, { nodeType: 'TRUE' })
 })

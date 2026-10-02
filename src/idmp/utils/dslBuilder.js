@@ -1,3 +1,5 @@
+import { canonicalPeriodColumn, withoutLegacyPeriod } from './factorPeriod.js'
+
 const AGGREGATION_LABELS = {
   COUNT: '记录计数',
   COUNT_DISTINCT: '去重计数',
@@ -43,7 +45,10 @@ export function serializeFilterNode(node, fields = []) {
 }
 
 
-export function buildFactorDsl({ domainCode, semanticTableCode, sourceAlias = 'base', joins = [], aggregation, fieldCode, groupBy = [], filters, fields = [], missingRowPolicy = null, calculationMode = 'TEMPORAL' }) {
+export function buildFactorDsl({ domainCode, tableName, semanticTableCode, sourceAlias = 'base', joins = [], aggregation, fieldCode, groupBy = [], filters, fields = [], periodColumn = '', missingRowPolicy = null, calculationMode = 'TEMPORAL' }) {
+  const mode = String(calculationMode).toUpperCase()
+  const period = canonicalPeriodColumn(periodColumn, filters, fields)
+  const businessFilters = withoutLegacyPeriod(filters)
   const fieldReference = serializeFieldReference(fieldCode)
   const aggregationNode = aggregation === 'COUNT'
     ? { function: 'COUNT', ...(fieldCode ? (typeof fieldReference === 'string' ? { fieldCode: fieldReference } : { fieldRef: fieldReference }) : {}) }
@@ -51,13 +56,14 @@ export function buildFactorDsl({ domainCode, semanticTableCode, sourceAlias = 'b
   return {
     schemaVersion: '1.0',
     dslType: 'FACTOR',
-    calculationMode: String(calculationMode).toUpperCase(),
-    primaryDomain: { domainCode, ...(semanticTableCode ? { semanticTableCode } : {}), ...(joins.length ? { sourceAlias } : {}) },
+    calculationMode: mode,
+    ...(mode === 'TEMPORAL' && period ? { periodColumn: period } : {}),
+    primaryDomain: { domainCode, ...(tableName ? { tableName } : semanticTableCode ? { semanticTableCode } : {}), ...(joins.length ? { sourceAlias } : {}) },
     ...(joins.length ? { joins: joins.map(({ relationId, fromAlias, sourceAlias: joinedAlias }) => ({ relationId: String(relationId), fromAlias, sourceAlias: joinedAlias })) } : {}),
-    filters: serializeFilterNode(filters, fields),
+    filters: serializeFilterNode(businessFilters, fields),
     aggregation: aggregationNode,
     groupBy: groupBy.map(serializeFieldReference),
-    parameters: collectParameters(filters),
+    parameters: mode === 'TEMPORAL' && period ? [{ code: 'period', type: 'PERIOD', source: 'RUNTIME' }, ...collectParameters(businessFilters)] : collectParameters(businessFilters),
     ...(missingRowPolicy ? { missingRowPolicy: String(missingRowPolicy) } : {}),
     output: { valueType: 'DECIMAL', semanticKind: 'MEASURE', dimension: aggregationNode.function, nullable: false }
   }

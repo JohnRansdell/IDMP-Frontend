@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { adaptDataDomainList, adaptPhysicalTableList, adaptSemanticFieldList, adaptSemanticTableList, adaptSourceFieldList } from '../src/idmp/api/adapters/meta.js'
 import { dataTypeLabel, matchModeLabel, semanticKindLabel, sourceObjectTypeLabel, transformOptionLabel } from '../src/idmp/features/meta/index.js'
 import { validateSemanticFieldCode, SEMANTIC_DATA_TYPES } from '../src/idmp/utils/validation.js'
+import { adaptFactorPhysicalFields, physicalFieldDataType } from '../src/idmp/api/adapters/factorMetadata.js'
 
 test('API adapters preserve BIGINT ids as opaque strings', () => {
   const id = '9223372036854775807'
@@ -54,4 +55,42 @@ test('data domain workspace uses physical tables without legacy semantic-table o
   assert.match(source, /openStandardization/)
   assert.match(source, /openFieldProfile/)
   assert.doesNotMatch(source, /fetchSemanticTables|createSemanticTable|semantic-table-relations/)
+})
+
+test('factor field options use physical columns and types while preserving governance ids', () => {
+  const fields = adaptFactorPhysicalFields([
+    { id: '9223372036854775807', code: 'ADMISSION_TIME', sourceFieldName: 'in_date', name: '入院时间', dataType: 'STRING', filterable: true },
+    { id: '2', code: 'AMOUNT', sourceFieldName: 'fee', dataType: 'STRING', aggregatable: false, valueSetId: '3' },
+    { id: '4', code: 'UNMAPPED', dataType: 'STRING' }
+  ], [
+    { columnName: 'IN_DATE', columnType: 'datetime' },
+    { columnName: 'fee', columnType: 'decimal(12,2)', comment: '费用' },
+    { columnName: 'ungoverned', columnType: 'varchar(20)' }
+  ], { sourceAlias: 'join1', sourceName: 'visit' })
+  assert.equal(fields.length, 2)
+  assert.equal(fields[0].code, 'join1.IN_DATE')
+  assert.equal(fields[0].semanticFieldCode, 'ADMISSION_TIME')
+  assert.equal(fields[0].id, '9223372036854775807')
+  assert.equal(fields[0].kind, 'DATETIME')
+  assert.equal(fields[1].kind, 'NUMBER')
+  assert.equal(fields[1].label, '费用')
+  assert.equal(fields[1].aggregatable, false)
+  assert.equal(fields[1].valueSetId, '3')
+  assert.equal(adaptFactorPhysicalFields([{ code: 'KEY', sourceFieldName: 'id' }], [], { isBase: true })[0].code, 'id')
+})
+
+test('physical MySQL types do not treat text dates as datetime', () => {
+  for (const type of ['int unsigned', 'bigint(20)', 'decimal(10,2)', 'float', 'double']) assert.match(physicalFieldDataType(type), /INTEGER|DECIMAL/)
+  assert.equal(physicalFieldDataType('varchar(40)', 'DATETIME'), 'STRING')
+  assert.equal(physicalFieldDataType('', 'DATETIME'), 'DATETIME')
+})
+
+test('ordinary factor editor uses physical-table APIs and the physical relation contract', async () => {
+  const source = await readFile(new URL('../src/idmp/views/FactorEditor.vue', import.meta.url), 'utf8')
+  assert.match(source, /fetchPhysicalTables/)
+  assert.match(source, /fetchPhysicalTableFields/)
+  assert.match(source, /fetchPhysicalTableRelations/)
+  assert.match(source, /leftPhysicalTableBindingId/)
+  assert.match(source, /tableName:dslForm.tableName/)
+  assert.doesNotMatch(source, /fetchSemanticTables|fetchSemanticTableFields|fetchSemanticTableRelations|主语义表/)
 })
