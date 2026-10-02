@@ -7,6 +7,7 @@ test('API errors keep actionable Chinese business messages', () => {
   assert.match(error.message, /指标名称已存在/)
   assert.equal(error.rawMessage, '指标名称已存在')
   assert.equal(error.traceId, 'trace-1')
+  assert.doesNotMatch(error.message, /traceId/)
 })
 
 test('API errors hide backend parser, stack, gateway and English internals', () => {

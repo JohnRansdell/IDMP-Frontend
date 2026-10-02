@@ -10,7 +10,8 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { ElMessage } from '@/idmp/utils/message'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import { BUILT_IN_LAYOUT_TEMPLATES, readLocalLayoutTemplates } from '@/idmp/features/dashboard/layoutTemplates.js'

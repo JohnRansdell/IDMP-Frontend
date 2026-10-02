@@ -1,5 +1,6 @@
 import { numericValue } from './fieldCatalog.js'
 import { chartColorKey } from './visualStyle.js'
+import { toUserMessage } from '../../utils/userMessage.js'
 
 export const AGGREGATIONS = { direct: '直接值（不聚合）', sum: '求和', avg: '平均值', max: '最大值', min: '最小值', count: '有效值计数' }
 export const BINDING_CAPABILITIES = {
@@ -191,7 +192,7 @@ export function compileWidgetData(kind, binding, dataset) {
     const sortedSeries = series.map(item => ({ ...item, values: order.map(index => item.values[index]) }))
     if (kind === 'kpi') return { status: 'ready', value: sortedSeries[0].values[0], label: sortedSeries[0].name, unit: binding.measures[0].aggregation === 'count' ? '' : dataset.fields.find(field => field.id === binding.measures[0].field)?.unit || '' }
     return { status: 'ready', categories: sortedCategories, dimensionTuples: order.map(index => Object.fromEntries(binding.dimensions.map((dimension, dimensionIndex) => [dimension.field, categoryValues[index].raw[dimensionIndex]]))), series: sortedSeries.map(seriesItem => ({ ...seriesItem, axis: binding.measures.find(measure => measure.field === seriesItem.field)?.axis || 'left' })), items: sortedCategories.map((name, index) => ({ name, value: sortedSeries[0].values[index] })).filter(item => item.value !== null) }
-  } catch (error) { return { status: 'invalid', message: error.message } }
+  } catch (error) { return { status: 'invalid', message: toUserMessage(error, '组件字段绑定无效，请检查字段与聚合方式。') } }
 }
 
 // Chart options are a downstream presentation adapter, not the engine contract.

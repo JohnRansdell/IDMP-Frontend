@@ -17,7 +17,7 @@
 </template>
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from '@/idmp/utils/message'
 import { useRouter } from 'vue-router'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'

@@ -104,7 +104,8 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { ElMessage } from '@/idmp/utils/message'
 import { useRoute, useRouter } from 'vue-router'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import { fetchDataDomains, fetchSemanticTableFields, fetchSemanticTables } from '@/idmp/api/modules/meta'

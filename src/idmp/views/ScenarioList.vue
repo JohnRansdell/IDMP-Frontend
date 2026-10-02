@@ -49,7 +49,7 @@
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from '@/idmp/utils/message'
 import { useRouter } from 'vue-router'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'

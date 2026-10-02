@@ -1,3 +1,5 @@
+import { sanitizeResponseMessages, toUserMessage } from '../utils/userMessage.js'
+
 export const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL || '/api/v1'
 const AUTH_TOKEN_STORAGE_KEY = 'idmp_access_token'
 const QUERY_CACHE_MAX_ENTRIES = 80
@@ -134,7 +136,7 @@ export async function requestJson(path, options = {}) {
     responseText = await response.text()
   } catch (error) {
     if (error?.name === 'AbortError' && didTimeout) {
-      const timeoutError = new Error(`请求超时（${timeoutMs}ms）`)
+      const timeoutError = new Error('请求超时，请稍后重试。')
       timeoutError.status = 408
       timeoutError.code = 'REQUEST_TIMEOUT'
       timeoutError.path = path
@@ -185,7 +187,7 @@ export async function requestJson(path, options = {}) {
     throw createApiError(Number(payload.status || 422), payload, path)
   }
 
-  const result = payload?.data ?? payload
+  const result = sanitizeResponseMessages(payload?.data ?? payload)
   if (cacheable && queryCacheGeneration === cacheGeneration) {
     saveQueryCache(cacheKey, result, responseText.length, ttl)
   } else if (!cacheable && method !== 'GET' && !path.startsWith('/auth/') && !isReadOnlyPost(path)) {
@@ -197,18 +199,14 @@ export async function requestJson(path, options = {}) {
 export function createApiError(status, payload = {}, path = '') {
   const serverMessage = typeof payload?.message === 'string' ? payload.message
     : typeof payload?.error === 'string' ? payload.error : ''
-  const technicalMessage = /Encountered unexpected token|Was expecting one of|JSQLParser|SQLSTATE|Communications link failure|\b(?:[A-Za-z]+Exception|TypeError|NetworkError)\b|\bat [\w.$]+\([^)]*\.java:\d+\)|^\s*(?:Bad Gateway|Gateway Timeout|Internal Server Error|Service Unavailable|Whitelabel Error Page)\s*$/i
-  const message = serverMessage && /[\u3400-\u9fff]/.test(serverMessage) && !technicalMessage.test(serverMessage)
-    ? serverMessage
-    : technicalMessage.test(serverMessage) && /SQL|token|parse/i.test(serverMessage) ? 'SQL 语句格式有误，请检查语法后重试。'
-      : status === 401 ? '登录状态已失效，请重新登录。'
+  const fallback = status === 401 ? '登录状态已失效，请重新登录。'
       : status === 403 ? '当前账号没有权限执行此操作。'
         : status === 404 ? '请求的内容不存在或已失效。'
           : status === 408 || status === 504 ? '请求超时，请稍后重试。'
             : status === 429 ? '请求过于频繁，请稍后重试。'
               : status >= 500 ? '服务暂时不可用，请稍后重试。' : '请求未能完成，请检查输入后重试。'
   const traceId = payload?.traceId || payload?.traceID || payload?.requestId || ''
-  const error = new Error(traceId ? `${message} (traceId: ${traceId})` : message)
+  const error = new Error(toUserMessage(serverMessage, fallback))
   error.status = Number(status) || 0
   error.code = payload?.code
   error.traceId = traceId

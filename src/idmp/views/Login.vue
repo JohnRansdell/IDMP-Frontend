@@ -17,7 +17,7 @@
 
 <script setup>
 import { reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from '@/idmp/utils/message'
 import { useRoute, useRouter } from 'vue-router'
 import { login } from '@/idmp/api/modules/system'
 import { sessionState } from '@/idmp/auth/session'

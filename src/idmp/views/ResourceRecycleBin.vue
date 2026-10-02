@@ -39,7 +39,8 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { ElMessage } from '@/idmp/utils/message'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import { getStatusLabel } from '@/idmp/design/status'
 import { formatApiError } from '@/idmp/utils/apiError'

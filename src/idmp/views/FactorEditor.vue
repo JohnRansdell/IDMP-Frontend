@@ -17,7 +17,9 @@
 <script setup>
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { ElMessage } from '@/idmp/utils/message'
+import { fieldLabel, toUserMessage } from '@/idmp/utils/userMessage'
 import { ArrowLeft, Delete, Plus } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import FactorRuleBuilder from '@/idmp/components/FactorRuleBuilder.vue'
@@ -94,7 +96,7 @@ function openIndicatorEditor(){const query={};if(Array.isArray(trialPeriod.value
 function toOpaqueId(value){return value===undefined||value===null||value===''?'':String(value)}
 async function handleFactorSaveError(error){const conflict=resolveResourceConflict(error);if(!conflict){ElMessage.error(error?.message||'因子保存失败');return}const action=await ElMessageBox.confirm(`已存在同名因子：${conflict.resource.name}（${conflict.resource.code}）。未创建新因子。`, '因子名称冲突', {type:'warning',confirmButtonText:'打开已有因子',cancelButtonText:'返回修改',distinguishCancelAndClose:true}).catch(()=> 'cancel');if(action==='confirm'){const path=resourceConflictEditorPath(conflict);if(path)router.push(path)}}
 function wait(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
-function formatCompileDiagnostics(diagnostics){return(diagnostics||[]).map(item=>{const path=String(item.path||'');const continuousHint=/value\.(start|end)|valueSetVersionId|continuous/i.test(path)?`连续范围条件 ${path}：`:path?`${path}：`:'';return `${item.code?`[${item.code}] `:''}${continuousHint}${item.message||item.suggestion||'未知编译问题'}${item.suggestion&&item.suggestion!==item.message?`（建议：${item.suggestion}）`:''}`}).join('；')}
+function formatCompileDiagnostics(diagnostics){return(diagnostics||[]).map(item=>{const label=fieldLabel(item.path);const message=toUserMessage(item.message||item.suggestion,'因子配置未通过校验，请检查计算口径');const suggestion=item.suggestion?toUserMessage(item.suggestion,''):'';return `${label==='填写的信息'?'':label+'：'}${message}${suggestion&&suggestion!==message?`（建议：${suggestion}）`:''}`}).join('；')}
 function fieldKey(reference){if(reference&&typeof reference==='object'){const alias=reference.sourceAlias||dslForm.baseAlias;const code=reference.fieldCode||'';return alias===dslForm.baseAlias?code:`${alias}.${code}`}return String(reference||'')}
 function toEditableFilterRoot(node){if(!node||node.nodeType==='TRUE')return{nodeType:'AND',children:[]};const normalized=withFilterId(node);return['AND','OR'].includes(normalized.nodeType)?normalized:{nodeType:'AND',children:[normalized]}}
 function withFilterId(node){if(!node)return node;const result={...node,id:node.id||`filter-${Date.now()}-${Math.random()}`};if(node.nodeType==='PREDICATE')result.fieldCode=fieldKey(node.fieldRef??node.fieldCode);if(node.children)result.children=node.children.map(withFilterId);if(node.child)result.child=withFilterId(node.child);return result}

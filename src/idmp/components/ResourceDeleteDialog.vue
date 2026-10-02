@@ -43,7 +43,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from '@/idmp/utils/message'
 import { formatApiError } from '@/idmp/utils/apiError'
 
 const props = defineProps({

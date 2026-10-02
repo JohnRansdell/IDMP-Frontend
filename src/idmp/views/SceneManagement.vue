@@ -281,7 +281,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from '@/idmp/utils/message'
 import {
   CopyDocument,
   DataAnalysis,

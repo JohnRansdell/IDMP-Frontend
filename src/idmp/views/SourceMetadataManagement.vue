@@ -182,7 +182,9 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { ElMessage } from '@/idmp/utils/message'
+import { formatApiError } from '@/idmp/utils/apiError'
 import { Refresh } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
@@ -350,15 +352,7 @@ function stateTypeForError(error) {
 }
 
 function formatErrorMessage(error, fallback) {
-  if (!error) return fallback
-  const status = error.status
-  const traceId = error.payload?.traceId
-  let message = error.payload?.message || error.message || fallback
-  if (status === 401) message = `未登录或访问令牌已失效：${message}`
-  else if (status === 403) message = `当前账号无权执行此操作：${message}`
-  else if (status >= 500) message = `后端或源数据库不可达：${message}`
-  else if (!status) message = `网络请求失败：${message}`
-  return traceId && !String(message).includes(traceId) ? `${message}（traceId: ${traceId}）` : String(message)
+  return formatApiError(error, fallback)
 }
 </script>
 

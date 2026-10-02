@@ -133,7 +133,9 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { ElMessage } from '@/idmp/utils/message'
+import { formatApiError } from '@/idmp/utils/apiError'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
@@ -282,14 +284,7 @@ function stateTypeForError(error) {
 }
 
 function formatErrorMessage(error, fallback) {
-  if (!error) return fallback
-  const status = error.status
-  const traceId = error.payload?.traceId
-  let message = error.payload?.message || error.message || fallback
-  if (status === 409) message = `数据域编码已存在或发生版本冲突：${message}`
-  else if (status === 401) message = `未登录或访问令牌已失效：${message}`
-  else if (status === 403) message = `当前账号无权执行此操作：${message}`
-  return traceId && !String(message).includes(traceId) ? `${message}（traceId: ${traceId}）` : String(message)
+  return formatApiError(error, fallback)
 }
 </script>
 

@@ -39,7 +39,8 @@
 
 <script setup>
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { ElMessage } from '@/idmp/utils/message'
 import { useRoute, useRouter } from 'vue-router'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import { compileFactorVersion, fetchFactorTemplateParameterSchema, fetchFactorTemplateVersion, fetchFactorTrialResults, fetchFactorVersion, instantiateFactorTemplateVersion, publishFactorVersion, trialFactorVersion } from '@/idmp/api/modules/factors'

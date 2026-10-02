@@ -39,7 +39,8 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { ElMessage } from '@/idmp/utils/message'
 import { useRoute, useRouter } from 'vue-router'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import { fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'

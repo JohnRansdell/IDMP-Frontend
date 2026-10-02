@@ -20,7 +20,7 @@
 </template>
 <script setup>
 import { computed, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from '@/idmp/utils/message'
 import { BACKGROUND_ASSETS } from '../backgroundAssets.js'
 const props = defineProps({ modelValue: { type: String, default: '' } })
 const emit = defineEmits(['update:modelValue'])
