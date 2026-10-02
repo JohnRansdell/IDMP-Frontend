@@ -24,6 +24,67 @@ import {
   validateSqlRuntimeParameterValues
 } from '../src/idmp/api/adapters/sqlImport.js'
 import { resourceConflictEditorPath, resolveResourceConflict } from '../src/idmp/api/adapters/resourceConflict.js'
+import { sqlImportGroupingFields, sqlImportGroupingFieldLabels, normalizeDimensionGrain, validateSqlDimensionBindings, selectSqlDimensionBindings } from '../src/idmp/features/indicator/grouping.js'
+
+test('SQL import preserves physical field choices and submits per-factor grouping bindings', () => {
+  const preview = normalizeSqlImportPreview({ factors: [{ key: 'total', groupingSupported: true, dimensionFieldOptions: [{ physicalTable: 'visit', sqlAlias: 'b', columnName: 'dept_code', fieldReference: 'b.dept_code', columnType: 'varchar', comment: '科室' }] }] })
+  assert.equal(preview.factors[0].groupingSupported, true)
+  assert.equal(preview.factors[0].dimensionFieldOptions[0].fieldReference, 'b.dept_code')
+  const factors = [{ key: 'total', code: 'TOTAL', name: '入院人次', calculationMode: 'STATIC', dimensionBindings: { DEPT_CODE: 'b.dept_code' } }]
+  const indicator = { code: 'RATE', name: '比例', dimensionGrain: ['dept_code'], drillPaths: [{ pathCode: 'ORGANIZATION', maxLevel: 'ATTENDING_DOCTOR', pathVersionId: '102027642461313071' }] }
+  const payload = buildSqlImportMetadataPayload({ scope: 'FACTORS_AND_INDICATOR', factors, indicator })
+  assert.deepEqual(payload.dimensionGrain, ['DEPT_CODE'])
+  assert.equal(payload.drillPaths[0].pathVersionId, '102027642461313071')
+  assert.deepEqual(payload.factors[0].dimensionBindings, factors[0].dimensionBindings)
+  assert.deepEqual(mergeSqlFactorMetadata(factors, preview.factors)[0].dimensionBindings, factors[0].dimensionBindings)
+  const only = buildSqlImportMetadataPayload({ scope: 'FACTORS_ONLY', factors, indicator })
+  assert.equal(Object.hasOwn(only, 'dimensionGrain'), false)
+  assert.equal(Object.hasOwn(only.factors[0], 'dimensionBindings'), false)
+  const resumed = normalizeSqlImportTask({ metadata: payload, preview })
+  assert.deepEqual(resumed.metadata.dimensionGrain, ['DEPT_CODE'])
+  assert.equal(resumed.metadata.drillPaths[0].pathVersionId, '102027642461313071')
+})
+
+test('SQL import mappings follow the selected path depth and never guess ambiguous joins', () => {
+  const catalog = [{ version: { id: '91' }, levels: [
+    { levelCode: 'HOSPITAL' },
+    { levelCode: 'OUT_DEPT', dimensionSemanticFieldCode: 'DEPT_CODE', memberKeySemanticFieldCode: 'DEPT_CODE', displaySemanticFieldCode: 'DEPT_NAME' },
+    { levelCode: 'ATTENDING_DOCTOR', dimensionSemanticFieldCode: 'DOCTOR_CODE', displaySemanticFieldCode: 'DOCTOR_NAME' }
+  ] }]
+  assert.deepEqual(sqlImportGroupingFields([{ pathCode: 'ORGANIZATION', pathVersionId: '91', maxLevel: 'OUT_DEPT' }], ['diagnosis'], catalog), ['DIAGNOSIS', 'DEPT_CODE', 'DEPT_NAME'])
+  const options = [{ columnName: 'dept_code', fieldReference: 'b.dept_code' }, { columnName: 'dept_code', fieldReference: 't.dept_code' }]
+  assert.match(validateSqlDimensionBindings([{ key: 'total', dimensionBindings: {} }], [{ key: 'total', dimensionFieldOptions: options }], ['DEPT_CODE']), /选择物理字段/)
+  assert.deepEqual(selectSqlDimensionBindings({ dimensionBindings: { DEPT_CODE: 'b.dept_code', DOCTOR_CODE: 'b.doctor_code' } }, ['DEPT_CODE']), { DEPT_CODE: 'b.dept_code' })
+})
+
+test('SQL import labels drill mappings in Chinese without changing binding keys or user names', () => {
+  const catalog = [{ version: { id: '91' }, levels: [
+    { levelCode: 'OUT_DEPT', levelName: '出院科室', dimensionSemanticFieldCode: 'OUT_DEPT_CODE', memberKeySemanticFieldCode: 'OUT_DEPT_CODE', displaySemanticFieldCode: 'OUT_DEPT_NAME' },
+    { levelCode: 'ATTENDING_DOCTOR', levelName: '主治医生', dimensionSemanticFieldCode: 'ATTENDING_DOCTOR', memberKeySemanticFieldCode: 'ATTENDING_DOCTOR', displaySemanticFieldCode: 'ATTENDING_DOCTOR_NAME' }
+  ] }]
+  const paths = [{ pathCode: 'ORGANIZATION', pathVersionId: '91', maxLevel: 'ATTENDING_DOCTOR' }]
+  const labels = sqlImportGroupingFieldLabels(paths, ['科室', 'CUSTOM_NAME'], catalog)
+  assert.deepEqual(labels, { 科室: '科室', CUSTOM_NAME: 'CUSTOM_NAME', OUT_DEPT_CODE: '出院科室编码', OUT_DEPT_NAME: '出院科室名称', ATTENDING_DOCTOR: '主治医生编码', ATTENDING_DOCTOR_NAME: '主治医生名称' })
+  assert.match(validateSqlDimensionBindings([{ key: 'total', name: '入院人次', dimensionBindings: {} }], [], ['ATTENDING_DOCTOR'], labels), /主治医生编码/)
+  assert.equal(sqlImportGroupingFieldLabels(paths, ['OUT_DEPT_CODE'], catalog).OUT_DEPT_CODE, 'OUT_DEPT_CODE')
+  assert.equal(sqlImportGroupingFieldLabels([{ ...paths[0], maxLevel: 'OUT_DEPT' }], [], catalog).ATTENDING_DOCTOR, undefined)
+  assert.deepEqual(Object.keys(labels), sqlImportGroupingFields(paths, ['科室', 'CUSTOM_NAME'], catalog))
+})
+
+test('user-defined dimensions bind different physical columns without semantic inference', () => {
+  const drafts = [{ key: 'numerator', dimensionFieldOptions: [{ columnName: 'dept_code', fieldReference: 'b.dept_code' }] }, { key: 'denominator', dimensionFieldOptions: [{ columnName: 'department_id', fieldReference: 'a.department_id' }] }]
+  const factors = [{ key: 'numerator', code: 'NUMERATOR', name: '分子', dimensionBindings: { 科室: 'b.dept_code' } }, { key: 'denominator', code: 'DENOMINATOR', name: '分母', dimensionBindings: { 科室: 'a.department_id' } }]
+  assert.deepEqual(normalizeDimensionGrain([' 科室 ', 'disease']), ['科室', 'DISEASE'])
+  assert.equal(validateSqlDimensionBindings(factors, drafts, ['科室']), '')
+  assert.match(validateSqlDimensionBindings([{ ...factors[0], dimensionBindings: {} }], drafts, ['科室']), /分子.*科室.*选择物理字段/)
+  assert.match(validateSqlDimensionBindings([{ ...factors[1], dimensionBindings: { 科室: 'b.dept_code' } }], drafts, ['科室']), /不属于当前 SQL/)
+  const payload = buildSqlImportMetadataPayload({ scope: 'FACTORS_AND_INDICATOR', factors, indicator: { code: 'RATE', name: '比例', dimensionGrain: ['科室'] } })
+  assert.deepEqual(payload.dimensionGrain, ['科室'])
+  assert.equal(payload.factors[1].dimensionBindings.科室, 'a.department_id')
+  assert.throws(() => normalizeDimensionGrain(['科室', '科室']), /重复/)
+  assert.throws(() => normalizeDimensionGrain(['科室;SELECT']), /只能包含/)
+  assert.throws(() => normalizeDimensionGrain(['factor_value']), /系统计算结果/)
+})
 
 test('SQL import preview keeps opaque ids and normalizes generated drafts', () => {
   const preview = normalizeSqlImportPreview({

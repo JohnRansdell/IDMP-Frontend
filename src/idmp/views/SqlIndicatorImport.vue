@@ -31,6 +31,10 @@
         </div>
       </section>
       <section v-if="scope === 'FACTORS_AND_INDICATOR'" class="surface-card section"><h2>指标信息</h2><el-form label-position="top"><div class="grid"><el-form-item label="指标编码"><el-input v-model="indicator.code" @input="indicator.code = normalizeCode(indicator.code)" /></el-form-item><el-form-item label="指标名称"><el-input v-model.trim="indicator.name" /></el-form-item></div><el-form-item label="指标说明"><el-input v-model.trim="indicator.description" type="textarea" /></el-form-item><el-form-item v-if="allTemporal" label="时间下钻"><el-switch v-model="indicator.timeDrillEnabled" active-text="启用" inactive-text="关闭" /></el-form-item><el-alert v-else-if="mixedModes" type="warning" :closable="false" title="当前因子同时包含静态与时序模式，不能创建同一个指标；请改为仅创建因子，或统一全部因子的计算模式。" /><el-alert v-else type="info" :closable="false" title="静态指标不支持时间下钻。" /></el-form></section>
+      <section v-if="scope === 'FACTORS_AND_INDICATOR'" class="surface-card section">
+        <h2>组合粒度与业务下钻</h2>
+        <SqlImportGroupingFields v-model:dimension-grain="indicator.dimensionGrain" v-model:drill-paths="indicator.drillPaths" v-model:factors="factorMetadata" :drafts="preview.factors" :catalog="drillPathCatalog" :loading="drillPathLoading" :error="drillPathError" @reload="loadDrillPathCatalog" />
+      </section>
       <section class="surface-card section"><h2>解析结果预览</h2><el-tabs><el-tab-pane v-for="factor in preview.factors" :key="factor.key" :label="factor.key"><JsonCodePreview :value="factor.dsl" :label="`${factor.key} 因子 DSL`" /></el-tab-pane><el-tab-pane label="指标公式"><JsonCodePreview :value="preview.formula?.template || {}" label="指标公式" /></el-tab-pane></el-tabs></section>
       <div class="action-bar"><el-button type="primary" :loading="metadataLoading" @click="submitMetadata">确认元数据并进入试算</el-button></div>
     </template>
@@ -71,21 +75,70 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { ElMessage } from '@/idmp/utils/message'
 import { ArrowLeft, Delete, Plus } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import JsonCodePreview from '@/idmp/components/JsonCodePreview.vue'
+import SqlImportGroupingFields from '@/idmp/components/SqlImportGroupingFields.vue'
+import { normalizeDimensionGrain, serializeDrillPaths, sqlImportGroupingFields, sqlImportGroupingFieldLabels, selectSqlDimensionBindings, validateSqlDimensionBindings } from '@/idmp/features/indicator/grouping'
 import { SQL_RUNTIME_PARAMETER_TYPES, buildSqlImportCreatePayload, buildSqlImportMetadataPayload, buildSqlImportTrialPayload, buildSqlRuntimeQueryPayload, canFinalizeSqlImport, canSubmitSqlImportMetadata, canTrialSqlImport, collectSqlRuntimeParameters, mergeSqlFactorMetadata, nextSqlImportCode, normalizeSqlImportOperationError, normalizeSqlImportTask, shouldPollSqlImport, sqlImportResourceTypeLabel, sqlImportStatusLabel, sqlImportStepLabel, validateSqlRuntimeParameterSyntax } from '@/idmp/api/adapters/sqlImport'
 import { abandonSqlImport, createSqlImport, fetchSqlImport, finalizeSqlImport, retrySqlImport, trialSqlImport, updateSqlImportMetadata } from '@/idmp/api/modules/sqlImports'
 import { fetchCalcBatch } from '@/idmp/api/modules/calculation'
-import { fetchSourceTableFields } from '@/idmp/api/modules/meta'
+import { fetchSourceTableFields, fetchDrillPaths, fetchDrillPathVersion } from '@/idmp/api/modules/meta'
 import { queryFactorVersion } from '@/idmp/api/modules/factors'
 import { queryIndicatorVersion } from '@/idmp/api/modules/indicators'
 
 const ResourceTable = { props: { resources: { type: Array, default: () => [] } }, setup: () => ({ statusLabel: sqlImportStatusLabel, resourceTypeLabel: sqlImportResourceTypeLabel }), template: '<el-table :data="resources" size="small"><el-table-column prop="key" label="资源"/><el-table-column label="类型"><template #default="{row}">{{ resourceTypeLabel(row.type) }}</template></el-table-column><el-table-column label="状态"><template #default="{row}">{{ row.published ? "已发布" : row.compiled ? "已编译" : statusLabel(row.trial?.status || "RUNNING") }}</template></el-table-column><el-table-column label="诊断"><template #default="{row}">{{ row.diagnostics?.map(x => x.message || x).join("；") || "—" }}</template></el-table-column></el-table>' }
 const router = useRouter(); const route = useRoute(); const sql = ref(''); const importTask = ref(null); const factorMetadata = ref([]); const tableMappings = reactive({}); const scope = ref('FACTORS_AND_INDICATOR'); const category = ref(''); const trialPeriod = ref([])
-const indicator = reactive({ code: '', name: '', description: '', timeDrillEnabled: true, formula: null })
+const indicator = reactive({ code: '', name: '', description: '', timeDrillEnabled: true, formula: null, drillPaths: [], dimensionGrain: [] })
+const drillPathCatalog = ref([]); const drillPathLoading = ref(false); const drillPathError = ref('')
+async function loadDrillPathCatalog() {
+  drillPathLoading.value = true; drillPathError.value = ''
+  try {
+    const paths = []
+    for (let page = 1; ; page++) {
+      const result = await fetchDrillPaths({ subjectType: 'INDICATOR_RESULT', page, size: 100 })
+      const rows = result.records || []
+      paths.push(...rows)
+      if (!rows.length || paths.length >= Number(result.total || rows.length)) break
+    }
+    const ids = [...new Set(paths.filter(path => ['ORGANIZATION', 'DISEASE'].includes(path.pathCode)).map(path => path.currentPublishedVersionId).filter(Boolean))]
+    const details = await Promise.all(ids.map(fetchDrillPathVersion))
+    drillPathCatalog.value = details.filter(detail => detail.version?.publicationStatus === 'PUBLISHED' && detail.levels?.length)
+  } catch (error) { drillPathError.value = error?.message || '下钻路径读取失败，请重试' }
+  finally { drillPathLoading.value = false }
+}
+function metadataPayload() {
+  const fields = scope.value === 'FACTORS_ONLY' ? [] : sqlImportGroupingFields(indicator.drillPaths, indicator.dimensionGrain, drillPathCatalog.value)
+  return buildSqlImportMetadataPayload({ scope: scope.value, category: category.value, indicator, factors: factorMetadata.value.map(factor => ({ ...factor, dimensionBindings: selectSqlDimensionBindings(factor, fields) })) })
+}
+function validateGrouping() {
+  if (scope.value !== 'FACTORS_AND_INDICATOR') return ''
+  try {
+    normalizeDimensionGrain(indicator.dimensionGrain)
+    serializeDrillPaths(indicator.drillPaths)
+    for (const path of indicator.drillPaths) {
+      const definition = drillPathCatalog.value.find(item => String(item.version.id) === String(path.pathVersionId))
+      if (!definition?.levels.some(level => level.levelCode === path.maxLevel)) return '下钻路径版本或层级已不可用，请刷新路径后重新选择'
+    }
+    const fields = sqlImportGroupingFields(indicator.drillPaths, indicator.dimensionGrain, drillPathCatalog.value)
+    const labels = sqlImportGroupingFieldLabels(indicator.drillPaths, indicator.dimensionGrain, drillPathCatalog.value)
+    const bindingError = validateSqlDimensionBindings(factorMetadata.value, preview.value?.factors || [], fields, labels)
+    if (bindingError) return bindingError
+    if (fields.length) {
+      for (const draft of preview.value?.factors || []) {
+        if (!draft.groupingSupported) return `因子 ${draft.key} 的 SQL 暂不支持组合粒度或业务下钻`
+        const factor = factorMetadata.value.find(item => item.key === draft.key)
+        for (const [code, binding] of Object.entries(selectSqlDimensionBindings(factor, fields))) {
+          if (!draft.dimensionFieldOptions.some(field => field.fieldReference === binding)) return `因子 ${draft.key} 的 ${code} 映射字段不属于当前 SQL，请重新选择`
+        }
+      }
+    }
+    return ''
+  } catch (error) { return error.message }
+}
 const operationError = ref(null); const createLoading = ref(false); const metadataLoading = ref(false); const trialLoading = ref(false); const finalizeLoading = ref(false); const actionLoading = ref(false); const initializationStatus = ref(''); let timer = null; let initializationTimer = null
 const parameterTypes = SQL_RUNTIME_PARAMETER_TYPES; const runtimeParameterValues = reactive({}); const runtimeQueryLoading = ref(false); const runtimeQueryResult = ref(null); const selectedFactorVersionId = ref('')
 const timeFieldDialogVisible = ref(false); const timeFieldLoading = ref(false); const timeFieldSearch = ref(''); const physicalTimeFields = ref([]); const activeTimeFieldFactor = ref(null)
@@ -105,12 +158,25 @@ function formatRuntimeCell(value) { return value && typeof value === 'object' ? 
 async function openTimeFieldSelector(factor) { activeTimeFieldFactor.value = factor; timeFieldSearch.value = ''; timeFieldDialogVisible.value = true; timeFieldLoading.value = true; physicalTimeFields.value = []; const candidateTables = timeFieldOptions(factor).map(item => item.physicalTable); const tables = [...new Set([...candidateTables, ...(preview.value?.tables || []).map(item => item.physicalTable)].filter(Boolean))]; if (!tables.length) { timeFieldLoading.value = false; return ElMessage.warning('解析结果未返回可查询的物理表') } const results = await Promise.allSettled(tables.map(async physicalTable => ({ physicalTable, fields: await fetchSourceTableFields(physicalTable) }))); physicalTimeFields.value = results.flatMap(result => result.status === 'fulfilled' ? (Array.isArray(result.value.fields) ? result.value.fields : []).map(field => ({ physicalTable: result.value.physicalTable, columnName: String(field.columnName || ''), columnType: String(field.columnType || ''), comment: String(field.comment || ''), fieldReference: `${result.value.physicalTable}.${field.columnName}` })) : []).filter(item => item.columnName); timeFieldLoading.value = false; if (!physicalTimeFields.value.length) ElMessage.warning('未能读取物理表字段，请检查数据源权限后重试') }
 function choosePhysicalTimeField(field) { if (!activeTimeFieldFactor.value) return; activeTimeFieldFactor.value.timeField = field.fieldReference; timeFieldDialogVisible.value = false; ElMessage.success(`已选择 ${field.fieldReference}`) }
 function onFactorModeChange(factor) { if (factor.calculationMode === 'STATIC') factor.timeField = ''; else if (!factor.timeField) factor.timeField = timeFieldOptions(factor).find(item => item.recommended)?.fieldReference || '' }
-function accept(payload) { const task = normalizeSqlImportTask(payload); importTask.value = task; if (task.importId) router.replace({ query: { ...route.query, importId: task.importId } }); if (task.preview?.factors?.length && !factorMetadata.value.length) { factorMetadata.value = mergeSqlFactorMetadata([], task.preview.factors); task.preview.tables.forEach(x => { if (x.selectedViewMappingId) tableMappings[x.physicalTable] = x.selectedViewMappingId }) }; if (!selectedFactorVersionId.value && task.result?.factors?.length) selectedFactorVersionId.value = String(task.result.factors[0].factorVersionId || ''); schedule(); if (task.status === 'SUCCEEDED' && task.result?.initializationBatchId) scheduleInitializationPoll(task.result.initializationBatchId) }
+function accept(payload) {
+  const task = normalizeSqlImportTask(payload); importTask.value = task
+  if (task.importId) router.replace({ query: { ...route.query, importId: task.importId } })
+  if (task.preview?.factors?.length && !factorMetadata.value.length) {
+    factorMetadata.value = mergeSqlFactorMetadata(task.metadata?.factors || [], task.preview.factors)
+    task.preview.tables.forEach(x => { if (x.selectedViewMappingId) tableMappings[x.physicalTable] = x.selectedViewMappingId })
+    if (task.metadata) {
+      scope.value = task.metadata.scope; category.value = task.metadata.category || ''
+      Object.assign(indicator, { code: task.metadata.indicatorCode || '', name: task.metadata.indicatorName || '', description: task.metadata.indicatorDescription || '', timeDrillEnabled: task.metadata.timeDrillEnabled !== false, formula: task.metadata.formula, drillPaths: task.metadata.drillPaths, dimensionGrain: task.metadata.dimensionGrain })
+    }
+  }
+  if (!selectedFactorVersionId.value && task.result?.factors?.length) selectedFactorVersionId.value = String(task.result.factors[0].factorVersionId || '')
+  schedule(); if (task.status === 'SUCCEEDED' && task.result?.initializationBatchId) scheduleInitializationPoll(task.result.initializationBatchId)
+}
 function schedule() { clearTimeout(timer); if (shouldPollSqlImport(importTask.value)) timer = setTimeout(refresh, 1500) }
 async function refresh() { if (!importTask.value?.importId) return; try { accept(await fetchSqlImport(importTask.value.importId)) } catch (e) { captureOperationError(e, '导入状态读取失败，请稍后重试') } }
 async function createImport() { const syntaxMessage = validateSqlRuntimeParameterSyntax(sql.value); if (syntaxMessage) return ElMessage.warning({ message: syntaxMessage, duration: 8000, showClose: true }); operationError.value = null; createLoading.value = true; try { accept(await createSqlImport(buildSqlImportCreatePayload({ sql: sql.value, tableMappings }), key('sql-import'))); ElMessage.success('SQL 已解析，请确认治理元数据') } catch (e) { captureOperationError(e, 'SQL 解析失败') } finally { createLoading.value = false } }
-function validateMetadata() { if (!factorMetadata.value.every(x => x.code && x.name && (x.calculationMode !== 'TEMPORAL' || x.timeField))) return '请补全因子编码、名称和时序因子的时间字段'; const parameterMessage = validateRuntimeDeclarations(); if (parameterMessage) return parameterMessage; if (scope.value === 'FACTORS_AND_INDICATOR') { if (!indicator.code || !indicator.name) return '请填写指标编码和名称'; const modes = new Set(factorMetadata.value.map(x => x.calculationMode)); if (modes.size !== 1) return '创建指标时，全部因子必须使用相同计算模式'; if (!hasFormula(preview.value?.formula?.template)) return '解析结果没有可提交的指标公式，请调整 SQL 后重新解析，或改为仅创建因子' } return '' }
-async function submitMetadata() { const message = validateMetadata(); if (message) return ElMessage.warning(message); operationError.value = null; metadataLoading.value = true; try { indicator.formula = preview.value?.formula?.template || {}; if (!allTemporal.value) indicator.timeDrillEnabled = false; let activeImportId = importTask.value.importId; if (needsMappedReparse()) { const previousImportId = activeImportId; const previousFactors = factorMetadata.value; const mappedTask = await createSqlImport(buildSqlImportCreatePayload({ sql: sql.value || preview.value?.normalizedSql, tableMappings }), key('sql-import-mapped')); accept(mappedTask); activeImportId = importTask.value.importId; if (!activeImportId) throw new Error('映射重解析未返回新的导入会话 ID'); factorMetadata.value = mergeSqlFactorMetadata(previousFactors, preview.value?.factors || []); indicator.formula = preview.value?.formula?.template || {}; const mappedValidation = validateMetadata(); if (mappedValidation) throw new Error(`映射重解析后需要重新确认：${mappedValidation}`); void abandonSqlImport(previousImportId, '已按人工确认的表映射重新创建导入会话', key('sql-reparse-cleanup')).catch(() => {}); } accept(await updateSqlImportMetadata(activeImportId, buildSqlImportMetadataPayload({ scope: scope.value, category: category.value, indicator, factors: factorMetadata.value }))); ElMessage.success('元数据已确认，可发起试算') } catch (e) { captureOperationError(e, '元数据提交失败') } finally { metadataLoading.value = false } }
+function validateMetadata() { if (!factorMetadata.value.every(x => x.code && x.name && (x.calculationMode !== 'TEMPORAL' || x.timeField))) return '请补全因子编码、名称和时序因子的时间字段'; const parameterMessage = validateRuntimeDeclarations(); if (parameterMessage) return parameterMessage; if (scope.value === 'FACTORS_AND_INDICATOR') { if (!indicator.code || !indicator.name) return '请填写指标编码和名称'; const modes = new Set(factorMetadata.value.map(x => x.calculationMode)); if (modes.size !== 1) return '创建指标时，全部因子必须使用相同计算模式'; if (!hasFormula(preview.value?.formula?.template)) return '解析结果没有可提交的指标公式，请调整 SQL 后重新解析，或改为仅创建因子' } return validateGrouping() }
+async function submitMetadata() { const message = validateMetadata(); if (message) return ElMessage.warning(message); operationError.value = null; metadataLoading.value = true; try { indicator.formula = preview.value?.formula?.template || {}; if (!allTemporal.value) indicator.timeDrillEnabled = false; let activeImportId = importTask.value.importId; if (needsMappedReparse()) { const previousImportId = activeImportId; const previousFactors = factorMetadata.value; const mappedTask = await createSqlImport(buildSqlImportCreatePayload({ sql: sql.value || preview.value?.normalizedSql, tableMappings }), key('sql-import-mapped')); accept(mappedTask); activeImportId = importTask.value.importId; if (!activeImportId) throw new Error('映射重解析未返回新的导入会话 ID'); factorMetadata.value = mergeSqlFactorMetadata(previousFactors, preview.value?.factors || []); indicator.formula = preview.value?.formula?.template || {}; const mappedValidation = validateMetadata(); if (mappedValidation) throw new Error(`映射重解析后需要重新确认：${mappedValidation}`); void abandonSqlImport(previousImportId, '已按人工确认的表映射重新创建导入会话', key('sql-reparse-cleanup')).catch(() => {}); } accept(await updateSqlImportMetadata(activeImportId, metadataPayload())); ElMessage.success('元数据已确认，可发起试算') } catch (e) { captureOperationError(e, '元数据提交失败') } finally { metadataLoading.value = false } }
 async function runTrial() { const valueMessage = validateRuntimeValues(); if (valueMessage) return ElMessage.warning(valueMessage); const payload = buildSqlImportTrialPayload(factorMetadata.value, trialPeriod.value, runtimeParameterValues); if (hasTemporalFactors.value && (!payload.periodStart || !payload.periodEnd)) return ElMessage.warning('请选择完整试算周期'); operationError.value = null; trialLoading.value = true; try { accept(await trialSqlImport(importTask.value.importId, payload, key('sql-trial'))) } catch (e) { captureOperationError(e, '导入试算失败') } finally { trialLoading.value = false } }
 async function runRuntimeQuery(type) { const valueMessage = validateRuntimeValues(); if (valueMessage) return ElMessage.warning(valueMessage); const selectedResource = type === 'FACTOR' ? publishedFactors.value.find(item => String(item.factorVersionId) === String(selectedFactorVersionId.value)) : null; const selectedDefinition = selectedResource ? factorMetadata.value.find(item => item.key === selectedResource.key) : null; if (type === 'FACTOR' && !selectedDefinition) return ElMessage.warning('未找到所选因子的运行参数定义'); const queryFactors = type === 'FACTOR' ? [selectedDefinition] : factorMetadata.value; const payload = buildSqlRuntimeQueryPayload(queryFactors, trialPeriod.value, runtimeParameterValues); if (queryFactors.some(item => item.calculationMode === 'TEMPORAL') && (!payload.periodStart || !payload.periodEnd)) return ElMessage.warning('请选择完整查询周期'); runtimeQueryLoading.value = true; runtimeQueryResult.value = null; try { runtimeQueryResult.value = type === 'INDICATOR' ? await queryIndicatorVersion(importTask.value.result.indicatorVersionId, payload) : await queryFactorVersion(selectedFactorVersionId.value, payload); ElMessage.success(runtimeQueryResult.value?.executionMode === 'AD_HOC_SOURCE' ? '已按临时参数从源数据重新计算' : '已读取匹配的正式结果') } catch (e) { captureOperationError(e, '即时查询失败') } finally { runtimeQueryLoading.value = false } }
 async function finalizeImport() { operationError.value = null; finalizeLoading.value = true; try { accept(await finalizeSqlImport(importTask.value.importId, key('sql-finalize'))) } catch (e) { captureOperationError(e, '确认发布失败') } finally { finalizeLoading.value = false } }
@@ -120,12 +186,12 @@ function captureOperationError(error, fallback) { const normalized = normalizeSq
 function useNextCodeBatch() { factorMetadata.value.forEach(item => { item.code = nextSqlImportCode(item.code); item.name = nextBatchName(item.name, item.code) }); if (scope.value === 'FACTORS_AND_INDICATOR') { indicator.code = nextSqlImportCode(indicator.code); indicator.name = nextBatchName(indicator.name, indicator.code) } operationError.value = null; ElMessage.success('已切换到下一批编码，请核对后重新确认元数据') }
 function nextBatchName(name, code) { const suffix = code.match(/_R\d+$/)?.[0] || '_R02'; return `${String(name || '').replace(/_R\d+$/i, '')}${suffix}` }
 function openConflictResource() { const resource = operationError.value?.resource; if (!resource?.id) return; const path = String(resource.type).toUpperCase().includes('INDICATOR') ? `/indicator/edit/${encodeURIComponent(resource.id)}` : `/factor/edit/${encodeURIComponent(resource.id)}`; router.push(path) }
-function startNewImport() { clearTimeout(timer); clearTimeout(initializationTimer); importTask.value = null; factorMetadata.value = []; Object.keys(tableMappings).forEach(item => delete tableMappings[item]); Object.keys(runtimeParameterValues).forEach(item => delete runtimeParameterValues[item]); scope.value = 'FACTORS_AND_INDICATOR'; category.value = ''; trialPeriod.value = []; initializationStatus.value = ''; selectedFactorVersionId.value = ''; runtimeQueryResult.value = null; operationError.value = null; Object.assign(indicator, { code: '', name: '', description: '', timeDrillEnabled: true, formula: null }); sql.value = ''; const query = { ...route.query }; delete query.importId; router.replace({ path: '/indicator/import/sql', query }) }
+function startNewImport() { clearTimeout(timer); clearTimeout(initializationTimer); importTask.value = null; factorMetadata.value = []; Object.keys(tableMappings).forEach(item => delete tableMappings[item]); Object.keys(runtimeParameterValues).forEach(item => delete runtimeParameterValues[item]); scope.value = 'FACTORS_AND_INDICATOR'; category.value = ''; trialPeriod.value = []; initializationStatus.value = ''; selectedFactorVersionId.value = ''; runtimeQueryResult.value = null; operationError.value = null; Object.assign(indicator, { code: '', name: '', description: '', timeDrillEnabled: true, formula: null, drillPaths: [], dimensionGrain: [] }); sql.value = ''; const query = { ...route.query }; delete query.importId; router.replace({ path: '/indicator/import/sql', query }) }
 function hasFormula(formula) { return Boolean(formula && typeof formula === 'object' && (formula.root || formula.nodeType)) }
 function needsMappedReparse() { return (preview.value?.tables || []).some(row => { const selected = String(tableMappings[row.physicalTable] || ''); return selected && selected !== String(row.selectedViewMappingId || '') }) }
 function scheduleInitializationPoll(batchId) { clearTimeout(initializationTimer); initializationTimer = setTimeout(() => pollInitializationBatch(batchId), 500) }
 async function pollInitializationBatch(batchId) { try { const batch = await fetchCalcBatch(batchId); initializationStatus.value = String(batch?.status || batch?.batchStatus || 'RUNNING').toUpperCase(); if (!['SUCCEEDED', 'SUCCESS', 'FAILED', 'CANCELLED', 'CANCELED', 'PARTIAL_SUCCEEDED'].includes(initializationStatus.value)) initializationTimer = setTimeout(() => pollInitializationBatch(batchId), 2000) } catch { initializationStatus.value = '暂未查询到批次状态'; initializationTimer = setTimeout(() => pollInitializationBatch(batchId), 3000) } }
-onMounted(() => { if (route.query.importId) { importTask.value = { importId: String(route.query.importId), status: 'RUNNING', preview: { factors: [] }, resources: [] }; refresh() } }); onBeforeUnmount(() => { clearTimeout(timer); clearTimeout(initializationTimer) })
+onMounted(() => { void loadDrillPathCatalog(); if (route.query.importId) { importTask.value = { importId: String(route.query.importId), status: 'RUNNING', preview: { factors: [] }, resources: [] }; refresh() } }); onBeforeUnmount(() => { clearTimeout(timer); clearTimeout(initializationTimer) })
 </script>
 
 <style scoped>

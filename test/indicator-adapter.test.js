@@ -2,6 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   buildIndicatorVersionPayload,
+  buildIndicatorDataSources,
+  indicatorDataSourceKey,
+  normalizeIndicatorDataSources,
   collectFormulaFactorVersionIds,
   combineFormulaNodes,
   createIndicatorDataExplanation,
@@ -20,6 +23,15 @@ import {
   selectIndicatorSummaryRecord,
   validateDrillSelection
 } from '../src/idmp/api/adapters/indicator.js'
+
+test('metadata source selections use objects and preserve existing bindings', () => {
+  const existing = { dataSourceId: '102027642461313071', sourceCategory: 'HIS', usageRole: 'PRIMARY', priority: 1, required: true }
+  const key = indicatorDataSourceKey(existing)
+  assert.deepEqual(normalizeIndicatorDataSources(['HIS']), [{ sourceCategory: 'HIS' }])
+  assert.deepEqual(buildIndicatorDataSources([key, '病案'], [existing]), [existing, { sourceCategory: '病案' }])
+  assert.notEqual(buildIndicatorDataSources([key], [existing])[0], existing)
+  assert.throws(() => buildIndicatorDataSources(['SOURCE_ID_123']), /重新加载/)
+})
 
 test('range summary only sends inclusive dates and optional published version', () => {
   assert.deepEqual(normalizeIndicatorRangeSummaryParams({
@@ -233,6 +245,18 @@ test('indicator version payload supports multiple selected drill paths', () => {
   }), /只能选择一次/)
 })
 
+test('indicator versions carry combination grain and preserve specific drill versions', () => {
+  const payload = buildIndicatorVersionPayload({ dimensionGrain: ['dept_code', 'diagnosis'], drillPaths: [{ pathCode: 'ORGANIZATION', maxLevel: 'ATTENDING_DOCTOR', pathVersionId: '102027642461313071' }] })
+  assert.deepEqual(payload.dimensionGrain, ['DEPT_CODE', 'DIAGNOSIS'])
+  assert.equal(payload.drillPaths[0].pathVersionId, '102027642461313071')
+  assert.deepEqual(buildIndicatorVersionPayload({ drillPaths: [], dimensionGrain: [] }), { drillPaths: [], dimensionGrain: [] })
+  assert.equal(validateDrillSelection({}, []), '')
+  assert.throws(() => buildIndicatorVersionPayload({ dimensionGrain: ['a', 'A'] }), /重复/)
+  assert.throws(() => buildIndicatorVersionPayload({ dimensionGrain: ['v.dept_code'] }), /字母/)
+  assert.throws(() => buildIndicatorVersionPayload({ drillPaths: [{ pathCode: 'TIME' }] }), /最大层级/)
+  assert.deepEqual(normalizeDrillCapabilities({ dimensionGrainOptions: ['DEPT_CODE', 'DIAGNOSIS'] }).dimensionGrainOptions, ['DEPT_CODE', 'DIAGNOSIS'])
+})
+
 test('drill capability adapter preserves bigint ids and validates selected levels', () => {
   const capabilities = normalizeDrillCapabilities({
     factorVersionIds: ['102027642460282572', '102027642460282586'],
@@ -279,7 +303,7 @@ test('organization drill validation reports factor grain gaps before version cre
 test('indicator version payload rejects an incomplete drill configuration', () => {
   assert.throws(
     () => buildIndicatorVersionPayload({ drillConfig: { pathCode: '', maxLevel: '' } }),
-    /必须选择下钻路径/
+    /下钻路径和最大层级不能为空/
   )
 })
 

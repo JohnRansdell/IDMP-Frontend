@@ -48,6 +48,14 @@ export function fetchSourceTableFields(tableName) {
   return requestJson(`/meta/source-tables/${encodeURIComponent(tableName)}/fields`)
 }
 
+export function fetchDrillPaths(params = {}) {
+  return requestJson(withQuery('/meta/drill-paths', params))
+}
+
+export function fetchDrillPathVersion(versionId) {
+  return requestJson(`/meta/drill-path-versions/${encodeURIComponent(versionId)}`)
+}
+
 export function syncSourceMappings() {
   return requestJson('/meta/source-mappings/sync', {
     method: 'POST',

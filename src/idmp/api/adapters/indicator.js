@@ -1,4 +1,24 @@
+import { normalizeDimensionGrain, serializeDrillPaths } from '../../features/indicator/grouping.js'
+
 const runtimeEnv = typeof import.meta.env === 'object' && import.meta.env ? import.meta.env : {}
+
+export function normalizeIndicatorDataSources(sources = []) {
+  return sources.map(source => typeof source === 'string' ? { sourceCategory: source } : { ...source })
+}
+
+export function indicatorDataSourceKey(source) {
+  return source.dataSourceId != null ? `SOURCE_ID_${source.dataSourceId}` : source.sourceCategory
+}
+
+export function buildIndicatorDataSources(selection = [], savedSources = []) {
+  const sources = normalizeIndicatorDataSources(savedSources)
+  return selection.map(key => {
+    const saved = sources.find(source => indicatorDataSourceKey(source) === key)
+    if (saved) return { ...saved }
+    if (String(key).startsWith('SOURCE_ID_')) throw new Error('数据来源信息已失效，请重新加载指标后选择。')
+    return { sourceCategory: key }
+  })
+}
 
 const DRILL_PATH_LABELS = {
   ORGANIZATION: '组织维度',
@@ -328,7 +348,9 @@ export function normalizeDrillPaths(payload, fallback = []) {
   return list.map((path) => ({
     pathCode: String(path?.pathCode || ''),
     maxLevel: String(path?.maxLevel || ''),
-    pathVersionId: String(path?.pathVersionId || '')
+    pathVersionId: String(path?.pathVersionId || ''),
+    ...(path?.pathName ? { pathName: path.pathName } : {}),
+    ...(path?.levels?.length ? { levels: path.levels } : {})
   })).filter((path) => path.pathCode && path.maxLevel)
 }
 
@@ -342,13 +364,10 @@ export function normalizeDrillConfig(payload, fallback = defaultDrillConfig) {
   }
 }
 
-export function buildIndicatorVersionPayload({ copyFromVersionId = '', drillConfig, drillPaths, formula, calculationMode } = {}) {
+export function buildIndicatorVersionPayload({ copyFromVersionId = '', drillConfig, drillPaths, formula, calculationMode, dimensionGrain } = {}) {
   const normalizedPaths = Array.isArray(drillPaths)
-    ? normalizeDrillPaths({ drillPaths })
-    : normalizeDrillPaths({ drillConfig }, [{ ...defaultDrillConfig, ...drillConfig }])
-  if (!normalizedPaths.length) {
-    throw new Error('创建指标版本前必须选择下钻路径和最大层级')
-  }
+    ? drillPaths
+    : drillConfig ? [drillConfig] : []
   if (new Set(normalizedPaths.map((path) => path.pathCode)).size !== normalizedPaths.length) {
     throw new Error('同一下钻路径只能选择一次')
   }
@@ -357,7 +376,8 @@ export function buildIndicatorVersionPayload({ copyFromVersionId = '', drillConf
     ...(copyFromVersionId ? { copyFromVersionId: String(copyFromVersionId) } : {}),
     ...(formula ? { formula } : {}),
     ...(calculationMode ? { calculationMode: String(calculationMode).toUpperCase() } : {}),
-    drillPaths: normalizedPaths.map(({ pathCode, maxLevel }) => ({ pathCode, maxLevel }))
+    drillPaths: serializeDrillPaths(normalizedPaths),
+    ...(dimensionGrain !== undefined ? { dimensionGrain: normalizeDimensionGrain(dimensionGrain) } : {})
   }
 }
 
@@ -365,6 +385,8 @@ export function normalizeDrillCapabilities(payload = {}) {
   const data = payload?.data || payload || {}
   return {
     factorVersionIds: Array.isArray(data.factorVersionIds) ? data.factorVersionIds.map((id) => String(id)) : [],
+    dimensionGrainOptions: Array.isArray(data.dimensionGrainOptions) ? data.dimensionGrainOptions.map(String) : [],
+    fieldOptions: (data.fieldOptions || []).map(item => ({ ...item, factorVersionId: String(item.factorVersionId || ''), fields: (item.fields || []).map(field => ({ ...field, fieldId: String(field.fieldId || '') })) })),
     dimensions: Array.isArray(data.dimensions) ? data.dimensions.map((dimension) => ({
       pathCode: String(dimension?.pathCode || ''),
       supported: Boolean(dimension?.supported),
@@ -383,7 +405,8 @@ export function normalizeDrillCapabilities(payload = {}) {
 }
 
 export function validateDrillSelection(capabilities = {}, drillPaths = []) {
-  if (!Array.isArray(drillPaths) || !drillPaths.length) return '请至少选择一条下钻路径'
+  if (!Array.isArray(drillPaths)) return '下钻路径必须是列表'
+  if (!drillPaths.length) return ''
   const dimensions = new Map((capabilities.dimensions || []).map((dimension) => [dimension.pathCode, dimension]))
   const seen = new Set()
   for (const path of drillPaths) {

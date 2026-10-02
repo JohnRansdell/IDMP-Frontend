@@ -1,3 +1,6 @@
+import { normalizeDimensionGrain, serializeDrillPaths } from '../../features/indicator/grouping.js'
+import { toUserMessage } from '../../utils/userMessage.js'
+
 function toOpaqueId(value) {
   return value === undefined || value === null || value === '' ? '' : String(value)
 }
@@ -87,7 +90,8 @@ function readableSqlImportError(message, sql = '', fallback = '导入操作失�
   const trial = raw.match(/^(.+?) trial failed \(batch (\d+)\):/i)
   if (trial) return { message: `${trial[1] === 'indicator' ? '指标' : `因子“${trial[1]}”`}试算失败，请检查 SQL、时间范围和源数据；排查时可提供批次编号 ${trial[2]}` }
   if (TECHNICAL_ERROR.test(raw) || !/[\u3400-\u9fff]/.test(raw)) return { message: fallback }
-  return null
+  const friendly = toUserMessage(raw, fallback)
+  return friendly === raw ? null : { message: friendly }
 }
 
 const SQL_IMPORT_STATUS_LABELS = {
@@ -140,6 +144,8 @@ export function normalizeSqlImportPreview(payload = {}) {
         key: String(factor.key || ''), suggestedCode: String(factor.suggestedCode || factor.code || ''),
         suggestedName: String(factor.suggestedName || factor.name || ''), outputAlias: String(factor.outputAlias || ''),
         timeFieldOptions, timeFields: timeFieldOptions.map(item => item.fieldReference),
+        groupingSupported: factor.groupingSupported === true,
+        dimensionFieldOptions: (factor.dimensionFieldOptions || []).map(option => ({ ...normalizeTimeFieldOption(option), outputFieldCodes: (option.outputFieldCodes || []).map(code => String(code).toUpperCase()) })),
         parameters: (factor.parameters || factor.dsl?.parameters || []).map(normalizeSqlRuntimeParameter), dsl: factor.dsl || {}
       }
     }) : [],
@@ -229,7 +235,8 @@ export function mergeSqlFactorMetadata(current = [], drafts = []) {
       description: saved?.description || '', missingRowPolicy: saved?.missingRowPolicy || 'KEEP_NULL',
       calculationMode: saved?.calculationMode || (saved?.timeField ? 'TEMPORAL' : 'STATIC'),
       timeField: saved?.timeField || draft.timeFieldOptions?.find(item => item.recommended)?.fieldReference || '',
-      parameters: (saved?.parameters || draft.parameters || []).map(normalizeSqlRuntimeParameter)
+      parameters: (saved?.parameters || draft.parameters || []).map(normalizeSqlRuntimeParameter),
+      dimensionBindings: { ...saved?.dimensionBindings }
     }
   })
 }
@@ -245,14 +252,17 @@ export function buildSqlImportMetadataPayload({ scope, category, indicator, fact
         ...(String(item.description || '').trim() ? { description: String(item.description).trim() } : {}),
         ...(item.missingRowPolicy ? { missingRowPolicy: item.missingRowPolicy } : {}), calculationMode,
         ...((item.parameters || []).length ? { parameters: item.parameters.map(normalizeSqlRuntimeParameter) } : {}),
-        ...(calculationMode === 'TEMPORAL' && String(item.timeField || '').trim() ? { timeField: String(item.timeField).trim() } : {})
+        ...(calculationMode === 'TEMPORAL' && String(item.timeField || '').trim() ? { timeField: String(item.timeField).trim() } : {}),
+        ...(normalizedScope === 'FACTORS_AND_INDICATOR' && Object.keys(item.dimensionBindings || {}).length ? { dimensionBindings: { ...item.dimensionBindings } } : {})
       }
     })
   }
   if (normalizedScope === 'FACTORS_AND_INDICATOR') Object.assign(payload, {
     indicatorCode: String(indicator?.code || '').trim(), indicatorName: String(indicator?.name || '').trim(),
     ...(String(indicator?.description || '').trim() ? { indicatorDescription: String(indicator.description).trim() } : {}),
-    timeDrillEnabled: Boolean(indicator?.timeDrillEnabled), formula: indicator?.formula || {}
+    timeDrillEnabled: Boolean(indicator?.timeDrillEnabled), formula: indicator?.formula || {},
+    drillPaths: serializeDrillPaths(indicator?.drillPaths || []),
+    dimensionGrain: normalizeDimensionGrain(indicator?.dimensionGrain || [])
   })
   return payload
 }
@@ -283,6 +293,7 @@ export function normalizeSqlImportTask(payload = {}) {
   return {
     importId: toOpaqueId(data.importId), status: String(data.status || 'AWAITING_METADATA').toUpperCase(), step: String(data.step || ''), statusUrl: String(data.statusUrl || ''),
     preview: normalizeSqlImportPreview(data.preview || {}), error: rawError == null ? null : readableSqlImportError(rawError, data.preview?.normalizedSql, '导入任务失败，请保留导入会话编号并联系管理员排查')?.message || rawError,
+    metadata: data.metadata ? { ...data.metadata, drillPaths: serializeDrillPaths(data.metadata.drillPaths || []), dimensionGrain: normalizeDimensionGrain(data.metadata.dimensionGrain || []) } : null,
     resources: Array.isArray(data.resources) ? data.resources.map((resource) => ({
       key: String(resource.key || ''), type: String(resource.type || ''), resourceId: toOpaqueId(resource.resourceId), versionId: toOpaqueId(resource.versionId),
       artifactId: toOpaqueId(resource.artifactId), compiled: resource.compiled === true, published: resource.published === true,

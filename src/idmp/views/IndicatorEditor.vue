@@ -120,7 +120,7 @@
               </el-form-item>
               <el-form-item label="数据来源" prop="sources" class="form-span-2">
                 <el-checkbox-group v-model="form.sources">
-                  <el-checkbox v-for="item in sourceOptions" :key="item" :value="item">{{ item }}</el-checkbox>
+                  <el-checkbox v-for="item in sourceOptions" :key="item.value" :value="item.value">{{ item.label }}</el-checkbox>
                 </el-checkbox-group>
               </el-form-item>
               <el-form-item label="政策文件来源" prop="policies" class="form-span-2">
@@ -329,7 +329,9 @@
                   <el-table-column label="本版本最大层级" min-width="210"><template #default="{ row }"><el-select :model-value="selectedDrillPathLevel(row.pathCode)" :disabled="!row.supported || !isDrillPathSelected(row.pathCode)" placeholder="选择层级" @update:model-value="level => setDrillPathLevel(row.pathCode, level)"><el-option v-for="level in capabilityLevels(row)" :key="level.code" :label="drillLevelOptionLabel(level)" :value="level.code" /></el-select></template></el-table-column>
                   <el-table-column label="限制原因" min-width="280"><template #default="{ row }"><span v-if="row.limitingFactors.length">{{ limitingFactorText(row) }}</span><span v-else class="muted-text">-</span></template></el-table-column>
                 </el-table>
-                <el-alert v-if="!selectedDrillPaths.length" title="请至少启用一条支持的下钻路径。" type="warning" :closable="false" show-icon class="drill-capability-selection-hint" />
+                <el-form label-position="top" class="drill-capability-selection-hint">
+                  <DimensionGrainSelect v-model="indicatorDimensionGrain" :options="drillCapability.dimensionGrainOptions" />
+                </el-form>
               </template>
             </section>
             <div v-if="!isStaticIndicator" class="indicator-trial-period">
@@ -368,7 +370,7 @@
               <el-button
                 v-if="indicatorWorkflow.published"
                 type="primary"
-                :disabled="drillCapability.status !== 'ready' || !selectedDrillPaths.length"
+                :disabled="drillCapability.status !== 'ready'"
                 :loading="workflowLoading.version"
                 @click="createIndicatorDraftVersion"
               >
@@ -707,7 +709,8 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { ElMessage } from '@/idmp/utils/message'
 import {
   Box,
   CircleCheckFilled,
@@ -744,6 +747,9 @@ import {
 } from '@/idmp/api/modules/indicators'
 import {
   buildIndicatorVersionPayload,
+  buildIndicatorDataSources,
+  indicatorDataSourceKey,
+  normalizeIndicatorDataSources,
   combineFormulaNodes,
   drillLevelLabel,
   drillPathLabel,
@@ -764,6 +770,8 @@ import { getStatusLabel } from '@/idmp/design/status'
 import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
 import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
 import RuntimeParameterFields from '@/idmp/components/RuntimeParameterFields.vue'
+import DimensionGrainSelect from '@/idmp/components/DimensionGrainSelect.vue'
+import { normalizeDimensionGrain } from '@/idmp/features/indicator/grouping'
 import { buildSqlRuntimeParameterValues, collectSqlRuntimeParameters, validateSqlRuntimeParameterValues } from '@/idmp/api/adapters/sqlImport'
 
 const route = useRoute()
@@ -783,6 +791,7 @@ const indicatorWorkflow = reactive({
   indicatorId: '',
   versionId: '',
   resourceVersion: 0,
+  masterResourceVersion: 0,
   metadataVersionId: '',
   metadataResourceVersion: 0,
   formulaSaved: false,
@@ -808,11 +817,13 @@ const indicatorTrialTargets = ref([])
 const selectedIndicatorTrialTargetKey = ref('')
 const indicatorTrialResultsLoaded = ref(false)
 const selectedDrillPaths = ref([])
+const indicatorDimensionGrain = ref([])
 const drillCapability = reactive({
   status: 'idle',
   formulaSignature: '',
   factorVersionIds: [],
   dimensions: [],
+  dimensionGrainOptions: [],
   errorMessage: ''
 })
 const workflowDebug = reactive({
@@ -961,7 +972,15 @@ const publishGates = computed(() => [
     stateLabel: indicatorWorkflow.published ? '已发布' : canPublishIndicatorVersion.value ? '后端校验' : '待发布'
   }
 ])
-const sourceOptions = ['HIS', '手术麻醉', 'EMR', 'LIS', 'PACS', '病案', '药事', '财务']
+const savedDataSources = ref([])
+const sourceOptions = computed(() => {
+  const options = ['HIS', '手术麻醉', 'EMR', 'LIS', 'PACS', '病案', '药事', '财务'].map(value => ({ value, label: value }))
+  for (const source of savedDataSources.value) {
+    const value = indicatorDataSourceKey(source)
+    if (value && !options.some(option => option.value === value)) options.push({ value, label: source.sourceCategory || `数据源 ${source.dataSourceId}` })
+  }
+  return options
+})
 const policyOptions = ['绩效考核2024版', '2011年版指标', '医院评审2025版', 'NCIS 8.0']
 const defaultCategoryPath = ['医疗质量', '质量安全']
 const indicatorCategoryOptions = [
@@ -1224,6 +1243,7 @@ function resetDrillCapability() {
     formulaSignature: '',
     factorVersionIds: [],
     dimensions: [],
+    dimensionGrainOptions: [],
     errorMessage: ''
   })
   selectedDrillPaths.value = []
@@ -1301,6 +1321,7 @@ async function runDrillCapabilityPreflight(providedFormula) {
       formulaSignature: signature,
       factorVersionIds: capability.factorVersionIds,
       dimensions: capability.dimensions,
+      dimensionGrainOptions: capability.dimensionGrainOptions,
       errorMessage: ''
     })
     selectedDrillPaths.value = selectedDrillPaths.value.filter((path) => !validateDrillSelection(capability, [path]))
@@ -1329,6 +1350,14 @@ async function ensureFreshDrillCapability(formula) {
 watch(isStaticIndicator, (isStatic) => {
   if (isStatic) selectedDrillPaths.value = selectedDrillPaths.value.filter((path) => path.pathCode !== 'TIME')
 })
+
+watch(indicatorDimensionGrain, () => {
+  if (indicatorWorkflow.versionId && !indicatorWorkflow.published) {
+    indicatorWorkflow.formulaSaved = false
+    indicatorWorkflow.compiled = false
+    resetIndicatorTrialAfterPeriodChange()
+  }
+}, { deep: true, flush: 'sync' })
 
 watch(
   () => [
@@ -1495,13 +1524,15 @@ function hydrateIndicatorSummary(item) {
   form.direction = item.direction || form.direction || '监测比较'
   form.definition = item.description || item.definition || ''
   form.significance = item.significance || item.meaning || ''
-  form.sources = item.sources || item.dataSources || (item.source ? [item.source] : [])
+  savedDataSources.value = normalizeIndicatorDataSources(item.dataSources || item.sources || (item.source ? [item.source] : []))
+  form.sources = savedDataSources.value.map(indicatorDataSourceKey)
   form.period = fromApiStatisticalPeriod(item.period || item.statisticalPeriod) || form.period || '年度'
   form.policies = item.policies || []
   Object.assign(indicatorWorkflow, {
     indicatorId: toOpaqueId(item.id ?? item.indicatorId ?? routeIndicatorKey.value),
     versionId: toOpaqueId(item.currentVersionId ?? item.latestVersionId ?? item.versionId ?? indicatorWorkflow.versionId),
     resourceVersion: resolveResourceVersion(item),
+    masterResourceVersion: resolveResourceVersion(item),
     metadataVersionId: toOpaqueId(item.metadataVersionId ?? item.currentVersionId ?? item.latestVersionId ?? item.versionId ?? ''),
     metadataResourceVersion: resolveMetadataResourceVersion(item),
     formulaSaved: Boolean(item.formula || item.currentArtifactId),
@@ -1524,10 +1555,13 @@ function hydrateIndicatorSummary(item) {
 function hydrateIndicatorVersion(version) {
   if (!version) return
   const status = version.status || version.publicationStatus || ''
+  indicatorDimensionGrain.value = [...(version.dimensionGrain || [])]
 
   Object.assign(indicatorWorkflow, {
     versionId: resolveIndicatorVersionId(version),
     resourceVersion: resolveResourceVersion(version, indicatorWorkflow.resourceVersion),
+    metadataVersionId: resolveIndicatorVersionId(version),
+    metadataResourceVersion: resolveResourceVersion(version, indicatorWorkflow.metadataResourceVersion),
     formulaSaved: Boolean(version.formula || version.currentArtifactId),
     compiled: Boolean(version.currentArtifactId),
     taskId: '',
@@ -1675,6 +1709,7 @@ function resetIndicatorWorkflowAfterBasic(indicatorId, versionId = '', resourceV
     indicatorId: toOpaqueId(indicatorId),
     versionId: toOpaqueId(versionId),
     resourceVersion,
+    masterResourceVersion: resourceVersion,
     metadataVersionId: toOpaqueId(versionId),
     metadataResourceVersion: 0,
     formulaSaved: false,
@@ -1712,10 +1747,19 @@ async function saveIndicatorBasicInfo() {
       syncCategorySelection(resolveCategoryPath(updated, form.categoryPath))
       form.definition = updated?.definition ?? updated?.description ?? form.definition
       form.significance = updated?.meaning ?? form.significance
-      form.sources = updated?.dataSources ?? form.sources
+      if (updated?.dataSources) {
+        savedDataSources.value = normalizeIndicatorDataSources(updated.dataSources)
+        form.sources = savedDataSources.value.map(indicatorDataSourceKey)
+      }
+      indicatorWorkflow.masterResourceVersion = resolveResourceVersion(updated, indicatorWorkflow.masterResourceVersion)
       form.period = fromApiStatisticalPeriod(updated?.statisticalPeriod) || form.period
       indicatorWorkflow.metadataVersionId = toOpaqueId(updated?.metadataVersionId ?? indicatorWorkflow.metadataVersionId)
       indicatorWorkflow.metadataResourceVersion = resolveMetadataResourceVersion(updated, indicatorWorkflow.metadataResourceVersion)
+      if (indicatorWorkflow.metadataVersionId === indicatorWorkflow.versionId) {
+        indicatorWorkflow.resourceVersion = indicatorWorkflow.metadataResourceVersion
+        indicatorWorkflow.compiled = false
+        resetIndicatorTrialAfterPeriodChange()
+      }
       ElMessage.success('指标基本信息已更新')
       return true
     }
@@ -1791,7 +1835,7 @@ async function createIndicatorDraftVersion() {
 
     workflowLoading.version = true
     const copyFromVersionId = indicatorWorkflow.versionId
-    const versionPayload = buildIndicatorVersionPayload({ copyFromVersionId, drillPaths: selectedDrillPaths.value, calculationMode: indicatorCalculationMode.value })
+    const versionPayload = buildIndicatorVersionPayload({ copyFromVersionId, drillPaths: selectedDrillPaths.value, calculationMode: indicatorCalculationMode.value, dimensionGrain: indicatorDimensionGrain.value })
     recordWorkflowRequest({
       step: '创建指标版本',
       endpoint: `/api/v1/indicators/${indicatorWorkflow.indicatorId}/versions`,
@@ -1809,6 +1853,8 @@ async function createIndicatorDraftVersion() {
     Object.assign(indicatorWorkflow, {
       versionId,
       resourceVersion: resolveResourceVersion(version),
+      metadataVersionId: versionId,
+      metadataResourceVersion: resolveResourceVersion(version),
       formulaSaved: Boolean(extractFormula(version)),
       compiled: Boolean(version.currentArtifactId),
       taskId: '',
@@ -1905,7 +1951,8 @@ async function createFirstIndicatorVersionWithFormula(formula) {
   const versionPayload = buildIndicatorVersionPayload({
     drillPaths: selectedDrillPaths.value,
     formula,
-    calculationMode: indicatorCalculationMode.value
+    calculationMode: indicatorCalculationMode.value,
+    dimensionGrain: indicatorDimensionGrain.value
   })
   recordWorkflowRequest({
     step: '创建首个指标版本并保存公式',
@@ -2274,6 +2321,7 @@ async function publishIndicatorVersionOnly() {
 
 async function persistIndicatorFormula() {
   const formulaPayload = createIndicatorFormulaPayload(indicatorWorkflow.resourceVersion)
+  formulaPayload.dimensionGrain = normalizeDimensionGrain(indicatorDimensionGrain.value)
   recordWorkflowRequest({
     step: '保存公式',
     endpoint: `/api/v1/indicator-versions/${indicatorWorkflow.versionId}/formula`,
@@ -2288,7 +2336,7 @@ async function persistIndicatorFormula() {
   indicatorWorkflow.resourceVersion = resolveResourceVersion(savedFormula, indicatorWorkflow.resourceVersion)
   indicatorWorkflow.formulaSaved = true
   indicatorWorkflow.compiled = false
-  resetIndicatorTrialResultCollection()
+  resetIndicatorTrialAfterPeriodChange()
   recordWorkflowSuccess('保存公式成功')
 }
 
@@ -2362,18 +2410,20 @@ function createIndicatorFormulaPayload(resourceVersion) {
 function createIndicatorMetadataPayload() {
   const categoryPath = syncCategorySelection(form.categoryPath)
   return {
+    resourceVersion: indicatorWorkflow.masterResourceVersion,
     name: form.name,
     category: categoryPath[categoryPath.length - 1] || '',
     categoryMain: categoryPath[0] || '',
     categorySub: categoryPath[1] || '',
     description: form.definition || null,
     metadataVersionId: indicatorWorkflow.metadataVersionId || indicatorWorkflow.versionId || null,
-    metadataResourceVersion: indicatorWorkflow.metadataResourceVersion,
+    metadataResourceVersion: indicatorWorkflow.metadataVersionId === indicatorWorkflow.versionId
+      ? indicatorWorkflow.resourceVersion : indicatorWorkflow.metadataResourceVersion,
     definition: form.definition || null,
     meaning: form.significance || null,
     calculationDescription: `${numeratorFactors.value[0]?.name || '分子因子'} / ${denominatorFactors.value[0]?.name || '分母因子'} × 100%`,
     statisticalPeriod: toApiStatisticalPeriod(form.period),
-    dataSources: form.sources
+    dataSources: buildIndicatorDataSources(form.sources, savedDataSources.value)
   }
 }
 
