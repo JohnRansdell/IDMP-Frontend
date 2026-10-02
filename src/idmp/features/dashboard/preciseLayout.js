@@ -5,6 +5,12 @@ const integer = value => Math.round(Number(value))
 export const percentageToGridWidth = (percent, columns = 24) => Math.round(Number(percent) * columns / 100)
 export const gridWidthToPercentage = (width, columns = 24) => Math.round(Number(width) / columns * 100)
 
+export async function applyWidgetLayoutToCanvas(canvas, widgets) {
+  const requestedLayout = widgets.map(widget => ({ id: widget.id, ...widget.layout }))
+  const appliedLayout = await canvas?.applyLayout(requestedLayout)
+  return appliedLayout?.length ? appliedLayout : requestedLayout
+}
+
 export function validatePreciseLayout(widgets, widgetId, draft, columns = 24) {
   const widget = widgets.find(item => item.id === widgetId)
   if (!widget) return { ok: false, reason: '组件不存在' }
