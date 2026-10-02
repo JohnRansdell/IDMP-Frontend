@@ -52,10 +52,10 @@ const placementOnlyMode = process.env.DASHBOARD_PLACEMENT_ONLY === '1'
 // dashboard. Select the existing quality-safety scene through its supported
 // managed-dashboard route rather than relying on an empty default catalog.
 // The non-preview golden path keeps its existing backend-backed target.
-const dashboardId = previewSmokeMode ? 'quality-overview-quality-safety' : 'quality-overview'
+const dashboardId = process.env.IDMP_GOLDEN_DASHBOARD || (previewSmokeMode ? 'quality-overview-quality-safety' : 'quality-overview')
 const appUrl = previewSmokeMode
   ? `http://127.0.0.1:${appPort}/dashboard?id=${dashboardId}`
-  : `http://127.0.0.1:${appPort}/dashboard`
+  : `http://127.0.0.1:${appPort}/dashboard${process.env.IDMP_GOLDEN_DASHBOARD ? '?id=' + encodeURIComponent(dashboardId) : ''}`
 const chromePath = process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
 const profile = await mkdtemp(join(tmpdir(), 'idmp-dashboard-e2e-'))
 // Invoke Vite's JavaScript entry directly. Spawning pnpm.cmd without a Windows

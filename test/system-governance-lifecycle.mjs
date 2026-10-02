@@ -1,0 +1,61 @@
+import { api, check, finish, run, save } from './system-test-client.mjs'
+const code=`GOV_FT_${Date.now()}`
+const fixtures={valueSets:[],templates:[],factors:[],scenarios:[]}
+for(const mode of ['EXACT','CONTINUOUS'])await run('value-set-'+mode,async()=>{
+  let detail=await api('POST','/meta/value-sets',{code:code+'_'+mode,name:'系统完整测试值集 '+code+' '+mode,matchMode:mode,valueType:mode==='EXACT'?'STRING':'DECIMAL',...(mode==='CONTINUOUS'?{continuousSpec:{unit:'mg',precision:12,scale:2,minimumValue:'0',maximumValue:'100',minimumInclusive:true,maximumInclusive:true}}:{})})
+  fixtures.valueSets.push(detail.valueSet.id);const id=detail.valueSet.id,version=detail.version.id
+  if(mode==='EXACT')detail=await api('PUT',`/meta/value-set-versions/${version}/items`,{resourceVersion:detail.version.resourceVersion,items:[{code:'A',value:'1',label:'标准类别一',sortOrder:2},{code:'B',value:'2',label:'标准类别二',sortOrder:1}]})
+  const valid=await api('POST',`/meta/value-set-versions/${version}/validate`)
+  check('value-set-valid-'+mode,valid.valid,valid)
+  detail=await api('GET',`/meta/value-set-versions/${version}`)
+  const published=await api('POST',`/meta/value-sets/${id}/versions/${version}/publish`,{resourceVersion:detail.version.resourceVersion})
+  check('value-set-published-'+mode,published.version.publicationStatus==='PUBLISHED')
+  const copy=await api('POST',`/meta/value-sets/${id}/versions`,{copyFromVersionId:version})
+  check('value-set-copy-'+mode,copy.version.id!==version&&(mode!=='EXACT'||copy.version.items.length===2),copy.version)
+  await save('value-set-'+mode,{published,copy})
+  const archived=await api('POST',`/meta/value-set-versions/${copy.version.id}/archive`,{resourceVersion:copy.version.resourceVersion})
+  check('value-set-archive-draft-'+mode,archived.version.publicationStatus==='ARCHIVED')
+})
+await run('template-lifecycle',async()=>{
+  const dsl={schemaVersion:'1.0',dslType:'FACTOR',calculationMode:'STATIC',primaryDomain:{domainCode:'DASHBOARD_SURGERY_QUALITY_20260922',tableName:'vmq_surgeryinfo',sourceAlias:'base'},aggregation:{function:'COUNT'},filters:{nodeType:'PREDICATE',fieldCode:'surgery_level',operator:'EQ',value:{parameterRef:'level'}},groupBy:[],parameters:[],output:{valueType:'DECIMAL'},missingRowPolicy:'ZERO'}
+  let detail=await api('POST','/factor-templates',{code:code+'_T',name:'系统完整测试物理字段模板 '+code,factorTypeScope:'AGGREGATE',templateDefinition:dsl,outputDescriptor:{valueType:'DECIMAL'},parameters:[{code:'level',displayName:'手术级别',dataType:'STRING',required:true,exposed:true,defaultValue:'3',valueSourceType:'MANUAL',displayOrder:0}]})
+  fixtures.templates.push(detail.template.id);const id=detail.template.id,version=detail.version.id
+    const valid=await api('POST',`/factor-template-versions/${version}/validate`)
+  check('template-valid',valid.valid,valid)
+  detail=await api('GET',`/factor-template-versions/${version}`)
+  const published=await api('POST',`/factor-template-versions/${version}/publish`,{resourceVersion:detail.version.resourceVersion})
+  check('template-published',published.version.publicationStatus==='PUBLISHED')
+  const schema=await api('GET',`/factor-templates/${id}/parameter-schema`)
+  check('template-parameter-schema',schema.parameters.some(p=>p.code==='level'||p.code==='LEVEL'),schema)
+  const instantiated=await api('POST',`/factor-template-versions/${version}/instantiate`,{factorCode:code+'_INSTANCE',factorName:'系统完整测试模板实例 '+code,category:'QUALITY',parameterValues:{level:'3'}})
+  fixtures.factors.push(instantiated.factor.id)
+  const compilation=await api('POST',`/factor-versions/${instantiated.factor.draftVersionId}/compile`)
+  check('template-instance-compilation',compilation.status==='VALID',compilation)
+  const instances=await api('GET',`/factor-template-versions/${version}/instances`)
+  await save('template',{published,schema,instantiated,instances})
+  const copy=await api('POST',`/factor-templates/${id}/versions`,{})
+  check('template-copy-version',copy.version.id!==version)
+})
+await run('scenario-lifecycle',async()=>{
+  let detail=await api('POST','/scenarios',{code:code+'_S',name:'系统完整测试场景 '+code,type:'CUSTOM',defaultPeriodType:'MONTHLY',defaultParameters:{},effectiveStartDate:'2099-01-01'})
+  fixtures.scenarios.push(detail.scenario.id);const id=detail.scenario.id,version=detail.version.id
+  detail=await api('PUT',`/scenario-versions/${version}/indicators`,{resourceVersion:detail.version.resourceVersion,indicators:[{indicatorVersionId:'102027642461313071',displayOrder:0,required:true,periodType:'MONTHLY',dimensionGrain:['OUT_DEPT_CODE','IN_ICD10']}]})
+  detail=await api('PUT',`/scenario-versions/${version}/overrides`,{resourceVersion:detail.version.resourceVersion,overrides:[{indicatorVersionId:'102027642461313071',overrideType:'DISPLAY',targetNodePath:'/display/scale',overrideValue:3,displayText:'系统测试三位小数',priority:1}]})
+  const preview=await api('GET',`/scenario-versions/${version}/merged-preview`)
+  check('scenario-merged-grain',preview.indicators[0].dimensionGrain.includes('IN_ICD10'),preview)
+  const valid=await api('POST',`/scenario-versions/${version}/validate`)
+  check('scenario-valid',valid.valid,valid)
+  detail=await api('GET',`/scenario-versions/${version}`)
+  const published=await api('POST',`/scenario-versions/${version}/publish`,{resourceVersion:detail.version.resourceVersion})
+  check('scenario-published',published.version.publicationStatus==='PUBLISHED')
+  await save('scenario',{preview,published})
+  const copy=await api('POST',`/scenarios/${id}/versions`,{copyFromVersionId:version})
+  check('scenario-version-copy',copy.version.indicators.length===1)
+})
+for(const id of fixtures.factors)await run('template-instance-cleanup',async()=>{
+  const item=await api('GET',`/factors/${id}`)
+  await api('DELETE',`/factors/${id}`,{resourceVersion:item.resourceVersion,deleteReason:'完整测试模板实例回收'})
+  check('template-instance-cleanup',true)
+})
+await save('fixtures',fixtures)
+await finish()
