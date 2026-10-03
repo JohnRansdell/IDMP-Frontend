@@ -21,6 +21,8 @@
     "test:e2e:mapping-layout": "node test/mapping-filter-layout.e2e.js",
     "test:custom-drill-paths": "node --test test/custom-drill-paths.test.js",
     "test:e2e:custom-drill-paths": "node test/custom-drill-paths.e2e.js",
+    "test:breadcrumbs": "node --test test/breadcrumbs.test.js",
+    "test:e2e:breadcrumbs": "node test/breadcrumbs.e2e.js",
     "test:analysis-pdf": "node --test test/analysis-pdf.test.js",
     "test:e2e:analysis-pdf": "node test/analysis-pdf-live.e2e.js",
     "test:e2e:analysis-pdf-api": "node test/analysis-pdf-api.e2e.js",

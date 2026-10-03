@@ -35,13 +35,13 @@
     </aside>
 
     <header v-if="!designerImmersive" class="idmp-topbar">
-      <div class="idmp-breadcrumb" aria-label="面包屑">
-        <template v-for="(item, index) in displayBreadcrumbs" :key="`${item}-${index}`">
-          <RouterLink v-if="index === 0" to="/dashboard">{{ item }}</RouterLink>
-          <span v-else>{{ item }}</span>
-          <span v-if="index < displayBreadcrumbs.length - 1" class="separator">/</span>
+      <nav class="idmp-breadcrumb" aria-label="面包屑">
+        <template v-for="(item, index) in displayBreadcrumbs" :key="`${item.label}-${index}`">
+          <RouterLink v-if="item.to" :to="item.to">{{ item.label }}</RouterLink>
+          <span v-else :aria-current="item.current ? 'page' : undefined">{{ item.label }}</span>
+          <span v-if="index < displayBreadcrumbs.length - 1" class="separator" aria-hidden="true">/</span>
         </template>
-      </div>
+      </nav>
 
       <div class="idmp-topbar__right">
         <div class="idmp-context">
@@ -101,6 +101,7 @@ import { fetchUnreadNotificationCount } from '@/idmp/api/modules/warnings'
 import { fetchDashboardCatalog } from '@/idmp/api/modules/analysisDashboard'
 import { dashboardSummaryToCatalogEntry } from '@/idmp/api/adapters/dashboard'
 import { LOCAL_SCENE_DASHBOARDS } from '@/idmp/features/dashboard/sceneRegistry.js'
+import { buildPageBreadcrumbs } from '@/router/breadcrumbs.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -186,14 +187,7 @@ const navGroups = [
 ]
 
 const activePath = computed(() => route.meta.activeMenu || route.path)
-const breadcrumbs = computed(() => route.meta.breadcrumb || ['首页'])
-const displayBreadcrumbs = computed(() => {
-  if (route.name === 'IndicatorAnalysis') {
-    const indicatorName = String(route.query.indicatorName || route.query.indicator || '请选择指标')
-    return ['首页', '指标分析', indicatorName]
-  }
-  return breadcrumbs.value
-})
+const displayBreadcrumbs = computed(() => buildPageBreadcrumbs(route))
 
 watch(dashboardCatalogRevision, () => { void refreshRemoteDashboardOptions() })
 watch(notificationReadRevision, () => { void loadUnreadCount() })
