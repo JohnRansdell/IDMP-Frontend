@@ -14,15 +14,19 @@
     <el-tabs v-model="activePane" @tab-change="refreshCurrent">
       <el-tab-pane label="映射关系" name="mappings">
         <section class="surface-card filter-card">
-          <el-form :model="filters" class="mapping-filter" @submit.prevent="loadMappings">
+          <el-form :model="filters" label-width="96px" class="mapping-form" @submit.prevent="loadMappings">
+            <div class="mapping-filter">
             <el-form-item label="语义组"><el-select v-model="filters.groupId" clearable filterable placeholder="全部语义组"><el-option v-for="group in groups" :key="group.id" :label="group.name || group.code" :value="String(group.id)" /></el-select></el-form-item>
             <el-form-item label="政策文件 ID"><el-input v-model.trim="filters.policyFileId" placeholder="任一侧政策文件" /></el-form-item>
             <el-form-item label="指标版本"><el-select v-model="filters.indicatorVersionId" clearable filterable allow-create default-first-option placeholder="源或目标已发布版本"><el-option v-for="item in publishedIndicators" :key="item.id" :label="indicatorOptionLabel(item)" :value="String(item.id)" /></el-select></el-form-item>
             <el-form-item label="映射类型"><el-select v-model="filters.mappingType" clearable><el-option v-for="item in MAPPING_TYPES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
             <el-form-item label="审核状态"><el-select v-model="filters.reviewStatus" clearable><el-option label="草稿" value="DRAFT" /><el-option label="待审核" value="PENDING_REVIEW" /><el-option label="已驳回" value="REJECTED" /><el-option label="已通过" value="APPROVED" /><el-option label="已失效" value="INVALIDATED" /></el-select></el-form-item>
-            <el-form-item class="mapping-filter__actions"><el-button type="primary" native-type="submit" :icon="Search">查询</el-button><el-button @click="resetFilters">重置</el-button></el-form-item>
+            </div>
+            <div class="mapping-filter-toolbar">
+              <div class="mapping-type-shortcuts"><span>关系分类</span><el-button size="small" :type="!filters.mappingType ? 'primary' : 'default'" plain @click="setMappingTypeFilter('')">全部</el-button><el-button v-for="item in MAPPING_TYPES" :key="item.value" size="small" :type="filters.mappingType === item.value ? 'primary' : 'default'" plain @click="setMappingTypeFilter(item.value)">{{ item.label }}</el-button></div>
+              <div class="mapping-filter__actions"><el-button type="primary" native-type="submit" :icon="Search">查询</el-button><el-button @click="resetFilters">重置</el-button></div>
+            </div>
           </el-form>
-          <div class="mapping-type-shortcuts"><span>关系分类</span><el-button size="small" :type="!filters.mappingType ? 'primary' : 'default'" plain @click="setMappingTypeFilter('')">全部</el-button><el-button v-for="item in MAPPING_TYPES" :key="item.value" size="small" :type="filters.mappingType === item.value ? 'primary' : 'default'" plain @click="setMappingTypeFilter(item.value)">{{ item.label }}</el-button></div>
         </section>
 
         <section class="surface-card table-card">
@@ -141,11 +145,14 @@ onMounted(bootstrap)
 <style scoped lang="scss">
 .indicator-mapping { min-width: 0; }
 .mapping-notice { margin-bottom: 16px; }
-.mapping-filter { display: flex; flex-wrap: wrap; gap: 10px 14px; }
-.mapping-filter :deep(.el-form-item) { margin: 0; }
-.mapping-filter :deep(.el-input), .mapping-filter :deep(.el-select) { width: 190px; }
-.mapping-filter__actions { margin-left: auto !important; }
-.mapping-type-shortcuts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
+.mapping-form { display: block; }
+.mapping-filter { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 10px 14px; }
+.mapping-filter :deep(.el-form-item) { min-width: 0; margin: 0; }
+.mapping-filter :deep(.el-form-item__content) { min-width: 0; }
+.mapping-filter :deep(.el-input), .mapping-filter :deep(.el-select) { width: 100%; }
+.mapping-filter-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px 16px; margin-top: 14px; }
+.mapping-filter__actions { display: flex; justify-content: flex-end; }
+.mapping-type-shortcuts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .mapping-type-shortcuts > span, .table-heading p { color: var(--idmp-text-helper); font-size: 12px; }
 
 /* Keep table content aligned with the padded cards used across IDMP. */
@@ -177,7 +184,7 @@ onMounted(bootstrap)
 
 @media (max-width: 760px) {
   .table-card { padding: 14px; }
-  .mapping-filter__actions { margin-left: 0 !important; }
+  .mapping-filter-toolbar { grid-template-columns: 1fr; }
   .table-heading, .table-footer { align-items: flex-start; flex-direction: column; }
   .form-grid, .mapping-type-picker { grid-template-columns: 1fr; }
   .table-footer :deep(.el-pagination) { flex-wrap: wrap; }
