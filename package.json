@@ -18,6 +18,7 @@
     "test:sql-import-fields": "node --test test/sql-import-field-label.test.js test/sql-import-adapter.test.js",
     "test:e2e:sql-import-fields": "node test/sql-import-field-label.e2e.js",
     "test:e2e:notifications": "node test/notification-read.e2e.js",
+    "test:e2e:mapping-layout": "node test/mapping-filter-layout.e2e.js",
     "test:analysis-pdf": "node --test test/analysis-pdf.test.js",
     "test:e2e:analysis-pdf": "node test/analysis-pdf-live.e2e.js",
     "test:e2e:analysis-pdf-api": "node test/analysis-pdf-api.e2e.js",
