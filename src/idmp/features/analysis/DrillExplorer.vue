@@ -5,6 +5,7 @@
         <el-select v-model="dimension" size="small" aria-label="下钻维度" class="drill-dimension-select">
           <el-option label="组织维度" value="ORGANIZATION" :disabled="!pathAvailable('ORGANIZATION')" />
           <el-option label="病种维度" value="DISEASE" :disabled="!pathAvailable('DISEASE')" />
+          <el-option v-for="path in customPaths" :key="path.pathCode" :label="path.pathName || '自定义路径'" :value="path.pathCode" />
           <el-option v-if="source !== 'mock'" label="因子结果追溯" value="FACTOR_TRACE" />
           <el-option label="时间维度（待接入）" value="TIME" disabled />
           <el-option label="场景维度（待接入）" value="SCENARIO" disabled />
@@ -134,20 +135,27 @@ const props = defineProps({
   startLevel: { type: String, default: 'HOSPITAL' },
   startParentKeys: { type: Object, default: () => ({}) },
   maxLevels: { type: Object, default: () => ({}) },
+  configuredPaths: { type: Array, default: () => [] },
+  startPathCode: { type: String, default: '' },
   source: { type: String, default: 'live', validator: (value) => ['live', 'mock'].includes(value) },
   embedded: { type: Boolean, default: false }
 })
 const emit = defineEmits(['level-change'])
 const route = useRoute()
 const router = useRouter()
-const initialDimension = inferDimensionFromLevel(props.startLevel)
+const customPaths = computed(() => props.configuredPaths.filter(path => path.pathCode?.startsWith('CUSTOM_')))
+const inferredDimension = inferDimensionFromLevel(props.startLevel)
+const initialDimension = props.startPathCode || customPaths.value.find(path => path.levels?.some(level => level.levelCode === props.startLevel))?.pathCode ||
+  (customPaths.value.length && !props.configuredPaths.some(path => path.pathCode === inferredDimension) ? customPaths.value[0].pathCode : inferredDimension)
 const dimension = ref(initialDimension)
 const lastDrillDimension = ref(initialDimension)
-const currentLevel = ref(props.startLevel)
+const initialPath = props.configuredPaths.find(path => path.pathCode === initialDimension)
+const currentLevel = ref(initialPath?.levels?.length && !initialPath.levels.some(level => level.levelCode === props.startLevel) ? initialPath.levels[0].levelCode : props.startLevel)
 const parentKeys = ref({ ...props.startParentKeys })
 const result = ref(emptyResult())
 const loading = ref(false)
 const errorMessage = ref('')
+let drillRequestId = 0
 const factorTrace = ref(null)
 const factorTraceLoading = ref(false)
 const resolvedPathResultIds = ref({})
@@ -171,7 +179,7 @@ const resolvedPeriod = computed(() => {
   return start && end ? `${start} ～ ${end}` : (props.period || '由结果快照确定')
 })
 
-const currentLevelLabel = computed(() => ({
+const currentLevelLabel = computed(() => props.configuredPaths.find(path => path.pathCode === lastDrillDimension.value)?.levels?.find(level => level.levelCode === currentLevel.value)?.levelName || ({
   HOSPITAL: '医院',
   OUT_DEPT: '科室',
   DEPARTMENT: '科室',
@@ -213,6 +221,7 @@ function formulaRoleLabel(role) {
 
 function buildPayload() {
   const payload = {
+    ...(lastDrillDimension.value.startsWith('CUSTOM_') ? { pathCode: lastDrillDimension.value } : {}),
     parentKeys: parentKeys.value,
     filters: {},
     pageNum: 1,
@@ -225,21 +234,25 @@ function buildPayload() {
 
 async function loadDrill() {
   if (!activeResultId.value || isFactorTraceMode.value) return
+  const requestId = ++drillRequestId
   loading.value = true
   errorMessage.value = ''
   try {
-    result.value = await searchResultDrill(activeResultId.value, buildPayload(), { source: props.source })
+    const response = await searchResultDrill(activeResultId.value, buildPayload(), { source: props.source })
+    if (requestId !== drillRequestId) return
+    result.value = response
     currentLevel.value = result.value.context.currentLevel || currentLevel.value
     resolveCanonicalRootResultId()
   } catch (error) {
+    if (requestId !== drillRequestId) return
     errorMessage.value = error?.message || '请稍后重试。'
   } finally {
-    loading.value = false
+    if (requestId === drillRequestId) loading.value = false
   }
 }
 
 function resolveCanonicalRootResultId() {
-  const rootLevel = lastDrillDimension.value === 'DISEASE' ? 'ALL_SINGLE_DISEASE' : 'HOSPITAL'
+  const rootLevel = rootForPath(lastDrillDimension.value)
   if (String(currentLevel.value).toUpperCase() !== rootLevel) return
   const rootRecord = result.value.records.find((record) => (
     String(record.levelCode || '').toUpperCase() === rootLevel && record.resultId
@@ -267,6 +280,8 @@ function openNextLevel(row) {
 }
 
 function parentKeyForLevel(level) {
+  const definition = props.configuredPaths.find(path => path.pathCode === lastDrillDimension.value)?.levels?.find(item => item.levelCode === level)
+  if (definition) return definition.memberKeyFieldCode || definition.memberKeySemanticFieldCode || definition.dimensionFieldCode || definition.dimensionSemanticFieldCode || ''
   return {
     HOSPITAL: 'HOSPITAL_CODE',
     OUT_DEPT: 'OUT_DEPT_CODE',
@@ -315,12 +330,17 @@ function syncRouteContext() {
   const query = Object.fromEntries(Object.entries(route.query).filter(([key]) => !key.endsWith('_CODE')))
   Object.assign(query, parentKeys.value, {
     resultId: activeResultId.value,
-    currentLevel: currentLevel.value
+    currentLevel: currentLevel.value,
+    pathCode: lastDrillDimension.value,
+    parentKeys: JSON.stringify(parentKeys.value)
   })
   router.replace({ name: 'ResultDrill', query })
 }
 
 function pathAvailable(path) {
+  if (path.startsWith('CUSTOM_')) return customPaths.value.some(item => item.pathCode === path)
+  const businessPaths = props.configuredPaths.filter(item => ['ORGANIZATION', 'DISEASE'].includes(item.pathCode) || item.pathCode?.startsWith('CUSTOM_'))
+  if (businessPaths.length && !businessPaths.some(item => item.pathCode === path)) return false
   const configuredPaths = Object.keys(props.pathResultIds || {})
   if (configuredPaths.length) return Boolean(props.pathResultIds[path])
   return path === initialDimension
@@ -338,13 +358,13 @@ watch(() => [props.startLevel, props.startParentKeys], ([level, keys]) => {
   if (isFactorTraceMode.value) loadFactorTrace()
   else loadDrill()
 }, { deep: true })
-watch(() => [props.resultId, props.pathResultIds], () => {
+watch(() => [props.resultId, props.pathResultIds, props.configuredPaths], () => {
   resolvedPathResultIds.value = {}
   if (!pathAvailable(lastDrillDimension.value)) {
-    const nextDimension = pathAvailable('ORGANIZATION') ? 'ORGANIZATION' : 'DISEASE'
+    const nextDimension = customPaths.value[0]?.pathCode || (pathAvailable('ORGANIZATION') ? 'ORGANIZATION' : 'DISEASE')
     dimension.value = nextDimension
     lastDrillDimension.value = nextDimension
-    currentLevel.value = nextDimension === 'DISEASE' ? 'ALL_SINGLE_DISEASE' : 'HOSPITAL'
+    currentLevel.value = rootForPath(nextDimension)
     parentKeys.value = {}
   }
   if (isFactorTraceMode.value) loadFactorTrace()
@@ -360,6 +380,8 @@ watch(() => props.source, (source) => {
   loadDrill()
 })
 watch(dimension, (value) => {
+  drillRequestId += 1
+  loading.value = false
   factorTrace.value = null
   errorMessage.value = ''
   if (value === 'FACTOR_TRACE') {
@@ -367,6 +389,12 @@ watch(dimension, (value) => {
     return
   }
   lastDrillDimension.value = value
+  if (value.startsWith('CUSTOM_')) {
+    currentLevel.value = rootForPath(value)
+    parentKeys.value = {}
+    loadDrill()
+    return
+  }
   if (value === 'DISEASE') {
     currentLevel.value = 'ALL_SINGLE_DISEASE'
     parentKeys.value = {}
@@ -378,6 +406,10 @@ watch(dimension, (value) => {
   }
 })
 onMounted(loadDrill)
+
+function rootForPath(pathCode) {
+  return props.configuredPaths.find(path => path.pathCode === pathCode)?.levels?.[0]?.levelCode || (pathCode.startsWith('CUSTOM_') ? 'ROOT' : pathCode === 'DISEASE' ? 'ALL_SINGLE_DISEASE' : 'HOSPITAL')
+}
 </script>
 
 <style scoped>

@@ -29,7 +29,7 @@ export function preflightIndicatorDrillCapabilities(formula, options = {}) {
   return requestJson('/indicator-versions/drill-capabilities', {
     method: 'POST',
     signal: options.signal,
-    body: JSON.stringify({ formula })
+    body: JSON.stringify({ formula, ...(options.drillPaths !== undefined ? { drillPaths: options.drillPaths } : {}), ...(options.factorDimensionBindings !== undefined ? { factorDimensionBindings: options.factorDimensionBindings } : {}) })
   })
 }
 
