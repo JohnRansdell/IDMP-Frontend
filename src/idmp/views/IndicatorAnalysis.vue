@@ -331,6 +331,7 @@
             :start-level="drillStartLevel"
             :start-parent-keys="drillParentKeys"
             :max-levels="drillMaxLevels"
+            :configured-paths="backendIndicatorVersion?.drillConfig?.drillPaths || []"
             embedded
           />
           <div v-else class="analysis-empty-state">

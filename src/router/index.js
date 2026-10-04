@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import IdmpLayout from '@/idmp/layout/IdmpLayout.vue'
 import { scrollBehavior } from './scrollBehavior'
+import { breadcrumbLinks as B } from './breadcrumbs'
 
 const routes = [
   {
@@ -17,14 +18,14 @@ const routes = [
         path: 'dashboard',
         name: 'Dashboard',
         component: () => import('@/idmp/views/Dashboard.vue'),
-        meta: { title: '指标看板', breadcrumb: ['首页', '指标看板'] }
+        meta: { title: '指标看板', breadcrumb: [B.home, '指标看板'] }
       },
       { path: 'dashboard/manage', redirect: '/dashboard' },
       {
         path: 'indicator',
         name: 'IndicatorManagement',
         component: () => import('@/idmp/views/IndicatorManagement.vue'),
-        meta: { title: '指标管理', breadcrumb: ['首页', '指标管理'] }
+        meta: { title: '指标管理', breadcrumb: [B.home, '指标管理'] }
       },
       {
         path: 'indicator/edit/:id?',
@@ -33,7 +34,7 @@ const routes = [
         meta: {
           title: '指标编辑',
           activeMenu: '/indicator',
-          breadcrumb: ['首页', '指标管理', '编辑指标']
+          breadcrumb: [B.home, B.indicators, '编辑指标']
         }
       },
       {
@@ -43,7 +44,7 @@ const routes = [
         meta: {
           title: 'SQL 导入指标',
           activeMenu: '/indicator',
-          breadcrumb: ['首页', '指标管理', 'SQL 导入']
+          breadcrumb: [B.home, B.indicators, 'SQL 导入']
         }
       },
       {
@@ -53,44 +54,44 @@ const routes = [
         meta: {
           title: '指标详情',
           activeMenu: '/indicator',
-          breadcrumb: ['首页', '指标管理', '查看指标']
+          breadcrumb: [B.home, B.indicators, '查看指标']
         }
       },
       {
         path: 'indicator/recycle-bin',
         name: 'IndicatorRecycleBin',
         component: () => import('@/idmp/views/ResourceRecycleBin.vue'),
-        meta: { title: '指标回收站', activeMenu: '/indicator', resourceType: 'INDICATOR', breadcrumb: ['首页', '指标管理', '回收站'] }
+        meta: { title: '指标回收站', activeMenu: '/indicator', resourceType: 'INDICATOR', breadcrumb: [B.home, B.indicators, '回收站'] }
       },
       {
         path: 'factor',
         name: 'FactorManagement',
         component: () => import('@/idmp/views/FactorManagement.vue'),
-        meta: { title: '因子管理', breadcrumb: ['首页', '因子管理'] }
+        meta: { title: '因子管理', breadcrumb: [B.home, '因子管理'] }
       },
       {
         path: 'factor/templates',
         name: 'FactorTemplateManagement',
         component: () => import('@/idmp/views/FactorTemplateManagement.vue'),
-        meta: { title: '因子模板管理', activeMenu: '/factor/templates', breadcrumb: ['首页', '因子管理', '因子模板'] }
+        meta: { title: '因子模板管理', activeMenu: '/factor/templates', breadcrumb: [B.home, B.factors, '因子模板'] }
       },
       {
         path: 'factor/templates/new',
         name: 'FactorTemplateCreate',
         component: () => import('@/idmp/views/FactorTemplateEditor.vue'),
-        meta: { title: '新建因子模板', activeMenu: '/factor/templates', breadcrumb: ['首页', '因子管理', '因子模板', '新建'] }
+        meta: { title: '新建因子模板', activeMenu: '/factor/templates', breadcrumb: [B.home, B.factors, B.factorTemplates, '新建'] }
       },
       {
         path: 'factor/templates/:templateId/versions/:versionId',
         name: 'FactorTemplateEditor',
         component: () => import('@/idmp/views/FactorTemplateEditor.vue'),
-        meta: { title: '编辑因子模板', activeMenu: '/factor/templates', breadcrumb: ['首页', '因子管理', '因子模板', '版本编辑'] }
+        meta: { title: '编辑因子模板', activeMenu: '/factor/templates', breadcrumb: [B.home, B.factors, B.factorTemplates, '版本编辑'] }
       },
       {
         path: 'factor/templates/:templateId/versions/:versionId/instantiate',
         name: 'FactorTemplateInstantiate',
         component: () => import('@/idmp/views/FactorTemplateInstantiate.vue'),
-        meta: { title: '从模板创建因子', activeMenu: '/factor', breadcrumb: ['首页', '因子管理', '因子模板', '创建因子'] }
+        meta: { title: '从模板创建因子', activeMenu: '/factor', breadcrumb: [B.home, B.factors, B.factorTemplates, '创建因子'] }
       },
       {
         path: 'factor/edit/:id?',
@@ -99,26 +100,26 @@ const routes = [
         meta: {
           title: '因子编辑',
           activeMenu: '/factor',
-          breadcrumb: ['首页', '因子管理', '因子编辑']
+          breadcrumb: [B.home, B.factors, '因子编辑']
         }
       },
       {
         path: 'factor/recycle-bin',
         name: 'FactorRecycleBin',
         component: () => import('@/idmp/views/ResourceRecycleBin.vue'),
-        meta: { title: '因子回收站', activeMenu: '/factor', resourceType: 'FACTOR', breadcrumb: ['首页', '因子管理', '回收站'] }
+        meta: { title: '因子回收站', activeMenu: '/factor', resourceType: 'FACTOR', breadcrumb: [B.home, B.factors, '回收站'] }
       },
       {
         path: 'scenarios',
         name: 'ScenarioList',
         component: () => import('@/idmp/views/ScenarioList.vue'),
-        meta: { title: '场景管理', breadcrumb: ['首页', '场景管理'] }
+        meta: { title: '场景管理', breadcrumb: [B.home, '场景管理'] }
       },
       {
         path: 'scenarios/:scenarioId/edit',
         name: 'ScenarioEditor',
         component: () => import('@/idmp/views/ScenarioEditor.vue'),
-        meta: { title: '场景编辑', activeMenu: '/scenarios', breadcrumb: ['首页', '场景管理', '场景编辑'] }
+        meta: { title: '场景编辑', activeMenu: '/scenarios', breadcrumb: [B.home, B.scenarios, '场景编辑'] }
       },
       {
         path: 'scene',
@@ -128,13 +129,13 @@ const routes = [
         path: 'mapping',
         name: 'IndicatorMapping',
         component: () => import('@/idmp/views/IndicatorMapping.vue'),
-        meta: { title: '指标映射', breadcrumb: ['首页', '指标映射管理'] }
+        meta: { title: '指标映射', breadcrumb: [B.home, '指标映射管理'] }
       },
       {
         path: 'mapping/:id',
         name: 'IndicatorMappingDetail',
         component: () => import('@/idmp/views/IndicatorMappingDetail.vue'),
-        meta: { title: '映射详情', activeMenu: '/mapping', breadcrumb: ['首页', '指标映射管理', '映射详情'] }
+        meta: { title: '映射详情', activeMenu: '/mapping', breadcrumb: [B.home, B.mappings, '映射详情'] }
       },
       {
         path: 'analysis',
@@ -142,7 +143,7 @@ const routes = [
         component: () => import('@/idmp/views/IndicatorAnalysis.vue'),
         meta: {
           title: '指标分析',
-          breadcrumb: ['首页', '指标分析']
+          breadcrumb: [B.home, '指标分析']
         }
       },
       {
@@ -152,20 +153,20 @@ const routes = [
         meta: {
           title: '结果下钻',
           activeMenu: '/analysis',
-          breadcrumb: ['首页', '指标分析', '结果下钻']
+          breadcrumb: [B.home, B.analysis, '结果下钻']
         }
       },
       {
         path: 'alerts',
         name: 'AlertCenter',
         component: () => import('@/idmp/views/AlertCenter.vue'),
-        meta: { title: '预警中心', breadcrumb: ['首页', '预警中心'] }
+        meta: { title: '预警中心', breadcrumb: [B.home, '预警中心'] }
       },
       {
         path: 'calc',
         name: 'CalculationTaskCenter',
         component: () => import('@/idmp/views/CalculationTaskCenter.vue'),
-        meta: { title: '计算任务中心', breadcrumb: ['首页', '计算任务中心'] }
+        meta: { title: '计算任务中心', breadcrumb: [B.home, '计算任务中心'] }
       },
       {
         path: 'data',
@@ -178,7 +179,7 @@ const routes = [
         meta: {
           title: '数据源管理',
           activeMenu: '/data/sources',
-          breadcrumb: ['首页', '数据治理', '数据源管理']
+          breadcrumb: [B.home, B.data, '数据源管理']
         }
       },
       {
@@ -188,7 +189,7 @@ const routes = [
         meta: {
            title: '数据域管理',
           activeMenu: '/data/domains',
-           breadcrumb: ['首页', '数据治理', '数据域管理']
+           breadcrumb: [B.home, B.data, '数据域管理']
         }
       },
       {
@@ -198,44 +199,44 @@ const routes = [
         meta: {
           title: '数据域工作台',
           activeMenu: '/data/domains',
-           breadcrumb: ['首页', '数据治理', '数据域管理', '数据域工作台']
+           breadcrumb: [B.home, B.data, B.domains, '数据域工作台']
         }
       },
       {
         path: 'data/value-sets',
         name: 'ValueSetManagement',
         component: () => import('@/idmp/views/ValueSetManagement.vue'),
-        meta: { title: '值集管理', activeMenu: '/data/value-sets', breadcrumb: ['首页', '数据治理', '值集管理'] }
+        meta: { title: '值集管理', activeMenu: '/data/value-sets', breadcrumb: [B.home, B.data, '值集管理'] }
       },
       {
         path: 'data/value-sets/new',
         name: 'ValueSetCreate',
         component: () => import('@/idmp/views/ValueSetCreate.vue'),
-        meta: { title: '新建值集', activeMenu: '/data/value-sets', breadcrumb: ['首页', '数据治理', '值集管理', '新建值集'] }
+        meta: { title: '新建值集', activeMenu: '/data/value-sets', breadcrumb: [B.home, B.data, B.valueSets, '新建值集'] }
       },
       {
         path: 'data/value-sets/:valueSetId',
         name: 'ValueSetDetail',
         component: () => import('@/idmp/views/ValueSetDetail.vue'),
-        meta: { title: '值集详情', activeMenu: '/data/value-sets', breadcrumb: ['首页', '数据治理', '值集管理', '值集详情'] }
+        meta: { title: '值集详情', activeMenu: '/data/value-sets', breadcrumb: [B.home, B.data, B.valueSets, '值集详情'] }
       },
       {
         path: 'data/value-set-versions/:versionId/edit',
         name: 'ValueSetVersionEditor',
         component: () => import('@/idmp/views/ValueSetVersionEditor.vue'),
-        meta: { title: '值集版本编辑', activeMenu: '/data/value-sets', breadcrumb: ['首页', '数据治理', '值集管理', '版本编辑'] }
+        meta: { title: '值集版本编辑', activeMenu: '/data/value-sets', breadcrumb: [B.home, B.data, B.valueSets, '版本编辑'] }
       },
       {
         path: 'data/standardization/:mappingId',
         name: 'SourceStandardization',
         component: () => import('@/idmp/views/SourceStandardization.vue'),
-        meta: { title: '源值标准化', activeMenu: '/data/domains', breadcrumb: ['首页', '数据治理', '源值标准化'] }
+        meta: { title: '源值标准化', activeMenu: '/data/domains', breadcrumb: [B.home, B.data, '源值标准化'] }
       },
       {
         path: 'system',
         name: 'SystemManagement',
         component: () => import('@/idmp/views/SystemManagement.vue'),
-        meta: { title: '系统管理', breadcrumb: ['首页', '系统管理'] }
+        meta: { title: '系统管理', breadcrumb: [B.home, '系统管理'] }
       }
     ]
   },
@@ -258,7 +259,7 @@ if (import.meta.env.DEV) {
     path: 'dashboard-grid-poc',
     name: 'DashboardGridPoc',
     component: () => import('@/idmp/views/DashboardGridPoc.vue'),
-    meta: { title: 'GridStack Dashboard PoC', breadcrumb: ['首页', 'GridStack Dashboard PoC'] }
+    meta: { title: 'GridStack Dashboard PoC', breadcrumb: [B.home, 'GridStack Dashboard PoC'] }
   })
 }
 // 当前部署不启用统一登录入口；兼容旧书签并直接返回工作台。

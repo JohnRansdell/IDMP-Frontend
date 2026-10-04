@@ -303,6 +303,8 @@
               </el-tooltip>
             </div>
             <section class="drill-capability-card" aria-label="指标版本下钻能力预检">
+              <CustomDrillPathEditor v-model="selectedDrillPaths" :disabled="indicatorWorkflow.published" @update:model-value="invalidateGroupingConfiguration" />
+              <FactorDimensionBindingsEditor v-model="factorDimensionBindings" :disabled="indicatorWorkflow.published" :fields="customGroupingFields" :factors="selectedFormulaFactors" :field-options="drillCapability.fieldOptions" @update:model-value="invalidateGroupingConfiguration" />
               <div class="drill-config-card__heading">
                 <div>
                   <strong>下钻能力预检</strong>
@@ -320,19 +322,19 @@
               <el-alert v-if="drillCapability.status === 'idle'" :title="`请按${activeMode.factorRequirement}选择因子后执行预检；修改因子会使已有预检结果失效。`" type="info" :closable="false" show-icon />
               <StatePanel v-else-if="drillCapability.status === 'loading'" type="loading" title="正在预检下钻能力" />
               <el-alert v-else-if="drillCapability.status === 'error'" :title="drillCapability.errorMessage || '下钻能力预检失败'" type="error" :closable="false" show-icon />
-              <template v-else-if="drillCapability.status === 'ready'">
+              <template v-else-if="['ready', 'stale'].includes(drillCapability.status)">
                 <p class="drill-capability-coverage">本次预检覆盖因子版本：{{ drillCapability.factorVersionIds.join('、') || '-' }}</p>
                 <el-table :data="drillCapability.dimensions" size="small" border class="drill-capability-table">
-                  <el-table-column label="启用" width="76"><template #default="{ row }"><el-checkbox :model-value="isDrillPathSelected(row.pathCode)" :disabled="!row.supported || (isStaticIndicator && row.pathCode === 'TIME')" :aria-label="`启用${drillPathLabel(row.pathCode)}下钻路径`" @change="checked => toggleDrillPath(row, checked)" /></template></el-table-column>
-                  <el-table-column label="路径" min-width="145"><template #default="{ row }">{{ drillPathLabel(row.pathCode) }}</template></el-table-column>
+                  <el-table-column label="启用" width="76"><template #default="{ row }"><el-checkbox :model-value="isDrillPathSelected(row.pathCode)" :disabled="indicatorWorkflow.published || row.pathCode.startsWith('CUSTOM_') || !row.supported || (isStaticIndicator && row.pathCode === 'TIME')" :aria-label="`启用${drillPathLabel(row.pathCode)}下钻路径`" @change="checked => toggleDrillPath(row, checked)" /></template></el-table-column>
+                  <el-table-column label="路径" min-width="145"><template #default="{ row }">{{ selectedDrillPaths.find(path => path.pathCode === row.pathCode)?.pathName || drillPathLabel(row.pathCode) }}</template></el-table-column>
                   <el-table-column label="能力" min-width="120"><template #default="{ row }"><el-tag :type="row.supported ? 'success' : 'info'" size="small">{{ row.supported ? `最深到${drillLevelLabel(row.maxLevel)}` : '不支持' }}</el-tag></template></el-table-column>
-                  <el-table-column label="本版本最大层级" min-width="210"><template #default="{ row }"><el-select :model-value="selectedDrillPathLevel(row.pathCode)" :disabled="!row.supported || !isDrillPathSelected(row.pathCode)" placeholder="选择层级" @update:model-value="level => setDrillPathLevel(row.pathCode, level)"><el-option v-for="level in capabilityLevels(row)" :key="level.code" :label="drillLevelOptionLabel(level)" :value="level.code" /></el-select></template></el-table-column>
+                  <el-table-column label="本版本最大层级" min-width="210"><template #default="{ row }"><el-select :model-value="selectedDrillPathLevel(row.pathCode)" :disabled="indicatorWorkflow.published || row.pathCode.startsWith('CUSTOM_') || !row.supported || !isDrillPathSelected(row.pathCode)" placeholder="选择层级" @update:model-value="level => setDrillPathLevel(row.pathCode, level)"><el-option v-for="level in capabilityLevels(row)" :key="level.code" :label="drillLevelOptionLabel(level)" :value="level.code" /></el-select></template></el-table-column>
                   <el-table-column label="限制原因" min-width="280"><template #default="{ row }"><span v-if="row.limitingFactors.length">{{ limitingFactorText(row) }}</span><span v-else class="muted-text">-</span></template></el-table-column>
                 </el-table>
-                <el-form label-position="top" class="drill-capability-selection-hint">
-                  <DimensionGrainSelect v-model="indicatorDimensionGrain" :options="drillCapability.dimensionGrainOptions" />
-                </el-form>
               </template>
+              <el-form label-position="top" class="drill-capability-selection-hint">
+                <el-form-item label="组合粒度"><DimensionGrainEditor v-model="indicatorDimensionGrain" :disabled="indicatorWorkflow.published" /></el-form-item>
+              </el-form>
             </section>
             <div v-if="!isStaticIndicator" class="indicator-trial-period">
               <div>
@@ -771,7 +773,10 @@ import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvaila
 import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
 import { factorCalculationMode } from '@/idmp/utils/factorPeriod'
 import RuntimeParameterFields from '@/idmp/components/RuntimeParameterFields.vue'
-import DimensionGrainSelect from '@/idmp/components/DimensionGrainSelect.vue'
+import DimensionGrainEditor from '@/idmp/components/DimensionGrainEditor.vue'
+import CustomDrillPathEditor from '@/idmp/components/CustomDrillPathEditor.vue'
+import FactorDimensionBindingsEditor from '@/idmp/components/FactorDimensionBindingsEditor.vue'
+import { serializeDrillPaths, sqlImportGroupingFields } from '@/idmp/features/indicator/grouping.js'
 import { normalizeDimensionGrain } from '@/idmp/features/indicator/grouping'
 import { buildSqlRuntimeParameterValues, collectSqlRuntimeParameters, validateSqlRuntimeParameterValues } from '@/idmp/api/adapters/sqlImport'
 
@@ -818,12 +823,17 @@ const indicatorTrialTargets = ref([])
 const selectedIndicatorTrialTargetKey = ref('')
 const indicatorTrialResultsLoaded = ref(false)
 const selectedDrillPaths = ref([])
+const factorDimensionBindings = ref({})
+const customGroupingFields = computed(() => {
+  try { return sqlImportGroupingFields(selectedDrillPaths.value.filter(path => path.pathCode.startsWith('CUSTOM_')), indicatorDimensionGrain.value) } catch { return [] }
+})
 const indicatorDimensionGrain = ref([])
 const drillCapability = reactive({
   status: 'idle',
   formulaSignature: '',
   factorVersionIds: [],
   dimensions: [],
+  fieldOptions: [],
   dimensionGrainOptions: [],
   errorMessage: ''
 })
@@ -1215,19 +1225,21 @@ const drillCapabilityTagText = computed(() => ({
   idle: '待预检',
   loading: '预检中',
   ready: '预检完成',
+  stale: '待重新预检',
   error: '预检失败'
 }[drillCapability.status] || '待预检'))
 const drillCapabilityTagType = computed(() => ({
   idle: 'info',
   loading: 'warning',
   ready: 'success',
+  stale: 'warning',
   error: 'danger'
 }[drillCapability.status] || 'info'))
 
 let drillCapabilityRequestId = 0
 
 function formulaSignature(formula) {
-  return JSON.stringify(formula)
+  return JSON.stringify({ formula, drillPaths: selectedDrillPaths.value, factorDimensionBindings: factorDimensionBindings.value, dimensionGrain: indicatorDimensionGrain.value })
 }
 
 function resetDrillCapability() {
@@ -1238,9 +1250,10 @@ function resetDrillCapability() {
     factorVersionIds: [],
     dimensions: [],
     dimensionGrainOptions: [],
+    fieldOptions: [],
     errorMessage: ''
   })
-  selectedDrillPaths.value = []
+  selectedDrillPaths.value = selectedDrillPaths.value.filter(path => path.pathCode.startsWith('CUSTOM_'))
 }
 
 function capabilityLevels(dimension) {
@@ -1267,18 +1280,21 @@ function toggleDrillPath(dimension, checked) {
   if (!pathCode || !dimension?.supported) return
   if (!checked) {
     selectedDrillPaths.value = selectedDrillPaths.value.filter((path) => path.pathCode !== pathCode)
+    invalidateGroupingConfiguration()
     return
   }
   const levels = capabilityLevels(dimension)
   const maxLevel = levels[levels.length - 1]?.code || dimension.maxLevel
   if (!maxLevel) return
   selectedDrillPaths.value = [...selectedDrillPaths.value, { pathCode, maxLevel }]
+  invalidateGroupingConfiguration()
 }
 
 function setDrillPathLevel(pathCode, maxLevel) {
   selectedDrillPaths.value = selectedDrillPaths.value.map((path) => (
     path.pathCode === pathCode ? { ...path, maxLevel: String(maxLevel || '') } : path
   ))
+  invalidateGroupingConfiguration()
 }
 
 function limitingFactorText(dimension) {
@@ -1307,7 +1323,13 @@ async function runDrillCapabilityPreflight(providedFormula) {
   })
   workflowLoading.capability = true
   try {
-    const response = await preflightIndicatorDrillCapabilities(formula)
+    const fieldsResponse = await preflightIndicatorDrillCapabilities(formula)
+    if (requestId !== drillCapabilityRequestId) return false
+    drillCapability.fieldOptions = normalizeDrillCapabilities(fieldsResponse).fieldOptions
+    const paths = serializeDrillPaths(selectedDrillPaths.value)
+    const referencedIds = new Set(selectedFormulaFactors.value.map(factor => String(factor.versionId)))
+    const bindings = Object.fromEntries(Object.entries(factorDimensionBindings.value).filter(([id]) => referencedIds.has(id)).map(([id, fields]) => [id, Object.fromEntries(Object.entries(fields).filter(([name, value]) => customGroupingFields.value.includes(name) && value))]))
+    const response = paths.length || Object.keys(bindings).length ? await preflightIndicatorDrillCapabilities(formula, { drillPaths: paths, factorDimensionBindings: bindings }) : fieldsResponse
     if (requestId !== drillCapabilityRequestId) return false
     const capability = normalizeDrillCapabilities(response)
     Object.assign(drillCapability, {
@@ -1315,10 +1337,11 @@ async function runDrillCapabilityPreflight(providedFormula) {
       formulaSignature: signature,
       factorVersionIds: capability.factorVersionIds,
       dimensions: capability.dimensions,
+      fieldOptions: capability.fieldOptions,
       dimensionGrainOptions: capability.dimensionGrainOptions,
       errorMessage: ''
     })
-    selectedDrillPaths.value = selectedDrillPaths.value.filter((path) => !validateDrillSelection(capability, [path]))
+    drillCapability.formulaSignature = formulaSignature(formula)
     return true
   } catch (error) {
     if (requestId !== drillCapabilityRequestId) return false
@@ -1561,6 +1584,7 @@ function hydrateIndicatorVersion(version) {
   resetDrillCapability()
   hydrateFormulaFactors(formula)
   selectedDrillPaths.value = normalizeDrillPaths(version)
+  factorDimensionBindings.value = version.factorDimensionBindings || version.drillConfig?.factorDimensionBindings || {}
   indicatorRuntimeParameterGroups.value = Array.isArray(version.factorRuntimeParameters) ? version.factorRuntimeParameters : []
   indicatorRuntimeParameterValues.value = {}
 }
@@ -1815,7 +1839,7 @@ async function createIndicatorDraftVersion() {
 
     workflowLoading.version = true
     const copyFromVersionId = indicatorWorkflow.versionId
-    const versionPayload = buildIndicatorVersionPayload({ copyFromVersionId, drillPaths: selectedDrillPaths.value, calculationMode: indicatorCalculationMode.value, dimensionGrain: indicatorDimensionGrain.value })
+    const versionPayload = buildIndicatorVersionPayload({ copyFromVersionId, drillPaths: selectedDrillPaths.value, calculationMode: indicatorCalculationMode.value, dimensionGrain: indicatorDimensionGrain.value, factorDimensionBindings: activeFactorDimensionBindings() })
     recordWorkflowRequest({
       step: '创建指标版本',
       endpoint: `/api/v1/indicators/${indicatorWorkflow.indicatorId}/versions`,
@@ -1932,7 +1956,8 @@ async function createFirstIndicatorVersionWithFormula(formula) {
     drillPaths: selectedDrillPaths.value,
     formula,
     calculationMode: indicatorCalculationMode.value,
-    dimensionGrain: indicatorDimensionGrain.value
+    dimensionGrain: indicatorDimensionGrain.value,
+    factorDimensionBindings: activeFactorDimensionBindings()
   })
   recordWorkflowRequest({
     step: '创建首个指标版本并保存公式',
@@ -1965,6 +1990,7 @@ async function createFirstIndicatorVersionWithFormula(formula) {
   })
   resetIndicatorTrialResultCollection()
   selectedDrillPaths.value = normalizeDrillPaths(version)
+  factorDimensionBindings.value = version.factorDimensionBindings || version.drillConfig?.factorDimensionBindings || {}
   recordWorkflowSuccess(`首个指标版本及公式已保存：${versionId}`)
 }
 
@@ -2302,6 +2328,8 @@ async function publishIndicatorVersionOnly() {
 async function persistIndicatorFormula() {
   const formulaPayload = createIndicatorFormulaPayload(indicatorWorkflow.resourceVersion)
   formulaPayload.dimensionGrain = normalizeDimensionGrain(indicatorDimensionGrain.value)
+  formulaPayload.drillPaths = serializeDrillPaths(selectedDrillPaths.value)
+  formulaPayload.factorDimensionBindings = activeFactorDimensionBindings()
   recordWorkflowRequest({
     step: '保存公式',
     endpoint: `/api/v1/indicator-versions/${indicatorWorkflow.versionId}/formula`,
@@ -2314,10 +2342,28 @@ async function persistIndicatorFormula() {
     formulaPayload
   )
   indicatorWorkflow.resourceVersion = resolveResourceVersion(savedFormula, indicatorWorkflow.resourceVersion)
+  selectedDrillPaths.value = normalizeDrillPaths(savedFormula)
+  factorDimensionBindings.value = savedFormula.factorDimensionBindings || savedFormula.drillConfig?.factorDimensionBindings || {}
   indicatorWorkflow.formulaSaved = true
   indicatorWorkflow.compiled = false
   resetIndicatorTrialAfterPeriodChange()
   recordWorkflowSuccess('保存公式成功')
+}
+
+function activeFactorDimensionBindings() {
+  const ids = new Set(selectedFormulaFactors.value.map(factor => String(factor.versionId)))
+  return Object.fromEntries(Object.entries(factorDimensionBindings.value).filter(([id]) => ids.has(id)).map(([id, fields]) => [id, Object.fromEntries(Object.entries(fields).filter(([name, value]) => customGroupingFields.value.includes(name) && value))]))
+}
+
+function invalidateGroupingConfiguration() {
+  drillCapabilityRequestId += 1
+  drillCapability.status = drillCapability.dimensions.length ? 'stale' : 'idle'
+  drillCapability.formulaSignature = ''
+  if (indicatorWorkflow.versionId && !indicatorWorkflow.published) {
+    indicatorWorkflow.formulaSaved = false
+    indicatorWorkflow.compiled = false
+    resetIndicatorTrialAfterPeriodChange()
+  }
 }
 
 async function ensureIndicatorPublishPrerequisites() {

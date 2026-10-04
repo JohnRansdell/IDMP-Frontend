@@ -364,7 +364,7 @@ export function normalizeDrillConfig(payload, fallback = defaultDrillConfig) {
   }
 }
 
-export function buildIndicatorVersionPayload({ copyFromVersionId = '', drillConfig, drillPaths, formula, calculationMode, dimensionGrain } = {}) {
+export function buildIndicatorVersionPayload({ copyFromVersionId = '', drillConfig, drillPaths, formula, calculationMode, dimensionGrain, factorDimensionBindings } = {}) {
   const normalizedPaths = Array.isArray(drillPaths)
     ? drillPaths
     : drillConfig ? [drillConfig] : []
@@ -377,6 +377,7 @@ export function buildIndicatorVersionPayload({ copyFromVersionId = '', drillConf
     ...(formula ? { formula } : {}),
     ...(calculationMode ? { calculationMode: String(calculationMode).toUpperCase() } : {}),
     drillPaths: serializeDrillPaths(normalizedPaths),
+    ...(factorDimensionBindings !== undefined ? { factorDimensionBindings } : {}),
     ...(dimensionGrain !== undefined ? { dimensionGrain: normalizeDimensionGrain(dimensionGrain) } : {})
   }
 }

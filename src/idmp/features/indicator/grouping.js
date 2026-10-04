@@ -1,3 +1,9 @@
+export function createCustomDrillCode(prefix, cryptoProvider = globalThis.crypto) {
+  const bytes = new Uint8Array(16)
+  cryptoProvider.getRandomValues(bytes)
+  return `${prefix}_${Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('').toUpperCase()}`
+}
+
 export function normalizeDimensionGrain(values = []) {
   if (!Array.isArray(values)) throw new Error('组合粒度必须是字段列表')
   if (values.length > 10) throw new Error('组合粒度最多选择 10 个字段')
@@ -17,19 +23,35 @@ export function serializeDrillPaths(paths = []) {
     if (!pathCode || !maxLevel) throw new Error('下钻路径和最大层级不能为空')
     if (seen.has(pathCode)) throw new Error('同一下钻路径只能选择一次')
     seen.add(pathCode)
+    if (pathCode.startsWith('CUSTOM_') && Array.isArray(path.levels)) {
+      if (!String(path.pathName || '').trim()) throw new Error('请填写自定义路径名称')
+      if (path.levels.length < 2 || path.levels.length > 10 || path.levels[0]?.levelCode !== 'ROOT') throw new Error('自定义路径需要全院根层级和 1 至 9 个业务层级')
+      const dimensions = new Set()
+      const levels = new Set()
+      for (const [index, level] of path.levels.entries()) {
+        if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(level.levelCode) || levels.has(level.levelCode)) throw new Error('层级编码无效或重复')
+        levels.add(level.levelCode)
+        if (!String(level.levelName || '').trim()) throw new Error('请填写层级名称')
+        if (index === 0) continue
+        normalizeDimensionGrain([level.dimensionFieldCode])
+        if (dimensions.has(level.dimensionFieldCode)) throw new Error('同一路径的维度名称不能重复')
+        dimensions.add(level.dimensionFieldCode)
+        for (const field of [level.memberKeyFieldCode, level.displayFieldCode]) if (field) normalizeDimensionGrain([field])
+      }
+    }
     return { pathCode, maxLevel,
       ...(path.pathVersionId ? { pathVersionId: String(path.pathVersionId) } : {}),
       ...(path.pathName ? { pathName: String(path.pathName) } : {}),
-      ...(Array.isArray(path.levels) && path.levels.length ? { levels: path.levels.map(level => ({ ...level })) } : {}) }
+      ...(!path.pathVersionId && Array.isArray(path.levels) && path.levels.length ? { levels: path.levels.map(level => ({ ...level })) } : {}) }
   })
 }
 
 function selectedSqlDrillLevels(paths, catalog) {
   const selected = []
   for (const path of paths) {
-    if (!['ORGANIZATION', 'DISEASE'].includes(path.pathCode)) continue
+    if (!['ORGANIZATION', 'DISEASE'].includes(path.pathCode) && !path.pathCode.startsWith('CUSTOM_')) continue
     const definition = catalog.find(item => String(item.version?.id) === String(path.pathVersionId))
-    const levels = definition?.levels || path.levels || []
+    const levels = path.levels || definition?.levels || []
     const end = levels.findIndex(level => level.levelCode === path.maxLevel)
     selected.push(...levels.slice(0, end + 1))
   }
@@ -39,7 +61,7 @@ function selectedSqlDrillLevels(paths, catalog) {
 export function sqlImportGroupingFields(paths = [], grain = [], catalog = []) {
   const fields = new Set(normalizeDimensionGrain(grain))
   for (const level of selectedSqlDrillLevels(paths, catalog)) {
-    for (const property of ['dimensionSemanticFieldCode', 'memberKeySemanticFieldCode', 'displaySemanticFieldCode']) {
+    for (const property of ['dimensionSemanticFieldCode', 'memberKeySemanticFieldCode', 'displaySemanticFieldCode', 'dimensionFieldCode', 'memberKeyFieldCode', 'displayFieldCode']) {
       if (level[property]) fields.add(String(level[property]).toUpperCase())
     }
   }
@@ -50,9 +72,9 @@ export function sqlImportGroupingFieldLabels(paths = [], grain = [], catalog = [
   const labels = new Map(normalizeDimensionGrain(grain).map(name => [name, name]))
   for (const level of selectedSqlDrillLevels(paths, catalog)) {
     const name = level.levelName || level.levelCode
-    const key = String(level.memberKeySemanticFieldCode || '').toUpperCase()
-    const display = String(level.displaySemanticFieldCode || '').toUpperCase()
-    for (const field of [level.dimensionSemanticFieldCode, level.memberKeySemanticFieldCode, level.displaySemanticFieldCode]) {
+    const key = String(level.memberKeyFieldCode || level.memberKeySemanticFieldCode || '').toUpperCase()
+    const display = String(level.displayFieldCode || level.displaySemanticFieldCode || '').toUpperCase()
+    for (const field of [level.dimensionFieldCode || level.dimensionSemanticFieldCode, level.memberKeyFieldCode || level.memberKeySemanticFieldCode, level.displayFieldCode || level.displaySemanticFieldCode]) {
       const code = String(field || '').toUpperCase()
       if (!code || labels.has(code)) continue
       const role = code === key && code === display ? '编码/名称' : code === key ? '编码' : code === display ? '名称' : '分组字段'

@@ -121,6 +121,7 @@ function validateGrouping() {
     normalizeDimensionGrain(indicator.dimensionGrain)
     serializeDrillPaths(indicator.drillPaths)
     for (const path of indicator.drillPaths) {
+      if (path.levels?.length) continue
       const definition = drillPathCatalog.value.find(item => String(item.version.id) === String(path.pathVersionId))
       if (!definition?.levels.some(level => level.levelCode === path.maxLevel)) return '下钻路径版本或层级已不可用，请刷新路径后重新选择'
     }

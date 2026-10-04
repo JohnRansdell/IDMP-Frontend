@@ -12,6 +12,7 @@
       <el-table-column label="最大层级" min-width="200"><template #default="{ row }"><el-select :model-value="selectedLevel(row)" :disabled="!isSelected(row)" aria-label="下钻最大层级" @update:model-value="value => updateLevel(row, value)"><el-option v-for="level in row.levels" :key="level.levelCode" :label="level.levelName || level.levelCode" :value="level.levelCode" /></el-select></template></el-table-column>
     </el-table>
     <el-empty v-else-if="!loading && !error" description="暂无已发布的业务下钻路径" :image-size="48" />
+    <CustomDrillPathEditor :model-value="drillPaths" @update:model-value="value => emit('update:drillPaths', value)" />
     <template v-if="requiredFields.length">
       <h3>因子维度字段映射</h3>
       <div v-for="factor in factors" :key="factor.key" class="factor-bindings">
@@ -31,6 +32,7 @@
 import { computed } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import DimensionGrainEditor from './DimensionGrainEditor.vue'
+import CustomDrillPathEditor from './CustomDrillPathEditor.vue'
 import { sqlImportGroupingFields, sqlImportGroupingFieldLabels } from '../features/indicator/grouping.js'
 import { sqlPhysicalFieldLabel } from '../features/indicator/sqlImportFields.js'
 const props = defineProps({ dimensionGrain: { type: Array, default: () => [] }, drillPaths: { type: Array, default: () => [] }, factors: { type: Array, default: () => [] }, drafts: { type: Array, default: () => [] }, catalog: { type: Array, default: () => [] }, loading: Boolean, error: String })
