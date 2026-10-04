@@ -77,14 +77,22 @@
           <StatePanel v-if="versionLoading" type="loading" title="正在读取公式定义" />
           <el-alert v-else-if="versionError" :title="versionError" type="error" :closable="false" show-icon />
           <template v-else>
-            <p v-if="readableFormula?.expression" class="formula-expression">{{ readableFormula.displayExpression || readableFormula.expression }}</p>
-            <el-alert v-for="warning in formulaWarnings" :key="warning" :title="warning" type="warning" :closable="false" show-icon />
-            <dl v-if="readableFormula?.rules?.length" class="formula-rules"><dt>计算与展示规则</dt><dd v-for="rule in readableFormula.rules" :key="rule">{{ rule }}</dd></dl>
-            <div v-if="readableFormula?.factors?.length" class="formula-factors">
-              <h3>引用因子</h3>
-              <ul><li v-for="factor in readableFormula.factors" :key="factor.factorVersionId"><span>{{ factor.factorName }}</span><span class="formula-factor-code">{{ factor.factorCode || '-' }}</span><small>版本 ID：{{ factor.factorVersionId }}</small></li></ul>
+            <div v-if="readableFormula?.expression" class="formula-expression" :aria-label="readableFormula.displayExpression || readableFormula.expression">
+              <template v-if="formulaRatio">
+                <div class="formula-fraction">
+                  <span class="formula-numerator"><button type="button" class="formula-factor-link" :disabled="!!factorNavigationPending" @click="openFactorEditor(formulaRatio.numeratorVersionId)">{{ formulaRatio.numerator }}</button></span>
+                  <span class="formula-denominator"><button type="button" class="formula-factor-link" :disabled="!!factorNavigationPending" @click="openFactorEditor(formulaRatio.denominatorVersionId)">{{ formulaRatio.denominator }}</button></span>
+                </div>
+                <span v-if="formulaRatio.suffix" class="formula-suffix">{{ formulaRatio.suffix }}</span>
+              </template>
+              <span v-else><template v-for="(segment, index) in formulaSegments" :key="index"><button v-if="segment.factorVersionId" type="button" class="formula-factor-link" :disabled="!!factorNavigationPending" @click="openFactorEditor(segment.factorVersionId)">{{ segment.text }}</button><template v-else>{{ segment.text }}</template></template></span>
             </div>
-            <details v-if="selectedVersion.formula" class="formula-technical"><summary>原始定义</summary><pre class="json-preview">{{ formatJson(selectedVersion.formula) }}</pre></details>
+            <el-alert v-for="warning in formulaWarnings" :key="warning" :title="warning" type="warning" :closable="false" show-icon />
+            <p v-if="formulaNotes.length" class="formula-notes">{{ formulaNotes.join('；') }}</p>
+            <details :key="selectedVersionId" v-if="selectedVersion.formula" class="formula-technical">
+              <summary>查看完整定义</summary>
+              <JsonCodePreview :value="selectedVersion.formula" label="指标公式原始定义" />
+            </details>
           </template>
         </section>
 
@@ -176,6 +184,7 @@ import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
 import { InfoFilled } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
+import JsonCodePreview from '@/idmp/components/JsonCodePreview.vue'
 import PolicyVersionPicker from '@/idmp/components/PolicyVersionPicker.vue'
 import PolicyFileViewer from '@/idmp/components/PolicyFileViewer.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
@@ -192,6 +201,8 @@ import { indicatorRows } from '@/idmp/data/demo'
 import { getStatusLabel } from '@/idmp/design/status'
 import { createPolicyReference, fetchMappingsByIndicatorVersion, fetchPolicyReferences, invalidatePolicyReference } from '@/idmp/api/modules/mappings'
 import { POLICY_REFERENCE_ROLES } from '@/idmp/api/adapters/mapping'
+import { splitFormulaLinks } from '@/idmp/utils/formulaLinks'
+import { fetchFactorVersion } from '@/idmp/api/modules/factors'
 
 const route = useRoute()
 const router = useRouter()
@@ -234,6 +245,41 @@ const isPublishedVersion = computed(() => String(selectedVersion.value?.publicat
 const readableFormula = computed(() => selectedVersion.value?.formulaDefinition || null)
 const formulaWarnings = computed(() => readableFormula.value?.warnings?.length ? readableFormula.value.warnings
   : readableFormula.value?.expression ? [] : ['该版本暂无可读公式定义'])
+const formulaRatio = computed(() => {
+  const root = selectedVersion.value?.formula?.root
+  const definition = readableFormula.value
+  if (root?.nodeType !== 'BINARY' || root.operator !== 'DIV'
+    || root.left?.nodeType !== 'FACTOR_REF' || root.right?.nodeType !== 'FACTOR_REF') return null
+  const nameFor = node => definition?.factors?.find(factor => String(factor.factorVersionId) === String(node.factorVersionId))?.factorName
+  const numerator = nameFor(root.left), denominator = nameFor(root.right)
+  // Keep the backend text for ambiguous names or any expression beyond a simple ratio.
+  if (!numerator || !denominator || definition?.expression !== `(【${numerator}】 ÷ 【${denominator}】)`) return null
+  const display = definition.displayExpression || definition.expression
+  if (!display.startsWith(definition.expression)) return null
+  return { numerator, denominator, numeratorVersionId: String(root.left.factorVersionId), denominatorVersionId: String(root.right.factorVersionId), suffix: display.slice(definition.expression.length).trim() }
+})
+const formulaSegments = computed(() => splitFormulaLinks(readableFormula.value?.displayExpression || readableFormula.value?.expression, readableFormula.value?.factors))
+const factorNavigationPending = ref('')
+async function openFactorEditor(versionId) {
+  if (factorNavigationPending.value) return
+  const indicatorVersionId = selectedVersionId.value
+  const origin = route.fullPath
+  factorNavigationPending.value = versionId
+  try {
+    const factorVersion = await fetchFactorVersion(versionId)
+    if (selectedVersionId.value !== indicatorVersionId || route.fullPath !== origin) return
+    if (!factorVersion?.factorId) throw new Error('未找到对应的因子，请刷新后重试。')
+    await router.push({ name: 'FactorEditor', params: { id: String(factorVersion.factorId) }, query: { factorVersionId: versionId } })
+  } catch (error) {
+    if (selectedVersionId.value === indicatorVersionId && route.fullPath === origin) ElMessage.error(error?.message || '暂时无法打开因子，请稍后重试。')
+  } finally { factorNavigationPending.value = '' }
+}
+const formulaNotes = computed(() => {
+  const rules = readableFormula.value?.rules || []
+  if (!formulaRatio.value) return rules.filter(rule => rule.startsWith('展示值保留 '))
+  return rules.filter(rule => rule.startsWith('展示值保留 ') || rule.startsWith('除法 '))
+    .map(rule => rule.startsWith('除法 ') ? rule.slice(rule.lastIndexOf('：') + 1) : rule.replace(/^展示值/, ''))
+})
 
 function openIndicatorEditor() {
   // 编辑页的详情、版本读取接口以主键为准。编码只是展示/业务检索字段，
@@ -486,10 +532,6 @@ function pickLatestVersion(versions) {
   })[0]
 }
 
-function formatJson(value) {
-  return JSON.stringify(value, null, 2)
-}
-
 onMounted(loadIndicatorDetail)
 </script>
 
@@ -563,18 +605,22 @@ onMounted(loadIndicatorDetail)
   gap: 16px;
 }
 
-.formula-definition { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--idmp-border-subtle); min-width: 0; scroll-margin-top: 80px; }
-.formula-definition h2 { margin: 0 0 16px; font-size: 16px; }
-.formula-expression { font-size: 18px; font-weight: 600; line-height: 1.8; overflow-wrap: anywhere; margin: 0 0 16px; }
-.formula-rules { margin: 16px 0; }
-.formula-rules dt, .formula-factors h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
-.formula-rules dd { margin: 6px 0; line-height: 1.7; color: var(--idmp-text-secondary); overflow-wrap: anywhere; }
-.formula-factors ul { list-style: none; padding: 0; margin: 0; }
-.formula-factors li { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 8px 0; line-height: 1.7; overflow-wrap: anywhere; }
-.formula-factors li > span, .formula-factors small { min-width: 0; max-width: 100%; }
-.formula-factor-code, .formula-factors small { color: var(--idmp-text-helper); font-size: 12px; }
-.formula-technical { margin-top: 16px; }
-.formula-technical summary { cursor: pointer; font-size: 13px; color: var(--idmp-text-helper); padding: 8px 0; }
+.formula-definition { margin: 24px 0; padding-top: 20px; border-top: 1px solid var(--idmp-border-subtle); min-width: 0; scroll-margin-top: 80px; }
+.formula-definition h2 { margin: 0 0 18px; font-size: 15px; }
+.formula-expression { display: flex; align-items: center; gap: 16px; max-width: 100%; margin: 0; font-size: 15px; font-weight: 500; line-height: 1.7; color: var(--idmp-text-primary); overflow-wrap: anywhere; }
+.formula-expression > span { min-width: 0; }
+.formula-fraction { display: grid; min-width: 0; max-width: 100%; text-align: center; }
+.formula-numerator { padding: 0 8px 10px; border-bottom: 1px solid var(--idmp-text-secondary); }
+.formula-denominator { padding: 10px 8px 0; }
+.formula-suffix { flex-shrink: 0; font-size: 14px; }
+.formula-factor-link { max-width: 100%; padding: 0; font: inherit; text-align: inherit; color: inherit; background: transparent; border: 0; border-radius: 3px; cursor: pointer; overflow-wrap: anywhere; transition: background-color .15s, box-shadow .15s; }
+.formula-factor-link:disabled { cursor: wait; }
+.formula-factor-link:hover:not(:disabled) { background: #f0f2f4; box-shadow: 0 0 0 3px #f0f2f4; }
+.formula-factor-link:focus-visible { outline: 2px solid var(--idmp-interactive); outline-offset: 3px; }
+.formula-notes { margin: 16px 0 0; color: var(--idmp-text-helper); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.formula-technical { margin-top: 10px; }
+.formula-technical summary { cursor: pointer; font-size: 12px; color: var(--idmp-interactive); padding: 6px 0; width: fit-content; }
+.formula-technical summary:focus-visible { outline: 2px solid var(--idmp-interactive); outline-offset: 3px; }
 .formula-definition .el-alert { margin-top: 8px; }
 
 .version-card {
@@ -683,19 +729,6 @@ onMounted(loadIndicatorDetail)
   }
 }
 
-.json-preview {
-  max-height: 260px;
-  padding: 12px;
-  margin: 0;
-  overflow: auto;
-  color: var(--idmp-text-secondary);
-  font-size: 12px;
-  line-height: 18px;
-  background: var(--idmp-layer-02);
-  border: 1px solid var(--idmp-border-subtle);
-  border-radius: var(--idmp-radius-sm);
-}
-
 @media (max-width: 1180px) {
   .detail-layout {
     grid-template-columns: 1fr;
@@ -704,5 +737,7 @@ onMounted(loadIndicatorDetail)
 
 @media (max-width: 520px) {
   .policy-reference-form { grid-template-columns: 1fr; }
+  .formula-expression { flex-wrap: wrap; gap: 10px; font-size: 14px; }
+  .formula-suffix { flex-shrink: 1; }
 }
 </style>
