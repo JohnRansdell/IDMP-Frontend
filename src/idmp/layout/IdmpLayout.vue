@@ -180,6 +180,7 @@ const navGroups = [
     id: 'nav-platform',
     label: '平台管理',
     items: [
+      { label: '政策文件', path: '/policies', icon: markRaw(DocumentCopy) },
       { label: '系统管理', path: '/system', icon: markRaw(Setting) }
     ]
   }

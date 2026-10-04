@@ -142,15 +142,16 @@
           <el-table v-else :data="policyReferences" size="small" table-layout="fixed" empty-text="暂无有效政策引用">
             <el-table-column label="政策文件" min-width="170"><template #default="{ row }">{{ row.policyFileName || row.policyFileCode || row.policyFileVersionId }}</template></el-table-column>
             <el-table-column prop="relationRole" label="角色" width="100" />
-            <el-table-column label="操作" width="66"><template #default="{ row }"><el-button link type="danger" @click="invalidatePolicy(row)">失效</el-button></template></el-table-column>
+            <el-table-column label="操作" width="120"><template #default="{ row }"><el-button link type="primary" @click="policyViewerId = String(row.policyFileVersionId)">查看</el-button><el-button link type="danger" @click="invalidatePolicy(row)">失效</el-button></template></el-table-column>
           </el-table>
-          <div v-if="isPublishedVersion" class="policy-reference-form"><el-input v-model.trim="policyReferenceForm.policyFileVersionId" placeholder="已发布政策版本 ID" /><el-select v-model="policyReferenceForm.relationRole"><el-option v-for="item in POLICY_REFERENCE_ROLES" :key="item.value" :label="item.label" :value="item.value" /></el-select><el-button type="primary" :loading="policyReferenceSaving" @click="addPolicyReference">添加</el-button></div>
+          <div v-if="isPublishedVersion" class="policy-reference-form"><PolicyVersionPicker v-model="policyReferenceForm.policyFileVersionId" /><el-select v-model="policyReferenceForm.relationRole"><el-option v-for="item in POLICY_REFERENCE_ROLES" :key="item.value" :label="item.label" :value="item.value" /></el-select><el-button type="primary" :loading="policyReferenceSaving" @click="addPolicyReference">添加</el-button></div>
           <el-input v-if="isPublishedVersion" v-model="policyReferenceForm.citationLocation" class="policy-reference-input" placeholder="政策出处（可选）" />
           <el-input v-if="isPublishedVersion" v-model="policyReferenceForm.citationText" class="policy-reference-input" type="textarea" :rows="2" placeholder="政策原文（可选）" />
           <div class="version-mapping-links"><div class="section-title compact"><div><h3>有效指标映射</h3><p class="section-title__description">反查当前指标版本作为源侧或目标侧的已发布有效映射。</p></div></div><StatePanel v-if="mappingReferenceLoading" type="loading" title="正在读取有效映射" /><StatePanel v-else-if="mappingReferenceError" type="error" title="有效映射读取失败" :description="mappingReferenceError" /><el-table v-else :data="mappingReferences" size="small" empty-text="暂无有效映射"><el-table-column prop="code" label="映射编码" min-width="150" /><el-table-column prop="mappingType" label="关系" width="110" /><el-table-column prop="comparability" label="可比性" width="120" /><el-table-column label="操作" width="68"><template #default="{ row }"><el-button link type="primary" @click="openMapping(row)">查看</el-button></template></el-table-column></el-table></div>
         </article>
       </aside>
     </section>
+    <PolicyFileViewer :version-id="policyViewerId" @close="policyViewerId = ''" />
   </div>
 </template>
 
@@ -161,6 +162,8 @@ import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
 import { InfoFilled } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
+import PolicyVersionPicker from '@/idmp/components/PolicyVersionPicker.vue'
+import PolicyFileViewer from '@/idmp/components/PolicyFileViewer.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import {
@@ -188,6 +191,7 @@ const scenarioError = ref('')
 const policyReferences = ref([])
 const policyReferenceLoading = ref(false)
 const policyReferenceSaving = ref(false)
+const policyViewerId = ref('')
 const mappingReferences = ref([])
 const mappingReferenceLoading = ref(false)
 const mappingReferenceError = ref('')
@@ -356,7 +360,7 @@ async function loadPolicyReferences(versionId) {
 }
 
 async function addPolicyReference() {
-  if (!selectedVersionId.value || !policyReferenceForm.policyFileVersionId) return ElMessage.warning('请填写已发布政策版本 ID')
+  if (!selectedVersionId.value || !policyReferenceForm.policyFileVersionId) return ElMessage.warning('请选择已发布政策文件版本')
   policyReferenceSaving.value = true
   try {
     await createPolicyReference(selectedVersionId.value, {

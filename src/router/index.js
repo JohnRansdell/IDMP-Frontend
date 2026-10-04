@@ -9,6 +9,11 @@ const routes = [
     redirect: '/dashboard',
     children: [
       {
+        path: 'policies', name: 'PolicyFileManagement',
+        component: () => import('@/idmp/views/PolicyFileManagement.vue'),
+        meta: { title: '政策文件', breadcrumb: ['首页', '政策文件'] }
+      },
+      {
         path: 'dashboard',
         name: 'Dashboard',
         component: () => import('@/idmp/views/Dashboard.vue'),

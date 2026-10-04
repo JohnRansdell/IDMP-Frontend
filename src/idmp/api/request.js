@@ -97,7 +97,7 @@ export async function requestJson(path, options = {}) {
     ...fetchOptions
   } = options
   const headers = {
-    'Content-Type': 'application/json',
+    ...(typeof FormData !== 'undefined' && fetchOptions.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...optionHeaders
   }
@@ -162,7 +162,7 @@ export async function requestJson(path, options = {}) {
       const isAuthEndpoint = path.startsWith('/auth/')
       if (!skipSessionRecovery && !isAuthEndpoint && sessionRecoveryHandler) {
         const recovered = await sessionRecoveryHandler()
-        if (recovered) {
+        if (recovered && !(typeof FormData !== 'undefined' && options.body instanceof FormData)) {
           return requestJson(path, { ...options, skipSessionRecovery: true })
         }
       }
@@ -200,6 +200,7 @@ export function createApiError(status, payload = {}, path = '') {
   const serverMessage = typeof payload?.message === 'string' ? payload.message
     : typeof payload?.error === 'string' ? payload.error : ''
   const fallback = status === 401 ? '登录状态已失效，请重新登录。'
+      : status === 413 ? '文件超过允许的大小，请选择较小文件。'
       : status === 403 ? '当前账号没有权限执行此操作。'
         : status === 404 ? '请求的内容不存在或已失效。'
           : status === 408 || status === 504 ? '请求超时，请稍后重试。'
@@ -252,6 +253,40 @@ export async function requestPdf(path, body, { timeoutMs = 60000, skipSessionRec
     if (error instanceof TypeError) throw new Error('无法连接服务，请检查网络后重试。')
     throw error
   } finally { clearTimeout(timer) }
+}
+
+export async function requestFile(path, { skipSessionRecovery = false, signal } = {}) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 60000)
+  const cancel = () => controller.abort()
+  if (signal?.aborted) cancel()
+  signal?.addEventListener('abort', cancel, { once: true })
+  try {
+    const token = getAccessToken()
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      credentials: 'include', signal: controller.signal,
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+    if (!response.ok) {
+      const payload = parseJsonPreservingLargeIntegers(await response.text()) || {}
+      if (response.status === 401 && !skipSessionRecovery && sessionRecoveryHandler && await sessionRecoveryHandler()) {
+        return requestFile(path, { skipSessionRecovery: true, signal })
+      }
+      throw createApiError(response.status, payload, path)
+    }
+    const mime = (response.headers.get('Content-Type') || '').split(';')[0]
+    if (!['application/pdf', 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(mime)) {
+      throw new Error('服务未返回有效的政策文件，请稍后重试。')
+    }
+    return await response.blob()
+  } catch (error) {
+    if (error?.name === 'AbortError' && !signal?.aborted) throw new Error('文件读取超时，请稍后重试。')
+    if (error instanceof TypeError) throw new Error('无法连接文件服务，请检查网络后重试。')
+    throw error
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', cancel)
+  }
 }
 
 function parseJsonPreservingLargeIntegers(text) {
