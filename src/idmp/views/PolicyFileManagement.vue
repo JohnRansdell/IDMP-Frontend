@@ -94,7 +94,7 @@ const versionVisible = ref(false), versionForm = reactive({}), uploaded = ref(nu
 const viewerId = ref(''), accept = ref('.pdf,.docx,.txt'), relationVersionId = ref(''), relations = ref([])
 const relation = reactive({ targetVersionId: '', relationType: 'REFERENCES', description: '' })
 const relationLabels = { REFERENCES: '引用', REPLACES: '替代', SUPPLEMENTS: '补充', REVISES: '修订' }
-let listRevision = 0, detailRevision = 0, relationRevision = 0
+let listRevision = 0, detailRevision = 0, relationRevision = 0, versionRevision = 0
 async function load() {
   const revision = ++listRevision; loading.value = true; listError.value = ''
   try { const result = await api.fetchPolicies({ ...filters, page: page.value, size: 20 }); if (revision === listRevision) { rows.value = result.records || []; total.value = result.total || 0 } }
@@ -106,6 +106,7 @@ function reset() { Object.assign(filters, { name: '', status: '' }); search() }
 function newPolicy() { Object.assign(metadata, { id: '', code: '', name: '', category: 'QUALITY', issuingOrganization: '', documentNumber: '', description: '' }); metadataVisible.value = true }
 function editPolicy(row) { Object.assign(metadata, row); metadataVisible.value = true }
 async function saveMetadata() {
+  if (saving.value) return
   if (!metadata.name || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(metadata.code)) return ElMessage.warning('请填写文件名称，编码须以字母开头且仅包含字母、数字和下划线')
   saving.value = true
   try {
@@ -122,21 +123,24 @@ async function openDetail(row) {
   } catch (e) { if (revision === detailRevision) detailError.value = e.message }
   finally { if (revision === detailRevision) detailLoading.value = false }
 }
-function closeVersion(done) { if (!uploading.value && !saving.value) done() }
-function newVersion() { Object.assign(versionForm, { id: '', resourceVersion: 0, issueDate: '', effectiveStartDate: '', effectiveEndDate: '' }); uploaded.value = null; uploadState.value = ''; versionVisible.value = true }
+function closeVersion(done) { if (!uploading.value && !saving.value) { versionRevision++; done() } }
+function newVersion() { versionRevision++; Object.assign(versionForm, { id: '', resourceVersion: 0, issueDate: '', effectiveStartDate: '', effectiveEndDate: '' }); uploaded.value = null; uploadState.value = ''; versionVisible.value = true }
 async function editVersion(row) {
   newVersion(); Object.assign(versionForm, row)
-  try { if (row.fileObjectId) uploaded.value = await api.fetchPolicyFile(row.fileObjectId) }
-  catch (e) { ElMessage.error(e.message) }
+  const revision = versionRevision
+  try { if (row.fileObjectId) { const file = await api.fetchPolicyFile(row.fileObjectId); if (revision === versionRevision && versionVisible.value) uploaded.value = file } }
+  catch (e) { if (revision === versionRevision && versionVisible.value) ElMessage.error(e.message) }
 }
 async function selectFile(event) {
   const file = event.target.files?.[0]; if (!file) return
+  versionRevision++
   uploading.value = true; uploaded.value = null
   try { const result = await api.uploadPolicyFile(file, state => { uploadState.value = state }); uploaded.value = result.file; uploadState.value = result.instantUpload ? '秒传完成' : '上传完成' }
   catch (e) { uploadState.value = ''; ElMessage.error(e.message) }
   finally { uploading.value = false; event.target.value = '' }
 }
 async function saveVersion() {
+  if (saving.value || uploading.value) return
   if (!uploaded.value || !versionForm.issueDate) return ElMessage.warning('请选择文件并填写发布日期')
   if (versionForm.effectiveStartDate && versionForm.effectiveEndDate && versionForm.effectiveEndDate < versionForm.effectiveStartDate) return ElMessage.warning('失效日期不能早于生效日期')
   saving.value = true
@@ -169,6 +173,7 @@ async function loadRelations() {
   } catch (e) { if (current === relationRevision) ElMessage.error(e.message) }
 }
 async function saveRelation() {
+  if (saving.value) return
   if (!relation.targetVersionId) return ElMessage.warning('请选择目标政策版本')
   saving.value = true
   try { await api.createPolicyRelation(relationVersionId.value, relation); relation.targetVersionId = ''; relation.description = ''; await loadRelations(); ElMessage.success('政策文件已关联') }
