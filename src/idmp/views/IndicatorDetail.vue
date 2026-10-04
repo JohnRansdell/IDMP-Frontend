@@ -72,6 +72,22 @@
           <p>{{ detail.description || '当前指标目录接口未返回详细说明。' }}</p>
         </div>
 
+        <section v-if="selectedVersion" class="formula-definition" aria-label="指标公式定义">
+          <h2>指标公式</h2>
+          <StatePanel v-if="versionLoading" type="loading" title="正在读取公式定义" />
+          <el-alert v-else-if="versionError" :title="versionError" type="error" :closable="false" show-icon />
+          <template v-else>
+            <p v-if="readableFormula?.expression" class="formula-expression">{{ readableFormula.displayExpression || readableFormula.expression }}</p>
+            <el-alert v-for="warning in formulaWarnings" :key="warning" :title="warning" type="warning" :closable="false" show-icon />
+            <dl v-if="readableFormula?.rules?.length" class="formula-rules"><dt>计算与展示规则</dt><dd v-for="rule in readableFormula.rules" :key="rule">{{ rule }}</dd></dl>
+            <div v-if="readableFormula?.factors?.length" class="formula-factors">
+              <h3>引用因子</h3>
+              <ul><li v-for="factor in readableFormula.factors" :key="factor.factorVersionId"><span>{{ factor.factorName }}</span><span class="formula-factor-code">{{ factor.factorCode || '-' }}</span><small>版本 ID：{{ factor.factorVersionId }}</small></li></ul>
+            </div>
+            <details v-if="selectedVersion.formula" class="formula-technical"><summary>原始定义</summary><pre class="json-preview">{{ formatJson(selectedVersion.formula) }}</pre></details>
+          </template>
+        </section>
+
         <div class="related-scenarios">
           <div class="section-title compact"><div><h2>关联场景</h2><p class="section-title__description">按指标主 ID 反查当前有效场景，并展示实际引用的指标版本。</p></div></div>
           <StatePanel v-if="scenarioLoading" type="loading" title="正在加载关联场景" />
@@ -92,8 +108,7 @@
         <article class="surface-card version-card">
           <div class="section-title compact">
             <div>
-              <h2>版本与公式</h2>
-              <p class="section-title__description">按后端版本列表倒序展示，当前读取最新版本定义。</p>
+              <h2>版本信息</h2>
             </div>
           </div>
           <StatePanel
@@ -134,7 +149,6 @@
               <dd>{{ selectedVersion.createdAt || '-' }}</dd>
             </div>
           </dl>
-          <pre v-if="selectedVersion?.formula" class="json-preview">{{ formatJson(selectedVersion.formula) }}</pre>
         </article>
         <article v-if="selectedVersion" class="surface-card policy-card">
           <div class="section-title compact"><div><h2>政策依据</h2><p class="section-title__description">仅能绑定已发布的指标版本和政策文件版本。</p></div></div>
@@ -185,6 +199,9 @@ const routeIndicatorKey = computed(() => String(route.params.id || ''))
 const loadError = ref('')
 const versionRows = ref([])
 const selectedVersion = ref(null)
+const versionLoading = ref(false)
+const versionError = ref('')
+let versionRevision = 0
 const scenarioRows = ref([])
 const scenarioLoading = ref(false)
 const scenarioError = ref('')
@@ -214,6 +231,9 @@ const indicatorName = computed(() => detail.name || detail.code || routeIndicato
 const indicatorStatus = computed(() => detail.status || 'UNKNOWN')
 const selectedVersionId = computed(() => resolveIndicatorVersionId(selectedVersion.value))
 const isPublishedVersion = computed(() => String(selectedVersion.value?.publicationStatus || selectedVersion.value?.status || '').toUpperCase() === 'PUBLISHED')
+const readableFormula = computed(() => selectedVersion.value?.formulaDefinition || null)
+const formulaWarnings = computed(() => readableFormula.value?.warnings?.length ? readableFormula.value.warnings
+  : readableFormula.value?.expression ? [] : ['该版本暂无可读公式定义'])
 
 function openIndicatorEditor() {
   // 编辑页的详情、版本读取接口以主键为准。编码只是展示/业务检索字段，
@@ -314,16 +334,22 @@ async function loadVersions(indicatorId) {
   if (!indicatorId) return
   const versions = normalizeList(await fetchIndicatorVersions(indicatorId))
   versionRows.value = versions
-  const latest = pickLatestVersion(versions)
+  const requested = toOpaqueId(route.query.versionId || route.query.indicatorVersionId)
+  const latest = versions.find(version => resolveIndicatorVersionId(version) === requested) || pickLatestVersion(versions)
   if (resolveIndicatorVersionId(latest) || latest?.id) {
     await selectVersion(latest)
   }
 }
 
 async function selectVersion(version) {
+  const revision = ++versionRevision
   selectedVersion.value = version
+  versionError.value = ''
+  versionLoading.value = true
+  policyReferences.value = []
+  mappingReferences.value = []
   const versionId = resolveIndicatorVersionId(version) || toOpaqueId(version?.id)
-  if (!versionId) return
+  if (!versionId) { versionLoading.value = false; return }
   try {
     const versionDetail = await fetchIndicatorVersion(versionId)
     let formula = extractFormula(versionDetail)
@@ -334,6 +360,7 @@ async function selectVersion(version) {
         formula = null
       }
     }
+    if (revision !== versionRevision) return
     selectedVersion.value = {
       ...versionDetail,
       id: versionId,
@@ -341,9 +368,11 @@ async function selectVersion(version) {
     }
     detail.version = selectedVersion.value?.versionNo ? `V${selectedVersion.value.versionNo}` : detail.version
     detail.status = selectedVersion.value?.status || detail.status
-  } catch {
-    selectedVersion.value = version
-  }
+  } catch (error) {
+    if (revision !== versionRevision) return
+    versionError.value = error?.message || '公式定义读取失败，请重新选择版本后重试'
+  } finally { if (revision === versionRevision) versionLoading.value = false }
+  if (revision !== versionRevision) return
   void loadPolicyReferences(selectedVersionId.value)
   void loadMappingReferences(selectedVersionId.value)
 }
@@ -352,11 +381,13 @@ async function loadPolicyReferences(versionId) {
   if (!versionId) return
   policyReferenceLoading.value = true
   try {
-    policyReferences.value = await fetchPolicyReferences(versionId)
+    const references = await fetchPolicyReferences(versionId)
+    if (versionId === selectedVersionId.value) policyReferences.value = references
   } catch (error) {
+    if (versionId !== selectedVersionId.value) return
     policyReferences.value = []
     ElMessage.warning(error?.message || '政策引用读取失败')
-  } finally { policyReferenceLoading.value = false }
+  } finally { if (versionId === selectedVersionId.value) policyReferenceLoading.value = false }
 }
 
 async function addPolicyReference() {
@@ -378,11 +409,13 @@ async function loadMappingReferences(versionId) {
   mappingReferenceLoading.value = true
   mappingReferenceError.value = ''
   try {
-    mappingReferences.value = await fetchMappingsByIndicatorVersion(versionId)
+    const references = await fetchMappingsByIndicatorVersion(versionId)
+    if (versionId === selectedVersionId.value) mappingReferences.value = references
   } catch (error) {
+    if (versionId !== selectedVersionId.value) return
     mappingReferences.value = []
     mappingReferenceError.value = error?.message || '无法读取有效映射'
-  } finally { mappingReferenceLoading.value = false }
+  } finally { if (versionId === selectedVersionId.value) mappingReferenceLoading.value = false }
 }
 
 function openMapping(row) {
@@ -529,6 +562,20 @@ onMounted(loadIndicatorDetail)
   align-content: start;
   gap: 16px;
 }
+
+.formula-definition { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--idmp-border-subtle); min-width: 0; scroll-margin-top: 80px; }
+.formula-definition h2 { margin: 0 0 16px; font-size: 16px; }
+.formula-expression { font-size: 18px; font-weight: 600; line-height: 1.8; overflow-wrap: anywhere; margin: 0 0 16px; }
+.formula-rules { margin: 16px 0; }
+.formula-rules dt, .formula-factors h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+.formula-rules dd { margin: 6px 0; line-height: 1.7; color: var(--idmp-text-secondary); overflow-wrap: anywhere; }
+.formula-factors ul { list-style: none; padding: 0; margin: 0; }
+.formula-factors li { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 8px 0; line-height: 1.7; overflow-wrap: anywhere; }
+.formula-factors li > span, .formula-factors small { min-width: 0; max-width: 100%; }
+.formula-factor-code, .formula-factors small { color: var(--idmp-text-helper); font-size: 12px; }
+.formula-technical { margin-top: 16px; }
+.formula-technical summary { cursor: pointer; font-size: 13px; color: var(--idmp-text-helper); padding: 8px 0; }
+.formula-definition .el-alert { margin-top: 8px; }
 
 .version-card {
   padding: 16px;
