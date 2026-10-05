@@ -38,14 +38,18 @@ function fixtures() {
     const path = new URL(typeof input === 'string' ? input : input.url, location.href).pathname
     const respond = (data, status = 200) => new Response(JSON.stringify({ code: status === 200 ? 'OK' : 'INTERNAL_ERROR', message: status === 200 ? '' : '版本定义读取失败，请稍后重试', data }), { status, headers: { 'Content-Type': 'application/json' } })
     if (path === '/api/v1/indicators/90000') return respond({ id: '90000', code: 'FORMULA_DISPLAY_TEST', name: '公式显示与版本切换测试', status: 'PUBLISHED' })
-    if (path === '/api/v1/indicators/90000/versions') return respond([1, 2, 3, 4, 5, 6].map(n => ({ id: String(90000 + n), versionNo: n, status: 'PUBLISHED' })))
+    if (path === '/api/v1/indicators/90000/versions') return respond([1, 2, 3, 4, 5, 6, 7].map(n => ({ id: String(90000 + n), versionNo: n, status: 'PUBLISHED' })))
     if (path === '/api/v1/indicators/90000/scenarios') return respond({ records: [], total: 0 })
-    if (/\/9000[1-6]\/(policy-references)$/.test(path) || /\/by-indicator-version\/9000[1-6]$/.test(path)) return respond([])
+    if (/\/9000[1-7]\/(policy-references)$/.test(path) || /\/by-indicator-version\/9000[1-7]$/.test(path)) return respond([])
     if (path === '/api/v1/factor-versions/9999') return respond(null, 404)
-    if (/^\/api\/v1\/indicator-versions\/9000[1-6]$/.test(path)) {
+    if (/^\/api\/v1\/indicator-versions\/9000[1-7]$/.test(path)) {
       const version = Number(path.slice(-1))
       if (version === 1 && window.__holdFirst) await new Promise(resolve => { window.__releaseFirst = resolve })
       if (version === 4) return respond(null, 500)
+      if (version === 7) return respond({ id:'90007',versionNo:7,status:'PUBLISHED',
+        formula:{root:{nodeType:'BINARY',operator:'DIV',left:{nodeType:'BINARY',operator:'SUB',left:{nodeType:'FACTOR_REF',factorVersionId:'11'},right:{nodeType:'FACTOR_REF',factorVersionId:'12'}},right:{nodeType:'FACTOR_REF',factorVersionId:'11'}}},
+        formulaDefinition:{status:'READY',expression:'((【总人次】 - 【未转科人次】) ÷ 【总人次】)',displayExpression:'((【总人次】 - 【未转科人次】) ÷ 【总人次】) × 100（单位：%）',rules:[],
+          factors:[{factorVersionId:'11',factorName:'总人次'},{factorVersionId:'12',factorName:'未转科人次'}],warnings:[]} })
       if (version === 6) return respond({ id: '90006', versionNo: 6, status: 'PUBLISHED',
         formula: { root: { nodeType: 'FUNCTION', functionCode: 'MAX' } },
         formulaDefinition: { status: 'READY', expression: '最大值(【分子】，【分母】)', displayExpression: '最大值(【分子】，【分母】)', rules: [],
@@ -130,6 +134,13 @@ try {
   await send('Page.navigate', { url: 'http://127.0.0.1:5173/indicator/view/90000?versionId=90002' })
   await waitFor(() => evaluate(`document.querySelector('.formula-expression')?.textContent==='版本2业务公式'`), 'Explicit version selection')
   assert.equal(await evaluate(`!!document.querySelector('.formula-fraction')`), false)
+  await evaluate(`window.__formulaPage=document.querySelector('.indicator-detail-page').__vueParentComponent.setupState;window.__formulaPage.selectVersion({id:'90007',versionNo:7,status:'PUBLISHED'})`)
+  assert.equal(await evaluate(`document.querySelector('.formula-numerator').textContent`),'总人次 - 未转科人次')
+  assert.equal(await evaluate(`document.querySelector('.formula-denominator').textContent`),'总人次')
+  assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll('.formula-numerator button'),b=>b.textContent)`),['总人次','未转科人次'])
+  assert.equal(await evaluate(`document.querySelectorAll('.formula-factor-link').length`),3)
+  assert.ok(await evaluate(`document.querySelector('.formula-numerator').getBoundingClientRect().bottom<=document.querySelector('.formula-denominator').getBoundingClientRect().top`))
+  await evaluate(`window.__formulaPage=document.querySelector('.indicator-detail-page').__vueParentComponent.setupState;window.__formulaPage.selectVersion({id:'90002',versionNo:2,status:'PUBLISHED'})`)
   await evaluate(`window.__formulaPage=document.querySelector('.indicator-detail-page').__vueParentComponent.setupState;window.__formulaPage.openFactorEditor('9999')`)
   assert.equal(await evaluate(`location.pathname`), '/indicator/view/90000')
   assert.equal(await evaluate(`window.__formulaPage.factorNavigationPending`), '')

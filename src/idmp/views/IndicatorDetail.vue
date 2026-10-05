@@ -80,8 +80,8 @@
             <div v-if="readableFormula?.expression" class="formula-expression" :aria-label="readableFormula.displayExpression || readableFormula.expression">
               <template v-if="formulaRatio">
                 <div class="formula-fraction">
-                  <span class="formula-numerator"><button type="button" class="formula-factor-link" :disabled="!!factorNavigationPending" @click="openFactorEditor(formulaRatio.numeratorVersionId)">{{ formulaRatio.numerator }}</button></span>
-                  <span class="formula-denominator"><button type="button" class="formula-factor-link" :disabled="!!factorNavigationPending" @click="openFactorEditor(formulaRatio.denominatorVersionId)">{{ formulaRatio.denominator }}</button></span>
+                  <span class="formula-numerator"><template v-for="(segment, index) in formulaRatio.numerator" :key="index"><button v-if="segment.factorVersionId" type="button" class="formula-factor-link" :disabled="!!factorNavigationPending" @click="openFactorEditor(segment.factorVersionId)">{{ segment.text }}</button><span v-else>{{ segment.text }}</span></template></span>
+                  <span class="formula-denominator"><template v-for="(segment, index) in formulaRatio.denominator" :key="index"><button v-if="segment.factorVersionId" type="button" class="formula-factor-link" :disabled="!!factorNavigationPending" @click="openFactorEditor(segment.factorVersionId)">{{ segment.text }}</button><span v-else>{{ segment.text }}</span></template></span>
                 </div>
                 <span v-if="formulaRatio.suffix" class="formula-suffix">{{ formulaRatio.suffix }}</span>
               </template>
@@ -201,7 +201,7 @@ import { indicatorRows } from '@/idmp/data/demo'
 import { getStatusLabel } from '@/idmp/design/status'
 import { createPolicyReference, fetchMappingsByIndicatorVersion, fetchPolicyReferences, invalidatePolicyReference } from '@/idmp/api/modules/mappings'
 import { POLICY_REFERENCE_ROLES } from '@/idmp/api/adapters/mapping'
-import { splitFormulaLinks } from '@/idmp/utils/formulaLinks'
+import { splitFormulaFraction, splitFormulaLinks } from '@/idmp/utils/formulaLinks'
 import { fetchFactorVersion } from '@/idmp/api/modules/factors'
 
 const route = useRoute()
@@ -245,19 +245,7 @@ const isPublishedVersion = computed(() => String(selectedVersion.value?.publicat
 const readableFormula = computed(() => selectedVersion.value?.formulaDefinition || null)
 const formulaWarnings = computed(() => readableFormula.value?.warnings?.length ? readableFormula.value.warnings
   : readableFormula.value?.expression ? [] : ['该版本暂无可读公式定义'])
-const formulaRatio = computed(() => {
-  const root = selectedVersion.value?.formula?.root
-  const definition = readableFormula.value
-  if (root?.nodeType !== 'BINARY' || root.operator !== 'DIV'
-    || root.left?.nodeType !== 'FACTOR_REF' || root.right?.nodeType !== 'FACTOR_REF') return null
-  const nameFor = node => definition?.factors?.find(factor => String(factor.factorVersionId) === String(node.factorVersionId))?.factorName
-  const numerator = nameFor(root.left), denominator = nameFor(root.right)
-  // Keep the backend text for ambiguous names or any expression beyond a simple ratio.
-  if (!numerator || !denominator || definition?.expression !== `(【${numerator}】 ÷ 【${denominator}】)`) return null
-  const display = definition.displayExpression || definition.expression
-  if (!display.startsWith(definition.expression)) return null
-  return { numerator, denominator, numeratorVersionId: String(root.left.factorVersionId), denominatorVersionId: String(root.right.factorVersionId), suffix: display.slice(definition.expression.length).trim() }
-})
+const formulaRatio = computed(() => splitFormulaFraction(selectedVersion.value?.formula, readableFormula.value))
 const formulaSegments = computed(() => splitFormulaLinks(readableFormula.value?.displayExpression || readableFormula.value?.expression, readableFormula.value?.factors))
 const factorNavigationPending = ref('')
 async function openFactorEditor(versionId) {
@@ -610,6 +598,7 @@ onMounted(loadIndicatorDetail)
 .formula-expression { display: flex; align-items: center; gap: 16px; max-width: 100%; margin: 0; font-size: 15px; font-weight: 500; line-height: 1.7; color: var(--idmp-text-primary); overflow-wrap: anywhere; }
 .formula-expression > span { min-width: 0; }
 .formula-fraction { display: grid; min-width: 0; max-width: 100%; text-align: center; }
+.formula-numerator, .formula-denominator { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 8px; }
 .formula-numerator { padding: 0 8px 10px; border-bottom: 1px solid var(--idmp-text-secondary); }
 .formula-denominator { padding: 10px 8px 0; }
 .formula-suffix { flex-shrink: 0; font-size: 14px; }
