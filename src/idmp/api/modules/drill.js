@@ -19,3 +19,7 @@ export async function searchResultDrill(resultId, payload = {}, options = {}) {
 export function fetchResultFactors(resultId) {
   return requestJson(`/analysis/results/${encodeURIComponent(resultId)}/factors`)
 }
+
+export function fetchResultFactorDependencies(resultId, factorResultId) {
+  return requestJson(`/analysis/results/${encodeURIComponent(resultId)}/factors/${encodeURIComponent(factorResultId)}/dependencies`)
+}

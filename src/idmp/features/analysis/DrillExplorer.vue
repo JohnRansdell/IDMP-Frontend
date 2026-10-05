@@ -97,22 +97,7 @@
       <StatePanel v-else-if="errorMessage" type="error" title="因子追溯加载失败" :description="errorMessage">
         <template #actions><el-button size="small" @click="loadFactorTrace">重试</el-button></template>
       </StatePanel>
-      <el-table v-else-if="factorTrace" :data="factorTrace.factors || []" table-layout="fixed">
-        <el-table-column label="公式角色" width="120">
-          <template #default="{ row }">{{ formulaRoleLabel(row.formulaRole) }}</template>
-        </el-table-column>
-        <el-table-column prop="factorName" label="因子" min-width="220" show-overflow-tooltip />
-        <el-table-column prop="factorVersionId" label="因子版本" min-width="180" />
-        <el-table-column label="结果匹配" width="110">
-          <template #default="{ row }">{{ row.resultMatched ? '已匹配' : '未匹配' }}</template>
-        </el-table-column>
-        <el-table-column label="结果值" width="130">
-          <template #default="{ row }">{{ row.result?.displayValue ?? row.result?.value ?? '-' }}</template>
-        </el-table-column>
-        <el-table-column label="质量状态" width="130">
-          <template #default="{ row }">{{ row.result?.qualityStatus ? getStatusLabel(row.result.qualityStatus) : '-' }}</template>
-        </el-table-column>
-      </el-table>
+      <FactorTraceTree v-else-if="factorTrace" :key="`${factorTrace.context?.resultId}-${factorTrace.context?.configSnapshotId}`" :result-id="String(factorTrace.context?.resultId || activeResultId)" :factors="factorTrace.factors || []" />
     </section>
   </div>
 </template>
@@ -121,6 +106,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import StatePanel from '@/idmp/components/StatePanel.vue'
+import FactorTraceTree from '@/idmp/components/FactorTraceTree.vue'
 import { fetchResultFactors, searchResultDrill } from '@/idmp/api/modules/drill'
 import { limitDrillNextLevels } from '@/idmp/api/adapters/drill'
 import { isStatusRecord } from '@/idmp/features/analysis/resultAvailability'
@@ -158,6 +144,7 @@ const errorMessage = ref('')
 let drillRequestId = 0
 const factorTrace = ref(null)
 const factorTraceLoading = ref(false)
+let factorTraceRequestId = 0
 const resolvedPathResultIds = ref({})
 const isFactorTraceMode = computed(() => dimension.value === 'FACTOR_TRACE')
 const statusRecord = computed(() => result.value.records.find(isStatusRecord) || null)
@@ -295,14 +282,18 @@ function parentKeyForLevel(level) {
 
 async function loadFactorTrace() {
   if (!activeResultId.value || props.source === 'mock') return
+  const requestId = ++factorTraceRequestId
+  const resultId = activeResultId.value
   factorTraceLoading.value = true
+  factorTrace.value = null
   errorMessage.value = ''
   try {
-    factorTrace.value = await fetchResultFactors(activeResultId.value)
+    const data = await fetchResultFactors(resultId)
+    if (requestId === factorTraceRequestId && resultId === activeResultId.value) factorTrace.value = data
   } catch (error) {
-    errorMessage.value = error?.message || '因子追溯加载失败。'
+    if (requestId === factorTraceRequestId && resultId === activeResultId.value) errorMessage.value = error?.message || '因子追溯加载失败。'
   } finally {
-    factorTraceLoading.value = false
+    if (requestId === factorTraceRequestId) factorTraceLoading.value = false
   }
 }
 
@@ -371,6 +362,8 @@ watch(() => [props.resultId, props.pathResultIds, props.configuredPaths], () => 
   else loadDrill()
 }, { deep: true })
 watch(() => props.source, (source) => {
+  factorTraceRequestId += 1
+  factorTraceLoading.value = false
   factorTrace.value = null
   errorMessage.value = ''
   if (source === 'mock' && isFactorTraceMode.value) {
@@ -380,6 +373,8 @@ watch(() => props.source, (source) => {
   loadDrill()
 })
 watch(dimension, (value) => {
+  factorTraceRequestId += 1
+  factorTraceLoading.value = false
   drillRequestId += 1
   loading.value = false
   factorTrace.value = null

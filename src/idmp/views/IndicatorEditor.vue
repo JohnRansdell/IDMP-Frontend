@@ -304,7 +304,7 @@
             </div>
             <section class="drill-capability-card" aria-label="指标版本下钻能力预检">
               <CustomDrillPathEditor v-model="selectedDrillPaths" :disabled="indicatorWorkflow.published" @update:model-value="invalidateGroupingConfiguration" />
-              <FactorDimensionBindingsEditor v-model="factorDimensionBindings" :disabled="indicatorWorkflow.published" :fields="customGroupingFields" :factors="selectedFormulaFactors" :field-options="drillCapability.fieldOptions" @update:model-value="invalidateGroupingConfiguration" />
+              <FactorDimensionBindingsEditor v-model="factorDimensionBindings" :disabled="indicatorWorkflow.published" :fields="customGroupingFields" :factors="dimensionBindingFactors" :field-options="drillCapability.fieldOptions" @update:model-value="invalidateGroupingConfiguration" />
               <div class="drill-config-card__heading">
                 <div>
                   <strong>下钻能力预检</strong>
@@ -762,7 +762,6 @@ import {
   selectDefaultIndicatorTrialTarget,
   validateDrillSelection
 } from '@/idmp/api/adapters/indicator'
-import { fetchFactorVersions } from '@/idmp/api/modules/factors'
 import { createCalcBatch, fetchAsyncTask, fetchCalcBatch } from '@/idmp/api/modules/calculation'
 import {
   editorPolicyRows,
@@ -772,6 +771,8 @@ import { getStatusLabel } from '@/idmp/design/status'
 import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
 import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
 import { factorCalculationMode } from '@/idmp/utils/factorPeriod'
+import { configurableSourceFactors, activeSourceBindings } from '@/idmp/utils/derivedFactor'
+import { fetchPublishedFactorVersions } from '@/idmp/api/modules/factors'
 import RuntimeParameterFields from '@/idmp/components/RuntimeParameterFields.vue'
 import DimensionGrainEditor from '@/idmp/components/DimensionGrainEditor.vue'
 import CustomDrillPathEditor from '@/idmp/components/CustomDrillPathEditor.vue'
@@ -873,6 +874,7 @@ const selectedFormulaFactors = computed(() => [
   ...numeratorFactors.value,
   ...denominatorFactors.value
 ])
+const dimensionBindingFactors = computed(() => configurableSourceFactors(selectedFormulaFactors.value, drillCapability, backendEditorFactors.value))
 const indicatorCalculationMode = computed(() => {
   const modes = new Set(selectedFormulaFactors.value.map((factor) => String(factor?.calculationMode || factorCalculationMode(factor?.dsl || {})).toUpperCase()))
   return modes.size === 1 ? [...modes][0] : ''
@@ -1325,10 +1327,11 @@ async function runDrillCapabilityPreflight(providedFormula) {
   try {
     const fieldsResponse = await preflightIndicatorDrillCapabilities(formula)
     if (requestId !== drillCapabilityRequestId) return false
-    drillCapability.fieldOptions = normalizeDrillCapabilities(fieldsResponse).fieldOptions
+    const sourceCapability = normalizeDrillCapabilities(fieldsResponse)
+    drillCapability.fieldOptions = sourceCapability.fieldOptions
+    drillCapability.factorVersionIds = sourceCapability.factorVersionIds
     const paths = serializeDrillPaths(selectedDrillPaths.value)
-    const referencedIds = new Set(selectedFormulaFactors.value.map(factor => String(factor.versionId)))
-    const bindings = Object.fromEntries(Object.entries(factorDimensionBindings.value).filter(([id]) => referencedIds.has(id)).map(([id, fields]) => [id, Object.fromEntries(Object.entries(fields).filter(([name, value]) => customGroupingFields.value.includes(name) && value))]))
+    const bindings = activeFactorDimensionBindings()
     const response = paths.length || Object.keys(bindings).length ? await preflightIndicatorDrillCapabilities(formula, { drillPaths: paths, factorDimensionBindings: bindings }) : fieldsResponse
     if (requestId !== drillCapabilityRequestId) return false
     const capability = normalizeDrillCapabilities(response)
@@ -1422,7 +1425,7 @@ const editFactor = factor => ElMessage.info(`“${factor.name}”条件编辑为
 async function loadPublishedFactorVersions() {
   workflowLoading.factors = true
   try {
-    const payload = await fetchFactorVersions({ publicationStatus: 'PUBLISHED', page: 1, size: 100 })
+    const payload = await fetchPublishedFactorVersions()
     backendEditorFactors.value = normalizeList(payload).map(toEditorFactor).filter(item => item.code && item.versionId)
     refreshSelectedFactorReferences()
   } catch (error) {
@@ -2351,8 +2354,7 @@ async function persistIndicatorFormula() {
 }
 
 function activeFactorDimensionBindings() {
-  const ids = new Set(selectedFormulaFactors.value.map(factor => String(factor.versionId)))
-  return Object.fromEntries(Object.entries(factorDimensionBindings.value).filter(([id]) => ids.has(id)).map(([id, fields]) => [id, Object.fromEntries(Object.entries(fields).filter(([name, value]) => customGroupingFields.value.includes(name) && value))]))
+  return activeSourceBindings(factorDimensionBindings.value, dimensionBindingFactors.value, customGroupingFields.value)
 }
 
 function invalidateGroupingConfiguration() {

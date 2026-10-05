@@ -16,8 +16,31 @@ export function fetchFactorVersions(params = {}) {
   return requestJson(withQuery('/factor-versions', params))
 }
 
+export async function fetchPublishedFactorVersions() {
+  const rows = []
+  for (let page = 1; ; page += 1) {
+    const result = await fetchFactorVersions({ publicationStatus: 'PUBLISHED', page, size: 100 })
+    const items = Array.isArray(result) ? result : result.records || result.list || result.items || []
+    rows.push(...items)
+    if (Array.isArray(result) || items.length < 100 || rows.length >= Number(result.total ?? Infinity)) break
+  }
+  return rows.filter(item => (item.status || item.publicationStatus) === 'PUBLISHED')
+}
+
 export function fetchFactorVersion(versionId) {
   return requestJson(`/factor-versions/${versionId}`)
+}
+
+export function fetchFactorDependencies(versionId) {
+  return requestJson(`/factor-versions/${encodeURIComponent(versionId)}/dependencies`)
+}
+
+export function fetchFactorDependencyGraph(versionId) {
+  return requestJson(`/factor-versions/${encodeURIComponent(versionId)}/dependency-graph`)
+}
+
+export function fetchFactorImpactAnalysis(versionId) {
+  return requestJson(`/factor-versions/${encodeURIComponent(versionId)}/impact-analysis`)
 }
 
 export function createFactor(payload) {
