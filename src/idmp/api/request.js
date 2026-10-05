@@ -289,20 +289,26 @@ export async function requestFile(path, { skipSessionRecovery = false, signal } 
   }
 }
 
-function parseJsonPreservingLargeIntegers(text) {
+export function parseJsonPreservingLargeIntegers(text) {
   if (!text) return null
 
   try {
-    return JSON.parse(quoteUnsafeIntegers(text))
+    let needsFallback = false
+    const result = JSON.parse(text, (key, value, context) => {
+      if (typeof value !== 'number' || Number.isSafeInteger(value)) return value
+      if (!context?.source) { needsFallback = true; return value }
+      return /^-?\d+$/.test(context.source) ? context.source : value
+    })
+    return needsFallback ? JSON.parse(quoteUnsafeIntegers(text)) : result
   } catch {
-    try {
-      return JSON.parse(text)
-    } catch {
-      return null
-    }
+    return null
   }
 }
 
 function quoteUnsafeIntegers(text) {
-  return text.replace(/(:\s*)(-?\d{16,})(\s*[,}\]])/g, '$1"$2"$3')
+  // Older browsers lack JSON reviver source context. Tokenize strings first
+  // so numeric IDs in arrays are preserved without rewriting SQL or labels.
+  return text.replace(/"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g, token => (
+    /^-?\d+$/.test(token) && !Number.isSafeInteger(Number(token)) ? `"${token}"` : token
+  ))
 }
