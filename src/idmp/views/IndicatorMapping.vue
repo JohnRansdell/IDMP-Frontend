@@ -17,7 +17,13 @@
           <el-form :model="filters" label-width="96px" class="mapping-form" @submit.prevent="loadMappings">
             <div class="mapping-filter">
             <el-form-item label="语义组"><el-select v-model="filters.groupId" clearable filterable placeholder="全部语义组"><el-option v-for="group in groups" :key="group.id" :label="group.name || group.code" :value="String(group.id)" /></el-select></el-form-item>
-            <el-form-item label="政策文件 ID"><el-input v-model.trim="filters.policyFileId" placeholder="任一侧政策文件" /></el-form-item>
+            <el-form-item label="政策文件">
+              <el-select v-model="filters.policyFileId" class="policy-file-select" clearable filterable remote
+                :remote-method="searchPolicyFiles" :loading="policyFilesLoading" placeholder="全部政策文件"
+                @visible-change="handlePolicySelectVisible">
+                <el-option v-for="policy in policyFiles" :key="policy.id" :label="policy.label" :value="policy.id" />
+              </el-select>
+            </el-form-item>
             <el-form-item label="指标版本"><el-select v-model="filters.indicatorVersionId" clearable filterable allow-create default-first-option placeholder="源或目标已发布版本"><el-option v-for="item in publishedIndicators" :key="item.id" :label="indicatorOptionLabel(item)" :value="String(item.id)" /></el-select></el-form-item>
             <el-form-item label="映射类型"><el-select v-model="filters.mappingType" clearable><el-option v-for="item in MAPPING_TYPES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
             <el-form-item label="审核状态"><el-select v-model="filters.reviewStatus" clearable><el-option label="草稿" value="DRAFT" /><el-option label="待审核" value="PENDING_REVIEW" /><el-option label="已驳回" value="REJECTED" /><el-option label="已通过" value="APPROVED" /><el-option label="已失效" value="INVALIDATED" /></el-select></el-form-item>
@@ -84,7 +90,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from '@/idmp/utils/message'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
@@ -93,6 +99,7 @@ import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
 import { fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
+import { fetchPolicies } from '@/idmp/api/modules/policies'
 import { compareIndicatorMappings, createMapping, createMappingGroup, fetchMapping, fetchMappingGroups, fetchMappings, updateMapping } from '@/idmp/api/modules/mappings'
 import { COMPARABILITY_TYPES, MAPPING_TYPES, comparabilityLabel, formatIndicatorRef, mappingStatusLabel, mappingTypeDescription, mappingTypeLabel, normalizePage, toOpaqueId } from '@/idmp/api/adapters/mapping'
 
@@ -105,6 +112,9 @@ const mappingTotal = ref(0); const mappingPage = ref(1); const mappingSize = ref
 const groupDialogOpen = ref(false); const mappingDialogOpen = ref(false); const editingMappingId = ref(''); const editingDetail = ref(null)
 const creationStep = ref(0); const comparison = ref(null); const comparisonLoading = ref(false); const mappingEvidenceExtras = ref({})
 const filters = reactive({ groupId: '', policyFileId: '', indicatorVersionId: '', mappingType: '', reviewStatus: '' })
+const policyFiles = ref([])
+const policyFilesLoading = ref(false)
+let policyRequest = 0, policySearchTimer
 const groupForm = reactive(emptyGroupForm()); const mappingForm = reactive(emptyMappingForm())
 const selectedGroup = computed(() => groups.value.find(item => String(item.id) === String(mappingForm.groupId)) || null)
 const currentFilterGroup = computed(() => groups.value.find(item => String(item.id) === String(filters.groupId)) || null)
@@ -119,6 +129,37 @@ function displayObject(value) { if (value === undefined || value === null || val
 function differenceLabel(key) { return ({ indicatorName: '指标名称', definition: '定义', meaning: '业务含义', formulaAst: '计算公式', factors: '因子与过滤', policyReferences: '政策依据', defaultExclusion: '默认排除规则', unit: '单位', statisticalPeriod: '统计周期', granularity: '统计粒度', organizationScope: '组织范围' })[key] || key }
 function buildDifferenceRows(difference) { return Object.entries(difference || {}).filter(([key]) => key !== 'hasDifferences').map(([key, item]) => ({ label: differenceLabel(key), different: Boolean(item?.different), source: displayObject(item?.source), target: displayObject(item?.target) })) }
 function normalizeList(payload) { return Array.isArray(payload) ? payload : payload?.records || payload?.items || payload?.list || [] }
+function searchPolicyFiles(keyword) {
+  clearTimeout(policySearchTimer)
+  ++policyRequest
+  policyFilesLoading.value = true
+  policySearchTimer = setTimeout(() => loadPolicyFiles(keyword), 250)
+}
+function handlePolicySelectVisible(visible) {
+  if (visible && !policyFilesLoading.value) loadPolicyFiles('')
+}
+async function loadPolicyFiles(keyword = '') {
+  clearTimeout(policySearchTimer)
+  const revision = ++policyRequest
+  policyFilesLoading.value = true
+  try {
+    const params = { page: 1, size: 50 }
+    const term = keyword.trim()
+    const responses = term
+      ? await Promise.all([fetchPolicies({ ...params, name: term }), fetchPolicies({ ...params, code: term })])
+      : [await fetchPolicies(params)]
+    if (revision !== policyRequest) return
+    const selected = policyFiles.value.find(item => item.id === filters.policyFileId)
+    const rows = responses.flatMap(normalizeList).map(item => ({ ...item,
+      id: toOpaqueId(item.id), label: `${item.name || item.code || '未命名政策'}${item.code && item.name ? ` · ${item.code}` : ''}`
+    })).filter(item => item.id)
+    policyFiles.value = [...new Map([...(selected ? [selected] : []), ...rows].map(item => [item.id, item])).values()]
+  } catch (error) {
+    if (revision === policyRequest) ElMessage.error(error?.message || '政策文件加载失败，请重新打开选择框重试')
+  } finally {
+    if (revision === policyRequest) policyFilesLoading.value = false
+  }
+}
 async function bootstrap() { await Promise.all([loadGroups(), loadPublishedIndicators()]); await loadMappings() }
 async function loadGroups() { groupLoading.value = true; try { groups.value = normalizePage(await fetchMappingGroups({ page: 1, size: 200 })).items } catch (error) { ElMessage.error(error?.message || '语义组加载失败') } finally { groupLoading.value = false } }
 async function loadPublishedIndicators() { try { publishedIndicators.value = normalizeList(await fetchIndicatorVersionList({ publicationStatus: 'PUBLISHED', page: 1, size: 200 })).map(item => ({ ...item, id: toOpaqueId(item.id || item.versionId || item.indicatorVersionId) })).filter(item => item.id) } catch (error) { ElMessage.warning(error?.message || '已发布指标版本列表加载失败；仍可手工输入版本 ID。') } }
@@ -140,6 +181,7 @@ async function saveMapping() { if (!mappingForm.name || !mappingForm.mappingType
 watch(() => route.query.edit, id => { if (id) void openEditFromRoute(String(id)) }, { immediate: true })
 watch([() => mappingForm.groupId, () => mappingForm.targetIndicatorVersionId], () => { if (!editingMappingId.value) comparison.value = null })
 onMounted(bootstrap)
+onBeforeUnmount(() => { clearTimeout(policySearchTimer); ++policyRequest })
 </script>
 
 <style scoped lang="scss">

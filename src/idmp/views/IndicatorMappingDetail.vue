@@ -120,7 +120,7 @@
                   <el-button link type="primary" @click="togglePolicyForm(side.key)">{{ addingPolicySide === side.key ? '收起添加' : '添加引用' }}</el-button>
                 </div>
                 <el-form v-if="addingPolicySide === side.key" label-position="top" class="policy-form">
-                  <el-form-item label="已发布政策版本 ID"><el-input v-model.trim="policyForms[side.key].policyFileVersionId" /></el-form-item>
+                  <el-form-item label="已发布政策版本"><PolicyVersionPicker v-model="policyForms[side.key].policyFileVersionId" clearable :disabled="mutating" /></el-form-item>
                   <el-form-item label="引用角色"><el-select v-model="policyForms[side.key].relationRole"><el-option v-for="item in POLICY_REFERENCE_ROLES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
                   <el-form-item label="出处"><el-input v-model="policyForms[side.key].citationLocation" /></el-form-item>
                   <el-form-item label="政策原文"><el-input v-model="policyForms[side.key].citationText" type="textarea" :rows="2" /></el-form-item>
@@ -154,6 +154,7 @@ import { Back, Edit } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
+import PolicyVersionPicker from '@/idmp/components/PolicyVersionPicker.vue'
 import { approveMapping, createPolicyReference, fetchMapping, fetchPolicyReferences, invalidateMapping, invalidatePolicyReference as invalidatePolicyReferenceRequest, rejectMapping, submitMapping } from '@/idmp/api/modules/mappings'
 import { POLICY_REFERENCE_ROLES, comparabilityLabel, formatIndicatorRef, mappingActionAllowed, mappingActionCompleted, mappingCapabilities, mappingStatusLabel, mappingTypeDescription, mappingTypeLabel, policyReferenceRoleLabel, toOpaqueId } from '@/idmp/api/adapters/mapping'
 
@@ -243,7 +244,7 @@ async function runCurrentAction(action, comment = '') {
 }
 async function reviewCurrentMapping(action) { const reject = action === 'reject'; try { const { value } = await ElMessageBox.prompt(reject ? '请填写驳回意见（必填）' : '可填写审核意见', reject ? '驳回映射' : '审核通过并发布', { inputPattern: reject ? /\S+/ : undefined, inputErrorMessage: '驳回意见不能为空', confirmButtonText: reject ? '确认驳回' : '确认通过', cancelButtonText: '取消' }); await runCurrentAction(action, value) } catch { /* 用户取消 */ } }
 async function invalidateCurrentMapping() { try { const { value } = await ElMessageBox.prompt('请填写失效原因（必填）', '人工失效映射', { inputPattern: /\S+/, inputErrorMessage: '失效原因不能为空', confirmButtonText: '确认失效', cancelButtonText: '取消' }); await runCurrentAction('invalidate', value) } catch { /* 用户取消 */ } }
-async function savePolicyReference(side) { const versionId = indicatorVersionId(side); const form = policyForms[side]; if (!versionId || !form.policyFileVersionId.trim()) return ElMessage.warning('请填写已发布政策版本 ID'); mutating.value = true; try { await createPolicyReference(versionId, { ...form, policyFileVersionId: form.policyFileVersionId.trim() }); ElMessage.success('政策引用已添加'); Object.assign(form, emptyPolicyForm()); addingPolicySide.value = ''; await loadPolicyReferences(side) } catch (saveError) { ElMessage.error(saveError?.message || '添加政策引用失败') } finally { mutating.value = false } }
+async function savePolicyReference(side) { if (mutating.value) return; const versionId = indicatorVersionId(side); const form = policyForms[side]; const policyFileVersionId = toOpaqueId(form.policyFileVersionId).trim(); if (!versionId || !policyFileVersionId) return ElMessage.warning('请选择已发布政策版本'); mutating.value = true; try { await createPolicyReference(versionId, { ...form, policyFileVersionId }); ElMessage.success('政策引用已添加'); Object.assign(form, emptyPolicyForm()); addingPolicySide.value = ''; await loadPolicyReferences(side) } catch (saveError) { ElMessage.error(saveError?.message || '添加政策引用失败') } finally { mutating.value = false } }
 async function invalidatePolicyReference(reference, side) { try { await ElMessageBox.confirm('确认使该政策引用失效？映射历史仍会保留。', '失效政策引用', { type: 'warning' }); await invalidatePolicyReferenceRequest(reference.id, reference.resourceVersion); ElMessage.success('政策引用已失效'); await loadPolicyReferences(side) } catch (actionError) { if (actionError !== 'cancel' && actionError !== 'close') ElMessage.error(actionError?.message || '失效政策引用失败') } }
 
 watch(() => route.params.id, () => { void loadDetail() }, { immediate: true })
