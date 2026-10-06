@@ -34,14 +34,22 @@ async function evaluate(expression) {
 }
 function fixtures() {
   const realFetch = window.fetch.bind(window)
+  window.__factorVersionReads = {}
   window.fetch = async (input, options = {}) => {
     const path = new URL(typeof input === 'string' ? input : input.url, location.href).pathname
     const respond = (data, status = 200) => new Response(JSON.stringify({ code: status === 200 ? 'OK' : 'INTERNAL_ERROR', message: status === 200 ? '' : '版本定义读取失败，请稍后重试', data }), { status, headers: { 'Content-Type': 'application/json' } })
+    if (/^\/api\/v1\/factor-versions\/[^/]+$/.test(path)) window.__factorVersionReads[path] = (window.__factorVersionReads[path] || 0) + 1
     if (path === '/api/v1/indicators/90000') return respond({ id: '90000', code: 'FORMULA_DISPLAY_TEST', name: '公式显示与版本切换测试', status: 'PUBLISHED' })
     if (path === '/api/v1/indicators/90000/versions') return respond([1, 2, 3, 4, 5, 6].map(n => ({ id: String(90000 + n), versionNo: n, status: 'PUBLISHED' })))
     if (path === '/api/v1/indicators/90000/scenarios') return respond({ records: [], total: 0 })
     if (/\/9000[1-6]\/(policy-references)$/.test(path) || /\/by-indicator-version\/9000[1-6]$/.test(path)) return respond([])
     if (path === '/api/v1/factor-versions/9999') return respond(null, 404)
+    if (path === '/api/v1/factor-versions/11') {
+      if (window.__failFactorVersion) return respond(null, 500)
+      if (window.__holdFactorVersion) await new Promise(resolve => { window.__releaseFactorVersion = resolve })
+      return respond({id:'11',factorId:'911',versionNo:3,status:'PUBLISHED'})
+    }
+    if (path === '/api/v1/factor-versions/12') return respond({id:'12',factorId:'912',versionNo:7,status:'ARCHIVED'})
     if (/^\/api\/v1\/indicator-versions\/9000[1-6]$/.test(path)) {
       const version = Number(path.slice(-1))
       if (version === 1 && window.__holdFirst) await new Promise(resolve => { window.__releaseFirst = resolve })
@@ -64,6 +72,10 @@ function fixtures() {
   }
 }
 async function screenshot(name) { await writeFile(join(evidence, name), Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64')) }
+async function hover(selector) {
+  const position=await evaluate(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})()`)
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',...position})
+}
 try {
   let target
   await waitFor(async () => { try { target = (await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json()).find(item => item.type === 'page'); return !!target } catch { return false } }, 'Chrome')
@@ -91,6 +103,18 @@ try {
   const numeratorPath = `/factor/edit/${numerator.factorId}`
   const denominatorPath = `/factor/edit/${denominator.factorId}`
   assert.equal(await evaluate(`document.querySelectorAll('.formula-factor-link').length`), 2)
+  await evaluate(`document.querySelector('.formula-definition').scrollIntoView({block:'center'})`)
+  await delay(400)
+  await hover('.formula-numerator button')
+  await waitFor(()=>evaluate(`Array.from(document.querySelectorAll('.formula-factor-version-tooltip')).some(el=>el.offsetWidth>0&&el.textContent.includes(${JSON.stringify(String(numerator.id))})&&el.textContent.includes(${JSON.stringify(`版本：V${numerator.versionNo}`)}))`),'Real numerator version tooltip')
+  assert.match(await evaluate(`document.querySelector('.formula-factor-version-tooltip').textContent`),/状态：已发布/)
+  await screenshot('factor-version-tooltip-desktop.png')
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:5,y:5})
+  await hover('.formula-numerator button')
+  await delay(250)
+  assert.equal(await evaluate(`window.__factorVersionReads[${JSON.stringify(`/api/v1/factor-versions/${numerator.id}`)}]`),1)
+  await evaluate(`document.querySelector('.formula-denominator button').focus()`)
+  await waitFor(()=>evaluate(`Array.from(document.querySelectorAll('.formula-factor-version-tooltip')).some(el=>el.offsetWidth>0&&el.textContent.includes(${JSON.stringify(String(denominator.id))})&&el.textContent.includes(${JSON.stringify(`版本：V${denominator.versionNo}`)}))`),'Keyboard denominator tooltip')
   const factorStyle = await evaluate(`(()=>{const button=document.querySelector('.formula-factor-link'),style=getComputedStyle(button);return {color:style.color,parentColor:getComputedStyle(button.parentElement).color,border:style.borderBottomWidth,decoration:style.textDecorationLine}})()`)
   assert.equal(factorStyle.color, factorStyle.parentColor)
   assert.equal(factorStyle.border, '0px')
@@ -102,6 +126,11 @@ try {
   const size = await evaluate(`(()=>{const el=document.querySelector('.formula-expression');const r=el.getBoundingClientRect();return {client:el.clientWidth,scroll:el.scrollWidth,left:r.left,right:r.right}})()`)
   assert.ok(size.scroll <= size.client + 1 && size.right <= 391 && size.left >= 0, JSON.stringify(size))
   await screenshot('real-mobile.png')
+  await evaluate(`document.querySelector('.formula-denominator button').focus()`)
+  await waitFor(()=>evaluate(`Array.from(document.querySelectorAll('.formula-factor-version-tooltip')).some(el=>el.offsetWidth>0&&el.textContent.includes(${JSON.stringify(String(denominator.id))}))`),'Mobile version tooltip')
+  const tooltipBounds=await evaluate(`(()=>{const el=Array.from(document.querySelectorAll('.formula-factor-version-tooltip')).find(el=>el.offsetWidth>0&&el.textContent.includes(${JSON.stringify(String(denominator.id))}));return el.getBoundingClientRect().toJSON()})()`)
+  assert.ok(tooltipBounds.left>=0&&tooltipBounds.right<=391&&tooltipBounds.width<=322,JSON.stringify(tooltipBounds))
+  await screenshot('factor-version-tooltip-mobile.png')
   await evaluate(`document.querySelector('.formula-technical summary').click()`)
   assert.equal(await evaluate(`document.querySelector('.formula-technical').open`), true)
   assert.equal(await evaluate(`!!document.querySelector('.formula-factors,.formula-rules')`), false)
@@ -137,6 +166,23 @@ try {
   await evaluate(`window.__formulaPage=document.querySelector('.indicator-detail-page').__vueParentComponent.setupState;window.__formulaPage.selectVersion({id:'90006',versionNo:6,status:'PUBLISHED'})`)
   assert.equal(await evaluate(`document.querySelector('.formula-expression').textContent`), '最大值(【分子】，【分母】)')
   assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll('.formula-factor-link'),button=>button.textContent)`), ['【分子】', '【分母】'])
+  await evaluate(`window.__failFactorVersion=true;document.querySelector('.formula-definition').scrollIntoView({block:'center'})`)
+  await delay(400)
+  await hover('.formula-factor-link')
+  await waitFor(()=>evaluate(`Array.from(document.querySelectorAll('.formula-factor-version-tooltip')).some(el=>el.offsetWidth>0&&el.textContent.includes('版本 ID：11')&&el.textContent.includes('暂时无法读取'))`),'Friendly failed hover tooltip')
+  await evaluate(`document.querySelector('.formula-factor-link').blur();window.__failFactorVersion=false;window.__holdFactorVersion=true;document.querySelector('.formula-factor-link').focus()`)
+  await waitFor(()=>evaluate(`!!window.__releaseFactorVersion`),'Held factor version lookup')
+  await evaluate(`document.querySelector('.formula-factor-link').dispatchEvent(new MouseEvent('mouseenter',{bubbles:true}))`)
+  assert.equal(await evaluate(`window.__factorVersionReads['/api/v1/factor-versions/11']`),2)
+  await evaluate(`window.__formulaPage.selectVersion({id:'90005',versionNo:5,status:'PUBLISHED'})`)
+  await delay(250)
+  await evaluate(`document.querySelector('.formula-denominator button').focus()`)
+  await waitFor(()=>evaluate(`Array.from(document.querySelectorAll('.formula-factor-version-tooltip')).some(el=>el.offsetWidth>0&&el.textContent.includes('版本 ID：12')&&el.textContent.includes('版本：V7'))`),'Switched formula shows its own factor version')
+  await evaluate(`window.__releaseFactorVersion();window.__holdFactorVersion=false`)
+  await delay(250)
+  assert.ok(await evaluate(`Array.from(document.querySelectorAll('.formula-factor-version-tooltip')).some(el=>el.offsetWidth>0&&el.textContent.includes('版本 ID：12')&&el.textContent.includes('版本：V7'))`))
+  await evaluate(`document.querySelector('.formula-denominator button').blur();document.querySelector('.formula-numerator button').focus()`)
+  await waitFor(()=>evaluate(`Array.from(document.querySelectorAll('.formula-factor-version-tooltip')).some(el=>el.offsetWidth>0&&el.textContent.includes('版本 ID：11')&&el.textContent.includes('版本：V3'))`),'Retry fetched exact factor version')
   await evaluate(`window.__formulaPage=document.querySelector('.indicator-detail-page').__vueParentComponent.setupState;window.__formulaPage.selectVersion({id:'90005',versionNo:5,status:'PUBLISHED'})`)
   assert.equal(await evaluate(`document.querySelector('.formula-suffix').textContent`), '（单位：%）')
   assert.match(await evaluate(`document.querySelector('.formula-notes').textContent`), /分母为 0 时返回 0/)
@@ -157,5 +203,11 @@ try {
   assert.deepEqual(errors, [])
   await writeFile(join(evidence, 'result.json'), JSON.stringify({ passed: true, indicatorId, versionId, formulaDefinition: detail.formulaDefinition, size, errors }, null, 2))
   console.log(JSON.stringify({ passed: true, indicatorId, versionId, size, evidence }))
-} catch (error) { if (socket?.readyState === WebSocket.OPEN) await screenshot('failure.png'); throw error }
+} catch (error) {
+  if (socket?.readyState === WebSocket.OPEN) {
+    await screenshot('failure.png')
+    await writeFile(join(evidence,'failure.json'),JSON.stringify(await evaluate(`({reads:window.__factorVersionReads,tooltips:Array.from(document.querySelectorAll('.formula-factor-version-tooltip')).map(el=>({text:el.textContent,visible:el.offsetWidth>0})),versions:document.querySelector('.indicator-detail-page')?.__vueParentComponent.setupState.formulaFactorVersions,errors:document.querySelector('.indicator-detail-page')?.__vueParentComponent.setupState.formulaFactorVersionErrors})`),null,2))
+  }
+  throw error
+}
 finally { socket?.close(); chrome.kill() }
