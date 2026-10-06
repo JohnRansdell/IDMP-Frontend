@@ -9,16 +9,16 @@ export function fetchIndicator(indicatorId) {
   return requestJson(`/indicators/${indicatorId}`)
 }
 
-export function fetchIndicatorVersions(indicatorId) {
-  return requestJson(`/indicators/${indicatorId}/versions`)
+export function fetchIndicatorVersions(indicatorId, options = {}) {
+  return requestJson(`/indicators/${indicatorId}/versions`, options)
 }
 
 export function fetchIndicatorVersionList(params = {}) {
   return requestJson(withQuery('/indicator-versions', params))
 }
 
-export function fetchIndicatorVersion(versionId) {
-  return requestJson(`/indicator-versions/${versionId}`)
+export function fetchIndicatorVersion(versionId, options = {}) {
+  return requestJson(`/indicator-versions/${versionId}`, options)
 }
 
 export function fetchIndicatorFormula(versionId) {

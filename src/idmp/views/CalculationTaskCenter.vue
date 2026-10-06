@@ -3,10 +3,6 @@
     <PageHeader
       title="计算任务中心"
     >
-      <template #meta>
-        <span class="data-source-badge is-live">真实接口</span>
-        <span class="header-meta">任务与批次 ID 均按不透明字符串处理</span>
-      </template>
       <template #actions>
         <el-button
           :icon="Refresh"
@@ -19,29 +15,23 @@
       </template>
     </PageHeader>
 
-    <div v-if="!hasAccessToken" class="notice-strip is-warning auth-notice">
-      当前未保存访问令牌；若后端启用鉴权，查询与写操作会返回未登录或权限错误。
-    </div>
-
     <section class="operation-grid">
       <article class="surface-card query-card">
         <div class="section-title">
           <div>
             <h2>查询任务与批次</h2>
-            <p class="section-title__description">查询只读取后端当前状态，不会启动或停止任务。</p>
           </div>
-          <span class="endpoint-note">GET /async-tasks · GET /calc/batches</span>
         </div>
         <div class="query-controls">
           <el-form label-position="top" @submit.prevent="loadTask">
             <el-form-item label="异步任务 ID">
-              <el-input v-model.trim="queryForm.taskId" class="mono-input" placeholder="输入完整 taskId" />
+              <el-input v-model.trim="queryForm.taskId" class="mono-input" placeholder="输入完整任务 ID" />
             </el-form-item>
             <el-button :loading="taskLoading" @click="loadTask">查询任务</el-button>
           </el-form>
           <el-form label-position="top" @submit.prevent="loadBatch">
             <el-form-item label="计算批次 ID">
-              <el-input v-model.trim="queryForm.batchId" class="mono-input" placeholder="输入完整 batchId" />
+              <el-input v-model.trim="queryForm.batchId" class="mono-input" placeholder="输入完整批次 ID" />
             </el-form-item>
             <div class="query-actions">
               <el-button :loading="batchLoading" @click="loadBatch">查询批次</el-button>
@@ -63,27 +53,57 @@
         <div class="section-title">
           <div>
             <h2>创建计算批次</h2>
-            <p class="section-title__description">该操作会写入后端并启动异步计算。</p>
           </div>
-          <span class="endpoint-note">POST /calc/batches</span>
         </div>
         <div class="notice-strip is-warning create-warning">
-          提交前请核对对象版本和时间范围。接口受理仅表示批次已创建，不代表计算成功。
+          提交前请核对对象版本和时间范围。提交成功不代表计算完成，请查看后续计算状态。
         </div>
-        <el-form :model="createForm" label-position="top" @submit.prevent="createBatch">
+        <el-form :model="createForm" label-position="top" :disabled="createBusy" @submit.prevent="createBatch">
           <div class="create-form-grid">
             <el-form-item label="对象类型">
-              <el-select v-model="createForm.ownerType">
-                <el-option label="指标版本" value="INDICATOR" />
-                <el-option label="因子版本" value="FACTOR" />
+              <el-select v-model="createForm.ownerType" @change="handleOwnerTypeChange">
+                <el-option label="指标" value="INDICATOR" />
+                <el-option label="因子" value="FACTOR" />
               </el-select>
             </el-form-item>
-            <el-form-item label="对象版本 ID">
-              <el-input
-                v-model.trim="createForm.ownerVersionId"
-                class="mono-input"
-                placeholder="按字符串原样提交"
-              />
+            <el-form-item :label="createForm.ownerType === 'INDICATOR' ? '指标' : '因子'">
+              <el-select
+                v-model="createForm.ownerId"
+                class="owner-select"
+                filterable remote clearable
+                :remote-method="searchOwners"
+                :loading="ownerOptionsLoading || ownerInitializing"
+                placeholder="按名称或编码搜索"
+                @change="handleOwnerChange"
+                @visible-change="handleOwnerSelectVisible"
+              >
+                <el-option v-for="owner in ownerOptions" :key="owner.id" :label="owner.label" :value="owner.id" />
+              </el-select>
+              <small v-if="ownerOptionsError" class="form-help is-error">{{ ownerOptionsError }}
+                <el-button link type="primary" @click="loadOwnerOptions(ownerSearch)">重试</el-button>
+              </small>
+            </el-form-item>
+            <el-form-item label="版本">
+              <el-select
+                v-model="createForm.ownerVersionId"
+                class="owner-version-select"
+                :disabled="!createForm.ownerId || versionOptionsLoading"
+                :loading="versionOptionsLoading"
+                placeholder="选择版本"
+                :no-data-text="versionOptionsError || '当前对象暂无版本'"
+              >
+                <el-option v-for="version in versionOptions" :key="version.id"
+                  :label="version.label" :value="version.id" :disabled="!isVersionEligible(version)">
+                  <span>{{ version.label }}</span>
+                  <span v-if="!isVersionEligible(version)" class="version-option-reason">{{ versionUnavailableReason(version) }}</span>
+                </el-option>
+              </el-select>
+              <small v-if="versionOptionsError" class="form-help is-error">{{ versionOptionsError }}
+                <el-button link type="primary" @click="loadOwnerVersions()">重试</el-button>
+              </small>
+              <small v-else-if="createForm.ownerId && !versionOptionsLoading && !createForm.ownerVersionId" class="form-help">
+                {{ versionOptions.length ? '暂无符合当前计算类型的版本' : '当前对象暂无版本' }}
+              </small>
             </el-form-item>
             <el-form-item label="批次类型">
               <el-select v-model="createForm.batchType">
@@ -137,7 +157,7 @@
               />
             </el-form-item>
           </div>
-          <el-button type="primary" :loading="createLoading" @click="createBatch">确认并创建批次</el-button>
+          <el-button type="primary" :loading="createBusy" :disabled="!selectedVersion || !isVersionEligible(selectedVersion) || versionOptionsLoading" @click="createBatch">确认并创建批次</el-button>
         </el-form>
         <div v-if="createFeedback" class="operation-feedback">
           <StatusBadge
@@ -172,7 +192,7 @@
           v-else-if="!taskDetail"
           type="empty"
           title="尚未查询任务"
-          description="输入完整 taskId 后读取后端状态。"
+          description="请输入任务 ID。"
         >
           <template #actions>
             <el-button :disabled="!queryForm.taskId" @click="loadTask">查询任务</el-button>
@@ -181,18 +201,17 @@
         <dl v-else class="detail-list">
           <div><dt>任务 ID</dt><dd class="mono-data">{{ displayId(taskDetail.taskId) }}</dd></div>
           <div><dt>批次 ID</dt><dd class="mono-data">{{ displayId(taskDetail.batchId) }}</dd></div>
-          <div><dt>任务类型</dt><dd>{{ technicalEnumLabel(taskDetail.taskType, TASK_TYPE_LABELS) }}</dd></div>
+          <div><dt>任务类型</dt><dd>{{ enumLabel(taskDetail.taskType, TASK_TYPE_LABELS) }}</dd></div>
           <div class="status-row">
             <dt>状态</dt>
             <dd>
               <StatusBadge :status="taskDetail.status" />
-              <span class="mono-data status-code">{{ taskDetail.status || '-' }}</span>
             </dd>
           </div>
           <div><dt>进度</dt><dd>{{ formatProgress(taskDetail) }}</dd></div>
           <div><dt>开始时间</dt><dd class="mono-data">{{ taskDetail.startedAt || '-' }}</dd></div>
           <div><dt>结束时间</dt><dd class="mono-data">{{ taskDetail.finishedAt || '-' }}</dd></div>
-          <div><dt>Trace ID</dt><dd class="mono-data">{{ displayId(taskDetail.traceId) }}</dd></div>
+          <div><dt>追踪编号</dt><dd class="mono-data">{{ displayId(taskDetail.traceId) }}</dd></div>
           <div class="detail-list__wide"><dt>错误信息</dt><dd>{{ taskDetail.errorMessage || '-' }}</dd></div>
         </dl>
       </article>
@@ -217,7 +236,7 @@
           v-else-if="!batchDetail"
           type="empty"
           title="尚未查询批次"
-          description="输入完整 batchId 后读取批次、目标和节点。"
+          description="请输入批次 ID。"
         >
           <template #actions>
             <el-button :disabled="!queryForm.batchId" @click="loadBatch">查询批次</el-button>
@@ -227,12 +246,11 @@
           <div><dt>批次 ID</dt><dd class="mono-data">{{ displayId(batchDetail.batchId) }}</dd></div>
           <div><dt>任务 ID</dt><dd class="mono-data">{{ displayId(batchDetail.taskId) }}</dd></div>
           <div><dt>批次编码</dt><dd class="mono-data">{{ batchDetail.batchCode || '-' }}</dd></div>
-          <div><dt>批次类型</dt><dd>{{ technicalEnumLabel(batchDetail.batchType, BATCH_TYPE_LABELS) }}</dd></div>
+          <div><dt>批次类型</dt><dd>{{ enumLabel(batchDetail.batchType, BATCH_TYPE_LABELS) }}</dd></div>
           <div class="status-row">
             <dt>状态</dt>
             <dd>
               <StatusBadge :status="batchDetail.status" />
-              <span class="mono-data status-code">{{ batchDetail.status || '-' }}</span>
             </dd>
           </div>
           <div><dt>目标数</dt><dd class="clinical-metric">{{ batchDetail.targetCount ?? '-' }}</dd></div>
@@ -240,7 +258,7 @@
             <dt>成功 / 失败</dt>
             <dd class="clinical-metric">{{ batchDetail.succeededCount ?? 0 }} / {{ batchDetail.failedCount ?? 0 }}</dd>
           </div>
-          <div><dt>Trace ID</dt><dd class="mono-data">{{ displayId(batchDetail.traceId) }}</dd></div>
+          <div><dt>追踪编号</dt><dd class="mono-data">{{ displayId(batchDetail.traceId) }}</dd></div>
           <div class="detail-list__wide"><dt>错误信息</dt><dd>{{ batchDetail.errorMessage || '-' }}</dd></div>
         </dl>
         <div v-if="batchActionFeedback" class="operation-feedback">
@@ -258,7 +276,6 @@
       <div class="section-title">
         <div>
           <h2>计算目标与节点</h2>
-          <p class="section-title__description">节点重试会修改后端任务状态，仅失败节点可提交。</p>
         </div>
         <span class="endpoint-note">{{ flatNodes.length }} 个节点</span>
       </div>
@@ -285,7 +302,7 @@
         v-else-if="!batchDetail"
         type="empty"
         title="尚无批次上下文"
-        description="先查询一个计算批次，再查看其目标和 DAG 节点。"
+        description="先查询一个计算批次，再查看其计算目标和节点。"
       />
       <StatePanel
         v-else-if="!flatNodes.length"
@@ -301,7 +318,7 @@
         <el-table :data="flatNodes" row-key="nodeId" table-layout="fixed">
           <el-table-column prop="targetKey" label="目标" min-width="180" show-overflow-tooltip />
           <el-table-column label="对象类型" width="160">
-            <template #default="{ row }">{{ technicalEnumLabel(row.ownerType, OWNER_TYPE_LABELS) }}</template>
+            <template #default="{ row }">{{ enumLabel(row.ownerType, OWNER_TYPE_LABELS) }}</template>
           </el-table-column>
           <el-table-column label="版本 ID" min-width="178">
             <template #default="{ row }">
@@ -309,7 +326,9 @@
             </template>
           </el-table-column>
           <el-table-column prop="nodeCode" label="节点编码" min-width="190" show-overflow-tooltip />
-          <el-table-column prop="nodeType" label="节点类型" width="116" />
+          <el-table-column label="节点类型" width="116">
+            <template #default="{ row }">{{ enumLabel(row.nodeType, NODE_TYPE_LABELS) }}</template>
+          </el-table-column>
           <el-table-column label="状态" width="142">
             <template #default="{ row }">
               <StatusBadge :status="row.status" />
@@ -324,7 +343,7 @@
           <el-table-column prop="sourceRecordCount" label="源记录数" width="105" />
           <el-table-column prop="errorMessage" label="错误信息" min-width="190" show-overflow-tooltip />
           <el-table-column prop="attemptNo" label="尝试次数" width="92" />
-          <el-table-column prop="workerId" label="Worker" min-width="150" show-overflow-tooltip />
+          <el-table-column prop="workerId" label="执行实例" min-width="150" show-overflow-tooltip />
           <el-table-column label="操作" width="112" fixed="right">
             <template #default="{ row }">
               <el-button
@@ -345,7 +364,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
@@ -353,7 +372,6 @@ import { Refresh } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
-import { getAccessToken } from '@/idmp/api/request'
 import {
   cancelCalcBatch,
   createCalcBatch,
@@ -361,8 +379,9 @@ import {
   fetchCalcBatch,
   retryCalcNode
 } from '@/idmp/api/modules/calculation'
-import { fetchIndicatorScenarios, fetchIndicatorVersion } from '@/idmp/api/modules/indicators'
-import { fetchFactorVersion } from '@/idmp/api/modules/factors'
+import { fetchIndicator, fetchIndicators, fetchIndicatorScenarios, fetchIndicatorVersion, fetchIndicatorVersions } from '@/idmp/api/modules/indicators'
+import { fetchFactor, fetchFactors, fetchFactorVersion, fetchFactorVersionsByFactor } from '@/idmp/api/modules/factors'
+import { getStatusLabel } from '@/idmp/design/status'
 
 const route = useRoute()
 const router = useRouter()
@@ -373,7 +392,8 @@ const queryForm = reactive({
 
 const createForm = reactive({
   ownerType: String(route.query.ownerType || 'INDICATOR'),
-  ownerVersionId: String(route.query.ownerVersionId || ''),
+  ownerId: '',
+  ownerVersionId: '',
   batchType: String(route.query.batchType || 'TRIAL'),
   scenarioVersionId: String(route.query.scenarioVersionId || ''),
   periodStart: String(route.query.periodStart || '2000-01-01T00:00:00'),
@@ -399,9 +419,9 @@ function startOfDay(value) {
 
 const OWNER_TYPE_LABELS = { INDICATOR: '指标版本', FACTOR: '因子版本' }
 const BATCH_TYPE_LABELS = { TRIAL: '试算', FULL: '正式计算', RECALC: '重算' }
-const TASK_TYPE_LABELS = { FACTOR_TRIAL: '因子试算', INDICATOR_TRIAL: '指标试算' }
+const TASK_TYPE_LABELS = { FACTOR_TRIAL: '因子试算', INDICATOR_TRIAL: '指标试算', FACTOR_CALC: '因子计算', INDICATOR_CALC: '指标计算' }
+const NODE_TYPE_LABELS = { FACTOR: '原子因子计算', DERIVED_FACTOR: '复合因子计算', FORMULA: '公式计算', QUALITY_CHECK: '质量校验' }
 
-const hasAccessToken = ref(Boolean(getAccessToken()))
 const taskDetail = ref(null)
 const batchDetail = ref(null)
 const taskError = ref('')
@@ -416,6 +436,174 @@ const cancelLoading = ref(false)
 const retryingNodeId = ref('')
 const sceneOptions = ref([])
 const sceneOptionsLoading = ref(false)
+const preparingBatch = ref(false)
+const createBusy = computed(() => preparingBatch.value || createLoading.value)
+const ownerOptions = ref([])
+const ownerOptionsLoading = ref(false)
+const ownerInitializing = ref(false)
+const ownerOptionsError = ref('')
+const ownerSearch = ref('')
+const versionOptions = ref([])
+const versionOptionsLoading = ref(false)
+const versionOptionsError = ref('')
+const selectedVersion = computed(() => versionOptions.value.find(item => item.id === createForm.ownerVersionId))
+const selectedOwner = computed(() => ownerOptions.value.find(item => item.id === createForm.ownerId))
+let ownerRequest = 0, versionRequest = 0, sceneRequest = 0, initializationRequest = 0
+let ownerSearchTimer
+
+function listRows(payload) {
+  return Array.isArray(payload) ? payload : payload?.records || payload?.items || payload?.list || []
+}
+
+function normalizeOwner(item) {
+  const id = toOpaqueId(item.id)
+  const name = item.name || item.indicatorName || item.factorName || '未命名'
+  return { ...item, id, label: `${name}${item.code ? ` · ${item.code}` : ''}` }
+}
+
+function isVersionEligible(version) {
+  return Boolean(version?.currentArtifactId)
+    && (createForm.batchType === 'TRIAL'
+      ? ['DRAFT', 'PUBLISHED'].includes(version.status)
+      : version.status === 'PUBLISHED')
+}
+
+function versionUnavailableReason(version) {
+  if (!version.currentArtifactId) return '需先编译'
+  if (createForm.batchType !== 'TRIAL' && version.status !== 'PUBLISHED') return '需先发布'
+  return '当前状态不可计算'
+}
+
+function chooseDefaultVersion(preferredId = '') {
+  const eligible = versionOptions.value.filter(isVersionEligible)
+  const preferred = eligible.find(item => item.id === preferredId)
+  createForm.ownerVersionId = (preferred || eligible.find(item => item.status === 'PUBLISHED') || eligible[0])?.id || ''
+}
+
+function clearScenes() {
+  ++sceneRequest
+  sceneOptions.value = []
+  sceneOptionsLoading.value = false
+  createForm.scenarioVersionId = ''
+}
+
+function clearVersions() {
+  ++versionRequest
+  versionOptions.value = []
+  versionOptionsError.value = ''
+  versionOptionsLoading.value = false
+  createForm.ownerVersionId = ''
+  clearScenes()
+  createFeedback.value = null
+}
+
+function handleOwnerTypeChange() {
+  ++initializationRequest
+  ownerInitializing.value = false
+  createForm.ownerId = ''
+  ownerOptions.value = []
+  clearVersions()
+  loadOwnerOptions('')
+}
+
+function handleOwnerChange() {
+  ++initializationRequest
+  ownerInitializing.value = false
+  clearVersions()
+  if (createForm.ownerId) loadOwnerVersions()
+}
+
+function searchOwners(keyword) {
+  clearTimeout(ownerSearchTimer)
+  ++ownerRequest
+  ownerSearch.value = keyword
+  ownerOptionsLoading.value = true
+  ownerSearchTimer = setTimeout(() => loadOwnerOptions(keyword), 250)
+}
+
+function handleOwnerSelectVisible(visible) {
+  if (visible && !ownerOptions.value.length && !ownerOptionsLoading.value) loadOwnerOptions('')
+}
+
+async function loadOwnerOptions(keyword = '') {
+  clearTimeout(ownerSearchTimer)
+  ownerSearch.value = keyword
+  const revision = ++ownerRequest
+  const ownerType = createForm.ownerType
+  ownerOptionsLoading.value = true
+  ownerOptionsError.value = ''
+  try {
+    const fetchOwners = ownerType === 'INDICATOR' ? fetchIndicators : fetchFactors
+    const params = { page: 1, size: 50 }
+    // The list API has separate name/code filters, not a combined keyword filter.
+    const results = keyword.trim()
+      ? await Promise.all([fetchOwners({ ...params, name: keyword.trim() }), fetchOwners({ ...params, code: keyword.trim() })])
+      : [await fetchOwners(params)]
+    if (revision !== ownerRequest || ownerType !== createForm.ownerType) return
+    const selected = selectedOwner.value
+    const rows = results.flatMap(listRows).map(normalizeOwner).filter(item => item.id)
+    ownerOptions.value = [...new Map([...(selected ? [selected] : []), ...rows].map(item => [item.id, item])).values()]
+  } catch (error) {
+    if (revision !== ownerRequest) return
+    ownerOptions.value = selectedOwner.value ? [selectedOwner.value] : []
+    ownerOptionsError.value = error?.message || '列表加载失败，请重试'
+  } finally {
+    if (revision === ownerRequest) ownerOptionsLoading.value = false
+  }
+}
+
+async function loadOwnerVersions(preferredId = '') {
+  const ownerId = createForm.ownerId, ownerType = createForm.ownerType
+  if (!ownerId) return
+  const revision = ++versionRequest
+  versionOptionsLoading.value = true
+  versionOptionsError.value = ''
+  createForm.ownerVersionId = ''
+  clearScenes()
+  try {
+    const options = { cache: 'no-store' }
+    const payload = await (ownerType === 'INDICATOR' ? fetchIndicatorVersions(ownerId, options) : fetchFactorVersionsByFactor(ownerId, options))
+    if (revision !== versionRequest || ownerId !== createForm.ownerId || ownerType !== createForm.ownerType) return
+    versionOptions.value = listRows(payload).map(item => ({
+      ...item, id: toOpaqueId(item.id || item.versionId), status: String(item.status || item.publicationStatus || '').toUpperCase(),
+      label: `V${item.versionNo ?? '-'} · ${getStatusLabel(item.status || item.publicationStatus)}`
+    })).filter(item => item.id).sort((a, b) => Number(b.versionNo || 0) - Number(a.versionNo || 0))
+    chooseDefaultVersion(preferredId)
+  } catch (error) {
+    if (revision !== versionRequest) return
+    versionOptions.value = []
+    versionOptionsError.value = error?.message || '版本加载失败，请重试'
+  } finally {
+    if (revision === versionRequest) versionOptionsLoading.value = false
+  }
+}
+
+async function initializeOwnerSelection() {
+  const preferredId = toOpaqueId(route.query.ownerVersionId)
+  if (!preferredId) { loadOwnerOptions(''); return }
+  const revision = ++initializationRequest
+  const ownerType = createForm.ownerType
+  ownerInitializing.value = true
+  try {
+    const options = { cache: 'no-store' }
+    const version = await (ownerType === 'INDICATOR' ? fetchIndicatorVersion(preferredId, options) : fetchFactorVersion(preferredId, options))
+    const ownerId = toOpaqueId(ownerType === 'INDICATOR' ? version.indicatorId : version.factorId)
+    if (!ownerId) throw new Error('无法确认所选版本所属的指标或因子')
+    const owner = await (ownerType === 'INDICATOR' ? fetchIndicator(ownerId) : fetchFactor(ownerId))
+    if (revision !== initializationRequest || ownerType !== createForm.ownerType) return
+    ownerOptions.value = [normalizeOwner(owner)]
+    createForm.ownerId = ownerId
+    await loadOwnerVersions(preferredId)
+    await nextTick()
+    if (revision === initializationRequest && createForm.ownerVersionId === preferredId) {
+      createForm.scenarioVersionId = String(route.query.scenarioVersionId || '')
+    }
+  } catch (error) {
+    if (revision === initializationRequest) ownerOptionsError.value = error?.message || '预选版本加载失败，请重新选择'
+  } finally {
+    if (revision === initializationRequest) ownerInitializing.value = false
+  }
+}
 
 const batchStatus = computed(() => String(batchDetail.value?.status || '').toUpperCase())
 const canCancelBatch = computed(() => {
@@ -461,21 +649,26 @@ function normalizeScenarioOptions(payload) {
 
 async function loadSceneOptions() {
   if (createForm.ownerType !== 'INDICATOR' || !createForm.ownerVersionId) {
-    ElMessage.warning('请先填写指标版本 ID，再加载关联场景')
+    ElMessage.warning('请先选择指标和版本，再加载关联场景')
     return
   }
+  const revision = ++sceneRequest
+  const versionId = createForm.ownerVersionId
   sceneOptionsLoading.value = true
   try {
-    const version = await fetchIndicatorVersion(createForm.ownerVersionId)
+    const version = await fetchIndicatorVersion(versionId, { cache: 'no-store' })
     const indicatorId = toOpaqueId(version?.indicatorId || version?.indicator?.id)
     if (!indicatorId) throw new Error('后端未返回该指标版本所属的指标 ID')
-    sceneOptions.value = normalizeScenarioOptions(await fetchIndicatorScenarios(indicatorId, { page: 1, size: 200 }))
+    const options = normalizeScenarioOptions(await fetchIndicatorScenarios(indicatorId, { page: 1, size: 200 }))
+    if (revision !== sceneRequest || versionId !== createForm.ownerVersionId) return
+    sceneOptions.value = options
     if (!sceneOptions.value.length) ElMessage.info('当前指标版本暂无已关联场景')
   } catch (error) {
+    if (revision !== sceneRequest) return
     sceneOptions.value = []
     ElMessage.warning(error?.message || '关联场景加载失败；仍可手工输入场景版本 ID')
   } finally {
-    sceneOptionsLoading.value = false
+    if (revision === sceneRequest) sceneOptionsLoading.value = false
   }
 }
 
@@ -484,7 +677,12 @@ function handleScenarioSelectVisible(visible) {
 }
 
 watch(() => createForm.ownerVersionId, () => {
-  sceneOptions.value = []
+  clearScenes()
+})
+
+watch(() => createForm.batchType, () => {
+  clearScenes()
+  if (!selectedVersion.value || !isVersionEligible(selectedVersion.value)) chooseDefaultVersion()
 })
 
 async function loadTask() {
@@ -532,15 +730,30 @@ async function loadBatch() {
 }
 
 async function createBatch() {
-  if (createLoading.value) return
-  if (!createForm.ownerVersionId) {
-    ElMessage.warning('请输入对象版本 ID')
+  if (createBusy.value) return
+  preparingBatch.value = true
+  try {
+    await createSelectedBatch()
+  } finally {
+    preparingBatch.value = false
+  }
+}
+
+async function createSelectedBatch() {
+  if (!createForm.ownerId || !selectedVersion.value || !isVersionEligible(selectedVersion.value) || versionOptionsLoading.value) {
+    ElMessage.warning('请先选择指标或因子及可计算的版本')
     return
   }
   try {
     const ownerVersion = createForm.ownerType === 'INDICATOR'
-      ? await fetchIndicatorVersion(createForm.ownerVersionId)
-      : await fetchFactorVersion(createForm.ownerVersionId)
+      ? await fetchIndicatorVersion(createForm.ownerVersionId, { cache: 'no-store' })
+      : await fetchFactorVersion(createForm.ownerVersionId, { cache: 'no-store' })
+    const ownerId = toOpaqueId(createForm.ownerType === 'INDICATOR' ? ownerVersion.indicatorId : ownerVersion.factorId)
+    if (ownerId !== createForm.ownerId || !isVersionEligible({ ...ownerVersion, status: String(ownerVersion.status || '').toUpperCase() })) {
+      ElMessage.warning('所选版本状态已变化，请重新选择可计算的版本')
+      await loadOwnerVersions()
+      return
+    }
     if (resolveOwnerCalculationMode(ownerVersion) === 'STATIC') {
       ElMessage.warning('静态版本不能在计算任务中心手工创建周期批次；请通过发布动作返回的初始化批次跟踪全量计算')
       return
@@ -560,7 +773,7 @@ async function createBatch() {
 
   try {
     await ElMessageBox.confirm(
-      `将为${enumLabel(createForm.ownerType, OWNER_TYPE_LABELS)} ${createForm.ownerVersionId} 创建${enumLabel(createForm.batchType, BATCH_TYPE_LABELS)}批次。该操作会写入后端并启动异步计算，是否继续？`,
+      `将为“${selectedOwner.value?.name || selectedOwner.value?.label || '所选对象'}” ${selectedVersion.value.label} 创建${enumLabel(createForm.batchType, BATCH_TYPE_LABELS)}批次，是否继续？`,
       '确认创建计算批次',
       {
         confirmButtonText: '确认创建',
@@ -600,7 +813,7 @@ async function createBatch() {
       status: accepted.status || 'QUEUED',
       label: '创建请求已受理',
       tone: 'info',
-      message: `taskId ${queryForm.taskId || '-'}，batchId ${queryForm.batchId || '-'}；请继续查询执行状态。`
+      message: `任务 ID ${queryForm.taskId || '-'}，批次 ID ${queryForm.batchId || '-'}；请继续查询执行状态。`
     }
     ElMessage.success('计算批次创建请求已受理')
     await refreshCurrent()
@@ -757,12 +970,16 @@ function enumLabel(value, labels) {
 
 onMounted(() => {
   if (route.query.batchId) loadBatch()
+  initializeOwnerSelection()
 })
 
-function technicalEnumLabel(value, labels) {
-  const label = enumLabel(value, labels)
-  return value && label !== value ? `${label}（${value}）` : label
-}
+onBeforeUnmount(() => {
+  clearTimeout(ownerSearchTimer)
+  ++ownerRequest
+  ++versionRequest
+  ++sceneRequest
+  ++initializationRequest
+})
 
 function formatProgress(task) {
   const status = String(task?.status || '').toUpperCase()
@@ -784,15 +1001,10 @@ function stateTypeForError(message) {
   min-width: 0;
 }
 
-.header-meta,
 .endpoint-note {
   color: var(--idmp-text-helper);
   font-size: 12px;
   line-height: 20px;
-}
-
-.auth-notice {
-  margin-bottom: var(--idmp-space-4);
 }
 
 .operation-grid,
@@ -861,6 +1073,16 @@ function stateTypeForError(message) {
   line-height: 18px;
 }
 
+.form-help.is-error {
+  color: var(--el-color-danger);
+}
+
+.version-option-reason {
+  margin-left: 12px;
+  color: var(--idmp-text-helper);
+  font-size: 12px;
+}
+
 .detail-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -900,11 +1122,6 @@ function stateTypeForError(message) {
   align-items: center;
   flex-wrap: wrap;
   gap: var(--idmp-space-2);
-}
-
-.status-code {
-  color: var(--idmp-text-helper);
-  font-size: 11px;
 }
 
 .operation-feedback {

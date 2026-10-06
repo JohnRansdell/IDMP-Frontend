@@ -8,8 +8,8 @@ export function fetchFactor(factorId) {
   return requestJson(`/factors/${factorId}`)
 }
 
-export function fetchFactorVersionsByFactor(factorId) {
-  return requestJson(`/factors/${factorId}/versions`)
+export function fetchFactorVersionsByFactor(factorId, options = {}) {
+  return requestJson(`/factors/${factorId}/versions`, options)
 }
 
 export function fetchFactorVersions(params = {}) {
@@ -27,8 +27,8 @@ export async function fetchPublishedFactorVersions() {
   return rows.filter(item => (item.status || item.publicationStatus) === 'PUBLISHED')
 }
 
-export function fetchFactorVersion(versionId) {
-  return requestJson(`/factor-versions/${versionId}`)
+export function fetchFactorVersion(versionId, options = {}) {
+  return requestJson(`/factor-versions/${versionId}`, options)
 }
 
 export function fetchFactorDependencies(versionId) {
