@@ -287,7 +287,7 @@
         />
         <span>{{ nodeActionFeedback.message }}</span>
       </div>
-      <StatePanel v-if="batchLoading" type="loading" title="正在加载计算节点" />
+      <StatePanel v-if="batchLoading && !batchDetail" type="loading" title="正在加载计算节点" />
       <StatePanel
         v-else-if="batchError"
         :type="stateTypeForError(batchError)"
@@ -314,51 +314,7 @@
           <el-button @click="loadBatch">重新读取批次</el-button>
         </template>
       </StatePanel>
-      <div v-else class="table-scroll">
-        <el-table :data="flatNodes" row-key="nodeId" table-layout="fixed">
-          <el-table-column prop="targetKey" label="目标" min-width="180" show-overflow-tooltip />
-          <el-table-column label="对象类型" width="160">
-            <template #default="{ row }">{{ enumLabel(row.ownerType, OWNER_TYPE_LABELS) }}</template>
-          </el-table-column>
-          <el-table-column label="版本 ID" min-width="178">
-            <template #default="{ row }">
-              <span class="mono-data">{{ displayId(row.ownerVersionId) }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="nodeCode" label="节点编码" min-width="190" show-overflow-tooltip />
-          <el-table-column label="节点类型" width="116">
-            <template #default="{ row }">{{ enumLabel(row.nodeType, NODE_TYPE_LABELS) }}</template>
-          </el-table-column>
-          <el-table-column label="状态" width="142">
-            <template #default="{ row }">
-              <StatusBadge :status="row.status" />
-            </template>
-          </el-table-column>
-          <el-table-column label="结果结论" width="130">
-            <template #default="{ row }"><StatusBadge :status="row.resultOutcomeStatus" /></template>
-          </el-table-column>
-          <el-table-column label="源数据" width="120">
-            <template #default="{ row }"><StatusBadge :status="row.sourceDataStatus" /></template>
-          </el-table-column>
-          <el-table-column prop="sourceRecordCount" label="源记录数" width="105" />
-          <el-table-column prop="errorMessage" label="错误信息" min-width="190" show-overflow-tooltip />
-          <el-table-column prop="attemptNo" label="尝试次数" width="92" />
-          <el-table-column prop="workerId" label="执行实例" min-width="150" show-overflow-tooltip />
-          <el-table-column label="操作" width="112" fixed="right">
-            <template #default="{ row }">
-              <el-button
-                text
-                type="danger"
-                :disabled="String(row.status).toUpperCase() !== 'FAILED'"
-                :loading="retryingNodeId === displayId(row.nodeId)"
-                @click="retryNode(row)"
-              >
-                确认重试
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
+      <CalculationTargetsPanel v-else :key="displayId(batchDetail.batchId)" :targets="batchDetail.targets || []" :retrying-node-id="retryingNodeId" @retry="retryNode" />
     </section>
   </div>
 </template>
@@ -372,6 +328,7 @@ import { Refresh } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
+import CalculationTargetsPanel from '@/idmp/components/CalculationTargetsPanel.vue'
 import {
   cancelCalcBatch,
   createCalcBatch,
@@ -420,7 +377,6 @@ function startOfDay(value) {
 const OWNER_TYPE_LABELS = { INDICATOR: '指标版本', FACTOR: '因子版本' }
 const BATCH_TYPE_LABELS = { TRIAL: '试算', FULL: '正式计算', RECALC: '重算' }
 const TASK_TYPE_LABELS = { FACTOR_TRIAL: '因子试算', INDICATOR_TRIAL: '指标试算', FACTOR_CALC: '因子计算', INDICATOR_CALC: '指标计算' }
-const NODE_TYPE_LABELS = { FACTOR: '原子因子计算', DERIVED_FACTOR: '复合因子计算', FORMULA: '公式计算', QUALITY_CHECK: '质量校验' }
 
 const taskDetail = ref(null)
 const batchDetail = ref(null)
@@ -626,8 +582,8 @@ const flatNodes = computed(() => {
       ...node,
       targetId: toOpaqueId(target.targetId),
        targetKey: target.targetKey,
-       ownerType: target.ownerType,
-       ownerVersionId: toOpaqueId(target.ownerVersionId),
+       ownerType: node.ownerType || target.ownerType,
+       ownerVersionId: toOpaqueId(node.ownerVersionId || target.ownerVersionId),
        resultOutcomeStatus: target.resultOutcomeStatus || target.outcomeStatus || '',
        sourceDataStatus: node.sourceDataStatus || '',
        sourceRecordCount: node.sourceRecordCount ?? '-',
@@ -906,7 +862,7 @@ async function retryNode(row) {
   if (!nodeId || String(row.status).toUpperCase() !== 'FAILED' || retryingNodeId.value) return
   try {
     await ElMessageBox.confirm(
-      `确认重试失败节点 ${row.nodeCode || nodeId}？该操作会修改后端任务状态并增加尝试次数。`,
+      `确认重试失败节点“${row.nodeName || row.nodeCode || nodeId}”？`,
       '确认重试计算节点',
       {
         confirmButtonText: '确认重试',

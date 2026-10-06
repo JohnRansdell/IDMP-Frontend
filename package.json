@@ -7,6 +7,9 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "test:calculation-dag": "node --test test/calculation-graph.test.js",
+    "test:e2e:calculation": "node test/calculation-task-center.e2e.js",
+    "test:e2e:calculation-live": "node test/calculation-dag-live.e2e.js",
     "dev": "vite",
     "build:prod": "vite build",
     "preview": "vite preview",
@@ -32,6 +35,7 @@
     "test": "node --test test/request-error.test.js test/user-message.test.js test/sql-import-adapter.test.js test/meta-adapter.test.js test/cascade.test.js test/drill-adapter.test.js test/dashboard-drill-down.test.js test/dashboard-acceptance-example.test.js test/dashboard-quality-safety-demo-restore.test.js test/dashboard-global-filter-designer.test.js test/dashboard-scene-runtime.test.js test/dashboard-published-indicator-runtime.test.js test/dashboard-remote-query.test.js test/dashboard-widget-renderer.component.test.js test/dashboard-theme-and-sizing.test.js test/dashboard-visual-style.test.js test/dashboard-background-assets.test.js test/dashboard-background-picker.test.js test/dashboard-metric-group.test.js test/dashboard-multi-indicator.test.js test/dashboard-context-bar.test.js test/dashboard-smart-default-binding.test.js test/dashboard-kpi-variants.test.js test/dashboard-chart-presentation.test.js test/dashboard-warning-widget.test.js test/indicator-adapter.test.js test/scenario-adapter.test.js test/mapping-adapter.test.js test/warning-adapter.test.js test/status.test.js test/result-availability.test.js test/trial-period-recommendation.test.js test/dashboard-analysis-navigation.test.js test/dashboard-visualization.test.js test/dashboard-pie-drill.test.js test/dashboard-schema.test.js test/dashboard-grid-layout.test.js test/dashboard-persistence.test.js test/dashboard-binding.test.js test/dashboard-filter.test.js test/dashboard-interaction.test.js test/dashboard-layout-operations.test.js test/dashboard-layout-templates.test.js test/dashboard-responsive-layout.test.js test/dashboard-precise-layout.test.js test/dashboard-fr-acceptance.test.js test/derived-factor.test.js test/request-bigint.test.js"
   },
   "dependencies": {
+    "@dagrejs/dagre": "1.1.8",
     "@element-plus/icons-vue": "2.3.2",
     "@noble/hashes": "1.8.0",
     "echarts": "5.6.0",

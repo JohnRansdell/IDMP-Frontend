@@ -79,12 +79,12 @@ try {
     window.__factorVersion = { id: '102027642461312907', factorId: window.__factor.id, versionNo: 1, status: 'PUBLISHED', currentArtifactId: '6', dsl: { calculationMode: 'TEMPORAL' } };
     window.__calcTask = { taskId, batchId, taskType: 'INDICATOR_CALC', status: 'RUNNING', progress: 42 };
     window.__calcBatch = { batchId, taskId, batchType: 'FULL', status: 'RUNNING', targetCount: 1,
-      succeededCount: 0, failedCount: 1, targets: [{ targetId: '1', targetKey: 'BASE', ownerType: 'FACTOR', ownerVersionId: '3', nodes: [
-        { nodeId: '2', nodeCode: 'FACTOR:3', nodeType: 'FACTOR', status: 'SUCCEEDED' }
-      ] }, { targetId: '9', targetKey: 'BASE', ownerType: 'INDICATOR', ownerVersionId: '7', nodes: [
-        { nodeId: '4', ownerType: 'FACTOR', ownerVersionId: '5', nodeCode: 'FACTOR:5', nodeType: 'DERIVED_FACTOR', status: 'FAILED' },
-        { nodeId: '6', ownerType: 'INDICATOR', ownerVersionId: '7', nodeCode: 'FORMULA:7', nodeType: 'FORMULA', status: 'QUEUED' },
-        { nodeId: '8', ownerType: 'INDICATOR', ownerVersionId: '7', nodeCode: 'QUALITY:7', nodeType: 'QUALITY_CHECK', status: 'QUEUED' }
+      succeededCount: 0, failedCount: 1, targets: [{ targetId: '1', targetCode: 'BASE', status: 'SUCCEEDED', targetKey: 'BASE', ownerType: 'FACTOR', ownerVersionId: '3', nodes: [
+        { nodeId: '2', nodeCode: 'FACTOR:3', nodeType: 'FACTOR', nodeName: '同期入院总人次', dependencies: [], status: 'SUCCEEDED' }
+      ] }, { targetId: '9', targetKey: 'BASE', status: 'FAILED', drillPathName: '组织下钻', drillLevelName: '医生', periodType: 'MONTHLY', periodStart: '2026-01-01', periodEnd: '2026-01-31', grain: ['科室', '医生'], ownerType: 'INDICATOR', ownerVersionId: '7', nodes: [
+        { nodeId: '4', ownerType: 'FACTOR', ownerVersionId: '5', versionNo: '2', nodeName: '中药费用合计', nodeCode: 'FACTOR:5', nodeType: 'DERIVED_FACTOR', dependencies: [], attemptNo: 2, workerId: 'worker-test', errorMessage: '源数据连接暂不可用', status: 'FAILED' },
+        { nodeId: '6', ownerType: 'INDICATOR', ownerVersionId: '7', nodeName: '中药费用占比', nodeCode: 'FORMULA:7', nodeType: 'FORMULA', dependencies: ['FACTOR:5'], status: 'QUEUED' },
+        { nodeId: '8', ownerType: 'INDICATOR', ownerVersionId: '7', nodeCode: 'QUALITY:7', nodeType: 'QUALITY_CHECK', dependencies: ['FORMULA:7'], status: 'QUEUED' }
       ] }] };
     const originalFetch = window.fetch.bind(window);
     window.fetch = async (input, init = {}) => {
@@ -95,7 +95,12 @@ try {
         let data;
         if (url.endsWith('/async-tasks/' + taskId)) data = window.__calcTask;
         else if (url.endsWith('/calc/batches/' + batchId)) data = window.__calcBatch;
-        else if (path === '/api/v1/indicators' || path === '/api/v1/factors') {
+        else if (path === '/api/v1/calc/nodes/4/retry' && init.method === 'POST') {
+          window.__calcBatch.targets[1].nodes[0].status = 'QUEUED';
+          window.__calcBatch.targets[1].nodes[0].attemptNo = 3;
+          window.__calcBatch.targets[1].nodes[0].errorMessage = null;
+          data = {};
+        } else if (path === '/api/v1/indicators' || path === '/api/v1/factors') {
           const rows = path.endsWith('/indicators') ? window.__owners : [window.__factor];
           data = { records: rows.filter(row => (!parsed.searchParams.get('name') || row.name.includes(parsed.searchParams.get('name'))) && (!parsed.searchParams.get('code') || row.code.includes(parsed.searchParams.get('code')))) };
         } else if (path === '/api/v1/indicators/' + window.__owners[0].id) data = window.__owners[0];
@@ -131,17 +136,36 @@ try {
   await until(() => evaluate(`!!window.__calcCenter.value.$.setupState.taskDetail`), 'task loaded')
   const text = await evaluate(`document.querySelector('.calc-task-page').innerText`)
   assert.doesNotMatch(text, /GET \/|POST \/|真实接口|不透明字符串|DAG|taskId|batchId|Worker|INDICATOR_CALC/)
-  for (const label of ['因子版本', '指标版本', '因子计算', '公式计算', '复合因子计算', '质量校验', '运行中', '已成功', '失败', '排队中', '42%']) {
+  for (const label of ['运行中', '已成功', '失败', '42%']) {
     assert.ok(text.includes(label), label)
   }
   assert.ok(text.includes('102027642461312817'))
   assert.ok(text.includes('102027642461312818'))
   assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll('.status-row')).map(el => el.innerText)`), ['状态\n运行中', '状态\n运行中'])
-  assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll('.el-table button')).map(b => b.disabled)`), [true, false, true, true])
+  assert.equal(await evaluate(`document.querySelectorAll('.calculation-targets .el-collapse-item').length`), 2)
+  assert.equal(await evaluate(`document.querySelectorAll('.dag-node').length`), 0)
+  await evaluate(`document.querySelectorAll('.calculation-targets .el-collapse-item__header')[1].click()`)
+  await until(() => evaluate(`document.querySelectorAll('.dag-node').length === 3`), 'lazy graph expanded')
+  assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll('.dag-edges polyline')).map(e => [e.dataset.from, e.dataset.to])`), [['FACTOR:5', 'FORMULA:7'], ['FORMULA:7', 'QUALITY:7']])
+  assert.ok((await evaluate(`document.querySelector('.calculation-targets').innerText`)).includes('科室 × 医生'))
+  await evaluate(`document.querySelector('[data-node-id="4"]').click()`)
+  await until(() => evaluate(`!!document.querySelector('.node-details')`), 'failed node drawer')
+  const detail = await evaluate(`document.querySelector('.el-drawer').innerText`)
+  for (const label of ['中药费用合计', '复合因子', 'V2', 'worker-test', '源数据连接暂不可用', '重试失败节点']) assert.ok(detail.includes(label), label)
+  assert.match(detail, /版本 ID\s+5/)
+  await evaluate(`Array.from(document.querySelectorAll('.el-drawer button')).find(b => b.textContent.trim() === '关闭').click()`)
+  await until(() => evaluate(`!document.querySelector('.node-details')`), 'drawer closed')
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === '取消已查批次').disabled`), false)
   await evaluate(`window.__calcBatch.status = 'SUCCEEDED'; Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === '刷新当前状态').click()`)
   await until(() => evaluate(`!window.__calcCenter.value.$.setupState.batchLoading && !window.__calcCenter.value.$.setupState.taskLoading`), 'refresh complete')
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === '取消已查批次').disabled`), true)
+  assert.equal(await evaluate(`document.querySelectorAll('.dag-node').length`), 3, 'expansion survives refresh')
+  await evaluate(`document.querySelector('[data-node-id="6"]').click()`)
+  await until(() => evaluate(`!!document.querySelector('.node-details')`), 'formula drawer')
+  assert.equal(await evaluate(`Array.from(document.querySelectorAll('.el-drawer button')).some(b => b.textContent.trim() === '重试失败节点')`), false)
+  await evaluate(`document.querySelector('.dependency-links button').click()`)
+  await until(() => evaluate(`document.querySelector('.node-heading').innerText.includes('中药费用合计')`), 'dependency navigation')
+  await evaluate(`Array.from(document.querySelectorAll('.el-drawer button')).find(b => b.textContent.trim() === '关闭').click()`)
   const calls = await evaluate(`window.__calcCalls`)
   const calculationCalls = calls.filter(call => /\/(calc|async-tasks)\//.test(call.url))
   assert.ok(calculationCalls.length >= 4)
@@ -195,6 +219,18 @@ try {
   await until(() => evaluate(`window.__calcCalls.some(call => call.url.endsWith('/calc/batches') && call.method === 'POST') && !window.__calcState().createBusy`), 'mock batch created')
   const creation = (await evaluate(`window.__calcCalls`)).find(call => call.url.endsWith('/calc/batches') && call.method === 'POST')
   assert.deepEqual(creation.body, { ownerType: 'INDICATOR', ownerVersionId: '102027642461312904', batchType: 'TRIAL', periodStart: '2000-01-01T00:00:00', periodEnd: '2030-01-01T00:00:00' })
+  await evaluate(`document.querySelector('[data-node-id="4"]').click()`)
+  await until(() => evaluate(`!!document.querySelector('.node-details')`), 'retry detail')
+  await evaluate(`Array.from(document.querySelectorAll('.el-drawer button')).find(b => b.textContent.trim() === '重试失败节点').click()`)
+  await until(() => evaluate(`!!document.querySelector('.el-message-box')`), 'retry confirmation')
+  assert.ok((await evaluate(`document.querySelector('.el-message-box').innerText`)).includes('中药费用合计'))
+  await evaluate(`Array.from(document.querySelectorAll('.el-message-box button')).find(b => b.textContent.trim() === '确认重试').click()`)
+  await until(() => evaluate(`window.__calcCalls.some(call => call.url.endsWith('/calc/nodes/4/retry') && call.method === 'POST') && !window.__calcState().retryingNodeId`), 'retry submitted')
+  assert.equal(await evaluate(`document.querySelectorAll('.dag-node').length`), 3)
+  assert.ok((await evaluate(`document.querySelector('.node-heading').innerText`)).includes('排队中'))
+  assert.equal(await evaluate(`Array.from(document.querySelectorAll('.el-drawer button')).some(b => b.textContent.trim() === '重试失败节点')`), false)
+  await evaluate(`Array.from(document.querySelectorAll('.el-drawer button')).find(b => b.textContent.trim() === '关闭').click()`)
+  await until(() => evaluate(`!document.querySelector('.node-details')`), 'retry drawer closed')
   await until(() => evaluate(`document.querySelectorAll('.el-message').length === 0`), 'notification dismissal')
   await mkdir('.tmp/calculation-task-center-browser', { recursive: true })
   for (const viewport of [{ width: 1440, height: 1000, mobile: false }, { width: 390, height: 844, mobile: true }]) {
@@ -205,7 +241,7 @@ try {
     await writeFile('.tmp/calculation-task-center-browser/' + (viewport.mobile ? 'mobile' : 'desktop') + '.png', Buffer.from((await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true })).data, 'base64'))
   }
   assert.deepEqual(errors, [])
-  console.log('PASS: task display; searchable indicator/factor selection; route preselection; version eligibility/defaults; stale versions/scenes ignored; error retry; batch payload; desktop/mobile verified. APIs mocked; no server writes.')
+  console.log('PASS: lazy target DAG, actual dependency edges, node detail/version, dependency navigation, failed-only retry, refresh persistence; task selection and batch creation regressions; desktop/mobile. APIs mocked; no server writes.')
 } finally {
   socket?.close()
   chrome.kill()
