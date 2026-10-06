@@ -62,6 +62,11 @@ try {
   })()`)
   assert.equal(payload.status, 'SUCCEEDED')
   assert.equal(payload.targets.reduce((count, t) => count + t.nodes.length, 0), 60)
+  for (const target of payload.targets) {
+    const formula = target.nodes.find(n => n.nodeType === 'FORMULA')
+    assert.deepEqual(formula.dependencies, ['FACTOR:102027642462333442', 'FACTOR:102027642462321078'])
+    assert.equal(target.nodes.reduce((count, n) => count + n.dependencies.length, 0), 5)
+  }
   assert.equal(await evaluate(`document.querySelectorAll('.dag-node').length`), 0)
   for (let index = 0; index < payload.targets.length; index++) {
     const target = payload.targets[index]
@@ -70,7 +75,7 @@ try {
     assert.equal(await evaluate(`document.querySelectorAll('.dag-node').length`), target.nodes.length)
     const codes = new Set(target.nodes.map(n => n.nodeCode))
     const expectedEdges = target.nodes.flatMap(n => [...new Set(n.dependencies)].filter(code => codes.has(code)).map(code => [code, n.nodeCode]))
-    const edges = await evaluate(`Array.from(document.querySelectorAll('.dag-edges polyline')).map(e => [e.dataset.from, e.dataset.to])`)
+    const edges = await evaluate(`Array.from(document.querySelectorAll('.dag-edge')).map(e => [e.dataset.from, e.dataset.to])`)
     assert.deepEqual(edges.sort(), expectedEdges.sort())
   }
   await evaluate(`document.querySelectorAll('.calculation-targets .el-collapse-item__header')[0].click()`)
@@ -113,6 +118,8 @@ try {
       return nodes.some((a, i) => nodes.slice(i + 1).some(b => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom));
     })()`)
     assert.equal(overlaps, false)
+    const overflowingText = await evaluate(`Array.from(document.querySelectorAll('.dag-node__header,.dag-node__footer')).some(el => el.scrollWidth > el.clientWidth + 1)`)
+    assert.equal(overflowingText, false)
     await writeFile(`.tmp/calculation-dag-live/graph-${viewport.mobile ? 'mobile' : 'desktop'}.png`, Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'))
   }
   await send('Page.navigate', { url: `${base}/calc?batchId=101996817981379215` })
@@ -121,7 +128,7 @@ try {
   await until(() => evaluate(`document.querySelectorAll('.dag-node').length === 4`), 'historical graph')
   assert.deepEqual(writes, [])
   assert.deepEqual(errors, [])
-  console.log(JSON.stringify({ status: 'PASS', batchId, targets: 10, nodes: 60, historicalNodes: 4, writes: 0, verified: ['all target dependencies', 'composite detail and upstream navigation', 'desktop/mobile layout', 'lazy rendering'] }))
+  console.log(JSON.stringify({ status: 'PASS', batchId, targets: 10, nodes: 60, edgesPerTarget: 5, historicalNodes: 4, writes: 0, verified: ['formula references only composite and total drug cost', 'all target dependencies', 'composite detail and upstream navigation', 'desktop/mobile layout', 'lazy rendering'] }))
 } finally {
   for (const request of pending.values()) request.reject(new Error('Browser closed'))
   socket?.close()

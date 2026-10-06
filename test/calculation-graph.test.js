@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { layoutCalculationGraph, targetTitle, targetPeriod } from '../src/idmp/utils/calculationGraph.js'
+import { layoutCalculationGraph, relatedGraphCodes, roundedEdgePath, targetTitle, targetPeriod } from '../src/idmp/utils/calculationGraph.js'
 
 test('actual dependency codes define edges, not node order or owner', () => {
   const nodes = [
@@ -17,10 +17,31 @@ test('actual dependency codes define edges, not node order or owner', () => {
   assert.equal(graph.problems.length, 0)
   const byCode = new Map(graph.nodes.map(n => [n.nodeCode, n]))
   for (const edge of graph.edges) assert.ok(byCode.get(edge.from).x < byCode.get(edge.to).x)
+  assert.equal(byCode.get('total').x, byCode.get('patent').x)
+  assert.equal(byCode.get('herbal').x, byCode.get('patent').x)
+  assert.equal(graph.columns.length, 4)
+  assert.equal(graph.edges.some(e => e.from.includes('__layout') || e.to.includes('__layout')), false)
+  assert.equal(graph.edges.some(e => !e.path.startsWith('M ') || e.path.includes('NaN')), false)
   for (const node of graph.nodes) {
     assert.ok(node.x - node.width / 2 >= 0)
     assert.ok(node.x + node.width / 2 <= graph.width)
   }
+})
+
+test('dependency highlight follows ancestors and descendants but not unrelated co-inputs', () => {
+  const edges = [{ from: 'a', to: 'sum' }, { from: 'b', to: 'sum' }, { from: 'sum', to: 'formula' }, { from: 'total', to: 'formula' }, { from: 'formula', to: 'quality' }]
+  assert.deepEqual([...relatedGraphCodes(edges, 'sum')].sort(), ['a', 'b', 'sum', 'formula', 'quality'].sort())
+  assert.equal(relatedGraphCodes(edges, '').size, 0)
+  assert.equal(relatedGraphCodes([{ from: 'a', to: 'b' }, { from: 'b', to: 'a' }], 'a').size, 2)
+})
+
+test('rounded connector paths retain endpoints and handle degenerate segments', () => {
+  assert.equal(roundedEdgePath([]), '')
+  const path = roundedEdgePath([{ x: 0, y: 0 }, { x: 30, y: 0 }, { x: 30, y: 40 }])
+  assert.ok(path.startsWith('M 0 0'))
+  assert.ok(path.endsWith('L 30 40'))
+  assert.ok(path.includes(' Q '))
+  assert.ok(!roundedEdgePath([{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 20, y: 20 }]).includes('NaN'))
 })
 
 test('dependencies stay target-local, repeated codes cannot generate guessed edges', () => {
