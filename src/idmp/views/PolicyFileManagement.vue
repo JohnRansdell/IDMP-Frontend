@@ -36,7 +36,7 @@
       <div v-loading="detailLoading">
         <template v-if="detail">
           <el-descriptions :column="2" border><el-descriptions-item label="编码">{{ detail.policyFile.code }}</el-descriptions-item><el-descriptions-item label="发布机构">{{ detail.policyFile.issuingOrganization || '-' }}</el-descriptions-item><el-descriptions-item label="文号">{{ detail.policyFile.documentNumber || '-' }}</el-descriptions-item><el-descriptions-item label="说明">{{ detail.policyFile.description || '-' }}</el-descriptions-item></el-descriptions>
-          <div class="section-toolbar"><h3>文件版本</h3><el-button type="primary" :icon="Upload" @click="newVersion">上传新版本</el-button></div>
+          <div class="section-toolbar"><h3>文件版本</h3><el-button type="primary" :icon="Upload" :disabled="uploading || saving" @click="newVersion">上传新版本</el-button></div>
           <el-table :data="detail.versions" empty-text="尚未上传文件版本">
             <el-table-column prop="versionNo" label="版本" width="70" />
             <el-table-column prop="issueDate" label="发布日期" width="110" />
@@ -61,23 +61,47 @@
       </div>
     </el-drawer>
 
-    <el-dialog v-model="versionVisible" :title="versionForm.id ? '编辑草稿版本' : '上传文件版本'" width="min(620px, 94vw)" :close-on-click-modal="!uploading && !saving" :close-on-press-escape="!uploading && !saving" :before-close="closeVersion">
-      <el-form label-position="top" @submit.prevent="saveVersion">
-        <el-form-item label="政策文件" required><input type="file" :accept="accept" :disabled="uploading || saving" @change="selectFile" /><span v-if="uploaded" class="upload-status">{{ uploaded.originalName }}</span></el-form-item>
-        <el-alert v-if="uploadState" :title="uploadState" :type="uploaded ? 'success' : 'info'" :closable="false" />
-        <el-form-item label="发布日期" required><el-date-picker v-model="versionForm.issueDate" type="date" value-format="YYYY-MM-DD" /></el-form-item>
-        <div class="date-row"><el-form-item label="生效日期"><el-date-picker v-model="versionForm.effectiveStartDate" type="date" value-format="YYYY-MM-DD" /></el-form-item><el-form-item label="失效日期"><el-date-picker v-model="versionForm.effectiveEndDate" type="date" value-format="YYYY-MM-DD" /></el-form-item></div>
+    <el-dialog v-model="versionVisible" class="policy-version-dialog" :title="versionForm.id ? '编辑草稿版本' : '上传文件版本'" width="min(660px, 94vw)" :close-on-click-modal="!uploading && !saving" :close-on-press-escape="!uploading && !saving" :before-close="closeVersion">
+      <div class="version-context"><span>政策文件</span><strong>{{ detail?.policyFile?.name }}</strong><StatusBadge status="DRAFT" /></div>
+      <el-form class="version-form" label-position="top" :disabled="uploading || saving" @submit.prevent="saveVersion">
+        <el-form-item label="版本文件" required class="version-file-field">
+          <input ref="fileInput" class="version-file-input" type="file" :accept="accept" :disabled="uploading || saving" aria-label="选择政策版本文件" @change="selectFile" />
+          <div class="version-upload" :class="{ 'is-dragging': dragging, 'has-file': selectedFile || uploaded, 'has-error': uploadError }" :aria-busy="uploading" @dragover.prevent="dragging = !uploading && !saving" @dragleave.prevent="dragging = false" @drop.prevent="dropFile">
+            <template v-if="selectedFile || uploaded">
+              <div class="version-file-row">
+                <el-icon class="version-file-icon"><Document /></el-icon>
+                <div class="version-file-info"><strong>{{ selectedFile?.name || uploaded.originalName }}</strong><span>{{ formatFileSize(selectedFile?.size ?? uploaded?.fileSizeBytes) }}</span></div>
+                <el-button :icon="Upload" :disabled="uploading || saving" @click="fileInput?.click()">更换文件</el-button>
+              </div>
+              <div class="version-upload-state" :class="{ 'is-success': uploaded && !uploading, 'is-error': uploadError }" role="status" aria-live="polite">
+                <el-icon v-if="uploadError"><WarningFilled /></el-icon><el-icon v-else-if="uploaded && !uploading"><CircleCheckFilled /></el-icon>
+                <span>{{ uploadError || uploadState || '文件已上传' }}</span>
+                <el-button v-if="uploadError && selectedFile" :icon="Refresh" link type="primary" :disabled="uploading || saving" @click="uploadSelectedFile(selectedFile)">重试</el-button>
+              </div>
+              <el-progress v-if="uploading" :percentage="100" :indeterminate="true" :show-text="false" :stroke-width="3" />
+            </template>
+            <template v-else>
+              <el-icon class="version-upload-icon"><UploadFilled /></el-icon>
+              <el-button :icon="Upload" :disabled="uploading || saving" @click="fileInput?.click()">选择文件</el-button>
+              <span class="version-upload-label">或将文件拖到此处</span>
+            </template>
+          </div>
+          <div class="version-upload-limit">{{ uploadFormatLabel }}<span v-if="uploadLimits"> · 最大 {{ formatFileSize(uploadLimits.maxBytes) }}</span></div>
+        </el-form-item>
+        <div class="version-date-heading">版本日期</div>
+        <el-form-item label="发布日期" required><el-date-picker v-model="versionForm.issueDate" type="date" placeholder="选择发布日期" value-format="YYYY-MM-DD" aria-label="发布日期" /></el-form-item>
+        <div class="date-row"><el-form-item label="生效日期"><el-date-picker v-model="versionForm.effectiveStartDate" type="date" placeholder="未指定" value-format="YYYY-MM-DD" aria-label="生效日期" /></el-form-item><el-form-item label="失效日期"><el-date-picker v-model="versionForm.effectiveEndDate" type="date" placeholder="未指定" value-format="YYYY-MM-DD" aria-label="失效日期" /></el-form-item></div>
       </el-form>
-      <template #footer><el-button :disabled="uploading || saving" @click="versionVisible = false">取消</el-button><el-button type="primary" :disabled="uploading || !uploaded" :loading="saving" @click="saveVersion">保存草稿</el-button></template>
+      <template #footer><el-button :disabled="uploading || saving" @click="cancelVersion">取消</el-button><el-button type="primary" :disabled="uploading || !uploaded || !versionForm.issueDate" :loading="saving" @click="saveVersion">保存草稿</el-button></template>
     </el-dialog>
     <PolicyFileViewer :version-id="viewerId" @close="viewerId = ''" />
   </div>
 </template>
 
 <script setup>
-import { onMounted, ref, reactive } from 'vue'
+import { computed, onMounted, ref, reactive } from 'vue'
 import { useRoute } from 'vue-router'
-import { Search, Refresh, Upload } from '@element-plus/icons-vue'
+import { CircleCheckFilled, Document, Search, Refresh, Upload, UploadFilled, WarningFilled } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
 import PageHeader from '@/idmp/components/PageHeader.vue'
@@ -91,6 +115,8 @@ const filters = reactive({ name: '', status: '' })
 const metadataVisible = ref(false), saving = ref(false), metadata = reactive({})
 const detailVisible = ref(false), detailLoading = ref(false), detailError = ref(''), detail = ref(null)
 const versionVisible = ref(false), versionForm = reactive({}), uploaded = ref(null), uploading = ref(false), uploadState = ref('')
+const fileInput = ref(null), selectedFile = ref(null), uploadError = ref(''), dragging = ref(false), uploadLimits = ref(null)
+const uploadFormatLabel = computed(() => (uploadLimits.value?.extensions || ['pdf', 'docx', 'txt']).map(ext => ext.toUpperCase()).join(' / '))
 const viewerId = ref(''), accept = ref('.pdf,.docx,.txt'), relationVersionId = ref(''), relations = ref([])
 const relation = reactive({ targetVersionId: '', relationType: 'REFERENCES', description: '' })
 const relationLabels = { REFERENCES: '引用', REPLACES: '替代', SUPPLEMENTS: '补充', REVISES: '修订' }
@@ -123,9 +149,15 @@ async function openDetail(row) {
   } catch (e) { if (revision === detailRevision) detailError.value = e.message }
   finally { if (revision === detailRevision) detailLoading.value = false }
 }
-function closeVersion(done) { if (!uploading.value && !saving.value) { versionRevision++; done() } }
-function newVersion() { versionRevision++; Object.assign(versionForm, { id: '', resourceVersion: 0, issueDate: '', effectiveStartDate: '', effectiveEndDate: '' }); uploaded.value = null; uploadState.value = ''; versionVisible.value = true }
+function closeVersion(done) { if (!uploading.value && !saving.value) { versionRevision++; dragging.value = false; done() } }
+function cancelVersion() { if (!uploading.value && !saving.value) { versionRevision++; dragging.value = false; versionVisible.value = false } }
+function newVersion() {
+  if (uploading.value || saving.value) return
+  versionRevision++; Object.assign(versionForm, { id: '', resourceVersion: 0, issueDate: '', effectiveStartDate: '', effectiveEndDate: '' })
+  uploaded.value = null; selectedFile.value = null; uploadState.value = ''; uploadError.value = ''; dragging.value = false; versionVisible.value = true
+}
 async function editVersion(row) {
+  if (uploading.value || saving.value) return
   newVersion(); Object.assign(versionForm, row)
   const revision = versionRevision
   try { if (row.fileObjectId) { const file = await api.fetchPolicyFile(row.fileObjectId); if (revision === versionRevision && versionVisible.value) uploaded.value = file } }
@@ -133,11 +165,30 @@ async function editVersion(row) {
 }
 async function selectFile(event) {
   const file = event.target.files?.[0]; if (!file) return
-  versionRevision++
+  try { await uploadSelectedFile(file) } finally { event.target.value = '' }
+}
+function formatFileSize(bytes) {
+  if (!Number.isFinite(Number(bytes)) || bytes == null) return '-'
+  if (bytes >= 1024 * 1024) return `${Number((bytes / 1024 / 1024).toFixed(2))} MB`
+  return `${Number((bytes / 1024).toFixed(1))} KB`
+}
+async function dropFile(event) {
+  dragging.value = false
+  if (uploading.value || saving.value) return
+  if (event.dataTransfer?.files?.length !== 1) return ElMessage.warning('每个版本请选择一个文件')
+  await uploadSelectedFile(event.dataTransfer.files[0])
+}
+async function uploadSelectedFile(file) {
+  if (uploading.value || saving.value) return
+  const revision = ++versionRevision
+  selectedFile.value = file; uploadError.value = ''; uploadState.value = '正在校验文件'
   uploading.value = true; uploaded.value = null
-  try { const result = await api.uploadPolicyFile(file, state => { uploadState.value = state }); uploaded.value = result.file; uploadState.value = result.instantUpload ? '秒传完成' : '上传完成' }
-  catch (e) { uploadState.value = ''; ElMessage.error(e.message) }
-  finally { uploading.value = false; event.target.value = '' }
+  try {
+    const result = await api.uploadPolicyFile(file, state => { if (revision === versionRevision) uploadState.value = state })
+    if (revision !== versionRevision || !versionVisible.value) return
+    uploaded.value = result.file; uploadState.value = result.instantUpload ? '秒传完成' : '上传完成'
+  } catch (e) { if (revision === versionRevision) { uploadState.value = ''; uploadError.value = e.message || '上传失败，请重试' } }
+  finally { if (revision === versionRevision) uploading.value = false }
 }
 async function saveVersion() {
   if (saving.value || uploading.value) return
@@ -181,7 +232,7 @@ async function saveRelation() {
 }
 onMounted(async () => {
   load()
-  try { const options = await api.fetchPolicyUploadOptions(); accept.value = options.extensions.map(ext => `.${ext}`).join(',') } catch (e) { ElMessage.error(e.message) }
+  try { const options = await api.fetchPolicyUploadOptions(); uploadLimits.value = options; accept.value = options.extensions.map(ext => `.${ext}`).join(',') } catch (e) { ElMessage.error(e.message) }
   if (route.query.id) openDetail({ id: route.query.id })
 })
 </script>
@@ -194,8 +245,39 @@ onMounted(async () => {
 .section-toolbar { display: flex; justify-content: space-between; align-items: center; margin: 24px 0 12px; }
 .section-toolbar h3 { font-size: 16px; margin: 0; }
 .relation-form { display: grid; grid-template-columns: minmax(200px, 2fr) minmax(100px, 1fr); gap: 12px; margin-top: 16px; }
-.date-row { display: flex; gap: 16px; flex-wrap: wrap; }
-.upload-status { margin-left: 12px; overflow-wrap: anywhere; }
-input[type=file] { max-width: 100%; }
+.version-context { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding-bottom: 18px; border-bottom: 1px solid var(--idmp-border-subtle, #e5e7eb); }
+.version-context > span { color: var(--idmp-text-secondary, #606266); font-size: 13px; }
+.version-context strong { flex: 1; min-width: 120px; overflow-wrap: anywhere; font-size: 14px; font-weight: 600; }
+.version-form { margin-top: 20px; }
+.version-file-input { display: none; }
+.version-upload { width: 100%; min-height: 158px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 20px; border: 1px dashed var(--idmp-border-strong, #b8c2ce); border-radius: 6px; background: var(--idmp-layer-01, #f8fafb); transition: border-color .15s, background .15s; }
+.version-upload.is-dragging { border-color: var(--idmp-interactive, #409eff); background: var(--el-color-primary-light-9); }
+.version-upload.has-file { align-items: stretch; min-height: 126px; border-style: solid; }
+.version-upload.has-error { border-color: var(--el-color-danger-light-5); }
+.version-upload-icon { font-size: 30px; color: var(--idmp-text-secondary, #606266); }
+.version-upload-label, .version-upload-limit { color: var(--idmp-text-secondary, #606266); font-size: 12px; line-height: 20px; }
+.version-upload-limit { width: 100%; margin-top: 6px; }
+.version-file-row { display: flex; align-items: center; gap: 12px; width: 100%; }
+.version-file-icon { flex-shrink: 0; font-size: 26px; color: var(--idmp-interactive, #409eff); }
+.version-file-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.version-file-info strong { overflow-wrap: anywhere; line-height: 22px; font-size: 14px; font-weight: 600; }
+.version-file-info > span { font-size: 12px; line-height: 18px; color: var(--idmp-text-secondary, #606266); }
+.version-file-row .el-button { flex-shrink: 0; }
+.version-upload-state { display: flex; align-items: flex-start; gap: 6px; font-size: 13px; line-height: 20px; }
+.version-upload-state > span { min-width: 0; overflow-wrap: anywhere; }
+.version-upload-state > .el-icon { margin-top: 3px; flex-shrink: 0; }
+.version-upload-state.is-success { color: var(--el-color-success-dark-2); }
+.version-upload-state.is-error { color: var(--el-color-danger); }
+.version-upload-state .el-button { margin-left: auto; flex-shrink: 0; }
+.version-date-heading { margin: 22px 0 16px; padding-top: 18px; border-top: 1px solid var(--idmp-border-subtle, #e5e7eb); font-size: 14px; font-weight: 600; }
+.version-form :deep(.el-date-editor.el-input) { width: 100%; }
+.date-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 420px) {
+  .date-row { grid-template-columns: 1fr; gap: 0; }
+  .version-upload { padding: 14px; }
+  .version-file-row { display: grid; grid-template-columns: 26px minmax(0, 1fr); align-items: start; }
+  .version-file-row .el-button { grid-column: 2; justify-self: start; margin-left: 0; }
+  :global(.policy-version-dialog) { margin-top: 16px; margin-bottom: 16px; max-height: calc(100dvh - 32px); overflow-y: auto; }
+}
 @media (max-width: 600px) { .relation-form { grid-template-columns: 1fr; } .policy-filters .el-input { width: 100%; } }
 </style>
