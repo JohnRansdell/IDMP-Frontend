@@ -95,7 +95,7 @@ export const factorRows = [
   { code: 'F-003', name: '住院死亡患者人数', type: '原子因子', category: '死亡', aggregation: 'COUNT_DISTINCT', domain: '住院+死亡', references: 8, status: '已发布' },
   { code: 'F-004', name: '出院患者人数', type: '原子因子', category: '住院', aggregation: 'COUNT_DISTINCT', domain: '住院就诊', references: 12, status: '已发布' },
   { code: 'F-005', name: '抗菌药物使用DDD数', type: '原子因子', category: '用药', aggregation: 'SUM', domain: '抗菌药物', references: 2, status: '已发布' },
-  { code: 'F-010', name: '医疗服务收入（不含药品耗材检查）', type: '组合因子', category: '费用', aggregation: 'SUM', domain: '费用明细', references: 2, status: '已发布' },
+  { code: 'F-010', name: '医疗服务收入（不含药品耗材检查）', type: '复合因子', category: '费用', aggregation: 'SUM', domain: '费用明细', references: 2, status: '已发布' },
   { code: 'F-011', name: '急诊抢救室滞留时间（中位数）', type: '原子因子', category: '急诊', aggregation: 'MEDIAN', domain: '急诊就诊', references: 1, status: '草稿' }
 ]
 

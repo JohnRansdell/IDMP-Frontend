@@ -1,11 +1,38 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { newDerivedFactor, newExpression, validateDerivedFactor, configurableSourceFactors, activeSourceBindings } from '../src/idmp/utils/derivedFactor.js'
 import { inheritedFactorParameters } from '../src/idmp/utils/factorRuntimeParameters.js'
+import { getFactorTypeLabel } from '../src/idmp/utils/factorType.js'
 const source = (id, grain = [], status = 'PUBLISHED') => ({ id, status, output: { grain } })
 const fixture = () => ({ ...newDerivedFactor(), primaryDomain: { domainCode: 'INPATIENT_VISIT' },
   expression: { nodeType: 'BINARY', operator: 'DIV', zeroDenominatorPolicy: 'RETURN_NULL', left: { nodeType: 'FACTOR_REF', factorVersionId: '102027642461800096' }, right: { nodeType: 'FACTOR_REF', factorVersionId: '102027642461800094' } } })
 const versions = [source('102027642461800096'), source('102027642461800094')]
+
+test('factor list uses returned definition kind and does not guess missing types', () => {
+  assert.equal(getFactorTypeLabel('SOURCE'), '原子因子')
+  assert.equal(getFactorTypeLabel('DERIVED'), '复合因子')
+  assert.equal(getFactorTypeLabel('源表因子'), '原子因子')
+  assert.equal(getFactorTypeLabel('组合因子'), '复合因子')
+  assert.equal(getFactorTypeLabel(undefined), '-')
+  assert.equal(getFactorTypeLabel('UNKNOWN'), '-')
+  const management = readFileSync(new URL('../src/idmp/views/FactorManagement.vue', import.meta.url), 'utf8')
+  assert.match(management, /getFactorTypeLabel\(item\.definitionKind \|\| item\.factorKind \|\| item\.type\)/)
+})
+
+test('factor type labels consistently use atomic and composite terminology', () => {
+  const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
+  const editor = read('../src/idmp/views/FactorEditor.vue')
+  const management = read('../src/idmp/views/FactorManagement.vue')
+  const trace = read('../src/idmp/components/FactorTraceTree.vue')
+  const demo = read('../src/idmp/data/demo.js')
+  assert.match(editor, /label="SOURCE">原子因子/)
+  assert.match(editor, /label="DERIVED">复合因子/)
+  assert.match(management, /label="复合因子" value="复合因子"/)
+  assert.match(trace, /'复合因子' : '原子因子'/)
+  assert.doesNotMatch(editor + trace + demo, /源表因子|组合因子/)
+  assert.doesNotMatch(management, /label="(?:源表因子|组合因子)"/)
+})
 test('derived definition has no SQL source configuration', () => {
   const dsl = newDerivedFactor()
   assert.equal(dsl.definitionKind, 'DERIVED')

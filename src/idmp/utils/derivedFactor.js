@@ -71,7 +71,7 @@ export function configurableSourceFactors(selected = [], capability = {}, catalo
   return [...new Set(ids.map(String))].map(id => {
     const option = options.find(item => String(item.factorVersionId) === id)
     const factor = [...selected, ...catalog].find(item => String(item.versionId) === id)
-    return { ...factor, versionId: id, name: option?.factorName || factor?.name || `源因子版本 ${id}` }
+    return { ...factor, versionId: id, name: option?.factorName || factor?.name || `原子因子版本 ${id}` }
   })
 }
 

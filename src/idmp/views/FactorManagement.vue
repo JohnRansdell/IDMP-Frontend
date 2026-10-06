@@ -53,7 +53,7 @@
         <el-form-item>
           <el-select v-model="form.type" class="filter-select" clearable placeholder="因子类型" aria-label="按因子类型筛选">
             <el-option label="原子因子" value="原子因子" />
-            <el-option label="组合因子" value="组合因子" />
+            <el-option label="复合因子" value="复合因子" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -174,6 +174,7 @@ import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
 import { factorRows } from '@/idmp/data/demo'
 import { getStatusLabel } from '@/idmp/design/status'
 import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
+import { getFactorTypeLabel } from '@/idmp/utils/factorType'
 import { hasPermission, sessionState } from '@/idmp/auth/session'
 
 const router = useRouter()
@@ -277,7 +278,7 @@ function toFactorRow(item) {
     id: item.id ?? item.factorId ?? '',
     code: item.code || item.factorCode || '',
     name: item.name || item.factorName || '',
-    type: item.type || '原子因子',
+    type: getFactorTypeLabel(item.definitionKind || item.factorKind || item.type),
     category: item.category || '后端因子',
     aggregation: item.aggregation || item.output?.dimension || '-',
     domain: item.domain || item.domainCode || '-',
