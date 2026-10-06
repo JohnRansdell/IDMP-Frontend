@@ -2,9 +2,20 @@
   <div class="idmp-page factor-editor">
   <PageHeader :title="pageTitle"><template #actions><div class="page-toolbar"><el-button :icon="ArrowLeft" @click="router.push('/factor')">返回列表</el-button><el-button type="primary" :loading="loading.save" :disabled="workflow.published || !!unsupportedDsl || !!periodConfigurationError" @click="saveFactor">{{ isCreate ? '保存因子定义' : '保存修改' }}</el-button></div></template></PageHeader>
   <el-alert v-if="periodConfigurationError" type="error" :closable="false" :title="periodConfigurationError" /><el-alert v-if="!isCreate" class="editor-alert" :type="unsupportedDsl ? 'warning' : 'info'" show-icon :closable="false" :title="unsupportedDsl ? '该因子使用 SQL 或高级表达式，请通过原创建方式修改计算口径。' : workflow.message || '保存草稿后可继续完成编译、试算和发布。'" />
-    <section class="surface-card editor-section"><div class="section-title"><span class="section-number">1</span><div><h2>基础信息</h2><p>填写因子的编码、名称和业务说明，保存后会生成可继续校验的因子草稿。</p></div></div><el-form ref="basicFormRef" :model="basicForm" :rules="basicRules" label-width="88px"><el-row :gutter="16"><el-col :xs="24" :md="8"><el-form-item label="因子编码" prop="code"><el-input v-model.trim="basicForm.code" :disabled="!isCreate" placeholder="请输入唯一业务编码" /></el-form-item></el-col><el-col :xs="24" :md="8"><el-form-item label="因子名称" prop="name"><el-input v-model.trim="basicForm.name" placeholder="请输入因子名称" /></el-form-item></el-col><el-col :xs="24" :md="8"><el-form-item label="业务分类"><el-input v-model.trim="basicForm.category" placeholder="如：医疗质量" /></el-form-item></el-col></el-row><el-form-item label="说明"><el-input v-model.trim="basicForm.description" type="textarea" :rows="2" placeholder="说明因子的业务含义、统计口径或使用场景" /></el-form-item></el-form><div v-if="workflow.factorId || workflow.versionId" class="saved-summary"><span>因子 ID：<strong>{{ workflow.factorId || '-' }}</strong></span><span>版本 ID：<strong>{{ workflow.versionId || '-' }}</strong></span><span>保存状态：<strong>{{ getStatusLabel(workflow.status || 'DRAFT') }}</strong></span></div></section>
-    <section class="surface-card editor-section" aria-label="因子定义方式">
-      <el-radio-group v-model="definitionKind" :disabled="!isCreate || !!template.templateId"><el-radio-button label="SOURCE">原子因子</el-radio-button><el-radio-button label="DERIVED">复合因子</el-radio-button></el-radio-group>
+    <section class="surface-card editor-section">
+      <div class="section-title"><span class="section-number">1</span><div><h2>基础信息</h2><p>填写因子的编码、名称和业务说明，保存后会生成可继续校验的因子草稿。</p></div></div>
+      <el-form ref="basicFormRef" :model="basicForm" :rules="basicRules" label-width="88px">
+        <el-row :gutter="16"><el-col :xs="24" :md="8"><el-form-item label="因子编码" prop="code"><el-input v-model.trim="basicForm.code" :disabled="!isCreate" placeholder="请输入唯一业务编码" /></el-form-item></el-col><el-col :xs="24" :md="8"><el-form-item label="因子名称" prop="name"><el-input v-model.trim="basicForm.name" placeholder="请输入因子名称" /></el-form-item></el-col><el-col :xs="24" :md="8"><el-form-item label="业务分类"><el-input v-model.trim="basicForm.category" placeholder="如：医疗质量" /></el-form-item></el-col></el-row>
+        <el-form-item label="说明"><el-input v-model.trim="basicForm.description" type="textarea" :rows="2" placeholder="说明因子的业务含义、统计口径或使用场景" /></el-form-item>
+        <el-form-item label="因子类别" class="definition-kind-field">
+          <el-radio-group v-if="isCreate && !template.templateId" v-model="definitionKind" class="definition-kind-selector" aria-label="因子定义方式">
+            <el-radio-button label="SOURCE">原子因子</el-radio-button>
+            <el-radio-button label="DERIVED">复合因子</el-radio-button>
+          </el-radio-group>
+          <strong v-else class="definition-kind-current" :class="{ 'is-derived': isDerived }" aria-label="当前因子类别">{{ isDerived ? '复合因子' : '原子因子' }}</strong>
+        </el-form-item>
+      </el-form>
+      <div v-if="workflow.factorId || workflow.versionId" class="saved-summary"><span>因子 ID：<strong>{{ workflow.factorId || '-' }}</strong></span><span>版本 ID：<strong>{{ workflow.versionId || '-' }}</strong></span><span>保存状态：<strong>{{ getStatusLabel(workflow.status || 'DRAFT') }}</strong></span></div>
     </section>
     <DerivedFactorEditor v-if="isDerived" ref="derivedEditorRef" v-model="derivedDsl" :domains="domains" :disabled="workflow.published" />
     <template v-if="!isDerived">
@@ -341,6 +352,18 @@ function describeNode(node){if(!node)return'';if(node.nodeType==='PREDICATE'){co
 function operatorLabel(value){return({EQ:'等于',IN:'属于',IN_VALUE_SET:'属于值集',GTE:'晚于或等于',LTE:'早于或等于',GT:'大于',LT:'小于',BETWEEN:'位于范围'})[value]||value||''}function normalize(x){if(Array.isArray(x))return x;return x?.records||x?.list||x?.items||x?.data||[]}
 </script>
 <style scoped>
+.definition-kind-field{margin-bottom:0}
+.definition-kind-field :deep(.el-form-item__label){height:38px;line-height:38px}
+.definition-kind-current{display:inline-flex;align-items:center;min-height:30px;padding:0 12px;border-radius:4px;background:#eef5fd;color:#175b9c;font-size:14px;font-weight:600;line-height:22px}
+.definition-kind-current.is-derived{background:#edf7f3;color:#206b51}
+.definition-kind-selector{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;width:264px;max-width:100%;padding:3px;background:#f1f3f5;border:1px solid #e5e7eb;border-radius:6px}
+.definition-kind-selector :deep(.el-radio-button){min-width:0}
+.definition-kind-selector :deep(.el-radio-button__inner){display:flex;align-items:center;justify-content:center;width:100%;height:30px;padding:0 12px;border:0!important;border-radius:4px;box-shadow:none!important;background:transparent;color:#606770;font-size:14px;font-weight:400;transition:background-color .15s,color .15s}
+.definition-kind-selector :deep(.el-radio-button:not(.is-disabled):not(.is-active):hover .el-radio-button__inner){background:#e8ebef;color:#303640}
+.definition-kind-selector :deep(.el-radio-button.is-active .el-radio-button__inner){background:#fff;color:#1677c2;font-weight:600;box-shadow:0 1px 3px #00000014!important}
+.definition-kind-selector :deep(.el-radio-button.is-disabled .el-radio-button__inner){cursor:not-allowed}
+.definition-kind-selector :deep(.el-radio-button__original-radio:focus-visible + .el-radio-button__inner){outline:2px solid #1677ff;outline-offset:3px}
+@media(max-width:480px){.definition-kind-field{flex-direction:column}.definition-kind-field :deep(.el-form-item__label){justify-content:flex-start;width:auto!important;height:28px;line-height:28px}.definition-kind-field :deep(.el-form-item__content){width:100%;margin-left:0!important}.definition-kind-selector{width:100%}.definition-kind-selector :deep(.el-radio-button__inner){padding:0 8px}}
 @media (max-width: 600px) {
   .workflow-steps { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
   .workflow-steps :deep(.el-step.is-simple) { flex: none; max-width: none; }

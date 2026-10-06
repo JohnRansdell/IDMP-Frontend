@@ -74,6 +74,9 @@ function mockBackend() {
     else if (p === '/factors/4') data = { id: '4', code: 'SQL_TEMPORAL', name: 'SQL时序因子', currentPublishedVersionId: '6', status: 'PUBLISHED' }
     else if (p === '/factors/4/versions') data = [{ id: '6', versionNo: 1, status: 'PUBLISHED' }]
     else if (p === '/factor-versions/6') data = { id: '6', currentArtifactId: '22', status: 'PUBLISHED', dsl: { definitionType: 'SQL', sqlTemplate: 'SELECT COUNT(*) FROM visit b JOIN diagnosis d ON b.id=d.visit_id', periodColumn: 'd.diagnosis_time', calculationMode: 'TEMPORAL' } }
+    else if (p === '/factors/5') data = { id: '5', code: 'DERIVED_TEST', name: '复合因子类别测试', draftVersionId: '7', status: 'DRAFT' }
+    else if (p === '/factors/5/versions') data = [{ id: '7', versionNo: 1, publicationStatus: 'DRAFT' }]
+    else if (p === '/factor-versions/7') data = { id: '7', publicationStatus: 'DRAFT', dsl: { schemaVersion: '1.1', dslType: 'FACTOR', definitionKind: 'DERIVED', calculationMode: 'STATIC', primaryDomain: { domainCode: 'VISIT' }, expression: { nodeType: 'BINARY', operator: 'ADD', left: { nodeType: 'FACTOR_REF', factorVersionId: '6', alignmentPolicy: 'STRICT_EQUAL' }, right: { nodeType: 'CONST', value: '1' } }, output: { valueType: 'DECIMAL', semanticKind: 'MEASURE', dimension: 'COUNT', unit: 'COUNT', grain: [] } } }
     else if (p === '/compile-artifacts/22') data = { logicalPlan: { periodBinding: { tableAlias: 'd', physicalTable: 'diagnosis', physicalColumn: 'diagnosis_time', expression: 'd.diagnosis_time' } } }
     else if (p === '/factor-versions/6/compile') data = { artifactId: '22', status: 'VALID' }
     else if (p === '/factor-versions/6/trial-period-recommendation') data = { availabilityStatus: 'NO_DATA' }
@@ -118,6 +121,25 @@ try {
   await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `(${mockBackend.toString()})()` })
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false })
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${appPort}/factor/edit/new` })
+  await waitFor(()=>evaluate(`!!document.querySelector('.definition-kind-selector')`))
+  assert.equal(await evaluate(`document.querySelector('.definition-kind-selector').closest('section').querySelector('h2').textContent`), '基础信息')
+  assert.equal(await evaluate(`document.querySelector('.definition-kind-selector .is-active').textContent`), '原子因子')
+  await click(`document.querySelectorAll('.definition-kind-selector .el-radio-button')[1]`)
+  await waitFor(()=>evaluate(`!!document.querySelector('[aria-label="复合因子定义"]')`))
+  assert.equal(await evaluate(`document.querySelector('.definition-kind-selector .is-active').textContent`), '复合因子')
+  await mkdir('.tmp/factor-physical-browser', { recursive: true })
+  for (const viewport of [{width:1440,height:1000,mobile:false},{width:390,height:844,mobile:true}]) {
+    await cdp.send('Emulation.setDeviceMetricsOverride', {...viewport,deviceScaleFactor:1})
+    await delay(150)
+    await writeFile(`.tmp/factor-physical-browser/category-${viewport.mobile?'mobile':'desktop'}.png`,Buffer.from((await cdp.send('Page.captureScreenshot',{format:'png'})).data,'base64'))
+    const categoryLayout=await evaluate(`(() => {const items=[...document.querySelectorAll('.definition-kind-selector .el-radio-button__inner')];return {viewport:innerWidth,items:items.map(el=>{const r=el.getBoundingClientRect();return {height:r.height,width:r.width,left:r.left,right:r.right,background:getComputedStyle(el).backgroundColor}})}})()`)
+    assert.ok(categoryLayout.items.every(r=>r.height===30&&r.width>100&&r.left>=0&&r.right<=categoryLayout.viewport),JSON.stringify(categoryLayout))
+    assert.ok(categoryLayout.items[0].right<categoryLayout.items[1].left,JSON.stringify(categoryLayout))
+    assert.notEqual(categoryLayout.items[0].background,categoryLayout.items[1].background)
+  }
+  await cdp.send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false})
+  await click(`document.querySelectorAll('.definition-kind-selector .el-radio-button')[0]`)
+  await waitFor(()=>evaluate(`!!document.querySelector('.caliber-section')`))
   await waitFor(()=>evaluate(`!!document.querySelector('.factor-editor')`)); await fixture()
   for (const [templateId, versionId] of [['', ''], ['', '3'], ['10', ''], ['10', '3']]) {
     await evaluate(`window.__factorFixture.template.templateId=${JSON.stringify(templateId)};window.__factorFixture.workflow.versionId=${JSON.stringify(versionId)}`)
@@ -190,6 +212,8 @@ try {
   await evaluate(`window.__restoreOriginalDsl()`)
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${appPort}/factor/edit/1` })
   await waitFor(()=>evaluate(`document.querySelector('.join-target strong')?.textContent==='diagnosis'`)); await fixture()
+  assert.equal(await evaluate(`document.querySelector('.definition-kind-selector')`),null)
+  assert.equal(await evaluate(`document.querySelector('[aria-label="当前因子类别"]').textContent`),'原子因子')
   await waitFor(()=>evaluate(`window.__factorFixture.fields.length===6`))
   assert.equal(await evaluate(`window.__factorFixture.dslForm.fieldCode`), 'join1.visit_id')
   assert.deepEqual(await evaluate(`Array.from(window.__factorFixture.dslForm.groupBy)`), ['dept_code','join1.diagnosis'])
@@ -220,6 +244,16 @@ try {
   assert.equal(await evaluate(`window.__factorFixture.dslForm.fieldCode`), 'join1.visit_id')
   assert.deepEqual(await evaluate(`Array.from(window.__factorFixture.dslForm.groupBy)`), ['dept_code','join1.diagnosis'])
   assert.equal(await evaluate(`window.__factorFixture.dslForm.periodColumn`), 'in_date')
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${appPort}/factor/edit/5` })
+  await waitFor(()=>evaluate(`document.querySelector('[aria-label="当前因子类别"]')?.textContent==='复合因子'`))
+  assert.equal(await evaluate(`document.querySelector('.definition-kind-selector')`),null)
+  assert.equal(await evaluate(`!!document.querySelector('[aria-label="复合因子定义"]')`),true)
+  for (const viewport of [{width:1440,height:1000,mobile:false},{width:390,height:844,mobile:true}]) {
+    await cdp.send('Emulation.setDeviceMetricsOverride',{...viewport,deviceScaleFactor:1})
+    await evaluate(`window.scrollTo(0,0)`)
+    await delay(150)
+    await writeFile(`.tmp/factor-physical-browser/category-readonly-${viewport.mobile?'mobile':'desktop'}.png`,Buffer.from((await cdp.send('Page.captureScreenshot',{format:'png'})).data,'base64'))
+  }
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${appPort}/factor/edit/3` })
   await waitFor(()=>evaluate(`document.querySelector('.editor-alert')?.textContent.includes('该因子使用 SQL')`))
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('button')).find(el=>el.textContent.trim()==='保存修改').disabled`), true)
