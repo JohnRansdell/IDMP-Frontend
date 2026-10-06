@@ -80,12 +80,12 @@
             <div v-if="readableFormula?.expression" class="formula-expression" :aria-label="readableFormula.displayExpression || readableFormula.expression">
               <template v-if="formulaRatio">
                 <div class="formula-fraction">
-                  <span class="formula-numerator"><template v-for="(segment, index) in formulaRatio.numerator" :key="index"><button v-if="segment.factorVersionId" type="button" class="formula-factor-link" :disabled="!!factorNavigationPending" @click="openFactorEditor(segment.factorVersionId)">{{ segment.text }}</button><span v-else>{{ segment.text }}</span></template></span>
-                  <span class="formula-denominator"><template v-for="(segment, index) in formulaRatio.denominator" :key="index"><button v-if="segment.factorVersionId" type="button" class="formula-factor-link" :disabled="!!factorNavigationPending" @click="openFactorEditor(segment.factorVersionId)">{{ segment.text }}</button><span v-else>{{ segment.text }}</span></template></span>
+                  <span class="formula-numerator"><template v-for="(segment, index) in formulaRatio.numerator" :key="index"><el-tooltip v-if="segment.factorVersionId" :content="factorVersionTooltip(segment.factorVersionId)" placement="top" effect="light" :trigger="['hover', 'focus']" :show-after="180" popper-class="formula-factor-version-tooltip"><button type="button" class="formula-factor-link" :disabled="!!factorNavigationPending" @mouseenter="loadFormulaFactorVersion(segment.factorVersionId)" @focus="loadFormulaFactorVersion(segment.factorVersionId)" @click="openFactorEditor(segment.factorVersionId)">{{ segment.text }}</button></el-tooltip><span v-else>{{ segment.text }}</span></template></span>
+                  <span class="formula-denominator"><template v-for="(segment, index) in formulaRatio.denominator" :key="index"><el-tooltip v-if="segment.factorVersionId" :content="factorVersionTooltip(segment.factorVersionId)" placement="top" effect="light" :trigger="['hover', 'focus']" :show-after="180" popper-class="formula-factor-version-tooltip"><button type="button" class="formula-factor-link" :disabled="!!factorNavigationPending" @mouseenter="loadFormulaFactorVersion(segment.factorVersionId)" @focus="loadFormulaFactorVersion(segment.factorVersionId)" @click="openFactorEditor(segment.factorVersionId)">{{ segment.text }}</button></el-tooltip><span v-else>{{ segment.text }}</span></template></span>
                 </div>
                 <span v-if="formulaRatio.suffix" class="formula-suffix">{{ formulaRatio.suffix }}</span>
               </template>
-              <span v-else><template v-for="(segment, index) in formulaSegments" :key="index"><button v-if="segment.factorVersionId" type="button" class="formula-factor-link" :disabled="!!factorNavigationPending" @click="openFactorEditor(segment.factorVersionId)">{{ segment.text }}</button><template v-else>{{ segment.text }}</template></template></span>
+              <span v-else><template v-for="(segment, index) in formulaSegments" :key="index"><el-tooltip v-if="segment.factorVersionId" :content="factorVersionTooltip(segment.factorVersionId)" placement="top" effect="light" :trigger="['hover', 'focus']" :show-after="180" popper-class="formula-factor-version-tooltip"><button type="button" class="formula-factor-link" :disabled="!!factorNavigationPending" @mouseenter="loadFormulaFactorVersion(segment.factorVersionId)" @focus="loadFormulaFactorVersion(segment.factorVersionId)" @click="openFactorEditor(segment.factorVersionId)">{{ segment.text }}</button></el-tooltip><template v-else>{{ segment.text }}</template></template></span>
             </div>
             <el-alert v-for="warning in formulaWarnings" :key="warning" :title="warning" type="warning" :closable="false" show-icon />
             <p v-if="formulaNotes.length" class="formula-notes">{{ formulaNotes.join('；') }}</p>
@@ -248,13 +248,45 @@ const formulaWarnings = computed(() => readableFormula.value?.warnings?.length ?
 const formulaRatio = computed(() => splitFormulaFraction(selectedVersion.value?.formula, readableFormula.value))
 const formulaSegments = computed(() => splitFormulaLinks(readableFormula.value?.displayExpression || readableFormula.value?.expression, readableFormula.value?.factors))
 const factorNavigationPending = ref('')
+const formulaFactorVersions = reactive({})
+const formulaFactorVersionErrors = reactive({})
+const formulaFactorVersionRequests = new Map()
+function factorVersionTooltip(versionId) {
+  const id = String(versionId)
+  const version = formulaFactorVersions[id]
+  const lines = [`版本 ID：${id}`]
+  if (version) {
+    lines.unshift(version.versionNo == null ? '版本号暂未提供' : `版本：V${version.versionNo}`)
+    const status = version.publicationStatus || version.status
+    if (status) lines.push(`状态：${getStatusLabel(status)}`)
+  } else {
+    lines.push(formulaFactorVersionErrors[id] ? '版本信息暂时无法读取，请重新悬停重试' : '正在读取版本信息')
+  }
+  return lines.join('\n')
+}
+function loadFormulaFactorVersion(versionId) {
+  const id = String(versionId)
+  if (formulaFactorVersions[id]) return Promise.resolve(formulaFactorVersions[id])
+  if (formulaFactorVersionRequests.has(id)) return formulaFactorVersionRequests.get(id)
+  formulaFactorVersionErrors[id] = false
+  const request = fetchFactorVersion(id).then(version => {
+    if (!version?.factorId) throw new Error('因子版本信息不完整')
+    formulaFactorVersions[id] = version
+    return version
+  }).catch(() => {
+    formulaFactorVersionErrors[id] = true
+    return null
+  }).finally(() => formulaFactorVersionRequests.delete(id))
+  formulaFactorVersionRequests.set(id, request)
+  return request
+}
 async function openFactorEditor(versionId) {
   if (factorNavigationPending.value) return
   const indicatorVersionId = selectedVersionId.value
   const origin = route.fullPath
   factorNavigationPending.value = versionId
   try {
-    const factorVersion = await fetchFactorVersion(versionId)
+    const factorVersion = await loadFormulaFactorVersion(versionId)
     if (selectedVersionId.value !== indicatorVersionId || route.fullPath !== origin) return
     if (!factorVersion?.factorId) throw new Error('未找到对应的因子，请刷新后重试。')
     await router.push({ name: 'FactorEditor', params: { id: String(factorVersion.factorId) }, query: { factorVersionId: versionId } })
@@ -728,5 +760,15 @@ onMounted(loadIndicatorDetail)
   .policy-reference-form { grid-template-columns: 1fr; }
   .formula-expression { flex-wrap: wrap; gap: 10px; font-size: 14px; }
   .formula-suffix { flex-shrink: 1; }
+}
+</style>
+
+<style>
+.el-popper.formula-factor-version-tooltip {
+  max-width: min(320px, calc(100vw - 32px));
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.6;
 }
 </style>
