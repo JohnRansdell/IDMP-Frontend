@@ -63,6 +63,36 @@ test('old derived artifacts inherit parameters from frozen source dependencies',
   const root={id:'C',logicalPlan:{factorDependencies:[{factorVersionId:'A',artifactHash:'sha256:a'}]}}
   assert.deepEqual((await inheritedFactorParameters(root,async()=>leaf)).map(item=>item.code),['patientName'])
 })
+
+test('source factors expose business parameters but not system-provided inputs', async () => {
+  const patientName={code:'patientName',type:'STRING',required:false,parameterMode:'TEMPORARY'}
+  const requiredDate={code:'admissionDate',type:'DATETIME',required:true,systemProvided:false,parameterMode:'TEMPORARY'}
+  const root={id:'A',parameterSchema:{parameters:[patientName,requiredDate,
+    {code:'period',type:'DATETIME_RANGE',required:true,systemProvided:true},
+    {code:'executionContext',type:'STRING',required:true,systemProvided:true}]}}
+  assert.deepEqual(await inheritedFactorParameters(root,async()=>assert.fail('no dependencies')), [patientName,requiredDate])
+})
+
+test('composite factors exclude system inputs at every dependency level', async () => {
+  const period={code:'period',type:'DATETIME_RANGE',required:true,systemProvided:true}
+  const patientName={code:'patientName',type:'STRING',required:false,parameterMode:'TEMPORARY'}
+  const root={id:'C',parameterSchema:{parameters:[period]},logicalPlan:{factorDependencies:[{factorVersionId:'B'}]}}
+  const artifacts={
+    B:{id:'B',parameterSchema:{parameters:[period]},logicalPlan:{factorDependencies:[{factorVersionId:'A'}]}},
+    A:{id:'A',parameterSchema:{parameters:[patientName,period]}}
+  }
+  assert.deepEqual(await inheritedFactorParameters(root,async id=>artifacts[id]), [patientName])
+})
+
+test('legacy period ranges without the system flag remain hidden', async () => {
+  const root={id:'A',parameterSchema:{parameters:[
+    {code:'period',type:'DATETIME_RANGE',required:true},
+    {code:'periodStart',type:'DATETIME',required:true},
+    {code:'periodEnd',type:'DATETIME',required:true},
+    {code:'patientName',type:'STRING',required:false}
+  ]}}
+  assert.deepEqual((await inheritedFactorParameters(root,async()=>assert.fail('no dependencies'))).map(item=>item.code), ['patientName'])
+})
 test('parameter type conflict is explicit instead of picking the last upstream', async () => {
   const root={id:'C',logicalPlan:{factorDependencies:[{factorVersionId:'A'},{factorVersionId:'B'}]}}
   await assert.rejects(inheritedFactorParameters(root,async id=>({id,parameterSchema:{parameters:[{code:'x',type:id==='A'?'STRING':'INTEGER'}]}})),/类型不一致/)

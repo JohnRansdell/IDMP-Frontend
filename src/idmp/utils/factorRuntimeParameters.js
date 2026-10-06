@@ -7,7 +7,9 @@ export async function inheritedFactorParameters(root, loadArtifact) {
     if (visited.has(id)) return
     stack.add(id)
     for (const declaration of artifact.parameterSchema?.parameters || []) {
-      if (!declaration.code || declaration.type === 'PERIOD' || ['periodStart','periodEnd'].includes(declaration.code)) continue
+      if (!declaration.code || declaration.systemProvided === true || declaration.type === 'PERIOD'
+        || (declaration.code === 'period' && declaration.type === 'DATETIME_RANGE')
+        || ['periodStart','periodEnd'].includes(declaration.code)) continue
       const current = parameters.get(declaration.code)
       if (current && current.type !== declaration.type) throw new Error(`运行参数“${declaration.code}”在上游因子中的类型不一致`)
       parameters.set(declaration.code, { ...declaration, required: Boolean(current?.required || declaration.required),
