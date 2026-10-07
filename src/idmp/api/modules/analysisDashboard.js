@@ -1,4 +1,5 @@
 import { requestJson } from '@/idmp/api/request'
+import { expandDashboardResponse } from '../../features/dashboard/compactResponse.js'
 
 const DEFAULT_DASHBOARD_CODE = 'quality-overview'
 
@@ -23,8 +24,8 @@ export function queryDashboard(code = DEFAULT_DASHBOARD_CODE, payload = {}, opti
     timeoutMs: 90000,
     ...options,
     method: 'POST',
-    body: JSON.stringify(payload)
-  })
+    body: JSON.stringify({ responseFormat: 'COMPACT', ...payload })
+  }).then(expandDashboardResponse)
 }
 
 export function saveDashboard(id, payload, options = {}) {
