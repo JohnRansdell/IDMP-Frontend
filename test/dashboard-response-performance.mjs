@@ -8,9 +8,10 @@ import { expandDashboardResponse } from '../src/idmp/features/dashboard/compactR
 
 const base = process.env.IDMP_PERF_API || 'http://8.137.157.152/api/v1'
 const folder = process.env.IDMP_PERF_EVIDENCE || '.tmp/dashboard-response-optimization-before'
+const query = { periodStart: '2026-01-01', periodEnd: '2026-01-31', granularity: 'MONTHLY', ...JSON.parse(process.env.IDMP_PERF_QUERY || '{}') }
 await mkdir(folder, { recursive: true })
 async function measure(encoding, format = 'FULL') {
-  const payload = JSON.stringify({ periodStart: '2026-01-01', periodEnd: '2026-01-31', granularity: 'MONTHLY', responseFormat: format })
+  const payload = JSON.stringify({ ...query, responseFormat: format })
   const started = performance.now()
   const result = await new Promise((resolve, reject) => {
     const req = request(`${base}/analysis/dashboards/1189225114584501123/query`, {
@@ -54,8 +55,9 @@ for (const format of formats) for (const encoding of ['identity', 'gzip']) {
   results.push(result)
 }
 if (process.env.IDMP_PERF_CONCURRENT === '1') {
-  for (let round = 0; round < 3; round++) {
-    const group = await Promise.all(Array.from({ length: 4 }, () => measure('gzip', 'COMPACT')))
+  const concurrentFormats = process.env.IDMP_PERF_COMPARE_CONCURRENT === '1' ? ['FULL', 'COMPACT'] : ['COMPACT']
+  for (let round = 0; round < 3; round++) for (const format of (round % 2 ? [...concurrentFormats].reverse() : concurrentFormats)) {
+    const group = await Promise.all(Array.from({ length: 4 }, () => measure('gzip', format)))
     for (const result of group) {
       assert.deepEqual(result.expanded.widgets, expected)
       results.push({ ...result, concurrency: 4 })
