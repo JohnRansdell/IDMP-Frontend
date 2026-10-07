@@ -398,6 +398,7 @@ import { collectFormulaFactorVersionIds, createIndicatorDataExplanation, extract
 import { deriveDrillPathResultIds, reconcileScenarioPointWithRoot } from '@/idmp/api/adapters/drill'
 import { searchResultDrill } from '@/idmp/api/modules/drill'
 import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
+import { normalizeDepartmentComparisons } from '@/idmp/features/analysis/departmentRanking'
 import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
 import { getStatusLabel } from '@/idmp/design/status'
 import { periodOptions } from '@/idmp/features/analysis/indicatorProfiles'
@@ -593,8 +594,7 @@ const analysisNotice = computed(() => {
   return { title, message: availability.message }
 })
 const backendDepartmentComparisons = computed(() =>
-  (Array.isArray(backendAnalysis.value?.departmentComparison) ? backendAnalysis.value.departmentComparison : [])
-    .filter((item) => item?.dimensions?.out_dept_code || item?.dimensions?.out_dept_id)
+  normalizeDepartmentComparisons(backendAnalysis.value?.departmentComparison)
 )
 const backendDimensionResults = computed(() =>
   (Array.isArray(backendAnalysis.value?.dimensionComparison) ? backendAnalysis.value.dimensionComparison : [])
@@ -689,10 +689,10 @@ const rankTableData = computed(() => {
   if (Array.isArray(comparisons) && comparisons.length > 0) {
     return comparisons.map((item, index) => ({
       rank: index + 1,
-      departmentKey: item.dimensions?.out_dept_code || item.dimensions?.out_dept_id || `DEPT_${index + 1}`,
-      department: item.dimensions?.out_dept_name || item.dimensions?.out_dept_code || `科室${index + 1}`,
+      departmentKey: item.departmentCode,
+      department: item.departmentName,
       hospitalCode: item.dimensions?.hospital_code || item.dimensions?.HOSPITAL_CODE || '',
-      departmentCode: item.dimensions?.out_dept_code || item.dimensions?.OUT_DEPT_CODE || '',
+      departmentCode: item.departmentCode,
       rate: item.displayValue || (item.value != null ? String(item.value) : '-'),
       numerator: item.numeratorValue == null ? '-' : formatCount(item.numeratorValue),
       denominator: item.denominatorValue == null ? '-' : formatCount(item.denominatorValue),
