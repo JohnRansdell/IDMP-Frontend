@@ -91,7 +91,9 @@ try {
   })
   if (fixtures.domainId) await run('disable-test-domain', async () => {
     const detail = await api('GET', `/meta/data-domains/${fixtures.domainId}`)
-    await api('POST', `/meta/data-domains/${fixtures.domainId}/disable`, { resourceVersion: detail.resourceVersion, force: false })
+    // 因子已回收，但发布版本的历史引用仍会保留；仅停用本脚本创建的独立数据域。
+    if (detail.code !== code) throw new Error('数据域不是本次创建的验收资源，停止清理')
+    await api('POST', `/meta/data-domains/${fixtures.domainId}/disable`, { resourceVersion: detail.resourceVersion, force: true })
   })
   await save('fixtures', fixtures)
   await finish()
