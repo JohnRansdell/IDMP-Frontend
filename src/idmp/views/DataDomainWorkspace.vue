@@ -68,7 +68,7 @@
         <el-form-item label="业务字段名称" prop="name"><el-input v-model.trim="mappingForm.name" /></el-form-item>
         <el-form-item label="数据类型" prop="dataType"><el-select v-model="mappingForm.dataType"><el-option v-for="type in SEMANTIC_DATA_TYPES" :key="type" :label="dataTypeLabel(type)" :value="type" /></el-select></el-form-item>
         <el-form-item v-if="needsDateFormat" label="源数据日期格式" prop="conversionFormat"><el-select v-model="mappingForm.conversionFormat"><el-option v-for="format in dateFormats" :key="format" :label="format" :value="format" /></el-select></el-form-item>
-        <p class="mapping-validation-note">保存时最多检查 1,000 行样本，不代表全部源数据均可转换。</p>
+        <p class="mapping-validation-note">保存时最多检查 100 行样本，不代表全部源数据均可转换。</p>
         <el-form-item label="业务角色" prop="semanticKind"><el-select v-model="mappingForm.semanticKind"><el-option v-for="item in roleOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
         <el-form-item><el-checkbox v-model="mappingForm.sensitive">敏感字段</el-checkbox></el-form-item>
       </el-form>
