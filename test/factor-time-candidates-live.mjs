@@ -10,7 +10,7 @@ try {
   const text = options.find(field => field.columnName === 'out_date')
   check('unmarked-text-time-is-a-candidate', text?.columnType === 'varchar(32)' && text.requiresConfirmation && text.sampledValueCount <= 100, text)
   check('native-time-is-also-a-candidate', options.some(field => field.columnName === 'create_date' && !field.requiresConfirmation))
-  const sqlImport = await api('POST', '/sql-imports', { sql: `SELECT COUNT(*) AS value FROM ${table}`, definitionType: 'SQL' })
+  const sqlImport = await api('POST', '/sql-imports', { sql: `SELECT COUNT(*) AS ${code}_value FROM ${table}`, definitionType: 'SQL' })
   fixtures.importId = sqlImport.importId; await save('fixtures', fixtures)
   const preview = await poll(`/sql-imports/${sqlImport.importId}`, ['AWAITING_METADATA'])
   const sqlCandidates = preview.preview?.factors?.[0]?.timeFieldOptions || []
@@ -21,9 +21,9 @@ try {
   await api('POST', `/meta/data-domains/${domain.id}/physical-tables`, { tableName: table })
   const fieldsPath = `/meta/data-domains/${domain.id}/physical-tables/${table}/semantic-fields`
   const fields = rows(await api('GET', fieldsPath))
-  const selected = fields.find(field => field.sourceFieldName === 'out_date')
-  const native = fields.find(field => field.sourceFieldName === 'create_date')
-  const primary = fields.find(field => field.sourceFieldName === 'in_hospital_id')
+  const selected = fields.find(field => field.sourceFieldName.toLowerCase() === 'out_date')
+  const native = fields.find(field => field.sourceFieldName.toLowerCase() === 'create_date')
+  const primary = fields.find(field => field.sourceFieldName.toLowerCase() === 'in_hospital_id')
   check('selected-field-remains-unmarked-string', selected?.dataType === 'STRING', selected)
   await api('PATCH', `/meta/data-domains/${domain.id}/physical-tables/${table}/default-time-field`, { semanticFieldCode: native.code })
   let detail = await api('GET', `/meta/data-domains/${domain.id}`)
@@ -69,7 +69,7 @@ try {
   await save('artifact', artifact)
 } catch (error) { check('live-lifecycle', false, error.message) }
 finally {
-  if (fixtures.importId) await run('abandon-test-import', () => api('POST', `/sql-imports/${fixtures.importId}/abandon`))
+  if (fixtures.importId) await run('abandon-test-import', () => api('POST', `/sql-imports/${fixtures.importId}/abandon`, { reason: '时间候选验收完成，清理测试解析会话' }))
   for (const type of ['indicators', 'factors']) for (const id of fixtures[type]) await run(`cleanup-${id}`, async () => {
     let impact
     for (let i = 0; i < 30; i++) { impact = await api('GET', `/${type}/${id}/deletion-impact`); if (impact.deletable) break; await pause(1000) }
