@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { adaptDataDomainList, adaptPhysicalTableList, adaptSemanticFieldList, adaptSemanticTableList, adaptSourceFieldList } from '../src/idmp/api/adapters/meta.js'
 import { dataTypeLabel, matchModeLabel, semanticKindLabel, sourceObjectTypeLabel, transformOptionLabel } from '../src/idmp/features/meta/index.js'
 import { validateSemanticFieldCode, SEMANTIC_DATA_TYPES } from '../src/idmp/utils/validation.js'
-import { adaptFactorPhysicalFields, physicalFieldDataType } from '../src/idmp/api/adapters/factorMetadata.js'
+import { adaptFactorPhysicalFields, physicalFieldDataType, isFactorPeriodField } from '../src/idmp/api/adapters/factorMetadata.js'
 
 test('API adapters preserve BIGINT ids as opaque strings', () => {
   const id = '9223372036854775807'
@@ -92,6 +92,21 @@ test('physical MySQL types do not treat text dates as datetime', () => {
   for (const type of ['int unsigned', 'bigint(20)', 'decimal(10,2)', 'float', 'double']) assert.match(physicalFieldDataType(type), /INTEGER|DECIMAL/)
   assert.equal(physicalFieldDataType('varchar(40)', 'DATETIME'), 'STRING')
   assert.equal(physicalFieldDataType('', 'DATETIME'), 'DATETIME')
+  assert.equal(physicalFieldDataType('time'), 'STRING')
+})
+
+test('ordinary factor accepts sampled text time from main and joined tables without changing its business type', () => {
+  for (const isBase of [true, false]) {
+    const fields = adaptFactorPhysicalFields([{ code: 'EVENT_TIME', sourceFieldName: 'event_time', dataType: 'STRING' }],
+      [{ columnName: 'event_time', columnType: 'varchar(32)' }], { sourceAlias: 'joined', isBase,
+        timeFieldOptions: [{ columnName: 'EVENT_TIME', columnType: 'varchar(32)', requiresConfirmation: true, sampledValueCount: 100 }] })
+    assert.equal(fields[0].dataType, 'STRING')
+    assert.equal(fields[0].kind, 'STRING')
+    assert.equal(isFactorPeriodField(fields[0]), true)
+    assert.equal(fields[0].periodRequiresConfirmation, true)
+    assert.equal(fields[0].code, isBase ? 'event_time' : 'joined.event_time')
+  }
+  assert.equal(isFactorPeriodField({ dataType: 'STRING' }), false)
 })
 
 test('ordinary factor editor uses physical-table APIs and the physical relation contract', async () => {

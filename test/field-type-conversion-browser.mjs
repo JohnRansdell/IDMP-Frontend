@@ -30,6 +30,7 @@ function mockBackend() {
   const realFetch = window.fetch.bind(window)
   let mapped = { id: '1', code: 'EVENT_TIME', name: '事件日期', sourceFieldName: 'event_time', dataType: 'DATETIME',
     sourceDataType: 'varchar(32)', conversionFormat: 'yyyy/MM/dd HH:mm:ss', semanticKind: 'TIME', sourceFieldMappingId: '1' }
+  if (location.pathname.startsWith('/factor/')) mapped = { ...mapped, dataType: 'STRING', conversionFormat: null }
   window.__mappingRequests = []
   window.fetch = async (input, init = {}) => {
     const url = new URL(typeof input === 'string' ? input : input.url, location.href)
@@ -42,7 +43,8 @@ function mockBackend() {
     else if (path.endsWith('/semantic-fields')) {
       if (init.method === 'POST') { const body = JSON.parse(init.body); window.__mappingRequests.push(body); mapped = { ...mapped, ...body }; data = mapped }
       else data = [mapped]
-    } else if (path.endsWith('/fields')) data = [{ columnName: 'event_time', columnType: 'varchar(32)', comment: '事件日期', nullable: true }]
+    } else if (path.endsWith('/time-fields')) data = [{ columnName: 'event_time', columnType: 'varchar(32)', comment: '事件日期', requiresConfirmation: true, sampledValueCount: 100 }]
+    else if (path.endsWith('/fields')) data = [{ columnName: 'event_time', columnType: 'varchar(32)', comment: '事件日期', nullable: true }]
     return new Response(JSON.stringify({ code: 'OK', data }), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }
 }
@@ -84,6 +86,21 @@ try {
   await evaluate(`window.__workspace.submitMapping()`)
   assert.equal(await evaluate(`window.__mappingRequests[0].conversionFormat`), 'yyyy/MM/dd HH:mm:ss')
   assert.equal(await evaluate(`window.__workspace.timeFieldOptions[0].dataType`), 'DATETIME')
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false })
+  await cdp.send('Page.navigate', { url: 'http://127.0.0.1:5173/factor/edit/new' })
+  await waitFor(() => evaluate(`!!document.querySelector('.factor-editor')`))
+  await evaluate(`(() => { let c=document.querySelector('.factor-editor').__vueParentComponent; while(c && c.type.__name!=='FactorEditor')c=c.parent; window.__editor=c.setupState })()`)
+  await waitFor(() => evaluate(`window.__editor.domains.length===1`))
+  await evaluate(`window.__editor.dslForm.domainCode='TEST'; window.__editor.handleDomainChange()`)
+  await evaluate(`window.__editor.dslForm.tableName='records'; window.__editor.handleTableChange()`)
+  assert.equal(await evaluate(`window.__editor.periodFields[0].dataType`), 'STRING')
+  assert.equal(await evaluate(`window.__editor.periodFields[0].periodCandidate`), true)
+  assert.match(await evaluate(`window.__editor.periodFieldOptionLabel(window.__editor.periodFields[0])`), /文本日期（抽样识别）/)
+  await evaluate(`window.__editor.dslForm.periodColumn='event_time'`)
+  assert.equal(await evaluate(`window.__editor.buildDsl().periodColumn`), 'event_time')
+  await evaluate(`document.querySelector('.time-binding').scrollIntoView({block:'center'});document.querySelector('.time-binding .el-select__wrapper').click()`)
+  await delay(200)
+  await writeFile('.tmp/field-type-browser/factor-time-candidates.png', Buffer.from((await cdp.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'))
   assert.deepEqual(cdp.errors, [])
-  console.log('PASS 日期格式回显、提交、有效时间类型；桌面和移动端截图无溢出')
+  console.log('PASS 日期格式回显、提交；普通因子文本时间候选、周期保存；桌面和移动端截图无溢出')
 } finally { cdp?.socket.close(); chrome.kill() }

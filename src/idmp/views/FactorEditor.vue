@@ -56,10 +56,10 @@ import { newDerivedFactor } from '@/idmp/utils/derivedFactor'
 import { inheritedFactorParameters } from '@/idmp/utils/factorRuntimeParameters'
 import { queryFactorVersion } from '@/idmp/api/modules/factors'
 import { buildSqlRuntimeParameterValues, validateSqlRuntimeParameterValues } from '@/idmp/api/adapters/sqlImport'
-import { fetchDataDomains, fetchPhysicalTableFields, fetchPhysicalTableRelations, fetchPhysicalTables, fetchSourceTableFields } from '@/idmp/api/modules/meta'
+import { fetchDataDomains, fetchPhysicalTableFields, fetchPhysicalTableRelations, fetchPhysicalTables, fetchSourceTableFields, fetchSourceTimeFieldOptions } from '@/idmp/api/modules/meta'
 import { fetchSemanticFieldValueSet, fetchValueSetItems } from '@/idmp/api/modules/valueSets'
 import { adaptDataDomainList, adaptSemanticFieldList, adaptPhysicalTableList, adaptSourceFieldList } from '@/idmp/api/adapters/meta'
-import { adaptFactorPhysicalFields } from '@/idmp/api/adapters/factorMetadata'
+import { adaptFactorPhysicalFields, isFactorPeriodField } from '@/idmp/api/adapters/factorMetadata'
 import { resourceConflictEditorPath, resolveResourceConflict } from '@/idmp/api/adapters/resourceConflict'
 import { compileFactorVersion, createFactor, fetchFactor, fetchCompileArtifact, fetchFactorTemplateParameterSchema, fetchFactorTrialPeriodRecommendation, fetchFactorTrialResults, fetchFactorVersion, fetchFactorVersionsByFactor, instantiateFactorTemplateVersion, publishFactorVersion, trialFactorVersion, updateFactor } from '@/idmp/api/modules/factors'
 import { fetchAsyncTask } from '@/idmp/api/modules/calculation'
@@ -96,14 +96,15 @@ const currentTimeFieldCode=computed(()=>{
   const code=tables.value.find(item=>item.tableName===dslForm.tableName)?.defaultTimeSemanticFieldCode||''
   return baseFields.value.find(field=>field.semanticFieldCode===code||field.physicalColumn.toLowerCase()===code.toLowerCase())?.code||code
 })
-const periodFields=computed(()=>fields.value.filter(field=>['DATE','DATETIME','TIMESTAMP'].includes(String(field.dataType||'').toUpperCase())))
+const periodFields=computed(()=>fields.value.filter(isFactorPeriodField))
 function periodFieldOptionLabel(field) {
   const option = item => ({
     physicalTable: sourceDescriptors[item.sourceAlias]?.tableName || (item.sourceAlias === dslForm.baseAlias ? dslForm.tableName : ''),
     columnName: item.physicalColumn || item.code, fieldReference: item.code,
     columnType: fieldTypeLabel(item.kind || item.dataType), comment: item.label
   })
-  return sqlPhysicalFieldLabel(option(field), periodFields.value.map(option))
+  const label = sqlPhysicalFieldLabel(option(field), periodFields.value.map(option))
+  return field.periodRequiresConfirmation ? `${label} · 文本日期（抽样识别）` : label
 }
 async function loadNativePeriodBinding() {
   nativePeriodBinding.value = null
@@ -166,8 +167,8 @@ async function loadFields(){
   }catch(error){if(requestId===metadataRequestVersion.value)ElMessage.warning(error?.message||'物理字段读取失败')}
 }
 async function loadSourceFields(domainId,tableName,sourceAlias,sourceName,isBase=false){
-  const [mapped,source]=await Promise.all([fetchPhysicalTableFields(domainId,tableName),fetchSourceTableFields(tableName)])
-  const loaded=adaptFactorPhysicalFields(adaptSemanticFieldList(mapped),adaptSourceFieldList(source),{sourceAlias,sourceName,isBase})
+  const [mapped,source,timeFieldOptions]=await Promise.all([fetchPhysicalTableFields(domainId,tableName),fetchSourceTableFields(tableName),fetchSourceTimeFieldOptions(tableName)])
+  const loaded=adaptFactorPhysicalFields(adaptSemanticFieldList(mapped),adaptSourceFieldList(source),{sourceAlias,sourceName,isBase,timeFieldOptions:normalize(timeFieldOptions)})
   await Promise.all(loaded.map(loadFieldValueSet))
   return loaded
 }
@@ -260,7 +261,7 @@ function buildDsl(){return buildFactorDsl({domainCode:dslForm.domainCode,tableNa
 function hasPeriodParameter(node){return !!node&&(node.nodeType==='PREDICATE'&&node.parameter==='period'||(node.children||[]).some(hasPeriodParameter)||hasPeriodParameter(node.child))}
 function removePeriodPredicates(node){if(!node||typeof node!=='object')return;if(Array.isArray(node.children)){node.children=node.children.filter(item=>!(item?.nodeType==='PREDICATE'&&item.parameter==='period'));node.children.forEach(removePeriodPredicates)}if(node.child)removePeriodPredicates(node.child)}
 watch(()=>dslForm.calculationMode,(mode)=>{if(mode==='STATIC'){dslForm.periodColumn='';removePeriodPredicates(filters);trialPeriod.value=[];trialRecommendation.value=null;trialRecommendationError.value=''}})
-function hasInvalidPeriodParameter(node){if(!node)return false;if(node.nodeType==='PREDICATE')return node.parameter==='period'&&fieldByCode(fields.value,node.fieldCode)?.kind!=='DATETIME';return hasInvalidPeriodParameter(node.child)||(node.children||[]).some(hasInvalidPeriodParameter)}
+function hasInvalidPeriodParameter(node){if(!node)return false;if(node.nodeType==='PREDICATE')return node.parameter==='period'&&!periodFields.value.some(field=>field.code===node.fieldCode);return hasInvalidPeriodParameter(node.child)||(node.children||[]).some(hasInvalidPeriodParameter)}
 async function saveFactor(){if(isDerived.value)return saveDerivedFactor();if(periodConfigurationError.value)return ElMessage.warning(periodConfigurationError.value);if(unsupportedDsl.value)return ElMessage.warning('该因子使用 SQL 或高级表达式，请通过原创建方式修改计算口径');if(!(await basicFormRef.value?.validate().catch(()=>false)))return;if(!dslForm.domainCode||!dslForm.tableName)return ElMessage.warning('请选择数据域和物理表');if(joins.value.some(item=>!item.relationId))return ElMessage.warning('请选择完整的关联关系');const valid=new Set(fields.value.map(x=>x.code));if((dslForm.fieldCode&&!valid.has(dslForm.fieldCode))||dslForm.groupBy.some(code=>!valid.has(code)))return ElMessage.warning('统计字段和分组维度必须来自当前参与计算的物理表');const errors=scopeMode.value==='FILTERED'?validateFilterNode(filters,[],fields.value):[];if(errors.length)return ElMessage.warning(errors[0]);if(dslForm.calculationMode==='TEMPORAL'&&!periodFields.value.some(field=>field.code===dslForm.periodColumn))return ElMessage.warning('请选择当前参与计算的日期时间字段作为统计周期字段');if(scopeMode.value==='FILTERED'&&hasPeriodParameter(filters)&&hasInvalidPeriodParameter(filters))return ElMessage.warning('统计周期必须绑定到当前参与计算的日期时间字段');if(dslForm.aggregation!=='COUNT'&&!dslForm.fieldCode)return ElMessage.warning('请选择统计字段');loading.save=true;try{const wasCreate=isCreate.value;const payload={name:basicForm.name,description:basicForm.description,category:basicForm.category||null,dsl:buildDsl(),resourceVersion:resourceVersion.value};const result=wasCreate?(template.versionId?await instantiateFactorTemplateVersion(template.versionId,{parameters:parameterValues,overrides:{code:basicForm.code,name:basicForm.name,description:basicForm.description}}):await createFactor({code:basicForm.code,name:basicForm.name,description:basicForm.description,category:basicForm.category||undefined,dsl:buildDsl()})):await updateFactor(route.params.id,payload);resourceVersion.value=Number(result?.resourceVersion??result?.version??resourceVersion.value);workflow.factorId=toOpaqueId(result?.id??result?.factorId??workflow.factorId??route.params.id);workflow.versionId=toOpaqueId(result?.draftVersionId??result?.versionId??workflow.versionId);workflow.status=result?.status||workflow.status||'DRAFT';workflow.published=workflow.status==='PUBLISHED';resetWorkflowAfterDefinitionChange();if(wasCreate&&workflow.factorId)await router.replace(`/factor/edit/${encodeURIComponent(workflow.factorId)}`);workflow.message=`因子草稿已保存，版本 ID：${workflow.versionId}。请继续执行编译校验。`;workflow.messageType='success';await nextTick();workflowSectionRef.value?.scrollIntoView({ behavior:'smooth',block:'start'});ElMessage.success(wasCreate?'因子草稿已保存，请继续编译校验':'因子修改已保存，请重新编译校验')}catch(e){await handleFactorSaveError(e)}finally{loading.save=false}}
 async function saveDerivedFactor() {
   if (!(await basicFormRef.value?.validate().catch(() => false))) return
