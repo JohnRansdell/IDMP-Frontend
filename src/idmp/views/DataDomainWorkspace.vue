@@ -47,6 +47,7 @@
             <el-table-column prop="columnType" label="源类型" min-width="110" />
             <el-table-column prop="comment" label="源注释" min-width="160" show-overflow-tooltip><template #default="{ row }">{{ row.comment || '—' }}</template></el-table-column>
             <el-table-column prop="mapped.code" label="业务字段" min-width="180"><template #default="{ row }">{{ row.mapped?.name || row.mapped?.code || '未映射' }}<small v-if="row.mapped?.code">{{ row.mapped.code }}</small></template></el-table-column>
+            <el-table-column label="配置类型" width="110"><template #default="{ row }">{{ row.mapped ? dataTypeLabel(row.mapped.dataType) : '未映射' }}</template></el-table-column>
             <el-table-column label="角色" width="110"><template #default="{ row }">{{ roleLabel(row.mapped?.semanticKind) }}</template></el-table-column>
             <el-table-column label="操作" width="260" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openMappingDialog(row)">{{ row.mapped ? '编辑' : '映射' }}</el-button><template v-if="row.mapped"><el-button link :disabled="!canBindValueSet(row.mapped)" @click="openValueSetBinding(row.mapped)">值集</el-button><el-button link :disabled="!canStandardize(row.mapped)" @click="openStandardization(row.mapped)">标准化</el-button><el-button link :disabled="!row.mapped.sourceFieldMappingId" @click="openFieldProfile(row.mapped)">画像</el-button></template></template></el-table-column>
           </el-table>
@@ -61,7 +62,7 @@
       <template #footer><el-button @click="addDialogVisible = false">取消</el-button><el-button type="primary" :loading="adding" :disabled="!tableToAdd" @click="submitAddTable">确认接入</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="mappingDialogVisible" :title="`映射字段 · ${mappingForm.sourceFieldName}`" width="560px" destroy-on-close>
+    <el-dialog v-model="mappingDialogVisible" :title="`映射字段 · ${mappingForm.sourceFieldName}`" width="min(560px, calc(100vw - 32px))" destroy-on-close>
       <el-form ref="mappingFormRef" :model="mappingForm" :rules="mappingRules" label-position="top">
         <el-form-item label="业务字段编码" prop="code"><el-input v-model.trim="mappingForm.code" :disabled="editingMappedField" /></el-form-item>
         <el-form-item label="业务字段名称" prop="name"><el-input v-model.trim="mappingForm.name" /></el-form-item>
