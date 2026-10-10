@@ -66,6 +66,7 @@
         <el-form-item label="业务字段编码" prop="code"><el-input v-model.trim="mappingForm.code" :disabled="editingMappedField" /></el-form-item>
         <el-form-item label="业务字段名称" prop="name"><el-input v-model.trim="mappingForm.name" /></el-form-item>
         <el-form-item label="数据类型" prop="dataType"><el-select v-model="mappingForm.dataType"><el-option v-for="type in SEMANTIC_DATA_TYPES" :key="type" :label="dataTypeLabel(type)" :value="type" /></el-select></el-form-item>
+        <el-form-item v-if="needsDateFormat" label="源数据日期格式" prop="conversionFormat"><el-select v-model="mappingForm.conversionFormat"><el-option v-for="format in dateFormats" :key="format" :label="format" :value="format" /></el-select></el-form-item>
         <el-form-item label="业务角色" prop="semanticKind"><el-select v-model="mappingForm.semanticKind"><el-option v-for="item in roleOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
         <el-form-item><el-checkbox v-model="mappingForm.sensitive">敏感字段</el-checkbox></el-form-item>
       </el-form>
@@ -135,7 +136,15 @@ const profileField = ref(null)
 const profileItems = ref([])
 const tableToAdd = ref('')
 const mappingFormRef = ref(null)
-const mappingForm = reactive({ sourceFieldName: '', code: '', name: '', dataType: '', semanticKind: '', sensitive: false })
+const mappingForm = reactive({ sourceFieldName: '', code: '', name: '', dataType: '', semanticKind: '', sensitive: false, conversionFormat: '' })
+const mappingSourceType = ref('')
+const dateFormats = ['yyyy-MM-dd', 'yyyy-MM-dd HH:mm:ss', 'yyyy/MM/dd', 'yyyy/MM/dd HH:mm:ss', 'yyyyMMdd']
+const needsDateFormat = computed(() => ['DATE', 'DATETIME'].includes(mappingForm.dataType)
+  && !['DATE', 'DATETIME'].includes(inferDataType(mappingSourceType.value)))
+watch(() => mappingForm.dataType, () => {
+  if (!needsDateFormat.value) mappingForm.conversionFormat = ''
+  else if (!mappingForm.conversionFormat) mappingForm.conversionFormat = mappingForm.dataType === 'DATE' ? 'yyyy-MM-dd' : 'yyyy-MM-dd HH:mm:ss'
+})
 const roleOptions = [
   { value: 'DIMENSION', label: '维度' }, { value: 'MEASURE', label: '度量' },
   { value: 'IDENTIFIER', label: '标识' }, { value: 'TIME', label: '时间' },
@@ -248,6 +257,7 @@ async function submitAddTable() {
 
 function openMappingDialog(field) {
   const current = field.mapped
+  mappingSourceType.value = field.columnType
   editingMappedField.value = Boolean(current)
   const suggestedCode = String(field.columnName).toUpperCase().replace(/[^A-Z0-9_]/g, '_')
   Object.assign(mappingForm, {
@@ -255,7 +265,8 @@ function openMappingDialog(field) {
     code: current?.code || (/^[A-Z]/.test(suggestedCode) ? suggestedCode : `F_${suggestedCode}`).slice(0, 64),
     name: current?.name || field.comment || field.columnName,
     dataType: current?.dataType || inferDataType(field.columnType),
-    semanticKind: current?.semanticKind || '', sensitive: current?.sensitive || false
+    semanticKind: current?.semanticKind || '', sensitive: current?.sensitive || false,
+    conversionFormat: current?.conversionFormat || (current?.dataType === 'DATE' ? 'yyyy-MM-dd' : 'yyyy-MM-dd HH:mm:ss')
   })
   mappingDialogVisible.value = true
 }
@@ -346,7 +357,7 @@ async function submitMapping() {
   if (mappingSaving.value || !(await mappingFormRef.value?.validate().catch(() => false))) return
   mappingSaving.value = true
   try {
-    await bindPhysicalTableField(domainId.value, selectedTableName.value, { ...mappingForm })
+    await bindPhysicalTableField(domainId.value, selectedTableName.value, { ...mappingForm, conversionFormat: needsDateFormat.value ? mappingForm.conversionFormat : null })
     await loadFields()
     mappingDialogVisible.value = false
     ElMessage.success('字段映射已保存')

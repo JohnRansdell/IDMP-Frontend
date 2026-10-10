@@ -57,6 +57,15 @@ test('data domain workspace uses physical tables without legacy semantic-table o
   assert.doesNotMatch(source, /fetchSemanticTables|createSemanticTable|semantic-table-relations/)
 })
 
+test('validated effective types survive metadata and ordinary factor field adapters', () => {
+  const mapped = adaptSemanticFieldList([{ id: '1', code: 'EVENT_TIME', name: '事件时间', sourceFieldName: 'event_time',
+    dataType: 'DATETIME', sourceDataType: 'varchar(32)', conversionFormat: 'yyyy/MM/dd HH:mm:ss' }])
+  assert.equal(mapped[0].sourceDataType, 'varchar(32)')
+  assert.equal(mapped[0].conversionFormat, 'yyyy/MM/dd HH:mm:ss')
+  const fields = adaptFactorPhysicalFields(mapped, [{ columnName: 'event_time', columnType: 'varchar(32)' }], { isBase: true })
+  assert.equal(fields[0].dataType, 'DATETIME')
+})
+
 test('factor field options use physical columns and types while preserving governance ids', () => {
   const fields = adaptFactorPhysicalFields([
     { id: '9223372036854775807', code: 'ADMISSION_TIME', sourceFieldName: 'in_date', name: '入院时间', dataType: 'STRING', filterable: true },

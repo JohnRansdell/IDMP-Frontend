@@ -132,6 +132,8 @@ export function normalizeSemanticField(item = {}) {
     code: item.code || item.fieldCode || item.semanticCode || '',
     name: item.name || item.fieldName || item.semanticName || '',
     dataType: item.dataType || '',
+    sourceDataType: item.sourceDataType || '',
+    conversionFormat: item.conversionFormat || '',
     semanticKind,
     semanticRole: semanticKind,
     groupable: item.groupable,

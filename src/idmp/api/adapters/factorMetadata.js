@@ -19,7 +19,7 @@ export function adaptFactorPhysicalFields(mappedFields, sourceFields, { sourceAl
       ...item,
       code: physicalColumn,
       name: item.name || column?.comment || physicalColumn,
-      dataType: physicalFieldDataType(column?.columnType, item.dataType)
+      dataType: item.sourceDataType ? item.dataType : physicalFieldDataType(column?.columnType, item.dataType)
     })
     return { ...field, semanticFieldCode: item.code, physicalColumn, sourceAlias, sourceName, code: isBase ? physicalColumn : `${sourceAlias}.${physicalColumn}` }
   })
