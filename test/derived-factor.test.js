@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { newDerivedFactor, newExpression, validateDerivedFactor, configurableSourceFactors, activeSourceBindings } from '../src/idmp/utils/derivedFactor.js'
+import { newDerivedFactor, newExpression, validateDerivedFactor, configurableSourceFactors, activeSourceBindings, simpleDerivedExpression, buildSimpleDerivedExpression } from '../src/idmp/utils/derivedFactor.js'
 import { inheritedFactorParameters } from '../src/idmp/utils/factorRuntimeParameters.js'
 import { getFactorTypeLabel } from '../src/idmp/utils/factorType.js'
 const source = (id, grain = [], status = 'PUBLISHED') => ({ id, status, output: { grain } })
@@ -41,6 +41,16 @@ test('derived definition has no SQL source configuration', () => {
 test('valid ratio preserves bigint string references', () => {
   const dsl = validateDerivedFactor(fixture(), versions)
   assert.equal(dsl.expression.left.factorVersionId, '102027642461800096')
+})
+test('quick calculation keeps version IDs and alignment when changing arithmetic', () => {
+  const original = fixture().expression
+  original.left.alignmentPolicy = 'SCALAR_BROADCAST'
+  const simple = simpleDerivedExpression(original)
+  const changed = buildSimpleDerivedExpression('SUB', simple.left, simple.right)
+  assert.equal(changed.left.factorVersionId, '102027642461800096')
+  assert.equal(changed.left.alignmentPolicy, 'SCALAR_BROADCAST')
+  assert.equal(changed.zeroDenominatorPolicy, undefined)
+  assert.equal(simpleDerivedExpression({ nodeType: 'FUNCTION', functionCode: 'ABS', arguments: [original] }), null)
 })
 test('draft upstream is rejected', () => assert.throws(() => validateDerivedFactor(fixture(), [versions[0], source(versions[1].id, [], 'DRAFT')]), /已发布/))
 test('zero denominator policy must be explicit', () => { const dsl = fixture(); delete dsl.expression.zeroDenominatorPolicy; assert.throws(() => validateDerivedFactor(dsl, versions), /分母为零/) })

@@ -49,7 +49,7 @@
           <el-form ref="formRef" :model="form" :rules="rules" label-width="108px" status-icon>
             <div class="form-grid">
               <el-form-item label="指标编码" prop="code">
-                <el-input v-model="form.code" placeholder="如：KH-01，按规则自动生成或手动输入" />
+                <el-input v-model="form.code" :disabled="Boolean(indicatorWorkflow.indicatorId)" maxlength="64" placeholder="大写字母开头，仅含大写字母、数字和下划线" />
               </el-form-item>
               <el-form-item label="指标名称" prop="name">
                 <el-input v-model="form.name" placeholder="请输入指标完整名称" />
@@ -130,6 +130,7 @@
               </el-form-item>
             </div>
           </el-form>
+          <el-alert v-if="!indicatorWorkflow.versionId || indicatorWorkflow.published" type="info" :closable="false" show-icon :title="indicatorWorkflow.published ? '当前是已发布版本；定义、统计周期和数据来源需创建新草稿版本后才能修改。' : '定义、统计周期和数据来源会在首次保存公式、创建草稿版本后写入。当前保存先创建或更新指标基本资料。'" />
           <div class="business-action-bar">
             <div>
               <span>基本信息操作</span>
@@ -1046,20 +1047,20 @@ const indicatorCategoryProps = {
 }
 
 const form = reactive({
-  code: isNew.value ? 'INPATIENT_MORTALITY_RATE' : routeIndicatorKey.value,
-  name: isNew.value ? '住院死亡率' : '',
-  shortName: isNew.value ? '住院死亡率' : '',
+  code: isNew.value ? '' : routeIndicatorKey.value,
+  name: '',
+  shortName: '',
   categoryPath: [...defaultCategoryPath],
   categoryMain: defaultCategoryPath[0],
   categorySub: defaultCategoryPath[1],
   attribute: '定量',
   unit: '百分比（%）',
   direction: '逐步降低 ↓',
-  definition: isNew.value ? '统计周期内死亡患者记录数除以出院病案记录数，用于反映住院诊疗安全结果。' : '',
-  significance: isNew.value ? '用于监测医疗质量安全结果，辅助医院质量改进和趋势分析。' : '',
-  sources: isNew.value ? ['HIS', '病案'] : [],
+  definition: '',
+  significance: '',
+  sources: [],
   period: '年度',
-  policies: isNew.value ? ['绩效考核2024版', '2011年版指标'] : []
+  policies: []
 })
 
 const editorTitle = computed(() => {
@@ -1089,7 +1090,7 @@ const editorStatusLabel = computed(() => ({
 
 const required = message => ({ required: true, message, trigger: ['blur', 'change'] })
 const rules = {
-  code: [required('请输入指标编码')],
+  code: [required('请输入指标编码'), { pattern: /^[A-Z][A-Z0-9_]{0,63}$/, message: '编码须以大写字母开头，仅含大写字母、数字和下划线，最长 64 位', trigger: ['blur', 'change'] }],
   name: [required('请输入指标名称')],
   categoryPath: [required('请选择指标分类')],
   attribute: [required('请选择指标属性')],
@@ -1098,7 +1099,7 @@ const rules = {
   definition: [required('请输入指标定义')],
   sources: [required('请选择至少一个数据来源')],
   period: [required('请选择统计周期')],
-  policies: [required('请选择至少一个政策文件来源')]
+  policies: []
 }
 
 function findCategoryPath(target, options, trail = []) {
@@ -1749,35 +1750,19 @@ async function saveIndicatorBasicInfo() {
   try {
     if (!isNew.value) {
       if (!indicatorWorkflow.indicatorId) throw new Error('未读取到指标 ID，无法保存基本信息')
-      const updated = await updateIndicator(indicatorWorkflow.indicatorId, createIndicatorMetadataPayload())
-      form.name = updated?.name ?? form.name
-      syncCategorySelection(resolveCategoryPath(updated, form.categoryPath))
-      form.definition = updated?.definition ?? updated?.description ?? form.definition
-      form.significance = updated?.meaning ?? form.significance
-      if (updated?.dataSources) {
-        savedDataSources.value = normalizeIndicatorDataSources(updated.dataSources)
-        form.sources = savedDataSources.value.map(indicatorDataSourceKey)
-      }
-      indicatorWorkflow.masterResourceVersion = resolveResourceVersion(updated, indicatorWorkflow.masterResourceVersion)
-      form.period = fromApiStatisticalPeriod(updated?.statisticalPeriod) || form.period
-      indicatorWorkflow.metadataVersionId = toOpaqueId(updated?.metadataVersionId ?? indicatorWorkflow.metadataVersionId)
-      indicatorWorkflow.metadataResourceVersion = resolveMetadataResourceVersion(updated, indicatorWorkflow.metadataResourceVersion)
-      if (indicatorWorkflow.metadataVersionId === indicatorWorkflow.versionId) {
-        indicatorWorkflow.resourceVersion = indicatorWorkflow.metadataResourceVersion
-        indicatorWorkflow.compiled = false
-        resetIndicatorTrialAfterPeriodChange()
-      }
-      ElMessage.success('指标基本信息已更新')
+      const hasDraftVersion = Boolean(indicatorWorkflow.versionId && !indicatorWorkflow.published)
+      const updated = await updateIndicator(indicatorWorkflow.indicatorId, createIndicatorMetadataPayload({ includeVersionMetadata: hasDraftVersion }))
+      applySavedIndicatorMetadata(updated, hasDraftVersion)
+      rememberIndicatorEditorForm(indicatorWorkflow.indicatorId)
+      ElMessage.success(hasDraftVersion ? '指标基本信息与草稿版本元数据已保存' : '指标基本资料已保存；定义、周期和来源将在创建草稿版本后保存')
       return true
     }
 
-    const suffix = createBackendCodeSuffix()
-    const indicatorCode = normalizeBusinessCode(form.code) || `FRONTEND_INDICATOR_${suffix}`
     const categoryPath = syncCategorySelection(form.categoryPath)
     const indicator = await createIndicator({
-      code: `${indicatorCode}_${suffix}`,
-      name: form.name || `前端指标 ${suffix}`,
-      description: form.definition || '前端指标配置流程创建',
+      code: form.code,
+      name: form.name,
+      description: form.definition || null,
       category: categoryPath[categoryPath.length - 1] || '',
       categoryMain: categoryPath[0] || '',
       categorySub: categoryPath[1] || ''
@@ -1791,14 +1776,38 @@ async function saveIndicatorBasicInfo() {
       '',
       resolveResourceVersion(indicator)
     )
+    form.code = indicator.code ?? form.code
+    rememberIndicatorEditorForm(indicatorId, true)
     await router.replace(`/indicator/edit/${encodeURIComponent(indicatorId)}`)
-    ElMessage.success('指标基本信息已保存到后端')
+    ElMessage.success('指标已创建；定义、周期和来源将在首次保存公式后写入草稿版本')
     return true
   } catch (error) {
     await handleIndicatorSaveError(error)
     return false
   } finally {
     workflowLoading.basic = false
+  }
+}
+
+function applySavedIndicatorMetadata(updated, hasDraftVersion) {
+  form.code = updated?.code ?? form.code
+  form.name = updated?.name ?? form.name
+  syncCategorySelection(resolveCategoryPath(updated, form.categoryPath))
+  indicatorWorkflow.masterResourceVersion = resolveResourceVersion(updated, indicatorWorkflow.masterResourceVersion)
+  if (!hasDraftVersion) return
+  form.definition = updated?.definition ?? updated?.description ?? form.definition
+  form.significance = updated?.meaning ?? form.significance
+  if (updated?.dataSources) {
+    savedDataSources.value = normalizeIndicatorDataSources(updated.dataSources)
+    form.sources = savedDataSources.value.map(indicatorDataSourceKey)
+  }
+  form.period = fromApiStatisticalPeriod(updated?.statisticalPeriod) || form.period
+  indicatorWorkflow.metadataVersionId = toOpaqueId(updated?.metadataVersionId ?? indicatorWorkflow.metadataVersionId)
+  indicatorWorkflow.metadataResourceVersion = resolveMetadataResourceVersion(updated, indicatorWorkflow.metadataResourceVersion)
+  if (indicatorWorkflow.metadataVersionId === indicatorWorkflow.versionId) {
+    indicatorWorkflow.resourceVersion = indicatorWorkflow.metadataResourceVersion
+    indicatorWorkflow.compiled = false
+    resetIndicatorTrialAfterPeriodChange()
   }
 }
 
@@ -1893,7 +1902,6 @@ async function saveBasicAndOpenFormula() {
   const basicSaved = await saveIndicatorBasicInfo()
   if (!basicSaved) return
   activeTab.value = 'formula'
-  ElMessage.success(indicatorWorkflow.versionId ? '基本信息已保存，可以继续配置公式' : '基本信息已保存，请选择分子、分母并创建首个版本')
 }
 
 async function saveIndicatorFormulaOnly() {
@@ -1976,7 +1984,7 @@ async function createFirstIndicatorVersionWithFormula(formula) {
     versionId,
     resourceVersion: resolveResourceVersion(version),
     metadataVersionId: toOpaqueId(version.metadataVersionId ?? versionId),
-    metadataResourceVersion: resolveMetadataResourceVersion(version),
+    metadataResourceVersion: resolveMetadataResourceVersion(version, resolveResourceVersion(version)),
     formulaSaved: true,
     compiled: Boolean(version.currentArtifactId),
     taskId: '',
@@ -1995,6 +2003,13 @@ async function createFirstIndicatorVersionWithFormula(formula) {
   selectedDrillPaths.value = normalizeDrillPaths(version)
   factorDimensionBindings.value = version.factorDimensionBindings || version.drillConfig?.factorDimensionBindings || {}
   recordWorkflowSuccess(`首个指标版本及公式已保存：${versionId}`)
+  try {
+    const updated = await updateIndicator(indicatorWorkflow.indicatorId, createIndicatorMetadataPayload())
+    applySavedIndicatorMetadata(updated, true)
+    rememberIndicatorEditorForm(indicatorWorkflow.indicatorId)
+  } catch (error) {
+    throw new Error(`草稿版本和公式已创建，但定义、周期和来源保存失败：${error?.message || '请返回基础页重试保存'}`)
+  }
 }
 
 async function compileIndicatorFormulaOnly() {
@@ -2435,7 +2450,7 @@ function createIndicatorFormulaPayload(resourceVersion) {
   }
 }
 
-function createIndicatorMetadataPayload() {
+function createIndicatorMetadataPayload({ includeVersionMetadata = true } = {}) {
   const categoryPath = syncCategorySelection(form.categoryPath)
   return {
     resourceVersion: indicatorWorkflow.masterResourceVersion,
@@ -2444,15 +2459,49 @@ function createIndicatorMetadataPayload() {
     categoryMain: categoryPath[0] || '',
     categorySub: categoryPath[1] || '',
     description: form.definition || null,
-    metadataVersionId: indicatorWorkflow.metadataVersionId || indicatorWorkflow.versionId || null,
-    metadataResourceVersion: indicatorWorkflow.metadataVersionId === indicatorWorkflow.versionId
+    ...(includeVersionMetadata ? {
+      metadataVersionId: indicatorWorkflow.metadataVersionId || indicatorWorkflow.versionId,
+      metadataResourceVersion: indicatorWorkflow.metadataVersionId === indicatorWorkflow.versionId
       ? indicatorWorkflow.resourceVersion : indicatorWorkflow.metadataResourceVersion,
-    definition: form.definition || null,
-    meaning: form.significance || null,
-    calculationDescription: `${numeratorFactors.value[0]?.name || '分子因子'} / ${denominatorFactors.value[0]?.name || '分母因子'} × 100%`,
-    statisticalPeriod: toApiStatisticalPeriod(form.period),
-    dataSources: buildIndicatorDataSources(form.sources, savedDataSources.value)
+      definition: form.definition || null,
+      meaning: form.significance || null,
+      calculationDescription: formulaValid.value ? formulaPreview.value : null,
+      statisticalPeriod: toApiStatisticalPeriod(form.period),
+      dataSources: buildIndicatorDataSources(form.sources, savedDataSources.value)
+    } : {})
   }
+}
+
+function indicatorEditorStorageKey(indicatorId) {
+  return `idmp:indicator-editor-form:${indicatorId}`
+}
+
+function rememberIndicatorEditorForm(indicatorId, openFormula = false) {
+  if (!indicatorId) return
+  try {
+    sessionStorage.setItem(indicatorEditorStorageKey(indicatorId), JSON.stringify({
+      form: { ...form, categoryPath: [...form.categoryPath], sources: [...form.sources], policies: [...form.policies] },
+      openFormula
+    }))
+  } catch { /* Storage may be unavailable; the current editor still keeps its in-memory values. */ }
+}
+
+function restoreIndicatorEditorForm() {
+  const indicatorId = indicatorWorkflow.indicatorId || (!isNew.value && routeIndicatorKey.value)
+  if (!indicatorId) return
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(indicatorEditorStorageKey(indicatorId)) || 'null')
+    if (!saved?.form) return
+    if (indicatorWorkflow.versionId) {
+      form.policies = Array.isArray(saved.form.policies) ? [...saved.form.policies] : form.policies
+    } else {
+      const persistedCode = indicatorWorkflow.indicatorId ? form.code : ''
+      Object.assign(form, saved.form)
+      if (persistedCode) form.code = persistedCode
+      syncCategorySelection(form.categoryPath)
+    }
+    if (saved.openFormula) activeTab.value = 'formula'
+  } catch { /* Ignore invalid or unavailable session data and use the backend response. */ }
 }
 
 function initialIndicatorTrialPeriod() {
@@ -2545,14 +2594,6 @@ async function pollBackendBatch(batchId) {
 
 function delay(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
-}
-
-function normalizeBusinessCode(value) {
-  return String(value || '').trim().replace(/[^\w]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '')
-}
-
-function createBackendCodeSuffix() {
-  return new Date().toISOString().replace(/\D/g, '').slice(0, 14)
 }
 
 function createIdempotencyKey(prefix) {
@@ -2661,8 +2702,10 @@ async function refreshTrialTaskStatus() {
 }
 
 onMounted(async () => {
+  restoreIndicatorEditorForm()
   await loadPublishedFactorVersions()
   await loadIndicatorForEdit()
+  restoreIndicatorEditorForm()
 })
 
 </script>

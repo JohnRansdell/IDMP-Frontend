@@ -23,6 +23,24 @@ export function newDerivedFactor() {
     output: { valueType: 'DECIMAL', semanticKind: 'MEASURE', dimension: 'COUNT', unit: 'COUNT', grain: [] } }
 }
 
+export function simpleDerivedExpression(node) {
+  if (node?.nodeType === 'FACTOR_REF') return { operator: 'REF', left: node, right: null }
+  if (node?.nodeType === 'BINARY' && ['ADD', 'SUB', 'MUL', 'DIV'].includes(node.operator)
+    && node.left?.nodeType === 'FACTOR_REF' && node.right?.nodeType === 'FACTOR_REF') {
+    return { operator: node.operator, left: node.left, right: node.right }
+  }
+  return null
+}
+
+export function buildSimpleDerivedExpression(operator, left, right, zeroDenominatorPolicy = 'RETURN_NULL') {
+  const factorRef = value => value?.nodeType === 'FACTOR_REF'
+    ? { ...value, factorVersionId: String(value.factorVersionId || '') }
+    : { nodeType: 'FACTOR_REF', factorVersionId: String(value || ''), alignmentPolicy: 'STRICT_EQUAL' }
+  if (operator === 'REF') return factorRef(left)
+  return { nodeType: 'BINARY', operator, left: factorRef(left), right: factorRef(right),
+    ...(operator === 'DIV' ? { zeroDenominatorPolicy } : {}) }
+}
+
 export function expressionChildren(node = {}) {
   if (['BINARY', 'COMPARE'].includes(node.nodeType)) return [['left', '左侧'], ['right', '右侧']]
   if (node.nodeType === 'UNARY') return [['operand', '操作数']]
