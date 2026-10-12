@@ -129,6 +129,7 @@ const props = defineProps({
   period: { type: String, default: '2026-06' },
   startLevel: { type: String, default: 'HOSPITAL' },
   startParentKeys: { type: Object, default: () => ({}) },
+  startFilters: { type: Object, default: () => ({}) },
   maxLevels: { type: Object, default: () => ({}) },
   configuredPaths: { type: Array, default: () => [] },
   startPathCode: { type: String, default: '' },
@@ -220,7 +221,7 @@ function buildPayload() {
   const payload = {
     ...(lastDrillDimension.value.startsWith('CUSTOM_') ? { pathCode: lastDrillDimension.value } : {}),
     parentKeys: parentKeys.value,
-    filters: {},
+    filters: { ...props.startFilters },
     pageNum: 1,
     pageSize: 20,
     sort: [{ field: 'indicatorValue', direction: 'DESC' }]
@@ -358,7 +359,7 @@ function inferDimensionFromLevel(level) {
     : 'ORGANIZATION'
 }
 
-watch(() => [props.startLevel, props.startParentKeys], ([level, keys]) => {
+watch(() => [props.startLevel, props.startParentKeys, props.startFilters], ([level, keys]) => {
   currentLevel.value = level
   parentKeys.value = { ...keys }
   if (isFactorTraceMode.value) loadFactorTrace()
