@@ -23,7 +23,7 @@ export function layoutCalculationGraph(input = []) {
     }
     codes.add(node.nodeCode)
     nodes.push(node)
-    graph.setNode(node.nodeCode, { width: 224, height: 128 })
+    graph.setNode(node.nodeCode, { width: 224, height: 160 })
   }
   for (const node of nodes) {
     if (!Array.isArray(node.dependencies)) problems.add('当前批次未保存完整依赖信息，连线可能不完整。')

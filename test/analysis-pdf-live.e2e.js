@@ -11,7 +11,7 @@ const published = (Array.isArray(versions) ? versions : versions.records || []).
 assert.ok(published, 'Published acceptance version is required')
 const versionId = String(published.id)
 const port = Number(process.env.PDF_APP_PORT || 5173), debugPort = 41815
-const evidence = resolve('.tmp/analysis-pdf-live')
+const evidence = resolve(process.env.PDF_EVIDENCE_DIR || '.tmp/analysis-pdf-live')
 await mkdir(evidence, { recursive: true })
 const profile = await mkdtemp(join(tmpdir(), 'idmp-analysis-pdf-'))
 const chrome = spawn(process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', ['--headless=new', `--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`, '--no-first-run', 'about:blank'], { windowsHide: true, stdio: 'ignore' })

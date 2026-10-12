@@ -1,6 +1,6 @@
 <template>
   <section class="custom-paths" aria-label="自定义业务下钻路径">
-    <div class="custom-paths__heading"><strong>自定义下钻路径</strong><el-button :icon="Plus" :disabled="disabled || modelValue.length >= 5" @click="addPath">添加路径</el-button></div>
+    <div class="custom-paths__heading"><h3>自定义下钻路径</h3><el-button :icon="Plus" :disabled="disabled || modelValue.length >= 5" @click="addPath">添加路径</el-button></div>
     <div v-for="path in customPaths" :key="path.pathCode" class="custom-path">
       <div class="custom-path__heading">
         <el-input :model-value="path.pathName" :disabled="disabled" :maxlength="100" aria-label="自定义路径名称" placeholder="路径名称" @update:model-value="value => updatePath(path, { pathName: value })" @keydown.enter.prevent />
@@ -57,6 +57,7 @@ function moveLevel(path, index, direction) {
 <style scoped>
 .custom-paths { margin: 16px 0; min-width: 0; }
 .custom-paths__heading, .custom-path__heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.custom-paths__heading h3 { margin: 0; font-size: 15px; font-weight: 600; line-height: 22px; color: var(--idmp-text-primary); }
 .custom-path { border-top: 1px solid var(--idmp-border-subtle); padding: 16px 0; margin-top: 12px; }
 .custom-path__heading .el-input { max-width: 420px; }
 .custom-path__root { padding: 12px 0; font-size: 14px; }
