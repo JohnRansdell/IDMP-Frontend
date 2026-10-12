@@ -6,15 +6,13 @@
           <el-option label="组织维度" value="ORGANIZATION" :disabled="!pathAvailable('ORGANIZATION')" />
           <el-option label="病种维度" value="DISEASE" :disabled="!pathAvailable('DISEASE')" />
           <el-option v-for="path in customPaths" :key="path.pathCode" :label="path.pathName || '自定义路径'" :value="path.pathCode" />
-          <el-option v-if="source !== 'mock'" label="因子结果追溯" value="FACTOR_TRACE" />
-          <el-option label="时间维度（待接入）" value="TIME" disabled />
-          <el-option label="场景维度（待接入）" value="SCENARIO" disabled />
         </el-select>
         <span class="drill-context-bar__period">统计周期：{{ resolvedPeriod }}</span>
         <span class="drill-context-bar__source">{{ source === 'mock' ? '演示数据' : '真实接口' }}</span>
         <el-button v-if="source !== 'mock' && !isFactorTraceMode" size="small" @click="showFactorTrace">
           {{ factorTrace ? '刷新因子追溯' : '查看因子追溯' }}
         </el-button>
+        <el-button v-if="isFactorTraceMode" size="small" @click="returnToDrill">返回下钻</el-button>
       </div>
     </div>
 
@@ -157,7 +155,7 @@ const traceBatchId = computed(() => String(factorTrace.value?.context?.calculati
 const factorTraceLoading = ref(false)
 let factorTraceRequestId = 0
 const resolvedPathResultIds = ref({})
-const isFactorTraceMode = computed(() => dimension.value === 'FACTOR_TRACE')
+const isFactorTraceMode = ref(false)
 const statusRecord = computed(() => result.value.records.find(isStatusRecord) || null)
 const memberRecords = computed(() => result.value.records.filter((item) => !isStatusRecord(item)))
 const visibleColumns = computed(() => result.value.columns.filter((column) => (
@@ -310,7 +308,21 @@ async function loadFactorTrace() {
 
 function showFactorTrace() {
   if (props.source === 'mock') return
-  dimension.value = 'FACTOR_TRACE'
+  drillRequestId += 1
+  loading.value = false
+  errorMessage.value = ''
+  factorTrace.value = null
+  isFactorTraceMode.value = true
+  loadFactorTrace()
+}
+
+function returnToDrill() {
+  factorTraceRequestId += 1
+  factorTraceLoading.value = false
+  factorTrace.value = null
+  errorMessage.value = ''
+  isFactorTraceMode.value = false
+  loadDrill()
 }
 
 function openTraceBatch() {
@@ -383,8 +395,7 @@ watch(() => props.source, (source) => {
   factorTrace.value = null
   errorMessage.value = ''
   if (source === 'mock' && isFactorTraceMode.value) {
-    dimension.value = lastDrillDimension.value
-    return
+    isFactorTraceMode.value = false
   }
   loadDrill()
 })
@@ -395,10 +406,7 @@ watch(dimension, (value) => {
   loading.value = false
   factorTrace.value = null
   errorMessage.value = ''
-  if (value === 'FACTOR_TRACE') {
-    loadFactorTrace()
-    return
-  }
+  isFactorTraceMode.value = false
   lastDrillDimension.value = value
   if (value.startsWith('CUSTOM_')) {
     currentLevel.value = rootForPath(value)
