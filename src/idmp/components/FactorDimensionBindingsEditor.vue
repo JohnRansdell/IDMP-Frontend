@@ -1,6 +1,6 @@
 <template>
-  <section v-if="fields.length" class="bindings" aria-label="逐因子维度字段映射">
-    <h3>因子维度字段映射</h3>
+  <section v-if="fields.length" class="bindings" :aria-label="title">
+    <h4>{{ title }}</h4>
     <el-alert v-if="!factors.length" type="info" :closable="false" title="尚未选择因子" />
     <el-alert v-else-if="error" type="error" :closable="false" :title="error" class="bindings__status">
       <el-button :disabled="disabled" @click="emit('retry')">重新加载</el-button>
@@ -26,9 +26,9 @@
 <script setup>
 import { computed, reactive, watch } from 'vue'
 import { dimensionFieldTableGroups, dimensionFieldTableKey } from '../utils/dimensionFieldOptions.js'
-const props = defineProps({ modelValue: { type: Object, default: () => ({}) }, fields: { type: Array, default: () => [] }, factors: { type: Array, default: () => [] }, fieldOptions: { type: Array, default: () => [] }, disabled: Boolean, loading: Boolean, error: { type: String, default: '' } })
+const props = defineProps({ modelValue: { type: Object, default: () => ({}) }, title: { type: String, default: '因子维度字段映射' }, tableSelections: { type: Map, default: null }, fields: { type: Array, default: () => [] }, factors: { type: Array, default: () => [] }, fieldOptions: { type: Array, default: () => [] }, disabled: Boolean, loading: Boolean, error: { type: String, default: '' } })
 const emit = defineEmits(['update:modelValue', 'retry'])
-const tableSelections = reactive(new Map())
+const tableSelections = props.tableSelections || reactive(new Map())
 const tableGroups = computed(() => new Map(props.fieldOptions.map(item => [String(item.factorVersionId), dimensionFieldTableGroups(item)])))
 const selectionKey = (id, field) => JSON.stringify([String(id), field])
 const tablesFor = id => tableGroups.value.get(String(id)) || []
@@ -52,6 +52,7 @@ function selectTable(id, field, value) {
   if (bound && dimensionFieldTableKey(tablesFor(id), bound) !== value) update(id, field, '', value)
 }
 watch(() => props.factors.flatMap(factor => props.fields.map(field => selectionKey(factor.versionId, field))), keys => {
+  if (props.tableSelections) return
   const active = new Set(keys)
   for (const key of tableSelections.keys()) if (!active.has(key)) tableSelections.delete(key)
 })
@@ -63,7 +64,8 @@ function update(id, field, value, table = selectedTable(id, field)) {
 }
 </script>
 <style scoped>
-h3 { font-size: 15px; margin: 16px 0 12px; }
+h4 { font-size: 13px; font-weight: 600; line-height: 20px; color: var(--idmp-text-secondary); margin: 16px 0 10px; }
+.bindings__factor > strong { font-size: 13px; font-weight: 500; color: var(--idmp-text-secondary); }
 .bindings__status { margin-bottom: 12px; font-size: 14px; color: var(--idmp-text-secondary); }
 .bindings__factor { border-top: 1px solid var(--idmp-border-subtle); padding: 14px 0; }
 .bindings__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
