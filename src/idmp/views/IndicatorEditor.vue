@@ -49,7 +49,7 @@
           <el-form ref="formRef" :model="form" :rules="rules" label-width="108px" status-icon>
             <div class="form-grid">
               <el-form-item label="指标编码" prop="code">
-                <el-input v-model="form.code" :disabled="Boolean(indicatorWorkflow.indicatorId)" maxlength="64" placeholder="大写字母开头，仅含大写字母、数字和下划线" />
+                <el-input v-model.trim="form.code" :disabled="!isNew || Boolean(indicatorWorkflow.indicatorId)" maxlength="64" aria-label="指标编码" placeholder="自动生成，可在创建时修改" />
               </el-form-item>
               <el-form-item label="指标名称" prop="name">
                 <el-input v-model="form.name" placeholder="请输入指标完整名称" />
@@ -772,6 +772,7 @@ import { getStatusLabel } from '@/idmp/design/status'
 import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
 import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
 import { factorCalculationMode } from '@/idmp/utils/factorPeriod'
+import { newResourceCode } from '@/idmp/utils/resourceCode'
 import { configurableSourceFactors, activeSourceBindings } from '@/idmp/utils/derivedFactor'
 import { fetchPublishedFactorVersions } from '@/idmp/api/modules/factors'
 import RuntimeParameterFields from '@/idmp/components/RuntimeParameterFields.vue'
@@ -1047,7 +1048,7 @@ const indicatorCategoryProps = {
 }
 
 const form = reactive({
-  code: isNew.value ? '' : routeIndicatorKey.value,
+  code: isNew.value ? newResourceCode('INDICATOR') : routeIndicatorKey.value,
   name: '',
   shortName: '',
   categoryPath: [...defaultCategoryPath],
