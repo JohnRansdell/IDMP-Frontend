@@ -4,7 +4,7 @@ import { IDMP_CHART_THEME, normalizeChartOption } from '../../charts/theme.js'
 const text = value => value === undefined || value === null || value === '' ? '-' : String(value)
 
 export function buildAnalysisPdfReport({ versionId, metadata = [], primaryMetric, summaryMetrics = [], trendRows = [], hasPeerTrend = false,
-  unit = '', trendDescription = '', chartPng, rankRows = [], scenarioRows = [], scenarioDescription = '', provenance = [], drillSection }) {
+  unit = '', trendDescription = '', chartPng, rankRows = [], rankDescription = '', scenarioRows = [], scenarioDescription = '', provenance = [], drillSection }) {
   const sections = [
     { title: '指标概览', columns: ['项目', '结果', '说明'], rows: [
       [text(primaryMetric?.label), text(primaryMetric?.value), text(primaryMetric?.statusLabel)],
@@ -13,7 +13,7 @@ export function buildAnalysisPdfReport({ versionId, metadata = [], primaryMetric
     { title: '趋势分析', description: trendDescription, columns: ['周期', '本院实际值', ...(hasPeerTrend ? ['同级医院均值'] : [])],
       rows: trendRows.map(row => [text(row.label), metric(row.actual, unit), ...(hasPeerTrend ? [metric(row.peer, unit)] : [])]),
       ...(chartPng ? { chartPng } : {}) },
-    { title: '科室指标排名', columns: ['排名', '科室', '指标值', '分子', '分母', '状态'],
+    { title: '科室指标排名', description: rankDescription, columns: ['排名', '科室', '指标值', '分子', '分母', '状态'],
       rows: rankRows.map(row => [row.rank, row.department, row.rate, row.numerator, row.denominator, row.status].map(text)) },
     { title: '不同场景对比', description: scenarioDescription,
       columns: ['场景', '周期', '指标值', '分子', '分母', '状态', '结果 ID', '快照 ID'], rows: scenarioRows.map(row => row.map(text)) },

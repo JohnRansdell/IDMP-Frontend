@@ -34,6 +34,7 @@
     "test:breadcrumbs": "node --test test/breadcrumbs.test.js",
     "test:e2e:breadcrumbs": "node test/breadcrumbs.e2e.js",
     "test:analysis-pdf": "node --test test/analysis-pdf.test.js",
+    "test:drill-periods": "node --test test/drill-periods.test.js test/indicator-drill-period.component.test.js test/department-ranking.test.js",
     "test:e2e:analysis-pdf": "node test/analysis-pdf-live.e2e.js",
     "test:e2e:analysis-pdf-api": "node test/analysis-pdf-api.e2e.js",
     "test:cache": "node --test test/request-cache.test.js",
