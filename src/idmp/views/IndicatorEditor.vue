@@ -305,7 +305,7 @@
             </div>
             <section class="drill-capability-card" aria-label="指标版本下钻能力预检">
               <CustomDrillPathEditor v-model="selectedDrillPaths" :disabled="indicatorWorkflow.published" @update:model-value="invalidateGroupingConfiguration" />
-              <FactorDimensionBindingsEditor v-model="factorDimensionBindings" :disabled="indicatorWorkflow.published" :fields="customGroupingFields" :factors="dimensionBindingFactors" :field-options="drillCapability.fieldOptions" @update:model-value="invalidateGroupingConfiguration" />
+              <FactorDimensionBindingsEditor v-model="factorDimensionBindings" :disabled="indicatorWorkflow.published" :fields="customGroupingFields" :factors="dimensionBindingFactors" :field-options="factorFieldState.fieldOptions" :loading="factorFieldState.status === 'loading'" :error="factorFieldState.errorMessage" @retry="loadFactorFieldOptions" @update:model-value="invalidateGroupingConfiguration" />
               <div class="drill-config-card__heading">
                 <div>
                   <strong>下钻能力预检</strong>
@@ -710,7 +710,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
@@ -827,6 +827,7 @@ const selectedIndicatorTrialTargetKey = ref('')
 const indicatorTrialResultsLoaded = ref(false)
 const selectedDrillPaths = ref([])
 const factorDimensionBindings = ref({})
+const factorFieldState = reactive({ status: 'idle', factorVersionIds: [], fieldOptions: [], errorMessage: '' })
 const customGroupingFields = computed(() => {
   try { return sqlImportGroupingFields(selectedDrillPaths.value.filter(path => path.pathCode.startsWith('CUSTOM_')), indicatorDimensionGrain.value) } catch { return [] }
 })
@@ -876,7 +877,7 @@ const selectedFormulaFactors = computed(() => [
   ...numeratorFactors.value,
   ...denominatorFactors.value
 ])
-const dimensionBindingFactors = computed(() => configurableSourceFactors(selectedFormulaFactors.value, drillCapability, backendEditorFactors.value))
+const dimensionBindingFactors = computed(() => configurableSourceFactors(selectedFormulaFactors.value, factorFieldState, backendEditorFactors.value))
 const indicatorCalculationMode = computed(() => {
   const modes = new Set(selectedFormulaFactors.value.map((factor) => String(factor?.calculationMode || factorCalculationMode(factor?.dsl || {})).toUpperCase()))
   return modes.size === 1 ? [...modes][0] : ''
@@ -1241,6 +1242,66 @@ const drillCapabilityTagType = computed(() => ({
 }[drillCapability.status] || 'info'))
 
 let drillCapabilityRequestId = 0
+let factorFieldRequestId = 0
+let factorFieldController = null
+let factorFieldPromise = null
+let factorFieldSignature = ''
+
+function selectedFactorVersionIds() {
+  return [...new Set(selectedFormulaFactors.value.map(factor => String(factor.versionId || '')).filter(Boolean))].sort()
+}
+
+function resetFactorFieldOptions() {
+  factorFieldRequestId += 1
+  factorFieldController?.abort()
+  factorFieldController = null
+  factorFieldPromise = null
+  factorFieldSignature = ''
+  Object.assign(factorFieldState, { status: 'idle', factorVersionIds: [], fieldOptions: [], errorMessage: '' })
+}
+
+async function loadFactorFieldOptions() {
+  const ids = selectedFactorVersionIds()
+  if (!ids.length) return false
+  const signature = JSON.stringify(ids)
+  if (factorFieldSignature === signature) {
+    if (factorFieldState.status === 'ready') return true
+    if (factorFieldPromise) return factorFieldPromise
+  }
+  resetFactorFieldOptions()
+  const requestId = factorFieldRequestId
+  const controller = new AbortController()
+  factorFieldController = controller
+  factorFieldSignature = signature
+  factorFieldState.status = 'loading'
+  // 只收集已选因子的字段及原子依赖，不要求分子、分母或下钻配置完整。
+  const formula = {
+    schemaVersion: '1.0', astType: 'INDICATOR_FORMULA',
+    root: combineFormulaNodes(ids.map((id, index) => ({ nodeId: `field_${index}`, nodeType: 'FACTOR_REF', factorVersionId: id })), 'ADD', 'fields')
+  }
+  factorFieldPromise = (async () => {
+    try {
+      const response = await preflightIndicatorDrillCapabilities(formula, { signal: controller.signal })
+      if (requestId !== factorFieldRequestId) return false
+      const capability = normalizeDrillCapabilities(response)
+      Object.assign(factorFieldState, { status: 'ready', factorVersionIds: capability.factorVersionIds, fieldOptions: capability.fieldOptions, errorMessage: '' })
+      return true
+    } catch (error) {
+      if (requestId !== factorFieldRequestId) return false
+      factorFieldState.status = 'error'
+      factorFieldState.errorMessage = error?.message || '物理字段加载失败，请重试'
+      return false
+    } finally {
+      if (requestId === factorFieldRequestId) {
+        factorFieldController = null
+        factorFieldPromise = null
+      }
+    }
+  })()
+  return factorFieldPromise
+}
+
+onBeforeUnmount(resetFactorFieldOptions)
 
 function formulaSignature(formula) {
   return JSON.stringify({ formula, drillPaths: selectedDrillPaths.value, factorDimensionBindings: factorDimensionBindings.value, dimensionGrain: indicatorDimensionGrain.value })
@@ -1327,14 +1388,11 @@ async function runDrillCapabilityPreflight(providedFormula) {
   })
   workflowLoading.capability = true
   try {
-    const fieldsResponse = await preflightIndicatorDrillCapabilities(formula)
+    if (!await loadFactorFieldOptions()) throw new Error(factorFieldState.errorMessage || '物理字段尚未加载完成，请重试')
     if (requestId !== drillCapabilityRequestId) return false
-    const sourceCapability = normalizeDrillCapabilities(fieldsResponse)
-    drillCapability.fieldOptions = sourceCapability.fieldOptions
-    drillCapability.factorVersionIds = sourceCapability.factorVersionIds
     const paths = serializeDrillPaths(selectedDrillPaths.value)
     const bindings = activeFactorDimensionBindings()
-    const response = paths.length || Object.keys(bindings).length ? await preflightIndicatorDrillCapabilities(formula, { drillPaths: paths, factorDimensionBindings: bindings }) : fieldsResponse
+    const response = await preflightIndicatorDrillCapabilities(formula, { drillPaths: paths, factorDimensionBindings: bindings })
     if (requestId !== drillCapabilityRequestId) return false
     const capability = normalizeDrillCapabilities(response)
     Object.assign(drillCapability, {
@@ -1387,8 +1445,19 @@ watch(
     '|',
     ...denominatorFactors.value.map((factor) => String(factor.versionId || factor.code || ''))
   ],
-  resetDrillCapability,
+  () => {
+    resetDrillCapability()
+    workflowLoading.capability = false
+  },
   { flush: 'sync' }
+)
+watch(
+  () => JSON.stringify(selectedFactorVersionIds()),
+  () => {
+    resetFactorFieldOptions()
+    void loadFactorFieldOptions()
+  },
+  { flush: 'post' }
 )
 const hasIndicatorTrialPeriod = computed(() =>
   Array.isArray(indicatorTrialPeriod.value) && indicatorTrialPeriod.value.length === 2
@@ -3434,8 +3503,22 @@ onMounted(async () => {
 }
 
 .factor-library__footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
   padding: 12px 16px;
   border-top: 1px solid var(--idmp-border-soft);
+
+  .el-button {
+    margin: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .factor-library__footer .el-button {
+    padding-inline: 8px;
+  }
 }
 
 .formula-preview {
