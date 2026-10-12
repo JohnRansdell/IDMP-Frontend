@@ -97,7 +97,16 @@
       <StatePanel v-else-if="errorMessage" type="error" title="因子追溯加载失败" :description="errorMessage">
         <template #actions><el-button size="small" @click="loadFactorTrace">重试</el-button></template>
       </StatePanel>
-      <FactorTraceTree v-else-if="factorTrace" :key="`${factorTrace.context?.resultId}-${factorTrace.context?.configSnapshotId}`" :result-id="String(factorTrace.context?.resultId || activeResultId)" :factors="factorTrace.factors || []" />
+      <template v-else-if="factorTrace">
+        <div v-if="traceBatchId" class="factor-trace-batch" aria-label="所属计算批次">
+          <div class="factor-trace-batch__identifier">
+            <span>所属批次</span>
+            <strong class="mono-data">{{ traceBatchId }}</strong>
+          </div>
+          <el-button size="small" @click="openTraceBatch">查看计算批次</el-button>
+        </div>
+        <FactorTraceTree :key="`${factorTrace.context?.resultId}-${factorTrace.context?.configSnapshotId}`" :result-id="String(factorTrace.context?.resultId || activeResultId)" :factors="factorTrace.factors || []" />
+      </template>
     </section>
   </div>
 </template>
@@ -143,6 +152,7 @@ const loading = ref(false)
 const errorMessage = ref('')
 let drillRequestId = 0
 const factorTrace = ref(null)
+const traceBatchId = computed(() => String(factorTrace.value?.context?.calculationBatchId || ''))
 const factorTraceLoading = ref(false)
 let factorTraceRequestId = 0
 const resolvedPathResultIds = ref({})
@@ -300,6 +310,11 @@ async function loadFactorTrace() {
 function showFactorTrace() {
   if (props.source === 'mock') return
   dimension.value = 'FACTOR_TRACE'
+}
+
+function openTraceBatch() {
+  if (!traceBatchId.value || factorTraceLoading.value) return
+  router.push({ path: '/calc', query: { batchId: traceBatchId.value }, hash: '#batch-overview' })
 }
 
 function goToBreadcrumb(index) {
@@ -538,6 +553,33 @@ function rootForPath(pathCode) {
   margin-top: 16px;
   padding: 0 12px 14px;
   border-top: 1px solid var(--idmp-border-subtle);
+}
+
+.factor-trace-batch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 0 0 12px;
+}
+
+.factor-trace-batch__identifier {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.factor-trace-batch__identifier span {
+  color: var(--idmp-text-secondary);
+}
+
+.factor-trace-batch__identifier strong {
+  font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 900px) {

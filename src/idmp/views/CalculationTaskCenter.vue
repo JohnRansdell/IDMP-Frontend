@@ -216,7 +216,7 @@
         </dl>
       </article>
 
-      <article class="surface-card detail-card">
+      <article id="batch-overview" ref="batchOverview" class="surface-card detail-card">
         <div class="section-title">
           <h2>计算批次概览</h2>
           <span v-if="batchDetail?.batchId" class="mono-data endpoint-note">{{ batchDetail.batchId }}</span>
@@ -342,6 +342,7 @@ import { getStatusLabel } from '@/idmp/design/status'
 
 const route = useRoute()
 const router = useRouter()
+const batchOverview = ref(null)
 const queryForm = reactive({
   taskId: '101996817981379215',
   batchId: String(route.query.batchId || '101996817981379215')
@@ -924,9 +925,13 @@ function enumLabel(value, labels) {
   return labels[String(value || '').trim().toUpperCase()] || value || '-'
 }
 
-onMounted(() => {
-  if (route.query.batchId) loadBatch()
-  initializeOwnerSelection()
+onMounted(async () => {
+  const batchQuery = route.query.batchId ? loadBatch() : Promise.resolve()
+  const ownerInitialization = initializeOwnerSelection()
+  if (route.hash !== '#batch-overview') return
+  await Promise.all([batchQuery, ownerInitialization])
+  await nextTick()
+  batchOverview.value?.scrollIntoView({ block: 'start' })
 })
 
 onBeforeUnmount(() => {
@@ -955,6 +960,10 @@ function stateTypeForError(message) {
 <style scoped lang="scss">
 .calc-task-page {
   min-width: 0;
+}
+
+#batch-overview {
+  scroll-margin-top: calc(var(--idmp-topbar-height, 56px) + 16px);
 }
 
 .endpoint-note {
