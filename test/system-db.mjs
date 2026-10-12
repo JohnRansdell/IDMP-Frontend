@@ -21,6 +21,7 @@ export function db(database, query) {
   return new Promise((resolve, reject) => {
     const child = spawn('ssh', ['-T', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', 'lab-server', "tr -d '\\r' | bash -s"], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
     let output = '', error = ''
+    child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8')
     child.stdout.on('data', data => { output += data })
     child.stderr.on('data', data => { error += data })
     child.on('error', reject)
