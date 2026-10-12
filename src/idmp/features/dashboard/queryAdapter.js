@@ -6,8 +6,11 @@ export function queryWidgetDataset(dataset, widget, definitions = [], runtimeVal
   if (!dataset) return dataset
   const conditions = [], diagnostics = []
   const query = widget.config?.query || {}
+  const independentPeriod = widget.config?.backendQuery?.periodMode === 'INDEPENDENT'
   if (query.inheritGlobalFilters !== false) for (const def of definitions) {
     if (def.enabled === false || query.ignoredGlobalFilterIds?.includes(def.id)) continue
+    if (independentPeriod && def.type === 'date-range') continue
+    if (dataset.appliedGlobalFilterFields?.includes(def.field)) continue
     if (validateFilterDefinitions([def]).length) { diagnostics.push('全局筛选定义无效'); continue }
     const field = dataset.fields.find(item => item.id === def.field)
     if (!field?.filterable || filterValueType(field) !== def.dataType) continue // incompatible widget, by design

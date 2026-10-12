@@ -10,7 +10,7 @@ function firstIdentifier(source = {}) {
 export function buildIndicatorAnalysisPeriodContext(period = '', backendQuery = {}) {
   const fixedStart = String(backendQuery.periodStart || '').trim()
   const fixedEnd = String(backendQuery.periodEnd || '').trim()
-  if (String(backendQuery.periodMode || '').toUpperCase() === 'FIXED' && fixedStart && fixedEnd) {
+  if (['FIXED', 'INDEPENDENT'].includes(String(backendQuery.periodMode || '').toUpperCase()) && fixedStart && fixedEnd) {
     return {
       periodStart: fixedStart,
       periodEnd: fixedEnd,

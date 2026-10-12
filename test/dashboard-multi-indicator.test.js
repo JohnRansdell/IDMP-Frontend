@@ -72,6 +72,8 @@ test('multi-indicator and component fixed scopes reject incomplete saved configu
   ])
   assert.deepEqual(validateComponentQueryScope({ periodMode: 'FIXED' }), ['fixed component period requires start and end'])
   assert.deepEqual(validateComponentQueryScope({ periodMode: 'FIXED', periodStart: '2026-09-01', periodEnd: '2026-09-30' }), [])
+  assert.deepEqual(validateComponentQueryScope({ periodMode: 'INDEPENDENT' }), ['independent component period requires start and end'])
+  assert.deepEqual(validateComponentQueryScope({ periodMode: 'INDEPENDENT', periodStart: '2026-09-01', periodEnd: '2026-09-30' }), [])
 })
 
 test('map rendering uses a real ECharts map only when a GeoJSON boundary is supplied', () => {
@@ -118,6 +120,20 @@ test('multiple indicators and component query scope persist through the backend 
   assert.deepEqual(restored.widgets[0].config.indicatorBindings, indicatorBindings)
   assert.equal(restored.widgets[0].config.backendQuery.scenarioMode, 'FIXED')
   assert.deepEqual(restored.widgets[0].config.backendQuery.scenarioVersionIds, ['301'])
+})
+
+test('independent period survives the dashboard save and restore contract', () => {
+  const schema = {
+    id: 'period-contract', name: '周期看板', dashboardType: 'topic', scope: 'hospital',
+    layout: { columns: 24, float: false }, widgets: [{
+      id: 'latest', type: 'kpi', title: '最新指标', sourceCode: 'A', layout: { x: 0, y: 0, w: 6, h: 3 },
+      config: { backendQuery: { periodMode: 'INDEPENDENT', periodStart: '2026-09-01', periodEnd: '2026-09-30', granularity: 'MONTHLY' } }
+    }]
+  }
+  const payload = schemaToDashboardPayload(schema, { dataSources: [{ code: 'A', indicatorVersionId: 101 }] })
+  const restored = dashboardDetailToSchema({ dashboard: { id: 'period-contract', name: '周期看板', type: 'TOPIC' }, version: { layout: payload.layout, widgets: payload.widgets } })
+  assert.equal(restored.widgets[0].config.backendQuery.periodMode, 'INDEPENDENT')
+  assert.equal(restored.widgets[0].config.backendQuery.periodStart, '2026-09-01')
 })
 
 test('a multi-indicator binding retains its selected published version', () => {

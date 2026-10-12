@@ -20,6 +20,14 @@ export function resolveDrillHierarchy(value, fields = []) {
   return [...new Set(resolved)].slice(0, 3)
 }
 export function initialDrillState() { return { path: [] } }
+// Axis labels may be companion names while branch filters use department codes.
+export function resolveDrillClickValue(params, effective, model) {
+  const field = effective?.hierarchy?.[effective.path?.length || 0]
+  if (!field) return undefined
+  const index = params?.dataIndex
+  const tuple = params?.data?.dimensionValues || (Number.isInteger(index) ? model?.dimensionTuples?.[index] : null)
+  return tuple?.[field] ?? params?.name
+}
 export function effectiveDrill(widget, dataset, state = initialDrillState()) {
   const hierarchy = resolveDrillHierarchy(widget.config?.interaction?.drill?.hierarchy, dataset?.fields)
   if (!hierarchy.length || !dataset) return { dataset, binding: widget.config?.dataBinding, hierarchy, path: [] }

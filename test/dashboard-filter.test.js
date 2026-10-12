@@ -54,6 +54,12 @@ test('ignored ids and inherit=false only bypass global conditions', () => {
     assert.equal(queryWidgetDataset(dataset, { config: { ...widget.config, query } }, [def], { department: ['内科'] }).rows.length, 4)
   }
 })
+test('independent component period ignores only global date ranges', () => {
+  const independent = { config: { ...widget.config, backendQuery: { periodMode: 'INDEPENDENT' } } }
+  const date = { id: 'date', label: '日期', field: 'date', dataType: 'date', type: 'date-range', enabled: true }
+  const result = queryWidgetDataset(dataset, independent, [def, date], { department: ['内科'], date: ['2026-09-01', '2026-09-30'] })
+  assert.deepEqual(result.rows, [rows[0], rows[2]])
+})
 test('reset returns independent default values rather than clearing them', () => {
   const definitions = [{ ...def, defaultValue: ['外科'] }]
   const runtime = initialFilterValues(definitions); runtime.department.push('内科')

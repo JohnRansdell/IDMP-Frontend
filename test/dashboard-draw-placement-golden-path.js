@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 export async function runDrawPlacementGoldenPath(cdp, { click, value, waitFor, delay, gridNode }) {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false })
+  assert.equal(await value(cdp, `!!document.querySelector('[data-testid="dashboard-designer-period-start"]') && !!document.querySelector('[data-testid="dashboard-designer-period-end"]')`), true, 'designer exposes a month range on every dashboard')
   const canvas = '[data-testid="dashboard-canvas"]'
   const ids = await value(cdp, `Array.from(document.querySelectorAll('${canvas} .grid-stack-item')).map(el => el.dataset.widgetId)`)
   assert.ok(ids.length >= 2, 'placement acceptance needs two components for collision checks')
@@ -126,18 +127,39 @@ export async function runDrawPlacementGoldenPath(cdp, { click, value, waitFor, d
   await click(cdp, '[data-testid="dashboard-library-text"]')
   await waitFor(cdp, `document.querySelector('[data-testid="dashboard-draw-surface"]')`)
   const textId = await value(cdp, `document.querySelector('${canvas}').__vueParentComponent.props.pendingWidget.id`)
-  await click(cdp, '[data-testid="dashboard-draw-surface"]')
-  assert.equal(await count(), 3, 'a click without drawing must not create a widget')
+  const clickPoint = await value(cdp, `(() => {
+    const el = document.querySelector('${canvas}');
+    const props = el.__vueParentComponent.props;
+    const g = el.__vueParentComponent.exposed.getGridGeometry();
+    const { w, h } = props.pendingWidget.layout;
+    const occupied = Array.from(el.querySelectorAll('.grid-stack-item')).map(item => item.gridstackNode);
+    for (let y = 0; y <= g.rows - h; y++) for (let x = 0; x <= g.columns - w; x++) {
+      if (occupied.some(item => x < item.x + item.w && x + w > item.x && y < item.y + item.h && y + h > item.y)) continue;
+      const scroller = el.closest('.studio-canvas-scroll');
+      scroller.scrollTop = Math.max(0, y * g.cellHeight - 100);
+      const r = el.getBoundingClientRect();
+      return { x: r.left + (x + .2) * g.cellWidth, y: r.top + (y + .2) * g.cellHeight };
+    }
+    return null;
+  })()`)
+  assert.ok(clickPoint, 'click placement needs an empty grid location')
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...clickPoint, button: 'left', buttons: 1, clickCount: 1 })
+  await release(clickPoint)
+  await waitFor(cdp, `document.querySelector('[data-widget-id="${textId}"]')?.gridstackNode`)
+  assert.equal(await count(), 4, 'clicking empty canvas space should place a widget at its default size')
+  await click(cdp, '[data-testid="dashboard-library-text"]')
+  await waitFor(cdp, `document.querySelector('[data-testid="dashboard-draw-surface"]')`)
+  const collisionId = await value(cdp, `document.querySelector('${canvas}').__vueParentComponent.props.pendingWidget.id`)
   const collisionEnd = await draw(target)
   assert.equal(await value(cdp, `document.querySelector('[data-testid="dashboard-placement-preview"]').classList.contains('is-invalid')`), true)
   await release(collisionEnd)
-  assert.equal(await value(cdp, `!!document.querySelector('[data-widget-id="${textId}"]')`), false)
+  assert.equal(await value(cdp, `!!document.querySelector('[data-widget-id="${collisionId}"]')`), false)
   await escape()
-  assert.equal(await count(), 3)
+  assert.equal(await count(), 4)
   assert.equal(await value(cdp, `!!document.querySelector(${JSON.stringify(createdSelector)}).gridstackNode.noMove`), false)
   assert.equal(await value(cdp, `!!document.querySelector(${JSON.stringify(createdSelector)}).gridstackNode.noResize`), false)
 
-  for (const id of [...ids.slice(0, 2), pendingId]) {
+  for (const id of [...ids.slice(0, 2), pendingId, textId]) {
     await click(cdp, `[data-widget-id="${id}"]`)
     await waitFor(cdp, `document.querySelector('[data-widget-id="${id}"]').classList.contains('is-selected')`)
     await click(cdp, '[data-testid="dashboard-delete-widget"]')

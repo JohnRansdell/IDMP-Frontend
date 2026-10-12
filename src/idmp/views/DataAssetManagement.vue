@@ -74,14 +74,9 @@
           <el-form-item label="域名称">
             <el-input v-model.trim="bindForm.domainName" />
           </el-form-item>
-          <div class="form-fields">
-            <el-form-item label="语义表编码">
-              <el-input v-model.trim="bindForm.semanticTableCode" class="mono-input" />
-            </el-form-item>
-            <el-form-item label="默认时间字段">
-              <el-input v-model.trim="bindForm.defaultTimeSemanticFieldCode" class="mono-input" placeholder="如 DEATH_DATETIME" />
-            </el-form-item>
-          </div>
+          <el-form-item label="语义表编码">
+            <el-input v-model.trim="bindForm.semanticTableCode" class="mono-input" />
+          </el-form-item>
           <el-form-item label="语义表名称">
             <el-input v-model.trim="bindForm.semanticTableName" />
           </el-form-item>
@@ -320,8 +315,7 @@ const bindForm = reactive({
   domainName: '住院死亡患者记录',
   domainDescription: '前端数据资产配置绑定',
   semanticTableCode: 'INPATIENT_DEATH_RECORD',
-  semanticTableName: '住院死亡患者记录',
-  defaultTimeSemanticFieldCode: 'DEATH_DATETIME'
+  semanticTableName: '住院死亡患者记录'
 })
 
 const firstDomain = computed(() => dataDomains.value[0])
@@ -487,8 +481,7 @@ async function handleBindSourceTable() {
       domainName: bindForm.domainName,
       domainDescription: bindForm.domainDescription,
       semanticTableCode: bindForm.semanticTableCode,
-      semanticTableName: bindForm.semanticTableName,
-      defaultTimeSemanticFieldCode: bindForm.defaultTimeSemanticFieldCode || null
+      semanticTableName: bindForm.semanticTableName
     })
     bindFeedback.value = {
       status: 'SUCCEEDED',
@@ -636,8 +629,7 @@ async function runDataAssetBackendChain() {
       domainName: bindForm.domainName,
       domainDescription: bindForm.domainDescription,
       semanticTableCode: bindForm.semanticTableCode,
-      semanticTableName: bindForm.semanticTableName,
-      defaultTimeSemanticFieldCode: bindForm.defaultTimeSemanticFieldCode || null
+      semanticTableName: bindForm.semanticTableName
     })
     setBackendStep(activeStep, 'SUCCEEDED', `${bindForm.tableName} → ${bindForm.domainCode}`)
 

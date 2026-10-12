@@ -55,8 +55,8 @@ export function validateComponentQueryScope(value) {
   if (value === undefined) return []
   if (!plain(value)) return ['backendQuery must be an object']
   const errors = []
-  if (value.periodMode === 'FIXED') {
-    if (!value.periodStart || !value.periodEnd) errors.push('fixed component period requires start and end')
+  if (['FIXED', 'INDEPENDENT'].includes(value.periodMode)) {
+    if (!value.periodStart || !value.periodEnd) errors.push(`${value.periodMode === 'INDEPENDENT' ? 'independent' : 'fixed'} component period requires start and end`)
     else if (value.periodStart > value.periodEnd) errors.push('component period start must not exceed end')
   }
   if (value.organizationMode === 'FIXED' && value.organizationScope?.level !== 'HOSPITAL' && !value.organizationScope?.ids?.length) errors.push('fixed component organization requires ids')

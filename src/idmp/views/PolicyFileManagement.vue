@@ -1,32 +1,40 @@
 <template>
   <div class="idmp-page policy-page">
-    <PageHeader title="政策文件" description="" />
-    <form class="policy-filters" @submit.prevent="search">
-      <el-input v-model.trim="filters.name" clearable placeholder="政策文件名称" aria-label="政策文件名称" />
-      <el-select v-model="filters.status" clearable placeholder="全部状态" aria-label="发布状态"><el-option label="草稿" value="DRAFT" /><el-option label="已发布" value="PUBLISHED" /></el-select>
-      <el-button native-type="submit" :icon="Search">查询</el-button>
-      <el-button :icon="Refresh" @click="reset">重置</el-button>
-      <el-button type="primary" :icon="Upload" @click="newPolicy">新建政策文件</el-button>
-    </form>
+    <PageHeader title="政策文件">
+      <template #meta><span>共 {{ total }} 份文件</span></template>
+      <template #actions><el-button type="primary" :icon="Upload" @click="newPolicy">新建政策文件</el-button></template>
+    </PageHeader>
+    <section class="surface-card policy-filter-card" aria-label="政策文件筛选">
+      <form class="policy-filters" @submit.prevent="search">
+        <el-input v-model.trim="filters.name" clearable placeholder="政策文件名称" aria-label="政策文件名称" />
+        <el-select v-model="filters.status" clearable placeholder="全部状态" aria-label="发布状态"><el-option label="草稿" value="DRAFT" /><el-option label="已发布" value="PUBLISHED" /></el-select>
+        <div class="policy-filter-actions"><el-button type="primary" native-type="submit" :icon="Search">查询</el-button><el-button :icon="Refresh" @click="reset">重置</el-button></div>
+      </form>
+    </section>
     <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon />
-    <el-table v-loading="loading" :data="rows" empty-text="暂无政策文件" @row-dblclick="openDetail">
-      <el-table-column prop="name" label="文件名称" min-width="220" />
-      <el-table-column prop="code" label="编码" min-width="140" />
-      <el-table-column prop="issuingOrganization" label="发布机构" min-width="140" />
-      <el-table-column prop="documentNumber" label="文号" min-width="160" />
-      <el-table-column label="发布状态" width="100"><template #default="{ row }"><StatusBadge :status="row.status" /></template></el-table-column>
-      <el-table-column label="操作" width="140"><template #default="{ row }"><el-button link type="primary" @click="openDetail(row)">查看</el-button><el-button link @click="editPolicy(row)">编辑</el-button></template></el-table-column>
-    </el-table>
-    <el-pagination v-model:current-page="page" :page-size="20" :total="Number(total)" layout="total, prev, pager, next" @current-change="load" />
+    <section class="surface-card policy-table-card" aria-label="政策文件列表">
+      <div class="policy-table-heading"><h2>文件列表</h2><span>双击或点击查看文件版本与关系</span></div>
+      <div class="policy-table-scroll">
+        <el-table v-loading="loading" :data="rows" empty-text="暂无政策文件" @row-dblclick="openDetail">
+          <el-table-column prop="name" label="文件名称" min-width="220" show-overflow-tooltip />
+          <el-table-column prop="code" label="编码" min-width="140" />
+          <el-table-column prop="issuingOrganization" label="发布机构" min-width="140" />
+          <el-table-column prop="documentNumber" label="文号" min-width="160" />
+          <el-table-column label="发布状态" width="100"><template #default="{ row }"><StatusBadge :status="row.status" /></template></el-table-column>
+          <el-table-column label="操作" width="140"><template #default="{ row }"><el-button link type="primary" @click="openDetail(row)">查看</el-button><el-button link @click="editPolicy(row)">编辑</el-button></template></el-table-column>
+        </el-table>
+      </div>
+      <div class="policy-table-footer"><el-pagination v-model:current-page="page" :page-size="20" :total="Number(total)" layout="total, prev, pager, next" @current-change="load" /></div>
+    </section>
 
     <el-dialog v-model="metadataVisible" :title="metadata.id ? '编辑政策信息' : '新建政策文件'" width="min(620px, 94vw)" :close-on-click-modal="!saving">
-      <el-form label-position="top" @submit.prevent="saveMetadata">
-        <el-form-item label="文件名称" required><el-input v-model.trim="metadata.name" maxlength="300" /></el-form-item>
+      <el-form class="policy-metadata-form" label-position="top" @submit.prevent="saveMetadata">
+        <el-form-item class="policy-metadata-form__wide" label="文件名称" required><el-input v-model.trim="metadata.name" maxlength="300" /></el-form-item>
         <el-form-item label="编码" required><el-input v-model.trim="metadata.code" :disabled="Boolean(metadata.id)" maxlength="64" /></el-form-item>
         <el-form-item label="类别" required><el-select v-model="metadata.category"><el-option label="医疗质量" value="QUALITY" /><el-option label="绩效考核" value="PERFORMANCE" /><el-option label="其他" value="OTHER" /></el-select></el-form-item>
         <el-form-item label="发布机构"><el-input v-model.trim="metadata.issuingOrganization" maxlength="200" /></el-form-item>
         <el-form-item label="文号"><el-input v-model.trim="metadata.documentNumber" maxlength="100" /></el-form-item>
-        <el-form-item label="说明"><el-input v-model="metadata.description" type="textarea" maxlength="10000" :rows="3" /></el-form-item>
+        <el-form-item class="policy-metadata-form__wide" label="说明"><el-input v-model="metadata.description" type="textarea" maxlength="10000" :rows="3" /></el-form-item>
       </el-form>
       <template #footer><el-button :disabled="saving" @click="metadataVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="saveMetadata">保存</el-button></template>
     </el-dialog>
@@ -237,11 +245,24 @@ onMounted(async () => {
 })
 </script>
 <style scoped>
-.policy-page { display: flex; flex-direction: column; gap: 20px; }
+.policy-page { min-width: 0; }
+.policy-filter-card { margin-bottom: 16px; padding: 14px 16px; }
 .policy-filters { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.policy-filters .el-input { width: 260px; }
-.policy-filters .el-select { width: 150px; }
-.policy-filters .el-button:last-child { margin-left: auto; }
+.policy-filters > .el-input { flex: 1 1 260px; max-width: 360px; }
+.policy-filters > .el-select { width: 160px; }
+.policy-filter-actions { display: flex; gap: 8px; margin-left: auto; }
+.policy-filter-actions .el-button + .el-button { margin-left: 0; }
+.policy-page > .el-alert { margin-bottom: 16px; }
+.policy-table-card { overflow: hidden; }
+.policy-table-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; border-bottom: 1px solid var(--idmp-border-subtle); }
+.policy-table-heading h2 { margin: 0; font-size: 16px; }
+.policy-table-heading span { color: var(--idmp-text-helper); font-size: 12px; }
+.policy-table-scroll { overflow-x: auto; padding: 0 16px; }
+.policy-table-scroll :deep(.el-table) { min-width: 900px; }
+.policy-table-footer { display: flex; justify-content: flex-end; padding: 14px 16px; border-top: 1px solid var(--idmp-border-subtle); }
+.policy-metadata-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.policy-metadata-form__wide { grid-column: 1 / -1; }
+.policy-metadata-form :deep(.el-select) { width: 100%; }
 .section-toolbar { display: flex; justify-content: space-between; align-items: center; margin: 24px 0 12px; }
 .section-toolbar h3 { font-size: 16px; margin: 0; }
 .relation-form { display: grid; grid-template-columns: minmax(200px, 2fr) minmax(100px, 1fr); gap: 12px; margin-top: 16px; }
@@ -279,5 +300,10 @@ onMounted(async () => {
   .version-file-row .el-button { grid-column: 2; justify-self: start; margin-left: 0; }
   :global(.policy-version-dialog) { margin-top: 16px; margin-bottom: 16px; max-height: calc(100dvh - 32px); overflow-y: auto; }
 }
-@media (max-width: 600px) { .relation-form { grid-template-columns: 1fr; } .policy-filters .el-input { width: 100%; } }
+@media (max-width: 600px) {
+  .relation-form, .policy-metadata-form { grid-template-columns: 1fr; }
+  .policy-filters > .el-input, .policy-filters > .el-select { width: 100%; max-width: none; }
+  .policy-filter-actions { width: 100%; margin-left: 0; }
+  .policy-table-heading { align-items: flex-start; flex-direction: column; }
+}
 </style>

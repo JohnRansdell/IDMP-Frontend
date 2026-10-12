@@ -39,17 +39,40 @@
       <div class="action-bar"><el-button type="primary" :loading="metadataLoading" @click="submitMetadata">确认元数据并进入试算</el-button></div>
     </template>
 
-    <section v-if="canTrial || isSucceeded" class="surface-card section"><div class="section-heading"><div><h2>{{ isSucceeded ? '运行条件与即时查询' : '3. 导入试算' }}</h2><span>{{ runtimeConditionHint }}</span></div><el-button v-if="canTrial" type="primary" :loading="trialLoading" @click="runTrial">发起试算</el-button><div v-else class="query-actions"><el-select v-if="publishedFactors.length" v-model="selectedFactorVersionId" placeholder="选择因子" aria-label="选择即时查询因子"><el-option v-for="factor in publishedFactors" :key="factor.factorVersionId" :label="factor.key || factor.factorCode || factor.factorVersionId" :value="factor.factorVersionId" /></el-select><el-button v-if="publishedFactors.length" :loading="runtimeQueryLoading" @click="runRuntimeQuery('FACTOR')">查询因子</el-button><el-button v-if="importTask.result?.indicatorVersionId" type="primary" :loading="runtimeQueryLoading" @click="runRuntimeQuery('INDICATOR')">查询指标</el-button></div></div>
+    <section v-if="canTrial || isSucceeded" class="surface-card section runtime-query-section">
+      <div class="section-heading runtime-query-heading"><div><h2>{{ isSucceeded ? '运行条件与即时查询' : '3. 导入试算' }}</h2><span>{{ runtimeConditionHint }}</span></div></div>
       <el-alert v-if="parameterConflicts.length" class="condition-alert" type="error" :closable="false" show-icon :title="`存在不兼容的同名参数：${parameterConflicts.map(item => item.code).join('、')}`" description="试算请求只有一个 parameters 对象；同名参数在所有因子中的类型、必填性和模式必须一致。" />
-      <div class="runtime-conditions">
+      <div v-if="hasTemporalFactors || runtimeParameters.length" class="runtime-conditions">
         <div v-if="hasTemporalFactors" class="runtime-period">
           <span class="runtime-period__label">统计周期</span>
           <el-date-picker v-model="trialPeriod" type="datetimerange" value-format="YYYY-MM-DDTHH:mm:ss" start-placeholder="开始时间（包含）" end-placeholder="结束时间（不包含）" aria-label="试算统计周期" />
+          <small>开始时间包含，结束时间不包含</small>
         </div>
-        <div v-for="parameter in runtimeParameters" :key="parameter.code" class="runtime-field"><label><span>{{ parameter.code }}<em v-if="parameter.required">*</em></span><small>{{ parameterTypeLabel(parameter.type) }} · {{ parameter.parameterMode === 'TEMPORARY' ? '临时重算' : '结果维度' }}</small></label><el-select v-if="parameter.type === 'BOOLEAN'" v-model="runtimeParameterValues[parameter.code]" clearable placeholder="请选择"><el-option label="是" :value="true" /><el-option label="否" :value="false" /></el-select><el-input-number v-else-if="parameter.type === 'INTEGER'" v-model="runtimeParameterValues[parameter.code]" :precision="0" :controls="false" placeholder="请输入整数" /><el-input-number v-else-if="parameter.type === 'DECIMAL'" v-model="runtimeParameterValues[parameter.code]" :controls="false" placeholder="请输入数值" /><el-date-picker v-else-if="parameter.type === 'DATE'" v-model="runtimeParameterValues[parameter.code]" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" /><el-date-picker v-else-if="parameter.type === 'DATETIME'" v-model="runtimeParameterValues[parameter.code]" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" placeholder="选择日期时间" /><el-input v-else v-model="runtimeParameterValues[parameter.code]" clearable :placeholder="parameter.code.toLowerCase().includes('dept') ? '输入单个科室编码' : '请输入参数值'" /></div>
+        <div v-if="runtimeParameters.length" class="runtime-parameter-section">
+          <div class="runtime-parameter-heading"><strong>SQL 运行参数</strong><small>SQL 自定义条件，与上方统计周期分别生效</small></div>
+          <div class="runtime-parameter-grid">
+            <div v-for="parameter in runtimeParameters" :key="parameter.code" class="runtime-field">
+              <label><span>{{ parameter.code }}<em v-if="parameter.required">*</em></span></label>
+              <el-select v-if="parameter.type === 'BOOLEAN'" v-model="runtimeParameterValues[parameter.code]" clearable placeholder="请选择"><el-option label="是" :value="true" /><el-option label="否" :value="false" /></el-select>
+              <el-input-number v-else-if="parameter.type === 'INTEGER'" v-model="runtimeParameterValues[parameter.code]" :precision="0" :controls="false" placeholder="请输入整数" />
+              <el-input-number v-else-if="parameter.type === 'DECIMAL'" v-model="runtimeParameterValues[parameter.code]" :controls="false" placeholder="请输入数值" />
+              <el-date-picker v-else-if="parameter.type === 'DATE'" v-model="runtimeParameterValues[parameter.code]" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" />
+              <el-date-picker v-else-if="parameter.type === 'DATETIME'" v-model="runtimeParameterValues[parameter.code]" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" placeholder="选择日期时间" />
+              <el-input v-else v-model="runtimeParameterValues[parameter.code]" clearable :placeholder="parameter.code.toLowerCase().includes('dept') ? '输入单个科室编码' : '请输入参数值'" />
+              <small>{{ parameterTypeLabel(parameter.type) }} · {{ parameter.parameterMode === 'TEMPORARY' ? '临时重算' : '结果维度' }}</small>
+            </div>
+          </div>
+        </div>
       </div>
       <el-alert v-if="runtimeParameters.some(item => item.code.toLowerCase().includes('dept'))" class="condition-alert" type="info" :closable="false" title="当前后端参数契约只支持单个标量科室编码；多科室选择需后端增加数组参数类型后再开放。" />
-      <div v-if="runtimeQueryResult" class="runtime-result"><div class="result-summary"><el-tag :type="runtimeQueryResult.executionMode === 'AD_HOC_SOURCE' ? 'warning' : 'success'">{{ runtimeQueryResult.executionMode === 'AD_HOC_SOURCE' ? '按源数据计算' : '正式结果' }}</el-tag><span>参数快照：{{ JSON.stringify(runtimeQueryResult.parameterSnapshot || {}) }}</span></div><el-table :data="runtimeQueryResult.rows || []" border max-height="360" empty-text="当前条件没有结果"><el-table-column v-for="column in runtimeResultColumns" :key="column" :prop="column" :label="column" min-width="140"><template #default="{ row }">{{ formatRuntimeCell(row[column]) }}</template></el-table-column></el-table></div>
+      <div class="runtime-query-toolbar">
+        <el-button v-if="canTrial" type="primary" :loading="trialLoading" @click="runTrial">发起试算</el-button>
+        <div v-else class="query-actions">
+          <div v-if="publishedFactors.length" class="factor-query-actions"><el-select v-model="selectedFactorVersionId" placeholder="选择因子" aria-label="选择即时查询因子"><el-option v-for="factor in publishedFactors" :key="factor.factorVersionId" :label="factor.key || factor.factorCode || factor.factorVersionId" :value="factor.factorVersionId" /></el-select><el-button :loading="runtimeQueryLoading" @click="runRuntimeQuery('FACTOR')">查询因子</el-button></div>
+          <el-button v-if="importTask.result?.indicatorVersionId" type="primary" :loading="runtimeQueryLoading" @click="runRuntimeQuery('INDICATOR')">查询指标</el-button>
+        </div>
+      </div>
+      <div v-if="runtimeQueryResult" class="runtime-result"><div class="result-summary"><strong>即时查询结果</strong><el-tag :type="runtimeQueryResult.executionMode === 'AD_HOC_SOURCE' ? 'warning' : 'success'">{{ runtimeQueryResult.executionMode === 'AD_HOC_SOURCE' ? '按源数据计算' : '正式结果' }}</el-tag><span>参数快照：{{ JSON.stringify(runtimeQueryResult.parameterSnapshot || {}) }}</span></div><el-table :data="runtimeQueryResult.rows || []" border max-height="360" empty-text="当前条件没有结果"><el-table-column v-for="column in runtimeResultColumns" :key="column" :prop="column" :label="column" min-width="140"><template #default="{ row }">{{ formatRuntimeCell(row[column]) }}</template></el-table-column></el-table></div>
     </section>
     <section v-if="canFinalize" class="surface-card section"><h2>4. 试算成功</h2><el-alert type="success" :closable="false" title="试算成功，尚未创建和发布正式资源。请核对资源级诊断后确认发布。" /><ResourceTable :resources="importTask.resources" /><div class="action-bar"><el-button type="success" :loading="finalizeLoading" @click="finalizeImport">确认创建并发布</el-button></div></section>
     <section v-if="importTask?.resources.length && !canFinalize" class="surface-card section"><h2>资源状态</h2><ResourceTable :resources="importTask.resources" /></section>
@@ -200,14 +223,42 @@ onMounted(() => { void loadDrillPathCatalog(); if (route.query.importId) { impor
 .conflict-resource{margin-top:10px}
 .technical-details{margin:12px 0;color:var(--idmp-text-helper)}
 .technical-details summary{cursor:pointer}
-.sql-import-page .runtime-conditions { min-width:0; }
-.runtime-period { grid-column:1 / -1; display:grid; justify-items:start; gap:8px; min-width:0; }
-.runtime-period__label { font-size:13px; font-weight:600; color:var(--idmp-text-primary); }
-.runtime-period > .el-date-editor { width:min(100%, 600px); max-width:100%; }
-.sql-import-page .runtime-field label { display:grid; justify-content:stretch; gap:2px; min-height:0; }
-.sql-import-page .runtime-field label small { white-space:normal; line-height:1.4; }
-@media (max-width:1300px) { .sql-import-page .runtime-conditions { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-@media (max-width:760px) { .sql-import-page .runtime-conditions { grid-template-columns:minmax(0,1fr); } }
+.runtime-query-section .runtime-query-heading { padding-bottom:14px; border-bottom:1px solid var(--idmp-border-subtle); }
+.runtime-query-section .runtime-query-heading span { display:block; margin-top:6px; line-height:1.5; }
+.runtime-query-section .runtime-conditions { display:grid; grid-template-columns:minmax(0,1fr); gap:18px; margin-top:18px; min-width:0; }
+.runtime-query-section .runtime-period { display:grid; gap:6px; width:min(100%,640px); min-width:0; }
+.runtime-period__label,.runtime-query-section .runtime-field label { color:var(--idmp-text-primary); font-size:13px; font-weight:600; }
+.runtime-query-section .runtime-period > .el-date-editor { width:100%; min-width:0; }
+.runtime-query-section .runtime-period small,.runtime-query-section .runtime-field > small { color:var(--idmp-text-helper); font-size:12px; line-height:1.4; }
+.runtime-query-section .runtime-parameter-section { display:grid; gap:12px; min-width:0; }
+.runtime-query-section .runtime-parameter-heading { display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 12px; }
+.runtime-query-section .runtime-parameter-heading strong { color:var(--idmp-text-primary); font-size:14px; }
+.runtime-query-section .runtime-parameter-heading small { color:var(--idmp-text-helper); font-size:12px; }
+.runtime-query-section .runtime-parameter-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px 16px; width:min(100%,1040px); }
+.runtime-query-section .runtime-field { grid-template-rows:minmax(20px,auto) auto minmax(17px,auto); gap:6px; }
+.runtime-query-section .runtime-field label { min-height:20px; }
+.runtime-query-section .runtime-field > .el-select,.runtime-query-section .runtime-field > .el-input { width:100%; }
+.runtime-query-toolbar { display:flex; justify-content:flex-end; margin-top:18px; padding-top:16px; border-top:1px solid var(--idmp-border-subtle); }
+.runtime-query-toolbar .query-actions { justify-content:flex-end; }
+.factor-query-actions { display:flex; align-items:center; gap:8px; padding-right:16px; border-right:1px solid var(--idmp-border-subtle); }
+.runtime-query-section .factor-query-actions .el-select { width:220px; }
+.runtime-query-toolbar .el-button + .el-button { margin-left:0; }
+.runtime-query-section .runtime-result { margin-top:18px; padding-top:16px; border-top:1px solid var(--idmp-border-subtle); }
+.runtime-query-section .result-summary strong { color:var(--idmp-text-primary); font-size:14px; }
+.runtime-query-section .result-summary span { overflow-wrap:anywhere; }
+@media (max-width:880px) {
+  .runtime-query-section .runtime-parameter-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width:620px) {
+  .runtime-query-section .runtime-parameter-grid { grid-template-columns:minmax(0,1fr); }
+}
+@media (max-width:760px) {
+  .runtime-query-toolbar .query-actions,.factor-query-actions { width:100%; }
+  .runtime-query-toolbar .query-actions { justify-content:stretch; }
+  .factor-query-actions { padding-right:0; border-right:0; }
+  .runtime-query-section .factor-query-actions .el-select { flex:1; width:auto; min-width:0; }
+  .runtime-query-toolbar > .el-button,.runtime-query-toolbar .query-actions > .el-button { width:100%; }
+}
 </style>
 
 <style scoped lang="scss">.sql-import-page{padding-bottom:48px}.section{margin-bottom:16px;padding:18px}.section-heading{display:flex;justify-content:space-between;gap:16px;align-items:center}.section-heading h2,.section h2,.block h3{margin:0}.section-heading span{color:var(--idmp-text-helper);font-size:12px}.block{margin-top:18px}.block+.block{margin-top:12px}.block :deep(.el-alert)+:deep(.el-alert){margin-top:8px}.mapping-hint,.time-field-hint{display:block;margin-top:6px;color:var(--idmp-text-helper)}.time-field-control{display:flex;gap:8px}.time-field-control .el-select,.time-field-control .el-input{min-width:0;flex:1}.time-field-search{margin:14px 0}.operation-error{margin-top:14px}.operation-error dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px;margin:12px 0}.operation-error dl div{min-width:0;padding:9px 10px;background:var(--idmp-field);border-radius:6px}.operation-error dt{color:var(--idmp-text-helper);font-size:12px}.operation-error dd{overflow-wrap:anywhere;margin:4px 0 0;font-family:Consolas,monospace}.error-actions,.query-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px}.query-actions .el-select{width:190px}.sql-editor{margin-top:16px}.sql-editor :deep(textarea){font-family:Consolas,monospace;background:#111b24;color:#e6edf3}.sql-parameter-hint{margin-top:12px}.sql-parameter-hint code{font-family:Consolas,monospace}.preview-summary{display:flex;gap:20px;margin-top:12px;color:var(--idmp-text-helper)}.factor-list{display:grid;gap:12px;margin-top:18px}.factor{display:grid;gap:8px;padding:14px;border:1px solid var(--idmp-border-subtle)}.factor small{color:var(--idmp-text-helper)}.factor-fields,.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.parameter-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px;padding-top:12px;border-top:1px solid var(--idmp-border-subtle)}.parameter-header>div{display:grid;gap:2px}.parameter-list{display:grid;gap:8px}.parameter-row{display:grid;grid-template-columns:minmax(160px,1.4fr) minmax(120px,1fr) minmax(120px,1fr) auto auto;align-items:center;gap:8px}.runtime-conditions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:16px}.runtime-conditions>.el-date-editor{width:100%}.runtime-field{display:grid;align-content:start;gap:6px;min-width:0}.runtime-field label{display:flex;align-items:baseline;justify-content:space-between;gap:8px}.runtime-field label span{font-weight:600;overflow-wrap:anywhere}.runtime-field label small{color:var(--idmp-text-helper);white-space:nowrap}.runtime-field em{color:var(--el-color-danger);font-style:normal}.runtime-field>.el-input-number,.runtime-field>.el-date-editor{width:100%}.condition-alert{margin-top:14px}.runtime-result{margin-top:16px}.result-summary{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px;color:var(--idmp-text-helper);font-size:12px}.action-bar{display:flex;justify-content:flex-end;margin:16px 0}.section pre{max-height:340px;overflow:auto;padding:12px;background:var(--idmp-field)}@media(max-width:900px){.factor-fields,.grid,.runtime-conditions,.operation-error dl{grid-template-columns:1fr}.parameter-row{grid-template-columns:1fr 1fr}.section-heading{align-items:stretch;flex-direction:column}.time-field-control{align-items:stretch;flex-direction:column}.query-actions{align-items:stretch}.query-actions .el-select{width:100%}}</style>

@@ -91,19 +91,16 @@
         <div class="dashboard-toolbar" aria-label="看板查询条件">
           <div class="dashboard-query-controls">
             <label class="dashboard-query-control"><span>期间</span>
-              <span v-if="isFormalRemoteDashboard" class="dashboard-period-selects" aria-label="统计期间">
+              <span class="dashboard-period-selects" aria-label="统计期间">
                 <el-select v-model="remotePeriodStart" class="dashboard-filter dashboard-filter--period" size="small" aria-label="开始月份" data-testid="dashboard-period-start">
-                  <el-option v-for="option in periodOptions" :key="`start-${option.value}`" :label="option.label" :value="option.value" />
+                  <el-option v-for="option in viewerPeriodOptions" :key="`start-${option.value}`" :label="option.label" :value="option.value" />
                 </el-select>
                 <span aria-hidden="true">至</span>
                 <el-select v-model="remotePeriodEnd" class="dashboard-filter dashboard-filter--period" size="small" aria-label="结束月份" data-testid="dashboard-period-end">
-                  <el-option v-for="option in periodOptions" :key="`end-${option.value}`" :label="option.label" :value="option.value" />
+                  <el-option v-for="option in viewerPeriodOptions" :key="`end-${option.value}`" :label="option.label" :value="option.value" />
                 </el-select>
                 <el-button type="primary" size="small" :loading="remoteQueryLoading" :disabled="!canApplyRemotePeriod" data-testid="dashboard-period-apply" @click="applyRemotePeriodRange">确定</el-button>
               </span>
-              <el-select v-else v-model="period" class="dashboard-filter dashboard-filter--compact" size="small" aria-label="统计期间">
-                <el-option v-for="option in periodOptions" :key="option.value" :label="option.label" :value="option.value" />
-              </el-select>
             </label>
             <label v-if="departmentOptions.length > 1" class="dashboard-query-control"><span>范围</span>
               <el-select v-model="department" class="dashboard-filter dashboard-filter--compact" size="small" aria-label="统计范围">
@@ -190,10 +187,10 @@
       </header>
       <div class="dashboard-designer-shell">
       <aside class="studio-library" aria-label="组件库">
-        <h2>组件库</h2><p>选择指标，再添加分析组件</p>
+        <h2>组件库</h2><p>选择指标后，点击组件卡片可在画布上放置；也可自动添加。</p>
         <input v-model="librarySearch" class="studio-search" placeholder="搜索组件…" aria-label="搜索组件" />
         <label class="studio-field-label">数据来源</label>
-        <el-select v-model="selectedDataCode" aria-label="指标数据" :loading="dashboardLoading || indicatorCatalogLoading">
+        <el-select v-model="selectedDataCode" aria-label="指标数据" :loading="dashboardLoading || indicatorCatalogLoading" @change="handleSelectedDataSourceChange">
           <el-option-group v-if="catalogIndicatorSources.length" label="已发布指标">
             <el-option v-for="source in catalogIndicatorSources" :key="source.code" :label="source.name" :value="source.code" />
           </el-option-group>
@@ -204,6 +201,7 @@
             <el-option v-for="source in indicatorDataSources" :key="source.code" :label="source.name" :value="source.code" />
           </el-option-group>
         </el-select>
+        <p v-if="suggestDesignerWidgetPeriod(selectedDataCode)" class="dashboard-source-period-note" role="status">该指标在当前看板周期无数据。添加后仅新组件使用 {{ suggestDesignerWidgetPeriod(selectedDataCode).periodStart.slice(0, 7) }} 的独立周期。</p>
         <section v-if="selectedDataSource?.code === UAT_COMPOSITE_SOURCE_CODE" class="dashboard-acceptance-source" data-testid="dashboard-acceptance-source">
           <strong>固定验收数据</strong><span>2026 Q3 · 18 条记录</span><el-button text type="primary" @click="acceptanceDataDialog = true">查看数据</el-button>
         </section>
@@ -213,12 +211,13 @@
           <h3>{{ group.name }}</h3>
           <StudioHoverPreview v-for="item in group.items" :key="item.type" :widget-item="item" :disabled="drawPlacementMode || Boolean(pendingLibraryWidget)">
             <button :data-testid="`dashboard-library-${item.type}`" class="studio-library-item" :class="{ 'is-current': addWidgetType === item.type }" @click="selectLibraryWidget(item.type)">
-              <span class="studio-library-icon" aria-hidden="true">{{ item.icon }}</span><span><strong>{{ item.name }}</strong><small>{{ item.hint }}</small></span>
+              <span class="studio-library-icon" aria-hidden="true">{{ item.icon }}</span><span><strong>{{ item.name }}</strong><small>{{ item.hint }}</small><small class="studio-library-readiness" :class="`is-${libraryReadiness(item.type).status}`">{{ libraryReadiness(item.type).label }}</small></span>
             </button>
           </StudioHoverPreview>
         </section>
         <p v-if="!filteredLibrary.length">没有匹配的组件</p>
-        <el-button data-testid="dashboard-add-widget" type="primary" plain :disabled="!selectedDataSource && !['text', 'metric-group'].includes(addWidgetType)" :icon="Plus" @click="addDashboardWidget">添加组件</el-button>
+        <el-button data-testid="dashboard-add-widget" type="primary" plain :disabled="!selectedDataSource && !['text', 'metric-group', 'warnings'].includes(addWidgetType)" :icon="Plus" @click="addDashboardWidget">添加组件</el-button>
+        <p v-if="drawPlacementMode && pendingLibraryWidget" class="studio-placement-hint" role="status">正在放置 {{ pendingLibraryWidget.title || libraryItems.find(item => item.type === addWidgetType)?.name }}：点击画布空白处放置，拖拽可指定大小；按 Esc 取消。</p>
         <section class="studio-template-library" aria-label="布局模板">
           <div class="studio-template-library__heading"><h3>设计模板</h3><span><button type="button" @click="newDashboardForm('blank')">空白看板</button><button type="button" @click="saveCurrentLayoutAsTemplate">保存当前布局</button></span></div>
           <p>选择后查看用途与构图；系统模板与本地模板相互独立。</p>
@@ -234,8 +233,23 @@
         <div class="studio-library-note">点击添加 · 拖动布局<br />空白处拖拽框选 · Ctrl/Shift 追加</div>
       </aside>
       <main class="studio-workspace">
-        <div class="studio-canvas-heading"><span>画布</span><span>{{ editingDashboardSchema?.layout?.columns || 24 }} 列 · Clinical Light</span></div>
+        <div class="studio-canvas-heading"><span>画布</span><span>{{ drawPlacementMode ? '点击空白处放置 · Esc 取消' : `${editingDashboardSchema?.layout?.columns || 24} 列 · Clinical Light` }}</span></div>
         <div class="studio-canvas-scroll">
+        <div class="dashboard-designer-period" aria-label="画布统计周期">
+          <label class="dashboard-query-control"><span>统计周期</span>
+            <span class="dashboard-period-selects">
+              <el-select v-model="remotePeriodStart" class="dashboard-filter dashboard-filter--period" size="small" aria-label="画布开始月份" data-testid="dashboard-designer-period-start">
+                <el-option v-for="option in designerPeriodOptions" :key="`designer-start-${option.value}`" :label="option.label" :value="option.value" />
+              </el-select>
+              <span aria-hidden="true">至</span>
+              <el-select v-model="remotePeriodEnd" class="dashboard-filter dashboard-filter--period" size="small" aria-label="画布结束月份" data-testid="dashboard-designer-period-end">
+                <el-option v-for="option in designerPeriodOptions" :key="`designer-end-${option.value}`" :label="option.label" :value="option.value" />
+              </el-select>
+              <el-button type="primary" size="small" :disabled="!canApplyRemotePeriod" data-testid="dashboard-designer-period-apply" @click="applyRemotePeriodRange">查询</el-button>
+            </span>
+          </label>
+          <span class="dashboard-designer-period__hint">组件默认继承此周期；独立周期可在组件“数据”中调整。</span>
+        </div>
         <DashboardFilterBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" @change="filterRuntimeValues = $event" />
         <DashboardContextBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :interactions="activeInteractionFilters" :drill-states="drillRuntimeState" :widgets="designerWidgets" @clear-filters="filterRuntimeValues = initialFilterValues(globalFilterDefinitions)" @clear-interactions="clearAllInteractionFilters" @clear-drills="clearAllWidgetDrills" />
         <div v-if="!designerWidgets.length && !pendingLibraryWidget" class="studio-empty">
@@ -291,6 +305,7 @@
             @metric-item-duplicate="duplicateMetricGroupItemFromCanvas"
             @metric-item-remove="removeMetricGroupItemFromCanvas"
             @metric-item-reorder="reorderMetricGroupItemFromCanvas"
+            @binding-action="handleWidgetBindingAction(widget, $event)"
           />
         </template>
       </DashboardCanvas>
@@ -323,15 +338,6 @@
               <MetricGroupInspector v-if="activeDesignerWidget.type === 'metric-group'" :widget="activeDesignerWidget" :sources="availableIndicatorSources" :get-datasets="getBindingDatasets" :selected-item-id="selectedMetricItemId" @change="updateMetricGroupConfig" @select-item="selectedMetricItemId = $event" />
               <WarningWidgetInspector v-else-if="activeDesignerWidget.type === 'warnings'" :model-value="activeDesignerWidget.config?.warning" @update:model-value="updateWarningWidgetConfig" />
               <dl v-else class="dashboard-property-list"><dt>指标</dt><dd>{{ activeDesignerWidget.sourceName || activeDesignerWidget.sourceCode || '未绑定' }}</dd><dt>展示类型</dt><dd>{{ activeDesignerWidget.chartKind || activeDesignerWidget.type }}</dd></dl>
-              <section class="dashboard-precise-layout">
-                <h3>位置与尺寸</h3>
-                <label>X<input :value="activeDesignerWidget.layout.x" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ x: $event.target.value })" /></label>
-                <label>Y<input :value="activeDesignerWidget.layout.y" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ y: $event.target.value })" /></label>
-                <label>宽度<input :value="activeDesignerWidget.layout.w" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ w: $event.target.value })" /></label>
-                <label>高度<input :value="activeDesignerWidget.layout.h" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ h: $event.target.value })" /></label>
-                <label>宽度（%）<input :value="gridWidthToPercentage(activeDesignerWidget.layout.w, editingDashboardSchema.layout.columns)" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ w: percentageToGridWidth($event.target.value, editingDashboardSchema.layout.columns) })" /></label>
-                <small>实际尺寸约 {{ precisePixelSize.width }} × {{ precisePixelSize.height }} px；仅作显示，不保存。</small>
-              </section>
               <MultiIndicatorInspector
                 v-if="activeDesignerWidget.type === 'chart' && ['line', 'bar', 'table', 'radar'].includes(activeDesignerWidget.chartKind)"
                 :widget="activeDesignerWidget"
@@ -347,6 +353,15 @@
               />
             </el-tab-pane>
             <el-tab-pane label="样式" name="style">
+              <section class="dashboard-precise-layout">
+                <h3>位置与尺寸</h3>
+                <label>X<input :value="activeDesignerWidget.layout.x" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ x: $event.target.value })" /></label>
+                <label>Y<input :value="activeDesignerWidget.layout.y" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ y: $event.target.value })" /></label>
+                <label>宽度<input :value="activeDesignerWidget.layout.w" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ w: $event.target.value })" /></label>
+                <label>高度<input :value="activeDesignerWidget.layout.h" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ h: $event.target.value })" /></label>
+                <label>宽度（%）<input :value="gridWidthToPercentage(activeDesignerWidget.layout.w, editingDashboardSchema.layout.columns)" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ w: percentageToGridWidth($event.target.value, editingDashboardSchema.layout.columns) })" /></label>
+                <small>实际尺寸约 {{ precisePixelSize.width }} × {{ precisePixelSize.height }} px；仅作显示，不保存。</small>
+              </section>
               <div class="dashboard-style-form">
                 <template v-if="activeDesignerWidget.type === 'text'"><h3>文本样式</h3><label>对齐<select :value="activeDesignerWidget.config?.text?.align || 'left'" @change="updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, text: { ...widget.config?.text, align: $event.target.value } } }))"><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></label><label>字号<input type="number" min="10" max="48" :value="activeDesignerWidget.config?.text?.fontSize || 14" @change="updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, text: { ...widget.config?.text, fontSize: Number($event.target.value) } } }))" /></label><label>字重<select :value="activeDesignerWidget.config?.text?.fontWeight || 400" @change="updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, text: { ...widget.config?.text, fontWeight: Number($event.target.value) } } }))"><option :value="400">常规</option><option :value="500">中等</option><option :value="600">加粗</option><option :value="700">粗体</option></select></label><label>正文颜色<input type="color" :value="designerStyle.text?.bodyColor || activeDesignerWidget.config?.text?.color || '#52636c'" @input="updateDesignerStyle({ text: { ...designerStyle.text, bodyColor: $event.target.value } })" /></label><label>标题颜色<input type="color" :value="designerStyle.text?.titleColor || '#25343b'" @input="updateDesignerStyle({ text: { ...designerStyle.text, titleColor: $event.target.value } })" /></label></template>
                 <ChartStyleInspector :widget="activeDesignerWidget" @update="updateDesignerStyle" @reset="resetDesignerVisualStyle" />
@@ -481,8 +496,9 @@ import { dashboardFilterCatalog, deriveDependentFilterOptions, normalizeDependen
 import { provide } from 'vue'
 import { compareDashboardGridMembership } from '@/idmp/features/dashboard/gridMembership.js'
 import { createWidgetBindingDatasets } from '@/idmp/features/dashboard/fieldCatalog.js'
-import { bindingKind } from '@/idmp/features/dashboard/bindingEngine.js'
+import { bindingKind, emptyBinding } from '@/idmp/features/dashboard/bindingEngine.js'
 import { resolveDrillHierarchy } from '@/idmp/features/dashboard/drillDown.js'
+import { departmentFilterOptions, MORTALITY_SOURCE } from '@/idmp/features/dashboard/formalGlobalFilters.js'
 import { createDefaultBinding } from '@/idmp/features/dashboard/smartDefaultBinding.js'
 import { createMultiIndicatorDataset, multiIndicatorMeasureField, normalizeIndicatorBindings } from '@/idmp/features/dashboard/multiIndicator.js'
 import { buildRemoteFilterOptionQuery, buildRemoteWidgetQuery, resolveDashboardQueryState } from '@/idmp/features/dashboard/remoteQuery.js'
@@ -501,7 +517,8 @@ import {
 } from '@/idmp/api/adapters/dashboard'
 import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
 import { fetchWarnings } from '@/idmp/api/modules/warnings'
-import { fetchIndicatorAnalysis, fetchIndicators } from '@/idmp/api/modules/indicators'
+import { fetchIndicatorAnalysis, fetchIndicatorVersion, fetchIndicators } from '@/idmp/api/modules/indicators'
+import { deriveDrillPathResultIds } from '@/idmp/api/adapters/drill'
 import { normalizePage } from '@/idmp/api/adapters/warning'
 import { dashboardTrend, dashboardWarnings as mockDashboardWarnings } from '@/idmp/data/demo'
 import { mockDashboardDepartmentRanking, mockIndicatorDataSources } from '@/idmp/features/dashboard/mockData'
@@ -517,11 +534,12 @@ import { LOCAL_SCENE_DASHBOARDS, findLocalSceneByDashboardId, shouldConfirmDashb
 import { canApplyDashboardLoad, canRefreshRemoteDashboard, createDashboardSelectorOptions, shouldSkipRemoteDashboardBootstrap } from '@/idmp/features/dashboard/dashboardIdentity.js'
 import { dashboardDemoPolicy, shouldUseDashboardDemoFallback } from '@/idmp/features/dashboard/demoPolicy.js'
 import { createDashboardEditingSnapshot } from '@/idmp/features/dashboard/editSession.js'
-import { buildPublishedIndicatorAnalysisQuery, buildPublishedIndicatorTrendPreviewQuery, createPublishedDashboardPeriodOptions, dateRangeForMonths, resolvePublishedDashboardPeriod, resolvePublishedDashboardPeriodRange, schemaPublishedIndicatorSourceCodes } from '@/idmp/features/dashboard/publishedIndicatorRuntime.js'
+import { buildPublishedIndicatorAnalysisQuery, buildPublishedIndicatorTrendPreviewQuery, createPublishedDashboardPeriodOptions, dateRangeForMonths, resolvePublishedDashboardPeriod, resolvePublishedDashboardPeriodRange, schemaPublishedIndicatorSourceCodes, suggestIndependentWidgetPeriod } from '@/idmp/features/dashboard/publishedIndicatorRuntime.js'
 import { dashboardActiveId, dashboardRequestedId, dashboardSceneCode, designerImmersive, notifyDashboardCatalogChanged } from '@/idmp/layout/shellState.js'
 import { createQualitySafetyDemoSchema } from '@/idmp/features/dashboard/acceptanceExample.js'
 import { addMetricGroupItem, createMetricGroupConfig, duplicateMetricGroupItem, metricGroupSourceCodes, removeMetricGroupItem, reorderMetricGroupItem } from '@/idmp/features/dashboard/metricGroup.js'
 import { createWarningWidgetConfig, normalizeWarningWidgetConfig, warningEventToDashboardItem, warningWidgetQuery } from '@/idmp/features/dashboard/warningWidget.js'
+import { widgetLibraryReadiness } from '@/idmp/features/dashboard/widgetGuidance.js'
 import { canRestoreQualitySafetyDemo as canRestoreQualitySafetyDemoEntry, createQualitySafetyDemoRestoreResult } from '@/idmp/features/dashboard/qualitySafetyDemoRestore.js'
 import { applyGlobalFilterScope, removeGlobalFilter } from '@/idmp/features/dashboard/globalFilterDesignerModel.js'
 import { resolveCompatibleGlobalFilterWidgetIds } from '@/idmp/features/dashboard/globalFilterCompatibility.js'
@@ -656,12 +674,14 @@ const remotePeriodEnd = computed({
   set: value => setRemotePeriodBoundary(1, value)
 })
 const canApplyRemotePeriod = computed(() => {
-  const draft = resolvePublishedDashboardPeriodRange(remotePeriodDraft.value, periodOptions.value)
+  const draft = resolvePublishedDashboardPeriodRange(remotePeriodDraft.value, isEditing.value ? designerPeriodOptions.value : viewerPeriodOptions.value)
   return draft.every(Boolean) && JSON.stringify(draft) !== JSON.stringify(remotePeriodRange.value)
 })
 function applyRemotePeriodRange() {
   if (!canApplyRemotePeriod.value) return
-  remotePeriodRange.value = resolvePublishedDashboardPeriodRange(remotePeriodDraft.value, periodOptions.value)
+  const next = resolvePublishedDashboardPeriodRange(remotePeriodDraft.value, isEditing.value ? designerPeriodOptions.value : viewerPeriodOptions.value)
+  remotePeriodRange.value = next
+  if (!isFormalRemoteDashboard.value) period.value = next[1]
 }
 const department = ref('')
 const designerCanvasRef = ref()
@@ -686,6 +706,7 @@ const activeWidgetId = computed({
 const alignmentActions = [{ mode: 'left', label: '左对齐' }, { mode: 'h-center', label: '水平居中' }, { mode: 'right', label: '右对齐' }, { mode: 'top', label: '顶部对齐' }, { mode: 'v-center', label: '垂直居中' }, { mode: 'bottom', label: '底部对齐' }]
 const selectionHasLockedWidget = computed(() => designerWidgets.value.some(widget => selectedWidgetIds.value.includes(widget.id) && widget.config?.locked === true))
 const selectedDataCode = ref('')
+let selectedDataSourceManuallySelected = false
 const addWidgetType = ref('kpi')
 const indicatorDataSources = ref(cloneDashboardSources(mockIndicatorDataSources))
 const catalogIndicatorSources = ref([])
@@ -693,6 +714,12 @@ const remoteWidgetDatasets = ref({})
 const remoteMultiIndicatorDatasets = ref({})
 const remoteWidgetPreviewGenerations = new Map()
 const remoteFieldCatalog = ref({})
+const remoteSourcePeriodOptions = ref({})
+const designerPeriodOptions = computed(() => {
+  const options = [...periodOptions.value, ...Object.values(remoteSourcePeriodOptions.value).flat()].filter(option => /^\d{4}-\d{2}$/.test(String(option?.value || '')))
+  return [...new Map(options.map(option => [option.value, option])).values()].sort((a, b) => b.value.localeCompare(a.value))
+})
+const viewerPeriodOptions = computed(() => isFormalRemoteDashboard.value ? periodOptions.value : designerPeriodOptions.value)
 const remoteFilterOptions = ref({})
 const remoteDashboardMeta = ref(null)
 const remoteDashboardIsMock = ref(false)
@@ -803,7 +830,7 @@ function getBindingDatasets(widget) {
     const fallbackId = ['kpi', 'gauge'].includes(kind) ? 'current' : kind === 'line' ? 'trend' : 'departments'
     const fallback = analysisDatasets.find(dataset => dataset.id === fallbackId)
     const remoteReady = remote && remote.status !== 'LOADING' && remote.status !== 'ERROR' && Array.isArray(remote.rows) && remote.rows.length > 0
-    const shouldUseFallback = fallback && (!remoteReady || (kind === 'line' && !isFormalRemoteDashboard.value))
+    const shouldUseFallback = fallback && !(source.origin === 'dashboard-data-source' && remote) && (!remoteReady || (kind === 'line' && !isFormalRemoteDashboard.value && widget.config?.backendQuery?.periodMode !== 'INDEPENDENT'))
     const bindingDatasetId = widget?.config?.dataBinding?.dataset
     if (shouldUseFallback && bindingDatasetId && bindingDatasetId !== fallback.id) {
       const catalogFields = remoteFieldCatalog.value[source.code] || []
@@ -823,6 +850,41 @@ function getBindingDatasets(widget) {
   return analysisDatasets
 }
 provide('dashboardBindingDatasets', getBindingDatasets)
+provide('dashboardSupportsBackendDrill', (widget) => {
+  const source = getWidgetSource(widget)
+  return Boolean(source?.analysisIndicatorId && ['indicator-catalog', 'dashboard-data-source'].includes(source.origin))
+})
+provide('dashboardResolveWidgetDrill', async (widget) => {
+  const source = getWidgetSource(widget)
+  if (!source?.analysisIndicatorId || !['indicator-catalog', 'dashboard-data-source'].includes(source.origin)) return null
+  const scope = widget?.config?.backendQuery || {}
+  const query = buildPublishedIndicatorAnalysisQuery(source, remotePeriodRange.value)
+  if (scope.periodMode === 'INDEPENDENT' && scope.periodStart && scope.periodEnd) {
+    query.periodStart = scope.periodStart
+    query.periodEnd = scope.periodEnd
+    query.granularity = scope.granularity || 'MONTHLY'
+  } else if (scope.periodMode === 'FIXED' && scope.periodStart && scope.periodEnd) {
+    query.periodStart = query.periodStart > scope.periodStart ? query.periodStart : scope.periodStart
+    query.periodEnd = query.periodEnd < scope.periodEnd ? query.periodEnd : scope.periodEnd
+  }
+  if (query.periodStart && query.periodEnd && query.periodStart > query.periodEnd) throw new Error('组件统计周期与看板周期没有交集')
+  const [analysis, version] = await Promise.all([
+    fetchIndicatorAnalysis(source.analysisIndicatorId, query),
+    source.analysisIndicatorVersionId ? fetchIndicatorVersion(source.analysisIndicatorVersionId).catch(() => null) : Promise.resolve(null)
+  ])
+  const resultId = deriveDrillPathResultIds(analysis).ORGANIZATION
+  if (!resultId) throw new Error('当前指标或统计周期没有可用的组织下钻结果')
+  const configuredPaths = version?.drillConfig?.drillPaths || version?.drillPaths || []
+  return {
+    resultId,
+    indicatorVersionId: String(source.analysisIndicatorVersionId || source.indicatorVersionId || ''),
+    pathResultIds: { ORGANIZATION: resultId },
+    indicatorName: source.name,
+    period: query.periodStart && query.periodEnd ? `${query.periodStart} ～ ${query.periodEnd}` : '',
+    maxLevels: Object.fromEntries(configuredPaths.filter(path => path?.pathCode && path?.maxLevel).map(path => [path.pathCode, path.maxLevel])),
+    configuredPaths
+  }
+})
 provide('dashboardSurfaceTone', computed(() => resolveDashboardSurfaceTone(dashboardBackgroundConfig.value)))
 provide('dashboardAppearanceTheme', dashboardTheme)
 const globalFilterDefinitions = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.globalFilters || [])
@@ -850,7 +912,11 @@ const globalFilterOptionSources = computed(() => availableIndicatorSources.value
   .map(source => ({ code: source.code, name: source.name })))
 const dependentFilterOptions = computed(() => deriveDependentFilterOptions(filterDatasets.value, globalFilterDefinitions.value, filterRuntimeValues.value))
 const filterOptionsById = computed(() => ({ ...Object.fromEntries(dependentFilterOptions.value), ...remoteFilterOptions.value }))
-const currentDependentFilterOptions = computed(() => new Map([...dependentFilterOptions.value, ...Object.entries(remoteFilterOptions.value)]))
+const currentDependentFilterOptions = computed(() => new Map([
+  ...dependentFilterOptions.value,
+  ...Object.entries(remoteFilterOptions.value).map(([id, options]) => [id, options.map(option => option && typeof option === 'object' ? option.value : option)])
+]))
+provide('dashboardFilterOptions', filterOptionsById)
 // Only definition/lifecycle changes reinitialize defaults. Runtime selections never
 // write into canonical schema or trigger dirty/persistence.
 watch(() => JSON.stringify(globalFilterDefinitions.value), () => { filterRuntimeValues.value = initialFilterValues(globalFilterDefinitions.value) }, { immediate: true })
@@ -860,7 +926,7 @@ watch([globalFilterDefinitions, filterRuntimeValues, currentDependentFilterOptio
   const normalized = normalizeDependentFilterValues(readyDefinitions, filterRuntimeValues.value, currentDependentFilterOptions.value)
   if (JSON.stringify(normalized) !== JSON.stringify(filterRuntimeValues.value)) filterRuntimeValues.value = normalized
 }, { deep: true })
-watch([globalFilterDefinitions, period, remotePeriodRange, filterRuntimeValues, () => JSON.stringify(remoteFieldCatalog.value)], () => { void loadRemoteFilterOptions() }, { deep: true })
+watch([globalFilterDefinitions, period, remotePeriodRange, filterRuntimeValues, () => JSON.stringify(remoteFieldCatalog.value), () => JSON.stringify(availableIndicatorSources.value)], () => { void loadRemoteFilterOptions() }, { deep: true })
 watch(requestedDashboardId, nextDashboardId => { if (nextDashboardId !== activeDashboardId.value) void requestDashboardSwitch(nextDashboardId) })
 watch(selectedDataCode, code => { if (code) void ensureRemoteDataSourceFields(code) })
 const currentDashboardWidgets = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.widgets || [])
@@ -1123,12 +1189,8 @@ function syncViewerViewport() { viewerViewportWidth.value = window.innerWidth }
 
 const dashboardLoading = computed(() => dashboardStatus.value === 'loading')
 const dashboardQueryLabel = computed(() => {
-  if (isFormalRemoteDashboard.value) {
-    const [start, end] = resolvePublishedDashboardPeriodRange(remotePeriodRange.value, periodOptions.value)
-    return `查询条件：${start === end ? start : `${start} 至 ${end}`} · ${department.value ? department.value : '全院'}`
-  }
-  const selectedPeriod = periodOptions.value.find((item) => item.value === period.value)?.label || '全部期间'
-  return `查询条件：${selectedPeriod} · ${department.value ? department.value : '全院'}`
+  const [start, end] = resolvePublishedDashboardPeriodRange(remotePeriodRange.value, viewerPeriodOptions.value)
+  return `查询条件：${start === end ? start : `${start} 至 ${end}`} · ${department.value ? department.value : '全院'}`
 })
 
 const warningWidgetRuntime = ref({})
@@ -1186,6 +1248,11 @@ const departmentRanking = computed(() => {
 const selectedDataSource = computed(() =>
   availableIndicatorSources.value.find((source) => source.code === selectedDataCode.value)
 )
+function libraryReadiness(type) {
+  const source = selectedDataSource.value
+  const widget = { id: 'library-preview', type: type === 'kpi' ? 'kpi' : 'chart', chartKind: type, sourceCode: source?.code, config: {} }
+  return widgetLibraryReadiness(type, source, source ? getBindingDatasets(widget) : [])
+}
 
 const dashboardSourceLabel = computed(() => ({
   select: '尚未选择看板',
@@ -1570,7 +1637,9 @@ async function prepareDesignerWidget(type = addWidgetType.value) {
   try {
     if (source && !['text', 'metric-group', 'warnings'].includes(type)) {
       await ensureRemoteDataSourceFields(source.code, { required: source.origin === 'dashboard-data-source' })
-      source = await hydrateIndicatorSource(source)
+      // Published widgets use the formal field catalog and preview endpoint.
+      // Analysis snapshots can be empty or expose different field capabilities.
+      if (source.origin !== 'dashboard-data-source') source = await hydrateIndicatorSource(source)
     }
   } catch (error) {
     ElMessage.warning(error?.message || '指标数据字段暂不可用，请稍后重试')
@@ -1588,8 +1657,14 @@ async function prepareDesignerWidget(type = addWidgetType.value) {
     ? { id, type: 'kpi', sourceCode: source.code, sourceName: source.name, visualType: 'kpi', config: {}, layout: getDefaultGridLayout('kpi') }
     : { id, type: 'chart', chartKind: type, title: getVisualizationTitle(source.name, type), sourceCode: source.code, sourceName: source.name, visualType: type, config: {}, layout: getDefaultGridLayout({ type: 'chart', chartKind: type }) }
   const normalizedMetadata = normalizeWidgetMetadata(metadata)
-  const dataBinding = !['text', 'metric-group', 'warnings'].includes(type) ? createDefaultBinding(bindingKind(normalizedMetadata), getBindingDatasets(normalizedMetadata)) : null
-  const widget = { ...normalizedMetadata, ...(dataBinding ? { config: { ...normalizedMetadata.config, dataBinding } } : {}), layout: metadata.layout }
+  const defaultDatasets = source?.origin === 'dashboard-data-source'
+    ? [{ id: 'backend', label: `${source.name} · 正式结果`, fields: dashboardFieldsToFrontend(remoteFieldCatalog.value[source.code] || []), rows: [] }]
+    : getBindingDatasets(normalizedMetadata)
+  const dataBinding = !['text', 'metric-group', 'warnings'].includes(type)
+    ? createDefaultBinding(bindingKind(normalizedMetadata), defaultDatasets) || emptyBinding(defaultDatasets[0]?.id || 'backend')
+    : null
+  const independentPeriod = source?.origin === 'dashboard-data-source' ? suggestDesignerWidgetPeriod(source.code) : null
+  const widget = { ...normalizedMetadata, config: { ...normalizedMetadata.config, ...(dataBinding ? { dataBinding } : {}), ...(independentPeriod ? { backendQuery: independentPeriod } : {}) }, layout: metadata.layout }
   return widget
 }
 
@@ -1622,6 +1697,7 @@ async function addDesignerWidget() {
   await designerCanvasRef.value?.registerWidget(id, { ...widget.layout, autoPosition: true })
   syncDesignerLayout(designerCanvasRef.value?.getLayout() || [], false)
   activeWidgetId.value = id
+  designerInspectorTab.value = 'data'
   markDashboardDirty()
   if (availableIndicatorSources.value.find(source => source.code === widget.sourceCode)?.origin === 'dashboard-data-source') void previewRemoteWidget(widget)
 }
@@ -1809,6 +1885,7 @@ async function placeDesignerWidget({ id, layout }) {
     await applyDesignerWidgetsLayout(result.widgets)
   })
   activeWidgetId.value = pending.id
+  designerInspectorTab.value = 'data'
   if (availableIndicatorSources.value.find(source => source.code === pending.sourceCode)?.origin === 'dashboard-data-source') void previewRemoteWidget(result.widgets.find(item => item.id === pending.id))
 }
 
@@ -1850,6 +1927,32 @@ function openWidgetConfig(widgetId) {
   designerDrawerOpen.value = true
 }
 
+async function handleWidgetBindingAction(widget, action) {
+  if (!isEditing.value) return
+  if (action === 'configure') {
+    openWidgetConfig(widget.id)
+    return
+  }
+  if (action === 'scope') {
+    openWidgetConfig(widget.id)
+    await nextTick()
+    document.querySelector('.studio-inspector .component-scope')?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' })
+    return
+  }
+  if (action === 'filters') {
+    document.querySelector('.dashboard-designer-period')?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' })
+    ElMessage.info('请在画布顶部切换统计周期或调整筛选条件')
+    return
+  }
+  if (action !== 'retry') return
+  const source = getWidgetSource(widget)
+  try {
+    if (source?.origin === 'dashboard-data-source') await previewRemoteWidget(widget)
+    else if (source?.origin === 'indicator-catalog') await hydrateIndicatorSource(source)
+    else ElMessage.info('请调整筛选条件后重新查看')
+  } catch (error) { ElMessage.error(error?.message || '数据预览失败，请稍后重试') }
+}
+
 function beginDashboardEdit(schema = dashboardSchema.value) {
   try {
     editingDashboardSchema.value = createDashboardEditingSnapshot(schema, loadDesignerSchema)
@@ -1885,7 +1988,7 @@ async function startDashboardEdit() {
     remoteDashboardMeta.value = dashboardDetailMeta(workingDetail)
     remoteDashboardIsMock.value = isMockDashboardDetail(workingDetail)
     dashboardDefinition.value = workingDetail
-    beginDashboardEdit(dashboardDetailToSchema(workingDetail))
+    beginDashboardEdit(applyDefaultDashboardBindings(dashboardDetailToSchema(workingDetail), remoteFieldCatalog.value))
   } catch (error) {
     ElMessage.error(`读取看板草稿失败：${error.message || '未知错误'}`)
   } finally {
@@ -1909,6 +2012,13 @@ function undoDashboardEdit() { if (canUndo.value) void applyDashboardHistory(das
 function redoDashboardEdit() { if (canRedo.value) void applyDashboardHistory(dashboardHistoryIndex.value + 1) }
 
 function finishDashboardEdit() {
+  const refreshPublishedViewer = isFormalRemoteDashboard.value && canRefreshCurrentRemoteDashboard.value
+  if (refreshPublishedViewer) {
+    const viewerRange = resolvePublishedDashboardPeriodRange(remotePeriodRange.value, periodOptions.value)
+    reconcilingRemotePeriod = true
+    remotePeriodRange.value = viewerRange
+    remotePeriodDraft.value = [...viewerRange]
+  }
   editingDashboardSchema.value = null
   dashboardHistory.value = []
   dashboardHistoryIndex.value = -1
@@ -1918,6 +2028,10 @@ function finishDashboardEdit() {
   dashboardDirty.value = false
   saveState.value = 'saved'
   designerImmersive.value = false
+  if (refreshPublishedViewer) void nextTick().then(() => {
+    reconcilingRemotePeriod = false
+    return refreshRemoteDashboardData()
+  })
 }
 async function exitDashboardEdit() {
   if (!isEditing.value) return
@@ -2342,6 +2456,10 @@ async function loadDashboard(targetDashboardId = activeDashboardId.value) {
   for (const [widgetId, generation] of remoteWidgetPreviewGenerations) remoteWidgetPreviewGenerations.set(widgetId, generation + 1)
   const generation = ++dashboardLoadGeneration
   const isCurrentLoad = () => canApplyDashboardLoad({ generation, latestGeneration: dashboardLoadGeneration, targetDashboardId, activeDashboardId: activeDashboardId.value })
+  if (!isRemoteDashboard(targetDashboardId) && !remotePeriodRange.value.length) {
+    remotePeriodRange.value = [period.value, period.value]
+    remotePeriodDraft.value = [period.value, period.value]
+  }
   if (isRemoteDashboard(targetDashboardId)) {
     const controller = new AbortController()
     dashboardAbortController = controller
@@ -2381,7 +2499,7 @@ async function loadDashboard(targetDashboardId = activeDashboardId.value) {
     dashboardDefinition.value = definition
     dashboardQueryResult.value = queryResult
     indicatorDataSources.value = createDashboardSources(queryResult)
-    selectedDataCode.value = indicatorDataSources.value[0]?.code || ''
+    selectedDataCode.value = selectedDataCode.value || indicatorDataSources.value[0]?.code || ''
     dashboardStatus.value = indicatorDataSources.value.length ? 'ready' : 'empty'
   } catch (error) {
     if (controller.signal.aborted || !isCurrentLoad()) return
@@ -2477,7 +2595,8 @@ async function loadPublishedIndicatorCatalog() {
     ])
     const orderedSources = sortDashboardDataSourcesByIndicatorCreatedAt(sources, normalizeList(indicators))
     catalogIndicatorSources.value = orderedSources.map(dashboardDataSourceToFrontend)
-    if (!selectedDataSource.value) selectedDataCode.value = availableIndicatorSources.value[0]?.code || ''
+    if (!selectedDataSourceManuallySelected && catalogIndicatorSources.value.length) selectedDataCode.value = catalogIndicatorSources.value[0].code
+    else if (!selectedDataSource.value) selectedDataCode.value = catalogIndicatorSources.value[0]?.code || availableIndicatorSources.value[0]?.code || ''
     await refreshSchemaPublishedIndicatorSources()
   } catch {
     // Catalog availability must not replace the current dashboard data path.
@@ -2489,7 +2608,7 @@ async function loadPublishedIndicatorCatalog() {
 async function ensureRemoteDataSourceFields(code, { required = false } = {}) {
   const source = availableIndicatorSources.value.find(item => item.code === code)
   if (!source || source.origin !== 'dashboard-data-source') return []
-  if (remoteFieldCatalog.value[code]) return remoteFieldCatalog.value[code]
+  if (remoteFieldCatalog.value[code] && remoteSourcePeriodOptions.value[code]) return remoteFieldCatalog.value[code]
   try {
     const [fields, periods] = await Promise.all([
       fetchDashboardDataSourceFields(code), fetchDashboardDataSourcePeriods(code).catch(() => [])
@@ -2499,10 +2618,7 @@ async function ensureRemoteDataSourceFields(code, { required = false } = {}) {
       const date = String(item.periodStart || '').slice(0, 7)
       return date ? { value: date, label: `${date.slice(0, 4)} 年 ${Number(date.slice(5, 7))} 月` } : null
     }).filter(Boolean)
-    if (options.length) {
-      periodOptions.value = [{ label: '全部期间', value: '' }, ...new Map(options.map(item => [item.value, item])).values()]
-      if (!periodOptions.value.some(item => item.value === period.value)) period.value = options[0].value
-    }
+    remoteSourcePeriodOptions.value = { ...remoteSourcePeriodOptions.value, [code]: [...new Map(options.map(item => [item.value, item])).values()].sort((a, b) => b.value.localeCompare(a.value)) }
     if (required && !fields.length) throw new Error('该指标未提供可用于图表的数据字段')
     return fields
   } catch (error) {
@@ -2512,7 +2628,17 @@ async function ensureRemoteDataSourceFields(code, { required = false } = {}) {
   }
 }
 
+function suggestDesignerWidgetPeriod(code) {
+  return suggestIndependentWidgetPeriod(remoteSourcePeriodOptions.value[code], remotePeriodRange.value)
+}
+
+async function handleSelectedDataSourceChange(code) {
+  selectedDataSourceManuallySelected = true
+  await ensureRemoteDataSourceFields(code)
+}
+
 let remoteFilterOptionGeneration = 0
+const departmentNameRequests = new Map()
 async function loadRemoteFilterOptions() {
   const generation = ++remoteFilterOptionGeneration
   const definitions = globalFilterDefinitions.value || []
@@ -2524,15 +2650,28 @@ async function loadRemoteFilterOptions() {
     try {
       const fields = await ensureRemoteDataSourceFields(sourceCode)
       if (!fields.some(field => field.filterable && field.code?.toLowerCase() === definition.field?.toLowerCase())) return
-      const range = isFormalRemoteDashboard.value
-        ? dateRangeForMonths(resolvePublishedDashboardPeriodRange(remotePeriodRange.value, periodOptions.value))
-        : dateRangeForMonths(period.value)
+      const range = dateRangeForMonths(resolvePublishedDashboardPeriodRange(remotePeriodRange.value, isEditing.value ? designerPeriodOptions.value : viewerPeriodOptions.value))
       const query = buildRemoteFilterOptionQuery(definition, definitions, filterRuntimeValues.value, fields, {
         periodStart: range.periodStart || null,
         periodEnd: range.periodEnd ? new Date(new Date(`${range.periodEnd}T00:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10) : null
       })
       const rows = await fetchDashboardFilterOptions(sourceCode, query)
-      next[definition.id] = (Array.isArray(rows) ? rows : []).map(item => item.value)
+      const options = Array.isArray(rows) ? rows : []
+      if (sourceCode === MORTALITY_SOURCE && definition.field === 'OUT_DEPT_CODE') {
+        const key = JSON.stringify({ sourceCode, range })
+        if (!departmentNameRequests.has(key)) {
+          const sample = widgets.find(widget => widget.sourceCode === sourceCode)
+          if (sample) {
+            const widget = schemaToDashboardPayload({ ...(editingDashboardSchema.value || dashboardSchema.value), widgets: [sample] }, { dataSources: availableIndicatorSources.value }).widgets[0]
+            departmentNameRequests.set(key, previewDashboardWidget({
+              widget: { ...widget, type: 'BAR_CHART', query: { ...widget.query, resultShape: 'COMPARISON' }, fieldBindings: { dataset: 'backend', dimensions: [{ field: 'OUT_DEPT_CODE' }], measures: [{ field: 'value', aggregation: 'direct' }], series: [], sort: [] } },
+              ...range, granularity: 'MONTHLY', filters: {}
+            }).then(result => result.rows || []).catch(error => { departmentNameRequests.delete(key); throw error }))
+            if (departmentNameRequests.size > 12) departmentNameRequests.delete(departmentNameRequests.keys().next().value)
+          }
+        }
+        next[definition.id] = departmentFilterOptions(options, departmentNameRequests.has(key) ? await departmentNameRequests.get(key) : [])
+      } else next[definition.id] = options.map(item => ({ value: item.value, label: item.label || String(item.value) }))
     } catch { /* Invalid/unsupported fields retain locally derived options. */ }
   }))
   if (generation === remoteFilterOptionGeneration) remoteFilterOptions.value = next
@@ -2553,7 +2692,7 @@ async function previewRemoteWidget(widget) {
       ...(editingDashboardSchema.value || dashboardSchema.value || {}),
       widgets: [widget]
     }, { dataSources: availableIndicatorSources.value }).widgets[0]
-    const range = dateRangeForMonths(resolvePublishedDashboardPeriodRange(remotePeriodRange.value, periodOptions.value))
+    const range = dateRangeForMonths(resolvePublishedDashboardPeriodRange(remotePeriodRange.value, designerPeriodOptions.value))
     if (normalizeIndicatorBindings(widget.config?.indicatorBindings, widget).length > 1) {
       const datasets = await queryRemoteMultiIndicatorSources(widget, range)
       if (remoteWidgetPreviewGenerations.get(widgetId) !== generation) return
@@ -2570,7 +2709,7 @@ async function previewRemoteWidget(widget) {
     if (remoteWidgetPreviewGenerations.get(widgetId) !== generation) return
     remoteWidgetDatasets.value = {
       ...remoteWidgetDatasets.value,
-      [widgetId]: widgetResultToDataset(result, fields, 'backend')
+      [widgetId]: widgetResultToDataset({ ...result, appliedGlobalFilterFields: Object.keys(query.filters) }, fields, 'backend')
     }
   } catch (error) {
     if (remoteWidgetPreviewGenerations.get(widgetId) !== generation) return
@@ -2583,7 +2722,7 @@ async function previewRemoteWidget(widget) {
 
 async function hydrateIndicatorSource(source) {
   if (!['indicator-catalog', 'dashboard-data-source'].includes(source?.origin) || !source.analysisIndicatorId) return source
-  const periodSelection = isFormalRemoteDashboard.value ? remotePeriodRange.value : period.value
+  const periodSelection = remotePeriodRange.value
   const query = buildPublishedIndicatorAnalysisQuery(source, periodSelection)
   const queryKey = JSON.stringify(query)
   if (source.analysisLoaded && source.analysisQueryKey === queryKey) return source
@@ -2622,7 +2761,7 @@ async function refreshSchemaPublishedIndicatorSources() {
 
 function applyDemoDashboard() {
   indicatorDataSources.value = cloneDashboardSources(mockIndicatorDataSources)
-  selectedDataCode.value = indicatorDataSources.value[0]?.code || ''
+  selectedDataCode.value = selectedDataCode.value || indicatorDataSources.value[0]?.code || ''
   dashboardStatus.value = 'demo'
   dashboardLoadMessage.value = ''
   if (!getDashboardDemoPolicy().skipDashboardBootstrap) void loadMortalityReadonlyChain()
@@ -2694,6 +2833,7 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
     }))
     if (!isCurrentLoad()) return
     remoteFieldCatalog.value = Object.fromEntries(metadataEntries.map(item => [item.code, item.fields]))
+    remoteSourcePeriodOptions.value = Object.fromEntries(metadataEntries.map(item => [item.code, createPublishedDashboardPeriodOptions([item.periods])]))
     const availablePeriods = createPublishedDashboardPeriodOptions(metadataEntries.map(item => item.periods))
     if (availablePeriods.length) {
       periodOptions.value = availablePeriods
@@ -2751,8 +2891,12 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
 
 function remoteWidgetQueryContext(range, sourceCode, schema = isEditing.value ? editingDashboardSchema.value : dashboardSchema.value) {
   const definitions = schema?.globalFilters || globalFilterDefinitions.value
+  const scopedDefinitions = definitions.filter(definition =>
+    definition.optionSourceCode !== MORTALITY_SOURCE ||
+    !['OUT_DEPT_CODE', 'OUT_DEPT_NAME'].includes(definition.field) ||
+    sourceCode === MORTALITY_SOURCE)
   return {
-    ...range, definitions, values: schema === dashboardSchema.value || schema === editingDashboardSchema.value ? filterRuntimeValues.value : initialFilterValues(definitions),
+    ...range, definitions: scopedDefinitions, values: schema === dashboardSchema.value || schema === editingDashboardSchema.value ? filterRuntimeValues.value : initialFilterValues(definitions),
     fields: remoteFieldCatalog.value[sourceCode] || [], department: department.value
   }
 }
@@ -2802,11 +2946,14 @@ async function queryRemoteDashboardByPeriod(schema, signal, dashboardId) {
     const planned = buildRemoteWidgetQuery(widget, remoteWidgetQueryContext(range, widget.sourceCode, schema))
     if (planned.error || planned.empty) return { widgets: { [widget.id]: { status: planned.error ? 'ERROR' : 'EMPTY', message: planned.error || '组件范围与看板周期没有交集', rows: [] } } }
     const query = planned.query
+    const appliedGlobalFilterFields = Object.keys(query.filters || {})
     if (trend && query.granularity === 'MONTHLY') {
       const months = monthsBetween(query.periodStart.slice(0, 7), new Date(new Date(`${query.periodEnd}T00:00:00Z`).getTime() - 1).toISOString().slice(0, 7))
-      return queryDashboardTrendMonths(dashboardId, query, [widget], months, signal)
+      const result = await queryDashboardTrendMonths(dashboardId, query, [widget], months, signal)
+      return { ...result, widgets: Object.fromEntries(Object.entries(result.widgets || {}).map(([id, item]) => [id, { ...item, appliedGlobalFilterFields }])) }
     }
-    return queryRemoteDashboardCached(dashboardId, query, signal)
+    const result = await queryRemoteDashboardCached(dashboardId, query, signal)
+    return { ...result, widgets: Object.fromEntries(Object.entries(result.widgets || {}).map(([id, item]) => [id, { ...item, appliedGlobalFilterFields }])) }
   })
   return {
     ...parts[0],
@@ -2889,6 +3036,9 @@ async function queryDashboardTrendMonths(dashboardId, baseQuery, widgets, months
 }
 
 async function refreshRemoteDashboardData() {
+  // A scene switch has not committed its published schema yet. Do not abort
+  // that load and query the temporary empty schema created for the new scene.
+  if (dashboardStatus.value === 'loading') return
   const schema = dashboardSchema.value
   const targetDashboardId = activeDashboardId.value
   if (!isRemoteDashboard(targetDashboardId) || !canRefreshCurrentRemoteDashboard.value) return
@@ -3077,7 +3227,7 @@ const goAlerts = () => {
 const goIndicatorAnalysis = (indicator, backendQuery = {}, drillContext = null) => {
   if (isEditing.value) return
   const source = typeof indicator === 'object' && indicator ? indicator : getDashboardIndicatorSource(indicator)
-  const context = buildIndicatorAnalysisPeriodContext(isFormalRemoteDashboard.value ? remotePeriodRange.value : period.value, backendQuery)
+  const context = buildIndicatorAnalysisPeriodContext(remotePeriodRange.value, backendQuery)
   const query = buildIndicatorAnalysisRouteQuery(source || { code: indicator }, context)
   if (!query || source?.analysisEnabled === false) return
   router.push({
@@ -3091,21 +3241,36 @@ const goIndicatorAnalysis = (indicator, backendQuery = {}, drillContext = null) 
   })
 }
 
+function refreshDesignerPeriodData() {
+  for (const widget of designerWidgets.value.filter(widget => getWidgetSource(widget)?.origin === 'dashboard-data-source')) void previewRemoteWidget(widget)
+  if (getDashboardDemoPolicy().loadPublishedIndicators) void refreshSchemaPublishedIndicatorSources()
+}
+
 watch(period, () => {
   if (reconcilingRemotePeriod) return
+  if (isEditing.value) return
   loadDashboard()
   if (getDashboardDemoPolicy().loadPublishedIndicators) void refreshSchemaPublishedIndicatorSources()
 })
 watch([remotePeriodRange, department], () => {
   if (reconcilingRemotePeriod) return
+  if (isEditing.value) { refreshDesignerPeriodData(); return }
   if (isFormalRemoteDashboard.value) void refreshRemoteDashboardData()
-  else void loadDashboard()
+  else if (period.value !== remotePeriodRange.value[1]) period.value = remotePeriodRange.value[1]
 })
 watch(activeWidgetId, () => { selectedMetricItemId.value = '' })
 watch(selectedDataCode, cancelDrawPlacement)
 watch(isEditing, value => { if (!value) cancelDrawPlacement() })
 let remoteFilterReloadTimer
 watch(filterRuntimeValues, () => {
+  drillRuntimeState.value = {}
+  if (isEditing.value && !remoteDashboardIsMock.value) {
+    globalThis.clearTimeout(remoteFilterReloadTimer)
+    remoteFilterReloadTimer = globalThis.setTimeout(() => {
+      for (const widget of designerWidgets.value.filter(widget => getWidgetSource(widget)?.origin === 'dashboard-data-source')) void previewRemoteWidget(widget)
+    }, 180)
+    return
+  }
   if (!isEditing.value && isRemoteDashboard() && canRefreshCurrentRemoteDashboard.value) {
     globalThis.clearTimeout(remoteFilterReloadTimer)
     remoteFilterReloadTimer = globalThis.setTimeout(() => {
@@ -3218,6 +3383,8 @@ onBeforeUnmount(() => {
   min-height: 932px;
   margin-top: 16px;
 }
+.dashboard-designer-period { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; margin-bottom:12px; padding:9px 12px; border:1px solid var(--db-border,#e3e9eb); border-radius:6px; background:var(--db-elevated,#fff); }
+.dashboard-designer-period__hint { color:var(--db-muted,#667780); font-size:12px; }
 
 .dashboard-page { min-height:100%; }
 .dashboard-schema-viewer { width:100%; margin-top:16px; overflow-x:auto; overflow-y:hidden; }
@@ -3261,6 +3428,7 @@ onBeforeUnmount(() => {
 .dashboard-page.is-presentation-mode .dashboard-schema-viewer { margin: 0; }
 .dashboard-page.is-presentation-mode .dashboard-schema-canvas { min-height: calc(100vh - 48px); }
 .dashboard-demo-source { padding:8px; border:1px solid #b8d7f0; border-radius:6px; background:#eef6ff; color:#175ea8 !important; font-size:11px !important; line-height:1.5; }
+.dashboard-source-period-note { margin:8px 0; padding:8px; border:1px solid #f4d69c; border-radius:6px; background:#fff8e9; color:#875a13; font-size:11px; line-height:1.5; }
 .dashboard-acceptance-source { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin:8px 0; padding:8px; border:1px solid #9dcbef; border-radius:6px; background:#eef8ff; color:#175ea8; font-size:12px; line-height:1.5; }.dashboard-acceptance-source strong { color:#0b5f9e; }.dashboard-acceptance-source .el-button { margin-left:auto; }.dashboard-acceptance-note { margin:0 0 10px; padding:8px 10px; border-radius:6px; background:#fff7e8; color:#8a5a00; font-size:13px; }.dashboard-acceptance-summary { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; margin:0 0 14px; font-size:12px; color:#475467; }.dashboard-acceptance-summary strong { color:#1d2939; }
 .dashboard-create-form { display:grid; gap:12px; }.dashboard-create-form label { display:grid; gap:5px; color:#475467; font-size:13px; }.dashboard-create-form input,.dashboard-create-form textarea,.dashboard-create-form select { width:100%; box-sizing:border-box; border:1px solid #d0d5dd; border-radius:5px; padding:7px; background:#fff; }.dashboard-create-form textarea { min-height:72px; resize:vertical; }.dashboard-open-list { display:grid; gap:7px; margin-top:14px; }.dashboard-open-list h3 { margin:10px 0 2px; font-size:13px; color:#667085; }.dashboard-open-list button { display:flex; justify-content:space-between; gap:12px; width:100%; padding:9px 10px; border:1px solid #e4e7ec; border-radius:6px; background:#fff; text-align:left; cursor:pointer; }.dashboard-open-list button:hover { border-color:#409eff; background:#f5faff; }.dashboard-open-list small { color:#667085; white-space:nowrap; }
 .dashboard-version-list { display:grid; gap:10px; }.dashboard-version-item { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:7px 12px; padding:13px; border:1px solid #e4e7ec; border-radius:7px; background:#fff; }.dashboard-version-item header { display:flex; align-items:center; gap:8px; }.dashboard-version-item p,.dashboard-version-item span { margin:0; color:#667085; font-size:12px; }.dashboard-version-item .el-button { grid-column:2; grid-row:2 / span 2; align-self:center; }
@@ -3289,4 +3457,8 @@ onBeforeUnmount(() => {
 @media (max-width: 767px) { .dashboard-page { min-width:0; overflow-x:hidden; } .dashboard-schema-viewer { margin-top:12px; } .dashboard-toolbar { align-items:flex-start; } .dashboard-toolbar__filters { width:100%; } .dashboard-toolbar :deep(.dashboard-filter-bar.is-compact .filter-control) { flex:1 1 140px; } .dashboard-toolbar :deep(.dashboard-filter-bar.is-compact .filter-control input),.dashboard-toolbar :deep(.dashboard-filter-bar.is-compact .filter-control select) { max-width:100%; } .dashboard-filter.dashboard-filter--compact { width:130px; } .dashboard-period-selects { flex-wrap:wrap; } .dashboard-filter.dashboard-filter--period { width:min(126px,calc(50vw - 50px)); } .dashboard-canvas-frame { padding:4px; } .dashboard-schema-canvas { min-height:0; } .dashboard-schema-viewer :deep(.dashboard-widget__chrome) { min-width:0; } }
 
 .studio-template-library { margin-top:18px; padding-top:14px; border-top:1px solid #eaecf0; }.studio-template-library__heading { display:flex; align-items:center; justify-content:space-between; gap:8px; }.studio-template-library__heading span { display:flex; gap:7px; }.studio-template-library h3 { margin:0; font-size:13px; }.studio-template-library p { margin:5px 0 10px; color:#667085; font-size:12px; line-height:1.45; }.studio-template-library button { border:0; background:transparent; color:#1570ef; cursor:pointer; font-size:12px; padding:2px; }.studio-template-item { display:grid; grid-template-columns:72px minmax(0,1fr); gap:8px; padding:8px 0; border-top:1px solid #f2f4f7; cursor:pointer; }.studio-template-item.is-selected { margin:0 -5px; padding:8px 5px; background:#f0f8ff; }.studio-template-item strong,.studio-template-item small { display:block; }.studio-template-item strong { font-size:12px; color:#344054; }.studio-template-item small { margin-top:3px; color:#667085; font-size:11px; line-height:1.35; }.studio-template-tags { display:flex; flex-wrap:wrap; gap:3px; margin-top:5px; }.studio-template-tags em { padding:1px 4px; border-radius:3px; background:#eaf2f4; color:#52636c; font-size:9px; font-style:normal; }.studio-template-preview { display:grid; grid-template-columns:repeat(24,1fr); grid-template-rows:repeat(30,2px); gap:1px; min-height:48px; padding:2px; border:1px solid #eaecf0; border-radius:4px; background:#f8fafc; overflow:hidden; }.studio-template-item.is-selected .studio-template-preview { border-color:#75a8c2; }.studio-template-preview i { min-width:0; min-height:0; border-radius:1px; background:#4f8196; opacity:.76; }.studio-template-preview i:nth-child(2n) { background:#86aebd; }.studio-template-preview i:nth-child(3n) { background:#b7c8cf; }.studio-template-item__actions { grid-column:2; display:flex; gap:10px; }.studio-template-item__actions .is-danger { color:#b42318; }.studio-template-detail { display:grid; gap:6px; margin-top:8px; padding:9px; border:1px solid #cfe1e8; border-radius:6px; background:#f8fcfd; }.studio-template-detail strong { color:#174d6c; font-size:12px; }.studio-template-detail dl { display:grid; grid-template-columns:32px 1fr; gap:4px 7px; margin:0; font-size:11px; line-height:1.35; }.studio-template-detail dt { color:#667085; }.studio-template-detail dd { margin:0; color:#344054; }
+.studio-library-readiness { display:block; margin-top:3px; font-size:11px; color:#1570ef; }
+.studio-library-readiness.is-setup,.studio-library-readiness.is-missing-source { color:#b54708; }
+.studio-library-readiness.is-loading { color:#667085; }
+.studio-placement-hint { margin:9px 0 0; padding:8px 10px; border:1px solid #a6cff0; border-radius:5px; background:#eff8ff; color:#175cd3; font-size:12px; line-height:1.5; }
 </style>

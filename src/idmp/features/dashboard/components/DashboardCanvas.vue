@@ -88,9 +88,17 @@ const placementPreview = computed(() => {
   const widget = placementWidget.value
   if (String(widget?.id) !== marquee.widgetId) return null
   if (!widget) return null
-  const layout = drawnRectangleToGridLayout(
-    { x: marquee.x, y: marquee.y }, { x: marquee.x + marquee.width, y: marquee.y + marquee.height },
-    gridGeometry, getWidgetGridConstraints(widget))
+  if (gridGeometry.cellWidth <= 0 || gridGeometry.cellHeight <= 0) return null
+  const layout = marquee.moved
+    ? drawnRectangleToGridLayout(
+      { x: marquee.x, y: marquee.y }, { x: marquee.x + marquee.width, y: marquee.y + marquee.height },
+      gridGeometry, getWidgetGridConstraints(widget))
+    : {
+      x: Math.min(Math.floor(marquee.startX / gridGeometry.cellWidth), Math.max(0, gridGeometry.columns - widget.layout.w)),
+      y: Math.min(Math.floor(marquee.startY / gridGeometry.cellHeight), Math.max(0, gridGeometry.rows - widget.layout.h)),
+      w: Math.min(widget.layout.w, gridGeometry.columns),
+      h: Math.min(widget.layout.h, gridGeometry.rows)
+    }
   const widgets = props.pendingWidget ? [...props.widgets, props.pendingWidget] : props.widgets
   return layout ? { ...validatePreciseLayout(widgets, widget.id, layout, gridGeometry.columns), layout } : null
 })
@@ -211,7 +219,7 @@ function finishMarqueeSelection(event) {
     ? { id: marquee.widgetId, layout: { ...placementPreview.value.layout } } : null
   resetMarqueeSelection()
   if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-  if (!moved) return
+  if (!moved && !placement) return
   suppressCanvasClick = true
   clearTimeout(suppressCanvasClickTimer)
   suppressCanvasClickTimer = setTimeout(() => { suppressCanvasClick = false }, 0)

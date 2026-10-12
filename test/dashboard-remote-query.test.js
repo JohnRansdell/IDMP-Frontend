@@ -37,6 +37,18 @@ test('fixed component period, organization and scenario narrow the query', () =>
   }), { empty: true })
 })
 
+test('independent component period keeps organization filters without changing the dashboard period', () => {
+  const independent = { ...widget, config: { backendQuery: { periodMode: 'INDEPENDENT', periodStart: '2026-09-01', periodEnd: '2026-09-30' } } }
+  const result = buildRemoteWidgetQuery(independent, {
+    periodStart: '2026-01-01', periodEnd: '2026-04-01', fields,
+    definitions: [{ id: 'department', field: 'OUT_DEPT_CODE' }, { id: 'date', field: 'periodStart', type: 'date-range' }],
+    values: { department: '10', date: ['2026-01-01', '2026-03-31'] }
+  })
+  assert.equal(result.query.periodStart, '2026-09-01')
+  assert.equal(result.query.periodEnd, '2026-10-01')
+  assert.deepEqual(result.query.filters, { OUT_DEPT_CODE: '10' })
+})
+
 test('unsupported fixed organization fails visibly and conflicting scope is empty', () => {
   const scoped = { ...widget, config: { backendQuery: { organizationMode: 'FIXED', organizationScope: { level: 'DOCTOR', ids: ['1'] } } } }
   assert.match(buildRemoteWidgetQuery(scoped, { fields }).error, /不支持/)

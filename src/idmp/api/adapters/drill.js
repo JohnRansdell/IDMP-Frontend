@@ -129,7 +129,7 @@ function normalizeColumn(item = {}) {
   }
 }
 
-export function deriveDrillPathResultIds(analysis = {}) {
+export function deriveDrillPathResultIds(analysis = {}, configuredPaths = []) {
   const departmentAnchor = (Array.isArray(analysis.departmentComparison) ? analysis.departmentComparison : [])
     .find((item) => item?.resultId)
   const candidates = [analysis.overview, ...(Array.isArray(analysis.dimensionComparison) ? analysis.dimensionComparison : [])]
@@ -176,6 +176,17 @@ export function deriveDrillPathResultIds(analysis = {}) {
   }
   if (!selected.ORGANIZATION && !selected.DISEASE && analysis.overview?.resultId) {
     selected.ORGANIZATION = toOpaqueId(analysis.overview.resultId)
+  }
+  // 自定义路径的根结果可能不会出现在 overview（汇总值没有 resultId）。
+  // 后端可通过路径编码从同周期的任一结果定位对应的根快照。
+  const customAnchor = toOpaqueId(
+    analysis.overview?.resultId || candidates[0]?.resultId || analysis.resultContext?.resultId
+  )
+  if (customAnchor) {
+    configuredPaths.forEach((path) => {
+      const code = String(path?.pathCode || '')
+      if (code.startsWith('CUSTOM_')) selected[code] = customAnchor
+    })
   }
   return selected
 }

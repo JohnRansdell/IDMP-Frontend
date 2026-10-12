@@ -45,3 +45,9 @@ test('a component fixed period takes priority over the dashboard month', () => {
     periodStart: '2026-01-01', periodEnd: '2026-03-31', granularity: 'QUARTERLY'
   })
 })
+
+test('analysis navigation keeps an independent component period', () => {
+  assert.deepEqual(buildIndicatorAnalysisPeriodContext(['2026-01', '2026-03'], {
+    periodMode: 'INDEPENDENT', periodStart: '2026-09-01', periodEnd: '2026-09-30'
+  }), { periodStart: '2026-09-01', periodEnd: '2026-09-30', granularity: 'MONTHLY' })
+})

@@ -16,7 +16,7 @@
         <label>候选数据来源<select :value="def.optionSourceCode || ''" @change="patch(def.id, { optionSourceCode: $event.target.value || undefined })"><option value="">全部兼容数据源</option><option v-for="source in optionSources" :key="source.code" :value="source.code">{{ source.name }}</option></select></label>
         <label>依赖筛选器<select multiple :value="def.dependsOn || []" @change="patch(def.id, { dependsOn: [...$event.target.selectedOptions].map(option => option.value) })"><option v-for="upstream in definitions.filter(item => item.id !== def.id)" :key="upstream.id" :value="upstream.id">{{ upstream.label }}</option></select></label>
         <label v-if="(def.dependsOn || []).length">上游变化后<select :value="def.invalidValueBehavior || 'clear'" @change="patch(def.id, { invalidValueBehavior: $event.target.value })"><option value="clear">清空失效值</option><option value="reset-default">恢复默认值</option></select></label>
-        <div class="default-value"><label>默认值</label><FilterValue :type="def.type" :options="fieldFor(def)?.options || []" :model-value="def.defaultValue" @update:model-value="patch(def.id, { defaultValue: $event })" /></div>
+        <div class="default-value"><label>默认值</label><FilterValue :type="def.type" :options="resolvedOptions[def.id] || fieldFor(def)?.options || []" :model-value="def.defaultValue" @update:model-value="patch(def.id, { defaultValue: $event })" /></div>
       </div>
       <fieldset class="scope"><legend>作用范围</legend><label><input type="radio" :name="`scope-${def.id}`" :checked="scopeMode(def) === 'all'" @change="setScope(def, null)" />所有兼容组件（{{ compatibleWidgets(def).length }}）</label><label><input type="radio" :name="`scope-${def.id}`" :checked="scopeMode(def) === 'selected'" :disabled="!compatibleWidgets(def).length" @change="setScope(def, [])" />指定组件</label><p v-if="!compatibleWidgets(def).length" class="scope-warning">当前没有组件可响应“{{ def.label }}”：请先在组件的数据绑定中使用字段“{{ fieldFor(def)?.label || def.field }}”。</p><div v-if="scopeMode(def) === 'selected'" class="scope-widgets"><label v-for="widget in compatibleWidgets(def)" :key="widget.id"><input type="checkbox" :checked="scopeTargets(def).includes(String(widget.id))" @change="toggleScopeWidget(def, widget.id, $event.target.checked)" />{{ widget.title || widget.sourceName || widget.id }}</label></div></fieldset>
       <button type="button" class="delete-filter" @click="emit('delete', def.id)">删除筛选器</button>
@@ -25,12 +25,15 @@
   </section>
 </template>
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, inject, ref } from 'vue'
 import FilterValue from './FilterValue.vue'
+import { filterValueLabel } from '../filterOptions.js'
 import { validateFilterDefinitions } from '../filterEngine.js'
 import { changeGlobalFilterField, createGlobalFilterDefinition, globalFilterScopeTargetIds } from '../globalFilterDesignerModel.js'
-const props = defineProps({ definitions: { type: Array, default: () => [] }, catalog: { type: Array, default: () => [] }, optionSources: { type: Array, default: () => [] }, widgets: { type: Array, default: () => [] }, compatibleWidgetIdsByFilter: { type: Object, default: () => ({}) } })
+const props = defineProps({ definitions: { type: Array, default: () => [] }, catalog: { type: Array, default: () => [] }, optionsById: { type: Object, default: () => ({}) }, optionSources: { type: Array, default: () => [] }, widgets: { type: Array, default: () => [] }, compatibleWidgetIdsByFilter: { type: Object, default: () => ({}) } })
 const emit = defineEmits(['change', 'delete', 'scope-change'])
+const remoteOptions = inject('dashboardFilterOptions', { value: {} })
+const resolvedOptions = computed(() => ({ ...remoteOptions.value, ...props.optionsById }))
 const selectedField = ref('')
 const available = computed(() => props.catalog.filter(field => field.semanticType !== 'measure' && !props.definitions.some(def => def.field === field.id)))
 const errors = computed(() => validateFilterDefinitions(props.definitions))
@@ -46,7 +49,7 @@ function fieldChoices(definition) { return props.catalog.filter(field => field.s
 function changeField(definition, fieldId) { const field = props.catalog.find(item => item.id === fieldId); if (field) patch(definition.id, changeGlobalFilterField(definition, field)) }
 function emptyDefault(type) { return type === 'multi-select' ? [] : null }
 function typeLabel(type) { return type === 'date-range' ? '时间范围' : type === 'multi-select' ? '多选' : '单选' }
-function defaultValueLabel(definition) { const value = definition.defaultValue; return Array.isArray(value) ? (value.length ? value.join('、') : '全部') : value ?? '全部' }
+function defaultValueLabel(definition) { const value = definition.defaultValue; return value === null || value === undefined || Array.isArray(value) && !value.length ? '全部' : filterValueLabel(value, resolvedOptions.value[definition.id] || []) }
 function dependencyLabel(definition) { return (definition.dependsOn || []).map(id => props.definitions.find(item => item.id === id)?.label || id).join('、') || '无' }
 function compatibleWidgets(definition) { const ids = new Set(props.compatibleWidgetIdsByFilter[definition.id] || []); return props.widgets.filter(widget => ids.has(String(widget.id))) }
 function scopeTargets(definition) { return globalFilterScopeTargetIds(props.widgets, definition.id, props.compatibleWidgetIdsByFilter[definition.id] || []) }

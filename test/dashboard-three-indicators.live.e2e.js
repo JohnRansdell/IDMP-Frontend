@@ -10,10 +10,10 @@ if (!proxyTarget) throw new Error('请设置 DASHBOARD_API_PROXY_TARGET，例如
 const appPort = 41749
 const debugPort = 41750
 const dashboardId = process.env.DASHBOARD_ID || '8185872850794987969'
-const appUrl = process.env.DASHBOARD_APP_URL || `http://127.0.0.1:${appPort}/dashboard?id=${dashboardId}`
+const appUrl = process.env.DASHBOARD_APP_URL || `http://127.0.0.1:${appPort}/dashboard${process.env.DASHBOARD_SELECT_TEST === '1' ? '' : `?id=${dashboardId}`}`
 const chromePath = process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
 const profile = await mkdtemp(join(tmpdir(), 'idmp-three-indicators-'))
-const server = process.env.DASHBOARD_APP_URL ? null : spawn(process.execPath, [join(process.cwd(), 'node_modules', 'vite', 'bin', 'vite.js'), '--host', '127.0.0.1', '--port', String(appPort), '--strictPort'], {
+const server = process.env.DASHBOARD_APP_URL ? null : spawn(process.execPath, [join(process.cwd(), 'node_modules', 'vite', 'bin', 'vite.js'), ...(process.env.DASHBOARD_DIST_SMOKE === '1' ? ['preview'] : []), '--host', '127.0.0.1', '--port', String(appPort), '--strictPort'], {
   env: { ...process.env, VITE_API_BASE_URL: '/api/v1', VITE_API_PROXY_TARGET: proxyTarget },
   stdio: ['ignore', 'pipe', 'pipe'], shell: false, windowsHide: true
 })
@@ -60,6 +60,89 @@ try {
     assert.match(bodyText, /环比\s*\+12\.02%/)
     assert.doesNotMatch(bodyText, /暂无正式结果|尚未配置数据|数据源不可用|加载失败/)
     process.stdout.write(`dashboard-current-version: PASS ${JSON.stringify({ appUrl, value: '0.34%', mom: '+12.02%' })}\n`)
+    if (process.env.DASHBOARD_DEPARTMENT_SMOKE === '1') {
+      assert.equal(await value(cdp, `document.querySelectorAll('[data-filter-field="OUT_DEPT_CODE"]').length`), 0, '未手动配置时不得自动显示科室筛选器')
+      await selectMonth(cdp, 'dashboard-period-start', '2026 年 3 月')
+      await selectMonth(cdp, 'dashboard-period-end', '2026 年 3 月')
+      await value(cdp, `document.querySelector('[data-testid="dashboard-period-apply"]').click()`)
+      await waitFor(cdp, `document.body.innerText.includes('0.31%')`, 100000)
+      await value(cdp, `document.querySelector('[data-testid="dashboard-edit"]').click()`)
+      await waitFor(cdp, `document.querySelector('[data-testid="dashboard-settings"]')`, 60000)
+      await value(cdp, `document.querySelector('[data-testid="dashboard-settings"]').click()`)
+      await value(cdp, `const field = document.querySelector('[data-testid="global-filter-field"]'); field.value = 'OUT_DEPT_CODE'; field.dispatchEvent(new Event('change', { bubbles: true }))`)
+      await value(cdp, `document.querySelector('[data-testid="global-filter-add"]').click()`)
+      await waitFor(cdp, `document.querySelector('[data-definition-field="OUT_DEPT_CODE"]')`)
+      await value(cdp, `const label = Array.from(document.querySelectorAll('[data-definition-field="OUT_DEPT_CODE"] .editor-grid > label')).find(item => item.textContent.includes('控件类型')); const select = label.querySelector('select'); select.value = 'select'; select.dispatchEvent(new Event('change', { bubbles: true }))`)
+      const selectDepartment = async department => {
+        await waitFor(cdp, `Array.from(document.querySelectorAll('[data-filter-field="OUT_DEPT_CODE"] select option')).some(item => item.textContent === '重症医学科')`, 60000)
+        await value(cdp, `(() => { const select = document.querySelector('[data-filter-field="OUT_DEPT_CODE"] select'); select.value = ${department === null ? "''" : "Array.from(select.options).find(option => option.textContent === '重症医学科').value"}; select.dispatchEvent(new Event('change', { bubbles: true })); })()`)
+      }
+      await selectDepartment('4')
+      await waitFor(cdp, `document.body.innerText.includes('28.57%') && !document.body.innerText.includes('当前筛选条件下暂无数据')`, 100000)
+      await selectDepartment(null)
+      await waitFor(cdp, `document.body.innerText.includes('0.31%')`, 100000)
+      await waitFor(cdp, `document.querySelector('.studio-library .el-select__wrapper')`, 60000)
+      for (const label of ['急诊手术占比', '患者入院48小时内转科的比例']) {
+        await value(cdp, `document.querySelector('.studio-library .el-select__wrapper').click()`)
+        await waitFor(cdp, `Array.from(document.querySelectorAll('.el-select-dropdown__item')).some(item => item.offsetParent && item.innerText.trim() === ${JSON.stringify(label)})`)
+        await value(cdp, `Array.from(document.querySelectorAll('.el-select-dropdown__item')).find(item => item.offsetParent && item.innerText.trim() === ${JSON.stringify(label)}).click(); document.querySelector('[data-testid="dashboard-library-kpi"]').click(); document.querySelector('[data-testid="dashboard-add-widget"]').click()`)
+        await waitFor(cdp, `Array.from(document.querySelectorAll('[data-widget-id]')).some(item => item.innerText.includes(${JSON.stringify(label)}) && item.innerText.includes(${JSON.stringify(label === '急诊手术占比' ? '5.19%' : '0.49%')}))`, 100000)
+      }
+      await selectDepartment('4')
+      await waitFor(cdp, `document.body.innerText.includes('28.57%') && document.body.innerText.includes('5.19%') && document.body.innerText.includes('0.49%') && !document.body.innerText.includes('当前筛选条件下暂无数据')`, 100000)
+      await selectDepartment(null)
+      await waitFor(cdp, `document.body.innerText.includes('0.31%') && document.body.innerText.includes('5.19%') && document.body.innerText.includes('0.49%')`, 100000)
+      await value(cdp, `document.querySelector('[data-testid="dashboard-settings"]').click()`)
+      await waitFor(cdp, `document.querySelector('[data-definition-field="OUT_DEPT_CODE"] .delete-filter')`)
+      await value(cdp, `document.querySelector('[data-definition-field="OUT_DEPT_CODE"] .delete-filter').click()`)
+      await waitFor(cdp, `document.querySelectorAll('[data-filter-field="OUT_DEPT_CODE"]').length === 0`)
+      process.stdout.write('dashboard-department: PASS manual add + Chinese department + delete; mortality 0.31% -> 28.57% -> 0.31%; surgery 5.19%; transfer 0.49%; saved=false\n')
+    }
+    if (process.env.DASHBOARD_ADD_KPI_SMOKE === '1') {
+      await value(cdp, `document.querySelector('[data-testid="dashboard-edit"]').click()`)
+      await waitFor(cdp, `document.querySelector('.studio-library .el-select__wrapper')`, 60000)
+      await value(cdp, `document.querySelector('.studio-library .el-select__wrapper').click()`)
+      await waitFor(cdp, `Array.from(document.querySelectorAll('.el-select-dropdown__item')).some(item => item.offsetParent && item.innerText.trim() === '住院死亡率（质量安全看板）')`)
+      await value(cdp, `Array.from(document.querySelectorAll('.el-select-dropdown__item')).find(item => item.offsetParent && item.innerText.trim() === '住院死亡率（质量安全看板）').click()`)
+      await value(cdp, `window.previousWidgetIds = Array.from(document.querySelectorAll('[data-widget-id]')).map(item => item.dataset.widgetId); document.querySelector('[data-testid="dashboard-library-kpi"]').click(); document.querySelector('[data-testid="dashboard-add-widget"]').click()`)
+      const newWidget = `Array.from(document.querySelectorAll('[data-widget-id]')).find(item => !window.previousWidgetIds.includes(item.dataset.widgetId))`
+      await waitFor(cdp, `(${newWidget})?.innerText.includes('0.34%')`, 100000)
+      const addedText = await value(cdp, `(${newWidget}).innerText`)
+      assert.doesNotMatch(addedText, /尚未配置|字段不存在|不可用|失败/)
+      process.stdout.write(`dashboard-add-kpi: PASS ${JSON.stringify({ addedText, saved: false })}\n`)
+      if (process.env.DASHBOARD_BAR_DRILL_SMOKE === '1') {
+        await value(cdp, `window.previousWidgetIds = Array.from(document.querySelectorAll('[data-widget-id]')).map(item => item.dataset.widgetId); document.querySelector('[data-testid="dashboard-library-bar"]').click(); document.querySelector('[data-testid="dashboard-add-widget"]').click()`)
+        await waitFor(cdp, `(${newWidget})?.querySelector('.idmp-chart')`, 100000)
+        await value(cdp, `window.drillWidgetId = (${newWidget}).dataset.widgetId; Array.from(document.querySelectorAll('[role="tab"]')).find(item => item.innerText.trim() === '交互').click()`)
+        await waitFor(cdp, `document.querySelector('.binding-interaction select option[value="drill"]')`)
+        await value(cdp, `const select = document.querySelector('.binding-interaction select'); select.value = 'drill'; select.dispatchEvent(new Event('change', { bubbles: true }))`)
+        await value(cdp, `document.querySelector('[data-testid="dashboard-preview"]').click()`)
+        const drilledWidget = `document.querySelector('.dashboard-preview-frame [data-widget-id="' + window.drillWidgetId + '"]')`
+        await waitFor(cdp, `(${drilledWidget})?.querySelector('.drill-breadcrumb') && (${drilledWidget})?.querySelector('.idmp-chart')`, 60000)
+        await value(cdp, `(${drilledWidget}).querySelector('.idmp-chart').scrollIntoView({ block: 'center' })`)
+        await delay(1000)
+        const bounds = await value(cdp, `(() => { const b = (${drilledWidget}).querySelector('.idmp-chart').getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height }; })()`)
+        let click
+        for (const heightRatio of [0.8, 0.6, 0.4]) {
+          for (let offset = 60; offset < bounds.width - 16; offset += 12) {
+            const x = bounds.x + offset, y = bounds.y + bounds.height * heightRatio
+            await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 })
+            await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 })
+            await delay(80)
+            if (await value(cdp, `(${drilledWidget})?.querySelectorAll('.drill-breadcrumb button').length === 3`)) { click = { x, y }; break }
+          }
+          if (click) break
+        }
+        assert.ok(click, '实际鼠标点击柱子应进入下一层')
+        await waitFor(cdp, `(${drilledWidget})?.querySelectorAll('.drill-breadcrumb button').length === 3 && (${drilledWidget})?.querySelector('.idmp-chart')`, 60000)
+        const result = await value(cdp, `({ text: (${drilledWidget}).innerText, doctors: Array.from((${drilledWidget}).querySelectorAll('.idmp-chart__table-panel tbody tr')).map(row => row.cells[0].textContent) })`)
+        assert.doesNotMatch(result.text, /暂无数据|尚未配置|字段不存在/)
+        assert.ok(result.doctors.length > 0)
+        await value(cdp, `Array.from((${drilledWidget}).querySelectorAll('.drill-breadcrumb button')).find(item => item.innerText === '返回顶层').click()`)
+        await waitFor(cdp, `(${drilledWidget})?.querySelectorAll('.drill-breadcrumb button').length === 2 && (${drilledWidget})?.querySelector('.idmp-chart')`)
+        process.stdout.write(`dashboard-bar-drill: PASS ${JSON.stringify({ click, doctors: result.doctors, returnedToTop: true, saved: false })}\n`)
+      }
+    }
   } else {
   assert.match(bodyText, /住院死亡率/)
   assert.match(bodyText, /急诊手术占比/)
@@ -129,7 +212,7 @@ function Cdp(url) {
 
 async function value(client, expression) {
   const result = await client.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
-  if (result.exceptionDetails) throw new Error(result.exceptionDetails.text || '页面脚本执行失败')
+  if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text || '页面脚本执行失败')
   return result.result.value
 }
 
@@ -168,8 +251,11 @@ function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)) }
 async function selectMonth(client, testId, label) {
   await waitFor(client, `document.querySelector('[data-testid="${testId}"] .el-select__wrapper')`, 60000)
   await value(client, `document.querySelector('[data-testid="${testId}"] .el-select__wrapper').click()`)
+  await delay(350)
   await waitFor(client, `Array.from(document.querySelectorAll('.el-select-dropdown__item')).some(item => item.offsetParent && item.innerText.trim() === ${JSON.stringify(label)})`)
   await value(client, `Array.from(document.querySelectorAll('.el-select-dropdown__item')).find(item => item.offsetParent && item.innerText.trim() === ${JSON.stringify(label)}).click()`)
+  await waitFor(client, `document.querySelector('[data-testid="${testId}"]').innerText.includes(${JSON.stringify(label)})`)
+  await delay(350)
 }
 
 async function waitForExit(processHandle) {

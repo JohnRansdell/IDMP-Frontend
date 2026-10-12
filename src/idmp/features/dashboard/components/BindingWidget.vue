@@ -3,10 +3,11 @@
   <article v-else class="dashboard-renderer-card" :class="[kind === 'kpi' ? 'db-kpi-card' : 'db-chart-card', { 'is-dark-surface': surfaceTone === 'dark', 'is-clickable': interactive && kind === 'kpi' }]" data-testid="binding-widget" :data-binding-status="model.status" :role="interactive && kind === 'kpi' ? 'button' : undefined" :tabindex="interactive && kind === 'kpi' ? 0 : undefined" @click="openAnalysis" @keydown.enter="openAnalysis" @keydown.space.prevent="openAnalysis">
     <div class="db-section-title"><h2 :style="{ color: visualStyle.kpi.titleColor || undefined }">{{ title }}</h2><nav v-if="drill.active" class="drill-breadcrumb" aria-label="组件下钻路径"><button v-for="(part, index) in drill.breadcrumb" :key="`${part}-${index}`" type="button" @click="drill.back(widget.id, index)">{{ part }}</button><button type="button" @click="drill.reset(widget.id)">返回顶层</button></nav></div>
     <p v-if="dataset?.filterDiagnostics?.length" role="status" class="filter-diagnostic">{{ dataset.filterDiagnostics.join('；') }}</p>
-    <div v-if="model.status !== 'ready'" class="binding-state" role="status" :data-testid="`binding-${model.status}`"><strong>{{ model.status === 'invalid' ? (String(model.message || '').startsWith('直接值遇到多行') ? '直接值无法显示' : '尚未配置数据') : dataset?.status === 'LOADING' ? '正在更新数据' : dataset?.status === 'ERROR' ? '数据预览失败' : '当前筛选条件下暂无数据' }}</strong><p>{{ dataset?.status === 'LOADING' ? '正在读取当前字段配置的预览结果。' : dataset?.status === 'ERROR' ? dataset.message : model.status === 'invalid' ? (model.message || '选择数据源后配置维度和指标。') : (dataset?.message || '可调整筛选条件，或检查当前数据是否有结果。') }}</p></div>
+    <div v-if="model.status !== 'ready' || mapError" class="binding-state" role="status" :data-testid="`binding-${model.status}`"><strong>{{ mapError || emptyGuidance.title }}</strong><p>{{ mapError ? '当前数据未提供地图区域边界，请切换图表类型或联系管理员接入。' : emptyGuidance.description }}</p><button v-if="designer && (mapError || emptyGuidance.action)" type="button" class="binding-state__action" @pointerdown.stop @click.stop="emit('action', mapError ? 'configure' : emptyGuidance.action)">{{ mapError ? '配置组件' : emptyGuidance.action === 'retry' ? '重试预览' : emptyGuidance.action === 'scope' ? '调整组件周期' : emptyGuidance.action === 'filters' ? '调整查询条件' : '配置数据字段' }}</button></div>
     <strong v-else-if="kind === 'kpi'" data-testid="binding-kpi-value" :style="{ color: visualStyle.kpi.valueColor || undefined }">{{ displayKpiValue }}{{ model.unit }}</strong>
     <ol v-else-if="kind === 'ranking'" class="binding-ranking"><li v-for="(item, index) in model.items" :key="item.name"><span>{{ index + 1 }}</span><span>{{ item.name }}</span><strong>{{ formatVisibleValue(item.value) }}</strong></li></ol>
     <div v-else-if="kind === 'table'" class="binding-table-wrap" :class="{ 'is-zebra': visualStyle.table.zebra, 'is-compact': visualStyle.table.compact }" :style="{ '--table-header-background': visualStyle.table.headerBackground }"><table data-testid="binding-table"><thead><tr><template v-if="rawTableColumns.length"><th v-for="column in rawTableColumns" :key="column.id">{{ column.label }}</th></template><template v-else><th>维度</th><th v-for="series in model.series" :key="series.name">{{ series.name }}</th></template></tr></thead><tbody><template v-if="rawTableColumns.length"><tr v-for="(row, index) in rawTableRows" :key="index"><td v-for="column in rawTableColumns" :key="column.id">{{ formatVisibleValue(row[column.id]) }}</td></tr></template><template v-else><tr v-for="(category, index) in model.categories" :key="category"><td>{{ category }}</td><td v-for="series in model.series" :key="series.name">{{ formatVisibleValue(series.values[index]) }}</td></tr></template></tbody></table></div>
+    <BackendChartDrill v-else-if="backendDrillParams" :widget="widget" :kind="kind" :title="title" :unit="model.unit || ''" :selected-params="backendDrillParams" @reset="backendDrillParams = null" />
     <IdmpChart v-else :option="option" :error="mapError" height="100%" fit-container :aria-label="`${title}，${model.series?.length || 1} 个系列`" @chart-click="onChartClick">
       <template #table><table><thead><tr><th>维度</th><th v-for="series in model.series" :key="series.name">{{ series.name }}</th></tr></thead><tbody><tr v-for="(category, index) in model.categories" :key="category"><td>{{ category }}</td><td v-for="series in model.series" :key="series.name">{{ formatVisibleValue(series.values[index]) }}</td></tr></tbody></table></template>
     </IdmpChart>
@@ -17,26 +18,35 @@
   </article>
 </template>
 <script setup>
-import { computed, inject } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
+import BackendChartDrill from './BackendChartDrill.vue'
 import { bindingKind, compileWidgetData, bindingChartOption, formatDashboardKpiMetric, formatDashboardMetric, normalizeDashboardMetricUnit } from '../bindingEngine.js'
 import { formatKpiComparison } from '../visualization.js'
 import { createDashboardChartTheme } from '../chartTheme.js'
 import { applyWidgetVisualStyle, resolveWidgetVisualStyle } from '../visualStyle.js'
 import { resolveWidgetSurfaceTone } from '../backgroundAssets.js'
 import { queryWidgetDatasetWithRuntime } from '../queryAdapter.js'
-import { DRILLABLE_KINDS, effectiveDrill } from '../drillDown.js'
+import { widgetEmptyGuidance } from '../widgetGuidance.js'
+import { DRILLABLE_KINDS, effectiveDrill, resolveDrillClickValue } from '../drillDown.js'
 import KpiPresentation from './KpiPresentation.vue'
-const props = defineProps({ widget: { type: Object, required: true }, title: String, interactive: { type: Boolean, default: false } })
-const emit = defineEmits(['chart-click', 'analysis'])
+const props = defineProps({ widget: { type: Object, required: true }, title: String, interactive: { type: Boolean, default: false }, designer: { type: Boolean, default: false } })
+const emit = defineEmits(['chart-click', 'analysis', 'action'])
 const getDatasets = inject('dashboardBindingDatasets', () => [])
 const filters = inject('dashboardFilterContext', { definitions: { value: [] }, values: { value: {} }, interactions: { value: {} } })
 const drillContext = inject('dashboardDrillContext', { states: { value: {} }, advance: () => {}, back: () => {}, reset: () => {} })
+const supportsBackendDrill = inject('dashboardSupportsBackendDrill', () => false)
+const backendDrillParams = ref(null)
 const kind = computed(() => bindingKind(props.widget))
 const sourceDataset = computed(() => queryWidgetDatasetWithRuntime(getDatasets(props.widget).find(item => item.id === props.widget.config.dataBinding?.dataset), props.widget, { definitions: filters.definitions.value, values: filters.values.value, interactions: filters.interactions?.value || {} }))
 const effective = computed(() => effectiveDrill(props.widget, sourceDataset.value, drillContext.states.value[String(props.widget.id)]))
 const dataset = computed(() => effective.value.dataset)
 const model = computed(() => compileWidgetData(kind.value, effective.value.binding, dataset.value))
+const emptyGuidance = computed(() => {
+  const guidance = widgetEmptyGuidance(model.value, dataset.value)
+  if (props.widget.config?.backendQuery?.periodMode !== 'INDEPENDENT' || guidance.action !== 'filters') return guidance
+  return { ...guidance, description: `${dataset.value?.message ? `${dataset.value.message}；` : ''}请在右侧“数据 → 组件查询范围”调整独立周期。`, action: 'scope' }
+})
 const rawTableColumns = computed(() => {
   if (kind.value !== 'table' || !Array.isArray(props.widget.config?.tableColumns)) return []
   const fields = new Map((dataset.value?.fields || []).map(field => [field.id, field]))
@@ -61,12 +71,18 @@ const kpiComparison = computed(() => {
 })
 const boundKpiModel = computed(() => ({ title: props.title, value: displayKpiValue.value, unit: kpiDisplay.value.unit, yoy: kpiComparison.value.yoy, mom: kpiComparison.value.mom, comparisonUnit: kpiComparison.value.unit }))
 const surfaceTone = computed(() => resolveWidgetSurfaceTone(props.widget))
-const mapError = computed(() => kind.value === 'map' && model.value.status === 'ready' && !dataset.value?.mapDefinition?.geoJSON ? '地图边界数据尚未接入。请后端在组件查询结果中返回 mapDefinition.geoJSON。' : '')
+const mapError = computed(() => kind.value === 'map' && model.value.status === 'ready' && !dataset.value?.mapDefinition?.geoJSON ? '缺少地图区域边界数据' : '')
 const option = computed(() => createDashboardChartTheme(applyWidgetVisualStyle(props.widget, bindingChartOption(kind.value, model.value, { mapDefinition: dataset.value?.mapDefinition })), surfaceTone.value))
 const visualStyle = computed(() => resolveWidgetVisualStyle(props.widget))
-const drill = computed(() => ({ active: props.widget.config?.interaction?.clickAction === 'drill' && DRILLABLE_KINDS.has(kind.value) && effective.value.hierarchy.length > 1, breadcrumb: ['全院', ...effective.value.path], back: drillContext.back, reset: drillContext.reset }))
+const backendDrillEnabled = computed(() => props.interactive && ['bar', 'pie'].includes(kind.value) && props.widget.config?.interaction?.clickAction === 'drill' && supportsBackendDrill(props.widget))
+const drill = computed(() => ({ active: !backendDrillEnabled.value && props.widget.config?.interaction?.clickAction === 'drill' && DRILLABLE_KINDS.has(kind.value) && effective.value.hierarchy.length > 1, breadcrumb: ['全院', ...effective.value.path], back: drillContext.back, reset: drillContext.reset }))
 function formatVisibleValue(value) { return value === null || value === undefined ? '—' : formatDashboardMetric(value) }
-function onChartClick(params) { if (drill.value.active) drillContext.advance(props.widget, sourceDataset.value, params?.name); else emit('chart-click', params) }
+function onChartClick(params) {
+  if (backendDrillEnabled.value) backendDrillParams.value = params
+  else if (drill.value.active) drillContext.advance(props.widget, sourceDataset.value, resolveDrillClickValue(params, effective.value, model.value))
+  else emit('chart-click', params)
+}
+watch(() => JSON.stringify([props.widget.sourceCode, props.widget.config?.backendQuery, sourceDataset.value?.resultId, sourceDataset.value?.snapshotId, sourceDataset.value?.rows?.length, filters.values.value]), () => { backendDrillParams.value = null })
 function openAnalysis() { if (props.interactive && kind.value === 'kpi') emit('analysis') }
 </script>
 <style scoped>
@@ -77,6 +93,7 @@ function openAnalysis() { if (props.interactive && kind.value === 'kpi') emit('a
 .db-chart-card :deep(.idmp-chart-frame) { flex:1 1 auto; min-height:0; }
 .binding-state { margin:auto; padding:12px; text-align:center; color:var(--db-muted,#78878e); font-size:12px; }
 .binding-state strong { font-size:13px; }.binding-state p { line-height:1.6; }
+.binding-state__action { margin-top:8px; padding:5px 10px; border:1px solid var(--db-accent,#1261a6); border-radius:4px; background:transparent; color:var(--db-accent,#1261a6); cursor:pointer; }
 .filter-diagnostic { margin:0 0 6px; font-size:11px; color:var(--db-warning,#a47735); }
 table { width:100%; font-size:12px; border-collapse:collapse; } td,th { padding:6px; text-align:left; }
 .binding-table-wrap { max-width:100%; overflow:auto; overscroll-behavior-inline:contain; max-height:100%; }.binding-table-wrap table { width:max-content; min-width:100%; }.binding-table-wrap th { position:sticky; top:0; background:var(--table-header-background,var(--db-surface,#fff)); }.binding-table-wrap td,.binding-table-wrap th { border-bottom:1px solid var(--db-border,#e3e9eb); white-space:nowrap; }.binding-table-wrap.is-zebra tbody tr:nth-child(even) { background:color-mix(in srgb, var(--table-header-background,#f3f7f8) 35%, transparent); }.binding-table-wrap.is-compact td,.binding-table-wrap.is-compact th { padding:4px 6px; }

@@ -14,35 +14,44 @@
     </StatePanel>
     <StatePanel v-else-if="!domain" type="empty" title="数据域不存在" />
     <template v-else>
-      <section class="domain-heading">
-        <div><CodeTooltip :code="domain.code" label="数据域编码"><h2>{{ domain.name }}</h2></CodeTooltip><p>{{ domain.description || '暂无说明' }}</p></div>
-        <StatusBadge :status="domain.status" />
+      <section class="surface-card domain-overview" aria-label="当前数据域">
+        <div class="domain-overview__main">
+          <span class="domain-overview__eyebrow">当前数据域</span>
+          <div class="domain-overview__title"><CodeTooltip :code="domain.code" label="数据域编码"><h2>{{ domain.name }}</h2></CodeTooltip><StatusBadge :status="domain.status" /></div>
+          <p>{{ domain.description || '暂无说明' }}</p>
+        </div>
+        <div class="domain-overview__count"><strong>{{ physicalTables.length }}</strong><span>接入物理表</span></div>
       </section>
 
-      <section class="workspace-section">
+      <section class="surface-card workspace-section" aria-label="物理表">
         <div class="section-title section-title--toolbar">
-          <div><h2>物理表</h2><p class="section-title__description">当前数据域接入的源表和视图</p></div>
-          <div class="toolbar-actions"><span class="table-count">共 {{ physicalTables.length }} 张</span><el-button type="primary" :icon="Plus" @click="openAddDialog">接入物理表</el-button></div>
+          <div><h2>物理表</h2><p class="section-title__description">选择一张源表或视图，查看并维护字段映射</p></div>
+          <div class="toolbar-actions"><el-button type="primary" :icon="Plus" @click="openAddDialog">接入物理表</el-button></div>
         </div>
-        <StatePanel v-if="!physicalTables.length" type="empty" title="尚未接入物理表">
+        <div v-if="!physicalTables.length" class="workspace-section__body"><StatePanel type="empty" title="尚未接入物理表">
           <template #actions><el-button type="primary" @click="openAddDialog">接入物理表</el-button></template>
-        </StatePanel>
-        <el-table v-else :data="physicalTables" :current-row-key="selectedTableName" row-key="tableName" highlight-current-row @row-click="selectTable">
+        </StatePanel></div>
+        <div v-else class="workspace-table-scroll"><el-table :data="physicalTables" :current-row-key="selectedTableName" row-key="tableName" highlight-current-row @row-click="selectTable">
           <el-table-column prop="tableName" label="表名" min-width="220" show-overflow-tooltip />
           <el-table-column prop="tableComment" label="说明" min-width="180" show-overflow-tooltip><template #default="{ row }">{{ row.tableComment || '—' }}</template></el-table-column>
-          <el-table-column prop="defaultTimeSemanticFieldCode" label="默认时间字段" min-width="160"><template #default="{ row }">{{ row.defaultTimeSemanticFieldCode || '未配置' }}</template></el-table-column>
           <el-table-column label="状态" width="120"><template #default="{ row }"><StatusBadge :status="row.status" /></template></el-table-column>
           <el-table-column label="操作" width="90" fixed="right"><template #default="{ row }"><el-button link type="primary" @click.stop="selectTable(row)">查看</el-button></template></el-table-column>
-        </el-table>
+        </el-table></div>
       </section>
 
-      <section class="workspace-section">
-        <div class="section-title section-title--toolbar"><div><h2>字段映射</h2><p class="section-title__description">{{ selectedTable?.tableName || '请选择物理表' }}</p></div><span v-if="selectedTable" class="table-count">已映射 {{ mappedFields.length }} / {{ sourceFields.length }}</span></div>
-        <StatePanel v-if="!selectedTable" type="empty" title="请选择物理表" />
-        <StatePanel v-else-if="fieldLoading" type="loading" title="正在加载字段" />
-        <StatePanel v-else-if="fieldError" type="error" title="字段加载失败" :description="fieldErrorMessage"><template #actions><el-button @click="loadFields">重试</el-button></template></StatePanel>
+      <section class="surface-card workspace-section workspace-section--fields" aria-label="字段映射">
+        <div class="section-title section-title--toolbar"><div><h2>字段映射</h2><p class="section-title__description">{{ selectedTable ? `当前物理表：${selectedTable.tableName}` : '从上方选择物理表后查看源字段' }}</p></div><span v-if="selectedTable" class="table-count">已映射 {{ mappedFields.length }} / {{ sourceFields.length }}</span></div>
+        <div v-if="!selectedTable" class="workspace-section__body"><StatePanel type="empty" title="请选择物理表" /></div>
+        <div v-else-if="fieldLoading" class="workspace-section__body"><StatePanel type="loading" title="正在加载字段" /></div>
+        <div v-else-if="fieldError" class="workspace-section__body"><StatePanel type="error" title="字段加载失败" :description="fieldErrorMessage"><template #actions><el-button @click="loadFields">重试</el-button></template></StatePanel></div>
         <template v-else>
-          <el-table :data="fieldRows" row-key="columnName" max-height="500">
+          <div v-if="sourceFields.length" class="field-search-bar">
+            <el-input v-model.trim="fieldSearch" clearable placeholder="搜索源字段、类型、注释或业务字段" aria-label="搜索字段映射" />
+            <span>匹配 {{ filteredFieldRows.length }} / {{ fieldRows.length }} 个字段</span>
+          </div>
+          <div v-if="!sourceFields.length" class="workspace-section__body"><StatePanel type="empty" title="当前物理表没有字段" /></div>
+          <div v-else-if="!filteredFieldRows.length" class="workspace-section__body"><StatePanel type="empty" title="没有匹配的字段" description="请更换关键词，或清空搜索查看全部字段。"><template #actions><el-button @click="fieldSearch = ''">清空搜索</el-button></template></StatePanel></div>
+          <div v-else class="workspace-table-scroll"><el-table :data="filteredFieldRows" row-key="columnName" max-height="500">
             <el-table-column prop="columnName" label="源字段" min-width="180" show-overflow-tooltip />
             <el-table-column prop="columnType" label="源类型" min-width="110" />
             <el-table-column prop="comment" label="源注释" min-width="160" show-overflow-tooltip><template #default="{ row }">{{ row.comment || '—' }}</template></el-table-column>
@@ -50,8 +59,7 @@
             <el-table-column label="配置类型" width="110"><template #default="{ row }">{{ row.mapped ? dataTypeLabel(row.mapped.dataType) : '未映射' }}</template></el-table-column>
             <el-table-column label="角色" width="110"><template #default="{ row }">{{ roleLabel(row.mapped?.semanticKind) }}</template></el-table-column>
             <el-table-column label="操作" width="260" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openMappingDialog(row)">{{ row.mapped ? '编辑' : '映射' }}</el-button><template v-if="row.mapped"><el-button link :disabled="!canBindValueSet(row.mapped)" @click="openValueSetBinding(row.mapped)">值集</el-button><el-button link :disabled="!canStandardize(row.mapped)" @click="openStandardization(row.mapped)">标准化</el-button><el-button link :disabled="!row.mapped.sourceFieldMappingId" @click="openFieldProfile(row.mapped)">画像</el-button></template></template></el-table-column>
-          </el-table>
-          <div class="time-field-control"><label for="default-time-field">默认时间字段</label><el-select id="default-time-field" v-model="defaultTimeFieldCode" :disabled="!timeFieldOptions.length" placeholder="选择已映射的日期字段"><el-option v-for="field in timeFieldOptions" :key="field.code" :label="`${field.name}（${field.code}）`" :value="field.code" /></el-select><el-button type="primary" :loading="timeSaving" :disabled="!defaultTimeFieldCode || defaultTimeFieldCode === selectedTable.defaultTimeSemanticFieldCode" @click="saveDefaultTimeField">保存</el-button></div>
+          </el-table></div>
         </template>
       </section>
     </template>
@@ -97,9 +105,11 @@ import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
-import { addPhysicalTable, bindPhysicalTableField, fetchDataDomains, fetchPhysicalTableFields, fetchPhysicalTables, fetchSourceTableFields, fetchSourceTables, updatePhysicalTableDefaultTimeField } from '@/idmp/api/modules/meta'
+import { addPhysicalTable, bindPhysicalTableField, fetchDataDomains, fetchPhysicalTableFields, fetchPhysicalTables, fetchSemanticField, fetchSourceTableFields, fetchSourceTables, updateSemanticField } from '@/idmp/api/modules/meta'
 import { adaptDataDomainList, adaptPhysicalTableList, adaptSemanticFieldList, adaptSourceFieldList, adaptSourceTableList } from '@/idmp/api/adapters/meta'
 import { dataTypeLabel } from '@/idmp/features/meta/model'
+import { buildSemanticFieldUpdate } from '@/idmp/features/meta/fieldUpdate'
+import { applySemanticFieldDetails, defaultTimeFieldOptions } from '@/idmp/features/meta/defaultTimeFields'
 import { SEMANTIC_DATA_TYPES } from '@/idmp/utils/validation'
 import { bindSemanticFieldValueSet, fetchSemanticFieldValueSet, fetchValueSet, fetchValueSets } from '@/idmp/api/modules/valueSets'
 import { fetchSourceValueProfile } from '@/idmp/api/modules/transformRules'
@@ -110,15 +120,14 @@ const domain = ref(null)
 const physicalTables = ref([])
 const sourceTables = ref([])
 const sourceFields = ref([])
+const fieldSearch = ref('')
 const mappedFields = ref([])
 const selectedTableName = ref('')
-const defaultTimeFieldCode = ref('')
 const loading = ref(false)
 const fieldLoading = ref(false)
 const sourceLoading = ref(false)
 const adding = ref(false)
 const mappingSaving = ref(false)
-const timeSaving = ref(false)
 const error = ref(null)
 const fieldError = ref(null)
 const sourceError = ref(null)
@@ -165,13 +174,18 @@ const availableSourceTables = computed(() => sourceTables.value.filter(table => 
 const fieldRows = computed(() => sourceFields.value.map(field => ({
   ...field, mapped: mappedFields.value.find(mapped => mapped.sourceFieldName === field.columnName)
 })))
-const timeFieldOptions = computed(() => mappedFields.value.filter(field => ['DATE', 'DATETIME'].includes(String(field.dataType).toUpperCase())))
+const filteredFieldRows = computed(() => {
+  const keyword = fieldSearch.value.trim().toLowerCase()
+  if (!keyword) return fieldRows.value
+  return fieldRows.value.filter(row => [row.columnName, row.columnType, row.comment, row.mapped?.code, row.mapped?.name]
+    .some(value => String(value ?? '').toLowerCase().includes(keyword)))
+})
 const errorMessage = computed(() => error.value?.message || '数据域读取失败')
 const fieldErrorMessage = computed(() => fieldError.value?.message || '字段读取失败')
 const sourceErrorMessage = computed(() => sourceError.value?.message || '来源目录读取失败')
 
 onMounted(loadWorkspace)
-watch(domainId, loadWorkspace)
+watch(domainId, () => { fieldSearch.value = ''; loadWorkspace() })
 
 async function loadWorkspace() {
   loading.value = true
@@ -180,9 +194,9 @@ async function loadWorkspace() {
     const [domains, tables] = await Promise.all([fetchDataDomains(), fetchPhysicalTables(domainId.value)])
     domain.value = adaptDataDomainList(domains).find(item => item.id === domainId.value) || null
     physicalTables.value = adaptPhysicalTableList(tables)
-    if (!physicalTables.value.some(table => table.tableName === selectedTableName.value)) selectedTableName.value = ''
+    if (!physicalTables.value.some(table => table.tableName === selectedTableName.value)) { selectedTableName.value = ''; fieldSearch.value = '' }
     if (selectedTableName.value) await loadFields()
-    else { sourceFields.value = []; mappedFields.value = []; defaultTimeFieldCode.value = '' }
+    else { sourceFields.value = []; mappedFields.value = [] }
   } catch (cause) {
     error.value = cause
     domain.value = null
@@ -195,9 +209,9 @@ async function loadWorkspace() {
 function selectTable(row) {
   if (!row?.tableName || selectedTableName.value === row.tableName) return
   selectedTableName.value = row.tableName
+  fieldSearch.value = ''
   sourceFields.value = []
   mappedFields.value = []
-  defaultTimeFieldCode.value = ''
   void loadFields()
 }
 
@@ -213,9 +227,14 @@ async function loadFields() {
       fetchSourceTableFields(tableName), fetchPhysicalTableFields(domainId.value, tableName)
     ])
     if (request !== fieldRequest || tableName !== selectedTableName.value) return
-    sourceFields.value = adaptSourceFieldList(source)
-    mappedFields.value = adaptSemanticFieldList(mapped)
-    defaultTimeFieldCode.value = selectedTable.value?.defaultTimeSemanticFieldCode || ''
+    const nextSourceFields = adaptSourceFieldList(source)
+    const nextMappedFields = adaptSemanticFieldList(mapped)
+    const timeCandidates = defaultTimeFieldOptions(nextMappedFields, nextSourceFields).filter(field => field.id)
+    const details = await Promise.all(timeCandidates.map(field => fetchSemanticField(field.id)))
+    if (request !== fieldRequest || tableName !== selectedTableName.value) return
+    const detailById = new Map(timeCandidates.map((field, index) => [field.id, details[index]]))
+    sourceFields.value = nextSourceFields
+    mappedFields.value = applySemanticFieldDetails(nextMappedFields, detailById)
   } catch (cause) {
     if (request !== fieldRequest) return
     fieldError.value = cause
@@ -257,18 +276,28 @@ async function submitAddTable() {
   finally { adding.value = false }
 }
 
-function openMappingDialog(field) {
+let mappingDialogRequest = 0
+async function openMappingDialog(field) {
   const current = field.mapped
   mappingSourceType.value = field.columnType
+  const request = ++mappingDialogRequest
+  const tableName = selectedTableName.value
+  let detail = null
+  if (current?.id) {
+    try { detail = await fetchSemanticField(current.id) }
+    catch (cause) { ElMessage.error(cause?.message || '字段详情读取失败，无法编辑映射'); return }
+    if (request !== mappingDialogRequest || tableName !== selectedTableName.value) return
+  }
   editingMappedField.value = Boolean(current)
   const suggestedCode = String(field.columnName).toUpperCase().replace(/[^A-Z0-9_]/g, '_')
   Object.assign(mappingForm, {
     sourceFieldName: field.columnName,
     code: current?.code || (/^[A-Z]/.test(suggestedCode) ? suggestedCode : `F_${suggestedCode}`).slice(0, 64),
-    name: current?.name || field.comment || field.columnName,
-    dataType: current?.dataType || inferDataType(field.columnType),
-    semanticKind: current?.semanticKind || '', sensitive: current?.sensitive || false,
-    conversionFormat: current?.conversionFormat || (current?.dataType === 'DATE' ? 'yyyy-MM-dd' : 'yyyy-MM-dd HH:mm:ss')
+    name: detail?.name || current?.name || field.comment || field.columnName,
+    dataType: detail?.valueType || current?.dataType || inferDataType(field.columnType),
+    semanticKind: detail?.semanticKind || current?.semanticKind || '',
+    sensitive: detail?.sensitivityLevel ? detail.sensitivityLevel !== 'NONE' : Boolean(current?.sensitive),
+    conversionFormat: detail?.conversionFormat || current?.conversionFormat || (current?.dataType === 'DATE' ? 'yyyy-MM-dd' : 'yyyy-MM-dd HH:mm:ss')
   })
   mappingDialogVisible.value = true
 }
@@ -359,24 +388,29 @@ async function submitMapping() {
   if (mappingSaving.value || !(await mappingFormRef.value?.validate().catch(() => false))) return
   mappingSaving.value = true
   try {
-    await bindPhysicalTableField(domainId.value, selectedTableName.value, { ...mappingForm, conversionFormat: needsDateFormat.value ? mappingForm.conversionFormat : null })
+    const sourceFieldName = mappingForm.sourceFieldName
+    const fieldCode = mappingForm.code
+    const existing = fieldRows.value.find(row => row.columnName === sourceFieldName)?.mapped
+    const mappingPayload = { ...mappingForm, conversionFormat: needsDateFormat.value ? mappingForm.conversionFormat : null }
+    if (editingMappedField.value && (needsDateFormat.value || existing?.conversionFormat)) {
+      await bindPhysicalTableField(domainId.value, selectedTableName.value, mappingPayload)
+    } else if (editingMappedField.value) {
+      if (!existing?.id) throw new Error('当前映射缺少字段 ID，无法编辑；请重新进入物理表后重试。')
+      const detail = await fetchSemanticField(existing.id)
+      await updateSemanticField(existing.id, buildSemanticFieldUpdate(detail, mappingForm))
+    } else {
+      await bindPhysicalTableField(domainId.value, selectedTableName.value, mappingPayload)
+    }
     await loadFields()
+    if (fieldError.value) throw new Error('映射已提交，但字段回读失败；请重新进入物理表核对保存结果。')
+    const saved = mappedFields.value.find(field => field.code === fieldCode && field.sourceFieldName === sourceFieldName)
+    if (!saved || String(saved.dataType).toUpperCase() !== mappingForm.dataType || saved.semanticKind !== mappingForm.semanticKind || saved.name !== mappingForm.name) {
+      throw new Error('映射接口已响应，但重新读取的字段配置与保存内容不一致；请检查后端字段详情与列表接口。')
+    }
     mappingDialogVisible.value = false
     ElMessage.success('字段映射已保存')
   } catch (cause) { ElMessage.error(cause?.message || '字段映射保存失败') }
   finally { mappingSaving.value = false }
-}
-
-async function saveDefaultTimeField() {
-  if (!defaultTimeFieldCode.value || timeSaving.value) return
-  timeSaving.value = true
-  try {
-    const updated = await updatePhysicalTableDefaultTimeField(domainId.value, selectedTableName.value, defaultTimeFieldCode.value)
-    physicalTables.value = physicalTables.value.map(table => table.tableName === selectedTableName.value
-      ? adaptPhysicalTableList([updated])[0] : table)
-    ElMessage.success('默认时间字段已保存')
-  } catch (cause) { ElMessage.error(cause?.message || '默认时间字段保存失败') }
-  finally { timeSaving.value = false }
 }
 
 function inferDataType(value) {
@@ -395,19 +429,41 @@ function roleLabel(value) {
 </script>
 
 <style scoped lang="scss">
-.data-domain-workspace { display: flex; flex-direction: column; gap: 20px; }
-.domain-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; border-bottom: 1px solid var(--idmp-border); padding: 4px 0 18px; }
-.domain-heading h2 { margin: 0 0 6px; font-size: 22px; }
-.domain-heading p { margin: 0; color: var(--idmp-text-secondary); }
-.workspace-section { min-width: 0; }
-.section-title--toolbar, .toolbar-actions, .time-field-control { display: flex; align-items: center; gap: 12px; }
-.section-title--toolbar { justify-content: space-between; margin-bottom: 14px; }
+.data-domain-workspace { min-width: 0; }
+.domain-overview { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 16px; padding: 18px 20px; }
+.domain-overview__main { min-width: 0; }
+.domain-overview__eyebrow { color: var(--idmp-text-helper); font-size: 12px; }
+.domain-overview__title { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 6px; }
+.domain-overview__title h2 { margin: 0; font-size: 18px; line-height: 26px; }
+.domain-overview__main p { margin: 6px 0 0; color: var(--idmp-text-secondary); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
+.domain-overview__count { display: grid; flex: 0 0 auto; justify-items: center; gap: 2px; min-width: 110px; padding-left: 20px; border-left: 1px solid var(--idmp-border-subtle); }
+.domain-overview__count strong { color: var(--idmp-text-primary); font-size: 24px; font-variant-numeric: tabular-nums; }
+.domain-overview__count span { color: var(--idmp-text-helper); font-size: 12px; }
+.workspace-section { min-width: 0; overflow: hidden; }
+.workspace-section + .workspace-section { margin-top: 16px; }
+.section-title--toolbar, .toolbar-actions { display: flex; align-items: center; gap: 12px; }
+.section-title--toolbar { justify-content: space-between; margin: 0; padding: 16px 18px; border-bottom: 1px solid var(--idmp-border-subtle); }
+.section-title--toolbar h2 { margin: 0; font-size: 16px; }
+.section-title__description { margin: 5px 0 0; color: var(--idmp-text-helper); font-size: 12px; }
 .toolbar-actions { flex-wrap: wrap; justify-content: flex-end; }
-.time-field-control { flex-wrap: wrap; border-top: 1px solid var(--idmp-border); padding-top: 18px; margin-top: 18px; }
-.time-field-control label { font-weight: 600; }
-.time-field-control .el-select { width: min(360px, 100%); }
+.workspace-section__body { padding: 18px; }
+.field-search-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--idmp-border-subtle); }
+.field-search-bar .el-input { width: min(380px, 100%); }
+.field-search-bar span { flex: 0 0 auto; color: var(--idmp-text-helper); font-size: 12px; }
+.workspace-table-scroll { overflow-x: auto; padding: 0 18px 16px; }
+.workspace-table-scroll :deep(.el-table) { min-width: 760px; }
+.workspace-section--fields .workspace-table-scroll :deep(.el-table) { min-width: 1000px; }
 .el-table small { display: block; color: var(--idmp-text-helper); }
 .dialog-select { width: 100%; }
 .mapping-validation-note { margin: 0 0 18px; color: var(--idmp-text-secondary); font-size: 13px; line-height: 1.5; }
-@media (max-width: 720px) { .section-title--toolbar { align-items: flex-start; flex-direction: column; } .toolbar-actions { justify-content: flex-start; } }
+@media (max-width: 720px) {
+  .domain-overview { align-items: flex-start; flex-direction: column; padding: 16px; }
+  .domain-overview__count { display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 12px 0 0; border-top: 1px solid var(--idmp-border-subtle); border-left: 0; }
+  .section-title--toolbar { align-items: flex-start; flex-direction: column; padding: 14px 16px; }
+  .toolbar-actions { justify-content: flex-start; }
+  .workspace-section__body { padding: 16px; }
+  .field-search-bar { align-items: stretch; flex-direction: column; padding: 12px 16px; }
+  .field-search-bar .el-input { width: 100%; }
+  .workspace-table-scroll { padding: 0 16px 14px; }
+}
 </style>

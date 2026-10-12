@@ -30,6 +30,25 @@ export function dateRangeForMonths(period = '') {
   return { periodStart: monthStart(start), periodEnd: nextMonthStart(end) }
 }
 
+export function suggestIndependentWidgetPeriod(options = [], dashboardRange = []) {
+  const months = [...new Set((Array.isArray(options) ? options : [])
+    .map(option => String(option?.value || ''))
+    .filter(value => /^\d{4}-\d{2}$/.test(value)))].sort().reverse()
+  if (!months.length) return null
+  const selected = (Array.isArray(dashboardRange) ? dashboardRange : [])
+    .map(value => String(value || ''))
+    .filter(value => /^\d{4}-\d{2}$/.test(value)).sort()
+  if (selected.length && months.some(month => month >= selected[0] && month <= selected[selected.length - 1])) return null
+  const month = months[0]
+  const [year, number] = month.split('-').map(Number)
+  return {
+    periodMode: 'INDEPENDENT',
+    periodStart: `${month}-01`,
+    periodEnd: new Date(Date.UTC(year, number, 0)).toISOString().slice(0, 10),
+    granularity: 'MONTHLY'
+  }
+}
+
 export function buildPublishedIndicatorAnalysisQuery(source = {}, period = '') {
   return {
     indicatorVersionId: String(source.analysisIndicatorVersionId || source.indicatorVersionId || ''),

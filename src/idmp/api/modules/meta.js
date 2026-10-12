@@ -37,6 +37,17 @@ export function bindPhysicalTableField(domainId, tableName, payload) {
   })
 }
 
+export function fetchSemanticField(fieldId) {
+  return requestJson(`/meta/semantic-fields/${encodeURIComponent(fieldId)}`)
+}
+
+export function updateSemanticField(fieldId, payload) {
+  return requestJson(`/meta/semantic-fields/${encodeURIComponent(fieldId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  })
+}
+
 export function updatePhysicalTableDefaultTimeField(domainId, tableName, semanticFieldCode) {
   return requestJson(`/meta/data-domains/${encodeURIComponent(domainId)}/physical-tables/${encodeURIComponent(tableName)}/default-time-field`, {
     method: 'PATCH',

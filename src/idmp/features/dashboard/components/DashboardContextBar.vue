@@ -13,12 +13,14 @@
   </section>
 </template>
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, inject, ref } from 'vue'
+import { filterValueLabel } from '../filterOptions.js'
 import { buildDashboardContext } from '../dashboardContext.js'
 const props = defineProps({ definitions: { type: Array, default: () => [] }, values: { type: Object, default: () => ({}) }, interactions: { type: Array, default: () => [] }, drillStates: { type: Object, default: () => ({}) }, widgets: { type: Array, default: () => [] } })
 defineEmits(['clear-filters', 'clear-interactions', 'clear-drills'])
 const expanded = ref(false)
-const context = computed(() => buildDashboardContext(props))
+const options = inject('dashboardFilterOptions', { value: {} })
+const context = computed(() => buildDashboardContext({ ...props, values: Object.fromEntries(Object.entries(props.values).map(([id, value]) => [id, value === null || value === undefined || value === '' || Array.isArray(value) && !value.length ? value : filterValueLabel(value, options.value[id] || [])])) }))
 const visibleItems = computed(() => context.value.items.slice(0, 1))
 const hiddenCount = computed(() => Math.max(0, context.value.items.length - 1))
 </script>

@@ -43,7 +43,8 @@ function mockBackend() {
     else if (path.endsWith('/semantic-fields')) {
       if (init.method === 'POST') { const body = JSON.parse(init.body); window.__mappingRequests.push(body); mapped = { ...mapped, ...body }; data = mapped }
       else data = [mapped]
-    } else if (path.endsWith('/time-fields')) data = [{ columnName: 'event_time', columnType: 'varchar(32)', comment: '事件日期', requiresConfirmation: true, sampledValueCount: 100 }]
+    } else if (path === '/meta/semantic-fields/1') data = { ...mapped, valueType: mapped.dataType, resourceVersion: 1, nullable: true }
+    else if (path.endsWith('/time-fields')) data = [{ columnName: 'event_time', columnType: 'varchar(32)', comment: '事件日期', requiresConfirmation: true, sampledValueCount: 100 }]
     else if (path.endsWith('/fields')) data = [{ columnName: 'event_time', columnType: 'varchar(32)', comment: '事件日期', nullable: true }]
     return new Response(JSON.stringify({ code: 'OK', data }), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }
@@ -71,7 +72,7 @@ try {
   await waitFor(() => evaluate(`!!document.querySelector('.data-domain-workspace .el-table')`))
   await evaluate(`(() => { let c = document.querySelector('.data-domain-workspace').__vueParentComponent; while(c && c.type.__name !== 'DataDomainWorkspace') c=c.parent; window.__workspace=c.setupState; window.__workspace.selectTable(window.__workspace.physicalTables[0]) })()`)
   await waitFor(() => evaluate(`window.__workspace.fieldRows.length === 1`))
-  assert.equal(await evaluate(`window.__workspace.timeFieldOptions[0].code`), 'EVENT_TIME')
+  assert.equal(await evaluate(`window.__workspace.mappedFields[0].code`), 'EVENT_TIME')
   await evaluate(`window.__workspace.openMappingDialog(window.__workspace.fieldRows[0])`)
   await waitFor(() => evaluate(`!!document.querySelector('.el-dialog input')`))
   assert.equal(await evaluate(`window.__workspace.mappingForm.conversionFormat`), 'yyyy/MM/dd HH:mm:ss')
@@ -85,7 +86,7 @@ try {
   }
   await evaluate(`window.__workspace.submitMapping()`)
   assert.equal(await evaluate(`window.__mappingRequests[0].conversionFormat`), 'yyyy/MM/dd HH:mm:ss')
-  assert.equal(await evaluate(`window.__workspace.timeFieldOptions[0].dataType`), 'DATETIME')
+  assert.equal(await evaluate(`window.__workspace.mappedFields[0].dataType`), 'DATETIME')
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false })
   await cdp.send('Page.navigate', { url: 'http://127.0.0.1:5173/factor/edit/new' })
   await waitFor(() => evaluate(`!!document.querySelector('.factor-editor')`))

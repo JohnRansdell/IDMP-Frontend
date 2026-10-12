@@ -151,6 +151,10 @@
       @closed="clearSelectedTable"
     >
       <p class="drawer-api-note">字段详情 · {{ selectedTable?.comment || '暂无对象说明' }}</p>
+      <div v-if="!fieldLoading && !fieldError && sourceFields.length" class="field-search-bar">
+        <el-input v-model.trim="fieldSearch" clearable placeholder="搜索字段名、类型或注释" aria-label="搜索字段名、类型或注释" />
+        <span>匹配 {{ filteredSourceFields.length }} / {{ sourceFields.length }} 个字段</span>
+      </div>
       <StatePanel v-if="fieldLoading" type="loading" title="正在加载字段结构" />
       <StatePanel
         v-else-if="fieldError"
@@ -166,7 +170,10 @@
         title="当前对象没有字段"
         description="接口返回了空字段列表，请确认数据结构已经同步。"
       />
-      <el-table v-else :data="sourceFields" table-layout="fixed" max-height="calc(100vh - 180px)">
+      <StatePanel v-else-if="!filteredSourceFields.length" type="empty" title="没有匹配的字段" description="请更换关键词，或清空搜索查看全部字段。">
+        <template #actions><el-button @click="fieldSearch = ''">清空搜索</el-button></template>
+      </StatePanel>
+      <el-table v-else :data="filteredSourceFields" table-layout="fixed" max-height="calc(100vh - 250px)">
         <el-table-column prop="columnName" label="字段名" min-width="180" show-overflow-tooltip />
         <el-table-column prop="columnType" label="字段类型" width="140" />
         <el-table-column prop="nullable" label="可为空" width="90">
@@ -195,6 +202,7 @@ import { sourceObjectTypeLabel } from '@/idmp/features/meta'
 
 const sourceTables = ref([])
 const sourceFields = ref([])
+const fieldSearch = ref('')
 const selectedTable = ref(null)
 const fieldsDrawerVisible = ref(false)
 const tableLoading = ref(false)
@@ -218,6 +226,13 @@ const filteredTables = computed(() => {
       && (!tableType || `${item.tableType} ${sourceObjectTypeLabel(item.tableType)}`.toLowerCase().includes(tableType))
       && (!comment || item.comment.toLowerCase().includes(comment))
   })
+})
+
+const filteredSourceFields = computed(() => {
+  const keyword = fieldSearch.value.trim().toLowerCase()
+  if (!keyword) return sourceFields.value
+  return sourceFields.value.filter(field => [field.columnName, field.columnType, field.comment]
+    .some(value => String(value ?? '').toLowerCase().includes(keyword)))
 })
 
 const totalFieldCount = computed(() => sourceTables.value.reduce((sum, item) => sum + Number(item.fieldCount || 0), 0))
@@ -300,31 +315,40 @@ async function handleSync() {
 function selectSourceTable(row) {
   selectedTable.value = row
   fieldsDrawerVisible.value = true
+  fieldSearch.value = ''
   sourceFields.value = []
   fieldError.value = null
   loadFields()
 }
 
+let fieldRequest = 0
 async function loadFields() {
   if (!selectedTable.value?.tableName) return
   const tableName = selectedTable.value.tableName
+  const request = ++fieldRequest
   fieldLoading.value = true
   fieldError.value = null
   try {
-    sourceFields.value = adaptSourceFieldList(await fetchSourceTableFields(tableName))
+    const fields = adaptSourceFieldList(await fetchSourceTableFields(tableName))
+    if (request === fieldRequest && selectedTable.value?.tableName === tableName) sourceFields.value = fields
   } catch (error) {
-    sourceFields.value = []
-    fieldError.value = error
-    ElMessage.error(fieldErrorMessage.value)
+    if (request === fieldRequest) {
+      sourceFields.value = []
+      fieldError.value = error
+      ElMessage.error(fieldErrorMessage.value)
+    }
   } finally {
-    fieldLoading.value = false
+    if (request === fieldRequest) fieldLoading.value = false
   }
 }
 
 function clearSelectedTable() {
+  fieldRequest++
   selectedTable.value = null
+  fieldSearch.value = ''
   sourceFields.value = []
   fieldError.value = null
+  fieldLoading.value = false
 }
 
 function resetFilters() {
@@ -389,6 +413,9 @@ function formatErrorMessage(error, fallback) {
 .sync-table-tag small { color: var(--idmp-text-helper); }
 .filter-bar { display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr)) auto; gap: 10px; margin-bottom: 14px; }
 .drawer-api-note { margin: -8px 0 16px; color: var(--idmp-text-helper); font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; }
+.field-search-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.field-search-bar .el-input { flex: 1; min-width: 0; }
+.field-search-bar span { flex: 0 0 auto; color: var(--idmp-text-helper); font-size: 12px; }
 @media (max-width: 900px) {
   .source-overview-grid { grid-template-columns: 1fr; }
   .workflow-steps { align-items: stretch; flex-direction: column; }
@@ -396,5 +423,8 @@ function formatErrorMessage(error, fallback) {
   .sync-summary { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
   .sync-summary__message { grid-column: 1 / -1; }
   .filter-bar { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 560px) {
+  .field-search-bar { align-items: stretch; flex-direction: column; gap: 6px; }
 }
 </style>

@@ -126,7 +126,7 @@ const dimensionValue = value => ['string', 'boolean'].includes(typeof value) || 
 
 function companionNameField(fieldId, fields = []) {
   const id = String(fieldId || '')
-  const candidate = /_CODE$/i.test(id) ? id.replace(/_CODE$/i, '_NAME') : /_ID$/i.test(id) ? id.replace(/_ID$/i, '_NAME') : ''
+  const candidate = /_CODE$/i.test(id) ? id.replace(/_CODE$/i, '_NAME') : /_ID$/i.test(id) ? id.replace(/_ID$/i, '_NAME') : /^ATTENDING_DOCTOR$/i.test(id) ? `${id}_NAME` : ''
   if (!candidate) return ''
   return fields.find(field => String(field.id).toLowerCase() === candidate.toLowerCase())?.id || ''
 }

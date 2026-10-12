@@ -1,14 +1,15 @@
 <template>
   <div class="filter-value">
     <details v-if="type === 'multi-select'">
-      <summary>{{ Array.isArray(modelValue) && modelValue.length ? modelValue.join('、') : allowAll ? '全部' : '未选择' }}</summary>
-      <div class="filter-options"><label v-for="(option, index) in options" :key="index"><input type="checkbox" :data-filter-option="String(option)" :checked="Array.isArray(modelValue) && modelValue.includes(option)" @change="toggle(option, $event.target.checked)" />{{ String(option) }}</label><span v-if="!options.length">暂无可选值</span></div>
+      <summary>{{ Array.isArray(modelValue) && modelValue.length ? filterValueLabel(modelValue, options) : allowAll ? '全部' : '未选择' }}</summary>
+      <div class="filter-options"><label v-for="(option, index) in options" :key="index"><input type="checkbox" :data-filter-option="String(filterOptionValue(option))" :checked="Array.isArray(modelValue) && modelValue.includes(filterOptionValue(option))" @change="toggle(filterOptionValue(option), $event.target.checked)" />{{ filterOptionLabel(option) }}</label><span v-if="!options.length">暂无可选值</span></div>
     </details>
     <div v-else-if="type === 'date-range'" class="filter-range"><input type="date" aria-label="开始日期" :value="modelValue?.[0] || ''" @change="range(0, $event.target.value)" /><span>至</span><input type="date" aria-label="结束日期" :value="modelValue?.[1] || ''" @change="range(1, $event.target.value)" /><button type="button" aria-label="清空日期范围" @click="emit('update:modelValue', null)">×</button></div>
-    <select v-else :value="modelValue === null || modelValue === undefined ? '' : options.findIndex(option => option === modelValue)" aria-label="筛选值" @change="emit('update:modelValue', $event.target.value === '' ? null : options[Number($event.target.value)])"><option value="" :disabled="!allowAll">{{ allowAll ? '全部' : '请选择' }}</option><option v-for="(option, index) in options" :key="index" :value="index">{{ String(option) }}</option></select>
+    <select v-else :value="modelValue === null || modelValue === undefined ? '' : options.findIndex(option => filterOptionValue(option) === modelValue)" aria-label="筛选值" @change="emit('update:modelValue', $event.target.value === '' ? null : filterOptionValue(options[Number($event.target.value)]))"><option value="" :disabled="!allowAll">{{ allowAll ? '全部' : '请选择' }}</option><option v-for="(option, index) in options" :key="index" :value="index">{{ filterOptionLabel(option) }}</option></select>
   </div>
 </template>
 <script setup>
+import { filterOptionValue, filterOptionLabel, filterValueLabel } from '../filterOptions.js'
 const props = defineProps({ modelValue: { default: null }, type: { type: String, default: 'select' }, options: { type: Array, default: () => [] }, allowAll: { type: Boolean, default: true } })
 const emit = defineEmits(['update:modelValue'])
 function toggle(option, checked) { const values = Array.isArray(props.modelValue) ? props.modelValue : []; emit('update:modelValue', checked ? [...values, option] : values.filter(value => value !== option)) }

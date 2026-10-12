@@ -54,7 +54,7 @@ export function buildRemoteWidgetQuery(widget, { periodStart, periodEnd, definit
 
   let start = periodStart
   let end = periodEnd
-  if (localQuery.inheritGlobalFilters !== false) {
+  if (localQuery.inheritGlobalFilters !== false && scope.periodMode !== 'INDEPENDENT') {
     for (const definition of definitions) {
       if (definition.enabled === false || definition.type !== 'date-range' || localQuery.ignoredGlobalFilterIds?.includes(definition.id)) continue
       const value = Object.hasOwn(values, definition.id) ? values[definition.id] : definition.defaultValue
@@ -73,13 +73,18 @@ export function buildRemoteWidgetQuery(widget, { periodStart, periodEnd, definit
       }
     }
   }
-  if (scope.periodMode === 'FIXED') {
-    if (!scope.periodStart || !scope.periodEnd || scope.periodStart > scope.periodEnd) return { error: '组件固定周期无效' }
+  if (scope.periodMode === 'FIXED' || scope.periodMode === 'INDEPENDENT') {
+    if (!scope.periodStart || !scope.periodEnd || scope.periodStart > scope.periodEnd) return { error: scope.periodMode === 'INDEPENDENT' ? '组件独立周期无效' : '组件固定周期无效' }
     const exclusiveEnd = new Date(`${scope.periodEnd}T00:00:00Z`)
     exclusiveEnd.setUTCDate(exclusiveEnd.getUTCDate() + 1)
-    start = start && start > scope.periodStart ? start : scope.periodStart
     const fixedEnd = exclusiveEnd.toISOString().slice(0, 10)
-    end = end && end < fixedEnd ? end : fixedEnd
+    if (scope.periodMode === 'INDEPENDENT') {
+      start = scope.periodStart
+      end = fixedEnd
+    } else {
+      start = start && start > scope.periodStart ? start : scope.periodStart
+      end = end && end < fixedEnd ? end : fixedEnd
+    }
   }
   if (start && end && start >= end) return { empty: true }
 
@@ -100,7 +105,7 @@ export function buildRemoteWidgetQuery(widget, { periodStart, periodEnd, definit
   return {
     query: {
       periodStart: start, periodEnd: end,
-      granularity: scope.periodMode === 'FIXED' ? scope.granularity || scope.periodGranularity || 'MONTHLY' : 'MONTHLY',
+      granularity: ['FIXED', 'INDEPENDENT'].includes(scope.periodMode) ? scope.granularity || scope.periodGranularity || 'MONTHLY' : 'MONTHLY',
       widgetCodes: [String(widget.id)], filters
     }
   }

@@ -35,7 +35,7 @@
         <el-form-item label="聚合字段"><el-select v-model="designer.fieldCode" filterable clearable :disabled="!designer.tableName" placeholder="COUNT 可留空统计记录数；其他聚合方式需选择字段"><el-option v-for="field in aggregatableFields" :key="field.code" :label="optionLabel({ name: field.label, code: field.code })" :value="field.code" /></el-select></el-form-item>
         <div class="grid">
           <el-form-item label="计算模式"><el-radio-group v-model="designer.calculationMode"><el-radio value="TEMPORAL">时序</el-radio><el-radio value="STATIC">静态</el-radio></el-radio-group></el-form-item>
-          <el-form-item v-if="designer.calculationMode === 'TEMPORAL'" label="周期时间字段" required><el-select v-model="designer.periodFieldCode" filterable :disabled="!designer.tableName" placeholder="请选择日期或时间字段"><el-option v-for="field in timeFields" :key="field.code" :label="optionLabel({ name: field.label, code: field.code })" :value="field.code" /></el-select></el-form-item>
+          <el-form-item v-if="designer.calculationMode === 'TEMPORAL'" label="周期时间字段" required><el-select v-model="designer.periodFieldCode" filterable :disabled="!designer.tableName" placeholder="请选择本模板的周期时间字段"><el-option v-for="field in timeFields" :key="field.code" :label="optionLabel({ name: field.label, code: field.code })" :value="field.code" /></el-select><small>按模板的统计口径选择，实例化因子将使用此字段。</small></el-form-item>
         </div>
 
         <el-divider />
@@ -196,8 +196,7 @@ async function loadFields() {
     const physicalCode = code => fields.value.find(field => field.code === code || field.semanticFieldCode === code)?.code || code
     designer.fieldCode = physicalCode(designer.fieldCode)
     designer.templateFilter.fieldCode = physicalCode(designer.templateFilter.fieldCode)
-    const table = tables.value.find(table => table.tableName === designer.tableName)
-    designer.periodFieldCode = physicalCode(designer.periodFieldCode || table?.defaultTimeSemanticFieldCode || '')
+    designer.periodFieldCode = physicalCode(designer.periodFieldCode)
   } catch (error) { if (requestId === metadataRequestVersion) ElMessage.error(error?.message || '物理字段读取失败') } finally { if (requestId === metadataRequestVersion) loading.fields = false }
 }
 function addParameter() { designer.parameters.push({ code: '', displayName: '', dataType: 'CODE', required: false, exposed: true, defaultValue: '', valueSourceType: 'FIXED', valueSourceRef: '', validation: { enum: [] }, displayOrder: designer.parameters.length }) }

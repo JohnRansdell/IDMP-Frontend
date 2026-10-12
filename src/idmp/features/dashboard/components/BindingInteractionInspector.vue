@@ -13,7 +13,7 @@
       </template>
       <button v-if="active" type="button" data-testid="interaction-clear" @click="dashboardContext.clearInteraction(widget.id)">清除当前临时联动筛选</button>
       </template>
-      <template v-if="clickAction === 'drill'"><p>组织下钻在当前组件内执行：科室 → 医疗组 → 医师；当前位置不会保存为看板默认状态。</p><label>下钻层级<input :value="drillHierarchy.join(' → ')" readonly /></label></template>
+      <template v-if="clickAction === 'drill'"><p>点击图表后按指标版本配置的组织路径下钻；当前位置不会保存为看板默认状态。</p><label>下钻层级<input :value="backendDrillSupported ? '以已发布指标版本的下钻配置为准' : drillHierarchy.join(' → ')" readonly /></label></template>
     </template>
     <p v-else>请先在“数据”中配置至少一个维度字段，才可使用点击筛选。</p>
 
@@ -33,6 +33,7 @@ import { DRILLABLE_KINDS, resolveDrillHierarchy } from '../drillDown.js'
 const props = defineProps({ widget: { type: Object, required: true }, datasets: { type: Array, default: () => [] } })
 const emit = defineEmits(['change', 'query-change'])
 const dashboardContext = inject('dashboardWidgetsContext', { widgets: { value: [] }, interactions: { value: {} }, clearInteraction: () => {} })
+const supportsBackendDrill = inject('dashboardSupportsBackendDrill', () => false)
 const dimensions = computed(() => props.widget.config?.dataBinding?.dimensions || [])
 const targets = computed(() => dashboardContext.widgets.value.filter(item => item.id !== props.widget.id && hasDataBinding(item)))
 const sources = computed(() => dashboardContext.widgets.value.filter(item => item.id !== props.widget.id && item.config?.interaction?.clickFilter?.enabled))
@@ -41,7 +42,8 @@ const clickAction = computed(() => props.widget.config?.interaction?.clickAction
 const selectedDataset = computed(() => props.datasets.find(dataset => dataset?.id === props.widget.config?.dataBinding?.dataset) || props.datasets[0])
 const datasetFields = computed(() => selectedDataset.value?.fields || [])
 const drillHierarchy = computed(() => resolveDrillHierarchy(props.widget.config?.interaction?.drill?.hierarchy || ['department', 'medicalGroup', 'doctor'], datasetFields.value))
-const drillSupported = computed(() => DRILLABLE_KINDS.has(props.widget.chartKind || props.widget.type) && drillHierarchy.value.length > 1)
+const backendDrillSupported = computed(() => ['bar', 'pie'].includes(props.widget.chartKind || props.widget.type) && supportsBackendDrill(props.widget))
+const drillSupported = computed(() => DRILLABLE_KINDS.has(props.widget.chartKind || props.widget.type) && (drillHierarchy.value.length > 1 || backendDrillSupported.value))
 const active = computed(() => Object.hasOwn(dashboardContext.interactions.value, `interaction-${props.widget.id}`))
 
 function patchClick(change) {

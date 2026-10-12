@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildPublishedIndicatorAnalysisQuery, buildPublishedIndicatorTrendPreviewQuery, createPublishedDashboardPeriodOptions, dateRangeForMonths, resolvePublishedDashboardPeriod, resolvePublishedDashboardPeriodRange, schemaPublishedIndicatorSourceCodes } from '../src/idmp/features/dashboard/publishedIndicatorRuntime.js'
+import { buildPublishedIndicatorAnalysisQuery, buildPublishedIndicatorTrendPreviewQuery, createPublishedDashboardPeriodOptions, dateRangeForMonths, resolvePublishedDashboardPeriod, resolvePublishedDashboardPeriodRange, schemaPublishedIndicatorSourceCodes, suggestIndependentWidgetPeriod } from '../src/idmp/features/dashboard/publishedIndicatorRuntime.js'
 import { dashboardDetailToSchema } from '../src/idmp/api/adapters/dashboard.js'
 
 test('published dashboard widgets query their persisted indicator version for the selected month', () => {
@@ -24,6 +24,15 @@ test('published dashboard widgets support a bounded inclusive month range', () =
   assert.deepEqual(buildPublishedIndicatorAnalysisQuery({ analysisIndicatorVersionId: '102027642460303757' }, ['2025-09', '2026-04']), {
     indicatorVersionId: '102027642460303757', granularity: 'MONTHLY', periodStart: '2025-09-01', periodEnd: '2026-05-01'
   })
+})
+
+test('a newly added source outside the dashboard range gets only its own latest month', () => {
+  const options = [{ value: '2026-09' }, { value: '2026-08' }]
+  assert.deepEqual(suggestIndependentWidgetPeriod(options, ['2026-01', '2026-03']), {
+    periodMode: 'INDEPENDENT', periodStart: '2026-09-01', periodEnd: '2026-09-30', granularity: 'MONTHLY'
+  })
+  assert.equal(suggestIndependentWidgetPeriod(options, ['2026-08', '2026-10']), null)
+  assert.equal(suggestIndependentWidgetPeriod([], ['2026-01', '2026-03']), null)
 })
 
 test('line previews retain the selected bounded period range', () => {

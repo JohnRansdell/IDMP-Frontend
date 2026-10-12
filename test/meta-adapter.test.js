@@ -28,6 +28,16 @@ test('semantic field adapter exposes stable fields and validates code/type', () 
   assert.ok(SEMANTIC_DATA_TYPES.includes('DATE'))
 })
 
+test('physical table field responses using valueType remain available as time candidates', () => {
+  const fields = adaptSemanticFieldList([
+    { id: '1', code: 'OUT_DATE', name: '出院时间', sourceFieldName: 'out_date', valueType: 'DATETIME', semanticKind: 'TIME', sensitivityLevel: 'NONE' },
+    { id: '2', code: 'CREATE_DATE', name: '创建时间', sourceFieldName: 'create_date', dataType: 'DATE', semanticKind: 'TIME' }
+  ])
+  assert.deepEqual(fields.filter(field => ['DATE', 'DATETIME'].includes(field.dataType)).map(field => field.code), ['OUT_DATE', 'CREATE_DATE'])
+  assert.equal(fields[0].sensitive, false)
+  assert.equal(adaptSemanticFieldList([{ valueType: 'STRING', sensitivityLevel: 'HIGH' }])[0].sensitive, true)
+})
+
 test('source field adapter preserves Chinese comments for mapping guidance', () => {
   const field = adaptSourceFieldList([{ columnName: 'death_datetime', columnType: 'datetime', nullable: true, comment: '死亡时间' }])[0]
   assert.equal(field.columnName, 'death_datetime')
@@ -50,15 +60,15 @@ test('data domain workspace uses physical tables without legacy semantic-table o
   const source = await readFile(file, 'utf8')
   assert.match(source, /fetchPhysicalTables/)
   assert.match(source, /bindPhysicalTableField/)
-  assert.match(source, /updatePhysicalTableDefaultTimeField/)
+  assert.doesNotMatch(source, /updatePhysicalTableDefaultTimeField|id="default-time-field"/)
   assert.match(source, /openValueSetBinding/)
   assert.match(source, /openStandardization/)
   assert.match(source, /openFieldProfile/)
   assert.doesNotMatch(source, /fetchSemanticTables|createSemanticTable|semantic-table-relations/)
 })
 
-test('validated effective types survive metadata and ordinary factor field adapters', () => {
-  const mapped = adaptSemanticFieldList([{ id: '1', code: 'EVENT_TIME', name: '事件时间', sourceFieldName: 'event_time',
+test('validated effective date type survives metadata and factor adapters', () => {
+  const mapped = adaptSemanticFieldList([{ id: '1', code: 'EVENT_TIME', sourceFieldName: 'event_time',
     dataType: 'DATETIME', sourceDataType: 'varchar(32)', conversionFormat: 'yyyy/MM/dd HH:mm:ss' }])
   assert.equal(mapped[0].sourceDataType, 'varchar(32)')
   assert.equal(mapped[0].conversionFormat, 'yyyy/MM/dd HH:mm:ss')
@@ -95,11 +105,11 @@ test('physical MySQL types do not treat text dates as datetime', () => {
   assert.equal(physicalFieldDataType('time'), 'STRING')
 })
 
-test('ordinary factor accepts sampled text time from main and joined tables without changing its business type', () => {
+test('sampled text dates can be factor periods without changing business type', () => {
   for (const isBase of [true, false]) {
     const fields = adaptFactorPhysicalFields([{ code: 'EVENT_TIME', sourceFieldName: 'event_time', dataType: 'STRING' }],
       [{ columnName: 'event_time', columnType: 'varchar(32)' }], { sourceAlias: 'joined', isBase,
-        timeFieldOptions: [{ columnName: 'EVENT_TIME', columnType: 'varchar(32)', requiresConfirmation: true, sampledValueCount: 100 }] })
+        timeFieldOptions: [{ columnName: 'EVENT_TIME', requiresConfirmation: true, sampledValueCount: 100 }] })
     assert.equal(fields[0].dataType, 'STRING')
     assert.equal(fields[0].kind, 'STRING')
     assert.equal(isFactorPeriodField(fields[0]), true)

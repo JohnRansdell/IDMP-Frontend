@@ -1,9 +1,9 @@
 <template>
   <section class="component-scope" aria-label="组件查询范围">
     <h3>组件查询范围</h3>
-    <p>默认继承看板条件；固定范围会随组件配置保存，并在全局条件基础上进一步收窄。</p>
-    <label>统计周期<select :value="periodMode" @change="setPeriodMode($event.target.value)"><option value="INHERIT">继承看板周期</option><option value="FIXED">固定周期</option></select></label>
-    <template v-if="periodMode === 'FIXED'">
+    <p>默认继承看板周期；固定周期在看板范围内收窄，独立周期只影响当前组件。</p>
+    <label>统计周期<select :value="periodMode" @change="setPeriodMode($event.target.value)"><option value="INHERIT">继承看板周期</option><option value="FIXED">固定周期（与看板取交集）</option><option value="INDEPENDENT">独立周期（不影响其他组件）</option></select></label>
+    <template v-if="periodMode !== 'INHERIT'">
       <label>时间粒度<select :value="query.granularity || 'MONTHLY'" @change="patch({ granularity: $event.target.value })"><option value="YEARLY">年度</option><option value="QUARTERLY">季度</option><option value="MONTHLY">月度</option><option value="DAILY">日</option></select></label>
       <label>开始日期<input type="date" :value="query.periodStart || ''" @change="patch({ periodStart: $event.target.value || null })" /></label>
       <label>结束日期<input type="date" :value="query.periodEnd || ''" @change="patch({ periodEnd: $event.target.value || null })" /></label>
@@ -24,11 +24,11 @@ import { computed } from 'vue'
 const props = defineProps({ modelValue: { type: Object, default: () => ({}) } })
 const emit = defineEmits(['change'])
 const query = computed(() => props.modelValue || {})
-const periodMode = computed(() => query.value.periodMode === 'FIXED' ? 'FIXED' : 'INHERIT')
+const periodMode = computed(() => ['FIXED', 'INDEPENDENT'].includes(query.value.periodMode) ? query.value.periodMode : 'INHERIT')
 const organizationMode = computed(() => query.value.organizationMode === 'FIXED' ? 'FIXED' : 'INHERIT')
 const scenarioMode = computed(() => query.value.scenarioMode === 'FIXED' ? 'FIXED' : 'INHERIT')
 const validation = computed(() => {
-  if (periodMode.value === 'FIXED' && (!query.value.periodStart || !query.value.periodEnd)) return '固定周期必须同时填写开始日期和结束日期。'
+  if (periodMode.value !== 'INHERIT' && (!query.value.periodStart || !query.value.periodEnd)) return '组件周期必须同时填写开始日期和结束日期。'
   if (query.value.periodStart && query.value.periodEnd && query.value.periodStart > query.value.periodEnd) return '开始日期不能晚于结束日期。'
   if (organizationMode.value === 'FIXED' && !query.value.organizationScope?.ids?.length && query.value.organizationScope?.level !== 'HOSPITAL') return '指定组织时请填写至少一个组织编码。'
   if (scenarioMode.value === 'FIXED' && !query.value.scenarioVersionIds?.length) return '指定场景时请填写至少一个场景版本 ID。'
@@ -36,7 +36,7 @@ const validation = computed(() => {
 })
 function patch(value) { emit('change', { ...query.value, ...value }) }
 function patchOrganization(value) { patch({ organizationScope: { ...(query.value.organizationScope || {}), ...value } }) }
-function setPeriodMode(mode) { patch(mode === 'FIXED' ? { periodMode: mode, granularity: query.value.granularity || 'MONTHLY' } : { periodMode: 'INHERIT', periodStart: null, periodEnd: null }) }
+function setPeriodMode(mode) { patch(['FIXED', 'INDEPENDENT'].includes(mode) ? { periodMode: mode, granularity: query.value.granularity || 'MONTHLY' } : { periodMode: 'INHERIT', periodStart: null, periodEnd: null }) }
 function setOrganizationMode(mode) { patch(mode === 'FIXED' ? { organizationMode: mode, organizationScope: query.value.organizationScope || { level: 'DEPARTMENT', ids: [] } } : { organizationMode: 'INHERIT', organizationScope: null }) }
 function setScenarioMode(mode) { patch(mode === 'FIXED' ? { scenarioMode: mode, scenarioVersionIds: query.value.scenarioVersionIds || [] } : { scenarioMode: 'INHERIT', scenarioVersionIds: [] }) }
 function split(value) { return [...new Set(String(value || '').split(/[,，\s]+/).map(item => item.trim()).filter(Boolean))] }
