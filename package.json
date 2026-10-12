@@ -9,7 +9,8 @@
   "scripts": {
     "test:dimension-field-options": "node --test test/dimension-field-options.test.js",
     "test:resource-code": "node --test test/resource-code.test.js",
-    "test:calculation-dag": "node --test test/calculation-graph.test.js",
+    "test:calculation-dag": "node --test test/calculation-graph.test.js test/calculation-results.test.js",
+    "test:e2e:calculation-results": "node test/calculation-node-results.e2e.js",
     "test:e2e:calculation": "node test/calculation-task-center.e2e.js",
     "test:e2e:calculation-live": "node test/calculation-dag-live.e2e.js",
     "dev": "vite",

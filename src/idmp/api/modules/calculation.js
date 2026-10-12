@@ -16,6 +16,11 @@ export function fetchCalcBatch(batchId) {
   return requestJson(`/calc/batches/${batchId}`)
 }
 
+export function fetchCalcNodeResults(nodeId, pageNum = 1, pageSize = 20, options = {}) {
+  const query = new URLSearchParams({ pageNum: String(pageNum), pageSize: String(pageSize) })
+  return requestJson(`/calc/nodes/${encodeURIComponent(nodeId)}/results?${query}`, { signal: options.signal })
+}
+
 export function cancelCalcBatch(batchId) {
   return requestJson(`/calc/batches/${batchId}/cancel`, {
     method: 'POST',
