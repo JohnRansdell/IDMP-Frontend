@@ -1,7 +1,7 @@
 <template>
   <div class="idmp-page indicator-detail-page">
     <PageHeader
-      :title="`查看指标：${indicatorName}`"
+      :title="`查看指标/${indicatorName}`"
       :status="indicatorStatus"
     >
       <template #meta>
