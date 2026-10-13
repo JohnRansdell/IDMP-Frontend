@@ -7,6 +7,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "test:api-alignment": "node --test test/pagination.test.js test/drill-explorer.component.test.js test/indicator-scenario-links.component.test.js test/indicator-policy-references.component.test.js test/scenario-editor-entry.component.test.js test/scenario-adapter.test.js test/formula-editor-alignment.test.js test/trial-pagination-alignment.test.js test/department-ranking.test.js",
     "test:dimension-field-options": "node --test test/dimension-field-options.test.js",
     "test:resource-code": "node --test test/resource-code.test.js",
     "test:calculation-dag": "node --test test/calculation-graph.test.js test/calculation-results.test.js",

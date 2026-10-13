@@ -115,11 +115,6 @@
                   <el-checkbox v-for="item in sourceOptions" :key="item.value" :value="item.value">{{ item.label }}</el-checkbox>
                 </el-checkbox-group>
               </el-form-item>
-              <el-form-item label="政策文件来源" prop="policies" class="form-span-2">
-                <el-checkbox-group v-model="form.policies">
-                  <el-checkbox v-for="item in policyOptions" :key="item" :value="item">{{ item }}</el-checkbox>
-                </el-checkbox-group>
-              </el-form-item>
             </div>
           </el-form>
           <el-alert v-if="!indicatorWorkflow.versionId || indicatorWorkflow.published" type="info" :closable="false" show-icon :title="indicatorWorkflow.published ? '当前是已发布版本；定义、统计周期和数据来源需创建新草稿版本后才能修改。' : '定义、统计周期和数据来源会在首次保存公式、创建草稿版本后写入。当前保存先创建或更新指标基本资料。'" />
@@ -603,23 +598,7 @@
       </el-tab-pane>
 
       <el-tab-pane label="5 政策依据" name="policy">
-        <section class="surface-card table-card">
-          <div class="section-title"><h2>政策依据</h2></div>
-          <div class="table-scroll">
-            <el-table :data="editorPolicyRows">
-              <el-table-column prop="policy" label="政策文件" min-width="250" />
-              <el-table-column prop="version" label="文件版本" width="110" />
-              <el-table-column prop="code" label="原始编码" width="140" />
-              <el-table-column prop="originalName" label="原始名称" min-width="220" />
-              <el-table-column prop="chapter" label="章节" min-width="180" />
-              <el-table-column prop="relation" label="关系类型" width="120">
-                <template #default="{ row }">
-                  <span class="status-pill" :class="row.relation === '参考' ? 'is-info' : ''">{{ row.relation }}</span>
-                </template>
-              </el-table-column>
-            </el-table>
-          </div>
-        </section>
+        <IndicatorPolicyReferences :version-id="indicatorWorkflow.versionId" :published="indicatorWorkflow.published" />
       </el-tab-pane>
 
       <el-tab-pane label="6 发布检查" name="publish">
@@ -697,6 +676,7 @@ import {
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import IndicatorScenarioLinks from '@/idmp/components/IndicatorScenarioLinks.vue'
+import IndicatorPolicyReferences from '@/idmp/components/IndicatorPolicyReferences.vue'
 import ResultAvailabilityPanel from '@/idmp/components/ResultAvailabilityPanel.vue'
 import { API_BASE_URL } from '@/idmp/api/request'
 import { resourceConflictEditorPath, resolveResourceConflict } from '@/idmp/api/adapters/resourceConflict'
@@ -732,7 +712,6 @@ import {
   validateDrillSelection
 } from '@/idmp/api/adapters/indicator'
 import { createCalcBatch, fetchAsyncTask, fetchCalcBatch } from '@/idmp/api/modules/calculation'
-import { editorPolicyRows } from '@/idmp/data/demo'
 import { getStatusLabel } from '@/idmp/design/status'
 import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
 import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
@@ -959,7 +938,6 @@ const sourceOptions = computed(() => {
   }
   return options
 })
-const policyOptions = ['绩效考核2024版', '2011年版指标', '医院评审2025版', 'NCIS 8.0']
 const defaultCategoryPath = ['医疗质量', '质量安全']
 const indicatorCategoryOptions = [
   {
@@ -1030,8 +1008,7 @@ const form = reactive({
   definition: '',
   significance: '',
   sources: [],
-  period: '年度',
-  policies: []
+  period: '年度'
 })
 
 const editorTitle = computed(() => {
@@ -1069,8 +1046,7 @@ const rules = computed(() => ({
   direction: isNew.value ? [required('请选择指标导向')] : [],
   definition: [required('请输入指标定义')],
   sources: [required('请选择至少一个数据来源')],
-  period: [required('请选择统计周期')],
-  policies: []
+  period: [required('请选择统计周期')]
 }))
 
 function findCategoryPath(target, options, trail = []) {
@@ -1600,7 +1576,6 @@ function hydrateIndicatorSummary(item) {
   savedDataSources.value = normalizeIndicatorDataSources(item.dataSources || item.sources || (item.source ? [item.source] : []))
   form.sources = savedDataSources.value.map(indicatorDataSourceKey)
   form.period = fromApiStatisticalPeriod(item.period || item.statisticalPeriod) || form.period || '年度'
-  form.policies = item.policies || []
   Object.assign(indicatorWorkflow, {
     indicatorId: toOpaqueId(item.id ?? item.indicatorId ?? routeIndicatorKey.value),
     versionId: toOpaqueId(item.currentVersionId ?? item.latestVersionId ?? item.versionId ?? indicatorWorkflow.versionId),
@@ -2580,7 +2555,7 @@ function rememberIndicatorEditorForm(indicatorId, openFormula = false) {
   if (!indicatorId) return
   try {
     sessionStorage.setItem(indicatorEditorStorageKey(indicatorId), JSON.stringify({
-      form: { ...form, categoryPath: [...form.categoryPath], sources: [...form.sources], policies: [...form.policies] },
+      form: { ...form, categoryPath: [...form.categoryPath], sources: [...form.sources] },
       openFormula
     }))
   } catch { /* Storage may be unavailable; the current editor still keeps its in-memory values. */ }
@@ -2592,13 +2567,13 @@ function restoreIndicatorEditorForm() {
   try {
     const saved = JSON.parse(sessionStorage.getItem(indicatorEditorStorageKey(indicatorId)) || 'null')
     if (!saved?.form) return
-    if (indicatorWorkflow.versionId) {
-      form.policies = Array.isArray(saved.form.policies) ? [...saved.form.policies] : form.policies
-    } else {
+    if (!indicatorWorkflow.versionId) {
       const persistedCode = indicatorWorkflow.indicatorId ? form.code : ''
       const persistedPresentation = indicatorWorkflow.indicatorId
         ? Object.fromEntries(['shortName', 'attribute', 'unit', 'direction'].map(key => [key, form[key]])) : null
-      Object.assign(form, saved.form)
+      const savedForm = { ...saved.form }
+      delete savedForm.policies
+      Object.assign(form, savedForm)
       if (persistedCode) form.code = persistedCode
       if (persistedPresentation) Object.assign(form, persistedPresentation)
       syncCategorySelection(form.categoryPath)
