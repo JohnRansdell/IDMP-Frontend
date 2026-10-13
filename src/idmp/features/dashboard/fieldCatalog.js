@@ -1,5 +1,6 @@
 // Catalogs describe available scalar columns, never a Cartesian join of snapshots.
 import { dashboardAcceptanceDrillRows, dashboardAcceptanceDualAxisRows, dashboardAcceptanceMapRows, dashboardAcceptanceRows } from './acceptanceData.js'
+import { normalizeDepartmentDataset } from './dimensionNames.js'
 const labels = { year: '年度', quarter: '季度', month: '统计月份', date: '统计日期', department: '科室', medicalGroup: '医疗组', doctor: '医师', disease: '病种', scene: '应用场景', indicatorCategory: '指标分类', indicatorValue: '指标值', actualValue: '实际值', targetValue: '目标值', period: '统计月份', departmentName: '科室', deptName: '科室', deptCode: '科室编码', category: '分类', value: '指标值', numerator: '分子值', denominator: '分母值', yoy: '同比', mom: '环比' }
 export function numericValue(value) {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null
@@ -50,7 +51,7 @@ export function createWidgetBindingDatasets(source, { result, demo = false, mont
       trendRows.length ? dataset('trend', `${source.name || 'Published indicator'} · 趋势`, trendRows, { periodStart: monthHint, value: valueHint, numeratorValue: numberHint, denominatorValue: numberHint }) : null,
       comparisonRows.length ? dataset('departments', `${source.name || 'Published indicator'} · 维度对比`, comparisonRows, { value: valueHint, numeratorValue: numberHint, denominatorValue: numberHint }) : null,
       records(source.bindingRows).length ? dataset('analysis', `${source.name || 'Published indicator'} analysis dimensions`, records(source.bindingRows), { value: valueHint }) : null
-    ].filter(Boolean)
+    ].filter(Boolean).map(item => normalizeDepartmentDataset({ ...item, dimensionDisplayFields: source.analysisDimensionDisplayFields, departmentFields: source.analysisDepartmentFields }, { diagnostics: source.analysisNameDiagnostics || [] }))
   }
   if (!demo && result) {
     // Do not reuse createDashboardSources' common trend for each summary metric.

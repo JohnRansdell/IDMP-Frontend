@@ -9,7 +9,7 @@
     <el-tabs v-model="activeTab" @tab-change="refreshCurrent">
       <el-tab-pane label="预警事件" name="events">
         <section class="surface-card filter-card"><el-form :model="eventFilters" inline @submit.prevent="loadEvents"><el-form-item label="规则 ID"><el-input v-model.trim="eventFilters.ruleId" /></el-form-item><el-form-item label="指标版本"><el-select v-model="eventFilters.indicatorVersionId" clearable filterable allow-create><el-option v-for="item in indicatorVersions" :key="item.id" :label="indicatorLabel(item)" :value="item.id" /></el-select></el-form-item><el-form-item label="状态"><el-select v-model="eventFilters.status" clearable><el-option v-for="item in WARNING_EVENT_STATUSES" :key="item" :label="warningLabel(item)" :value="item" /></el-select></el-form-item><el-form-item label="级别"><el-select v-model="eventFilters.severity" clearable><el-option v-for="item in WARNING_SEVERITIES" :key="item" :label="warningLabel(item)" :value="item" /></el-select></el-form-item><el-form-item><el-button type="primary" native-type="submit">查询</el-button><el-button @click="resetEventFilters">重置</el-button></el-form-item></el-form></section>
-        <section class="surface-card table-card"><div class="table-heading"><div><h2>预警事件</h2><p>事件由正式结果激活后的后端 Worker 自动评估生成；查询不会触发计算。</p></div></div><StatePanel v-if="eventError" type="error" title="预警事件读取失败" :description="eventError" /><StatePanel v-else-if="!eventLoading && !events.length" type="empty" title="暂无匹配的预警事件" /><el-table v-else v-loading="eventLoading" :data="events" table-layout="fixed"><el-table-column label="级别" width="100"><template #default="{ row }"><StatusBadge :label="warningLabel(row.severity)" :tone="severityTone(row.severity)" /></template></el-table-column><el-table-column label="类型" min-width="130"><template #default="{ row }">{{ warningLabel(row.warningType) }}</template></el-table-column><el-table-column label="当前值 / 阈值" width="150"><template #default="{ row }"><strong>{{ displayValue(row.actualValue) }}</strong><small> / {{ displayValue(row.thresholdValue) }}</small></template></el-table-column><el-table-column label="比较上下文" min-width="220"><template #default="{ row }"><span>{{ comparisonSummary(row.comparisonContext) }}</span></template></el-table-column><el-table-column label="状态" width="110"><template #default="{ row }"><StatusBadge :status="row.status" :label="warningLabel(row.status)" /></template></el-table-column><el-table-column label="触发时间" min-width="170"><template #default="{ row }"><span class="mono-data">{{ row.triggerTime || '-' }}</span></template></el-table-column><el-table-column label="操作" width="220" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openEvent(row.id)">详情</el-button><el-button v-if="row.status === 'OPEN'" link type="primary" @click="acknowledgeEvent(row)">确认</el-button><el-button v-if="row.status !== 'CLOSED'" link type="danger" @click="closeEvent(row)">关闭</el-button></template></el-table-column></el-table><div class="table-footer"><span>共 {{ eventTotal }} 条</span><el-pagination v-model:current-page="eventPage" v-model:page-size="eventSize" layout="prev, pager, next, sizes" :page-sizes="[6,9,12]" :total="eventTotal" @current-change="loadEvents" @size-change="loadEvents" /></div></section>
+        <section class="surface-card table-card"><div class="table-heading"><div><h2>预警事件</h2><p>事件由正式结果激活后的后端 Worker 自动评估生成；查询不会触发计算。</p></div></div><StatePanel v-if="eventError" type="error" title="预警事件读取失败" :description="eventError" /><StatePanel v-else-if="!eventLoading && !events.length" type="empty" title="暂无匹配的预警事件" /><el-table v-else v-loading="eventLoading" :data="events" table-layout="fixed"><el-table-column label="级别" width="100"><template #default="{ row }"><StatusBadge :label="warningLabel(row.severity)" :tone="severityTone(row.severity)" /></template></el-table-column><el-table-column label="类型" min-width="130"><template #default="{ row }">{{ warningLabel(row.warningType) }}</template></el-table-column><el-table-column label="当前值 / 阈值" width="150"><template #default="{ row }"><strong>{{ displayValue(row.actualValue) }}</strong><small> / {{ displayValue(row.thresholdValue) }}</small></template></el-table-column><el-table-column label="比较上下文" min-width="220"><template #default="{ row }"><span>{{ comparisonSummary(row.comparisonContext) }}</span></template></el-table-column><el-table-column label="状态" width="110"><template #default="{ row }"><StatusBadge :status="row.status" :label="warningLabel(row.status)" /></template></el-table-column><el-table-column label="触发时间" min-width="170"><template #default="{ row }"><span class="mono-data">{{ row.triggerTime || '-' }}</span></template></el-table-column><el-table-column label="操作" width="220" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="navigateToEvent(row.id)">详情</el-button><el-button v-if="row.status === 'OPEN'" link type="primary" @click="acknowledgeEvent(row)">确认</el-button><el-button v-if="row.status !== 'CLOSED'" link type="danger" @click="closeEvent(row)">关闭</el-button></template></el-table-column></el-table><div class="table-footer"><span>共 {{ eventTotal }} 条</span><el-pagination v-model:current-page="eventPage" v-model:page-size="eventSize" layout="prev, pager, next, sizes" :page-sizes="[6,9,12]" :total="eventTotal" @current-change="loadEvents" @size-change="loadEvents" /></div></section>
       </el-tab-pane>
 
       <el-tab-pane label="预警规则" name="rules">
@@ -18,7 +18,7 @@
       </el-tab-pane>
 
       <el-tab-pane label="站内通知" name="notifications">
-        <section class="surface-card table-card"><div class="table-heading"><div><h2>当前用户站内通知</h2><p>阅读通知不改变对应预警事件的确认或关闭状态。</p></div><el-button :disabled="!notifications.some(item => item.notificationStatus === 'UNREAD')" @click="readAllNotifications">全部已读</el-button></div><StatePanel v-if="notificationError" type="error" title="站内通知读取失败" :description="notificationError" /><StatePanel v-else-if="!notificationLoading && !notifications.length" type="empty" title="暂无有效站内通知" /><el-table v-else v-loading="notificationLoading" :data="notifications" table-layout="fixed"><el-table-column prop="title" label="标题" min-width="150" /><el-table-column prop="content" label="内容" min-width="360" :show-overflow-tooltip="{ popperClass: 'notification-content-tooltip' }" /><el-table-column label="状态" width="100"><template #default="{ row }"><StatusBadge :status="row.notificationStatus" :label="row.notificationStatus === 'UNREAD' ? '未读' : '已读'" /></template></el-table-column><el-table-column prop="createdAt" label="时间" min-width="170" /><el-table-column label="操作" width="160"><template #default="{ row }"><el-button v-if="row.businessRefType === 'WARNING_EVENT'" link type="primary" @click="openEvent(row.businessRefId)">查看预警</el-button><el-button v-if="row.notificationStatus === 'UNREAD'" link type="primary" @click="readNotification(row)">标记已读</el-button></template></el-table-column></el-table></section>
+        <section class="surface-card table-card"><div class="table-heading"><div><h2>当前用户站内通知</h2><p>阅读通知不改变对应预警事件的确认或关闭状态。</p></div><el-button :disabled="!notifications.some(item => item.notificationStatus === 'UNREAD')" @click="readAllNotifications">全部已读</el-button></div><StatePanel v-if="notificationError" type="error" title="站内通知读取失败" :description="notificationError" /><StatePanel v-else-if="!notificationLoading && !notifications.length" type="empty" title="暂无有效站内通知" /><el-table v-else v-loading="notificationLoading" :data="notifications" table-layout="fixed"><el-table-column prop="title" label="标题" min-width="150" /><el-table-column prop="content" label="内容" min-width="360" :show-overflow-tooltip="{ popperClass: 'notification-content-tooltip' }" /><el-table-column label="状态" width="100"><template #default="{ row }"><StatusBadge :status="row.notificationStatus" :label="row.notificationStatus === 'UNREAD' ? '未读' : '已读'" /></template></el-table-column><el-table-column prop="createdAt" label="时间" min-width="170" /><el-table-column label="操作" width="160"><template #default="{ row }"><el-button v-if="row.businessRefType === 'WARNING_EVENT'" link type="primary" @click="navigateToEvent(row.businessRefId)">查看预警</el-button><el-button v-if="row.notificationStatus === 'UNREAD'" link type="primary" @click="readNotification(row)">标记已读</el-button></template></el-table-column></el-table></section>
       </el-tab-pane>
     </el-tabs>
     </div>
@@ -31,7 +31,7 @@
 
 <script setup>
 import { computed, onActivated, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
 import { Plus, Refresh } from '@element-plus/icons-vue'
@@ -46,6 +46,7 @@ import { acknowledgeWarningEvent, closeWarningEvent, createWarningRule, disableW
 import { WARNING_EVENT_STATUSES, WARNING_OPERATORS, WARNING_PERIOD_TYPES, WARNING_SEVERITIES, WARNING_TYPES, buildWarningRulePayload, normalizePage, normalizeWarningRule, validateWarningRuleForm, warningLabel, warningRuleCapabilities } from '@/idmp/api/adapters/warning'
 
 const router = useRouter()
+const route = useRoute()
 const activeTab = ref('events')
 const loading = computed(() => eventLoading.value || ruleLoading.value || notificationLoading.value)
 const mutating = ref(false)
@@ -96,7 +97,38 @@ async function toggleRule(sourceRule, enable) { const rule = normalizeWarningRul
 async function mutateRule(action, message) { mutating.value = true; try { const result = await action(); ElMessage.success(message); await loadRules(); return result } catch (error) { ElMessage.error(error?.status === 409 ? '规则已被其他操作修改，请刷新后重试' : error?.message || '规则操作失败'); return null } finally { mutating.value = false } }
 function syncDialogRule(previous, result, readOnly) { if (!result || !ruleDialogOpen.value || opaqueId(editingRule.value?.id) !== opaqueId(previous.id)) return; const prior = normalizeWarningRule(previous); const next = normalizeWarningRule(result); openEditRule({ ...prior, ...next, version: { ...prior.version, ...next.version } }, readOnly) }
 
-async function openEvent(eventId) { eventDialogOpen.value = true; eventDetail.value = null; deliveries.value = []; eventDetailError.value = ''; eventDetailLoading.value = true; try { eventDetail.value = await fetchWarningEvent(eventId); deliveriesLoading.value = true; deliveries.value = normalizePage(await fetchWarningDeliveries(eventId, { page: 1, size: 100 })).records } catch (error) { eventDetailError.value = error?.message || '无法读取预警详情' } finally { eventDetailLoading.value = false; deliveriesLoading.value = false } }
+let eventDetailGeneration = 0
+function navigateToEvent(eventId) {
+  const id = String(eventId ?? '')
+  if (!/^[1-9]\d*$/.test(id)) return
+  activeTab.value = 'events'
+  if (String(route.query.eventId || '') === id) void openEvent(id)
+  else void router.push({ name: 'AlertCenter', query: { ...route.query, eventId: id } })
+}
+async function openEvent(eventId) {
+  const generation = ++eventDetailGeneration
+  eventDialogOpen.value = true
+  eventDetail.value = null
+  deliveries.value = []
+  eventDetailError.value = ''
+  eventDetailLoading.value = true
+  try {
+    const detail = await fetchWarningEvent(eventId)
+    if (generation !== eventDetailGeneration) return
+    eventDetail.value = detail
+    deliveriesLoading.value = true
+    const page = normalizePage(await fetchWarningDeliveries(eventId, { page: 1, size: 100 }))
+    if (generation !== eventDetailGeneration) return
+    deliveries.value = page.records
+  } catch (error) {
+    if (generation === eventDetailGeneration) eventDetailError.value = error?.message || '无法读取预警详情'
+  } finally {
+    if (generation === eventDetailGeneration) {
+      eventDetailLoading.value = false
+      deliveriesLoading.value = false
+    }
+  }
+}
 async function acknowledgeEvent(event) { try { await ElMessageBox.confirm('确认该预警事件已被知悉？此操作不会关闭事件。', '确认预警', { type: 'warning' }); await acknowledgeWarningEvent(event.id); ElMessage.success('预警已确认'); await loadEvents(); if (eventDetail.value?.id === event.id) await openEvent(event.id) } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(error?.message || '确认预警失败') } }
 async function closeEvent(event) { try { const { value } = await ElMessageBox.prompt('请填写关闭原因编码，例如 DATA_CONFIRMED。', '关闭预警', { inputPattern: /\S+/, inputErrorMessage: '关闭原因不能为空', confirmButtonText: '关闭事件', cancelButtonText: '取消' }); await closeWarningEvent(event.id, value.trim()); ElMessage.success('预警已关闭'); await loadEvents(); if (eventDetail.value?.id === event.id) await openEvent(event.id) } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(error?.message || '关闭预警失败') } }
 function openResultDrill(event) { eventDialogOpen.value = false; router.push({ path: '/analysis/drill', query: { resultId: opaqueId(event.indicatorResultId), source: 'live' } }) }
@@ -104,6 +136,18 @@ async function readNotification(notification) { try { await markNotificationRead
 async function readAllNotifications() { try { await markAllNotificationsRead(); notifyNotificationsRead(); ElMessage.success('当前有效通知已全部标记为已读'); await loadNotifications() } catch (error) { ElMessage.error(error?.message || '全部已读失败') } }
 
 watch(activeTab, (tab) => { if (tab === 'notifications' && !notifications.value.length) void loadNotifications() })
+watch([() => route.name, () => route.query.eventId], ([name, rawEventId]) => {
+  if (name !== 'AlertCenter') return
+  const eventId = typeof rawEventId === 'string' && /^[1-9]\d*$/.test(rawEventId) ? rawEventId : ''
+  if (!eventId) { eventDialogOpen.value = false; return }
+  activeTab.value = 'events'
+  void openEvent(eventId)
+}, { immediate: true })
+watch(eventDialogOpen, open => {
+  if (open) return
+  eventDetailGeneration += 1
+  if (route.name === 'AlertCenter' && route.query.eventId) void router.replace({ name: 'AlertCenter', query: { ...route.query, eventId: undefined } })
+})
 watch(() => ruleForm.indicatorVersionId, () => { if (ruleDialogOpen.value) void loadRuleScenarioOptions() })
 let deactivatedAt = 0
 onDeactivated(() => { deactivatedAt = Date.now() })

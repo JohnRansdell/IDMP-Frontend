@@ -3,6 +3,7 @@
     <div class="page-heading__main">
       <div class="page-heading__title-row">
         <h1>{{ title }}</h1>
+        <slot name="title-suffix" />
         <StatusBadge
           v-if="status || statusLabel"
           :status="status"

@@ -1,4 +1,5 @@
 import { numericValue } from './fieldCatalog.js'
+import { visibleDimensionName } from './dimensionNames.js'
 import { chartColorKey } from './visualStyle.js'
 import { toUserMessage } from '../../utils/userMessage.js'
 
@@ -124,18 +125,6 @@ export function formatDashboardKpiMetric(value, { unit = '', displayValue } = {}
 }
 const dimensionValue = value => ['string', 'boolean'].includes(typeof value) || (typeof value === 'number' && Number.isFinite(value)) ? value : null
 
-function companionNameField(fieldId, fields = []) {
-  const id = String(fieldId || '')
-  const candidate = /_CODE$/i.test(id) ? id.replace(/_CODE$/i, '_NAME') : /_ID$/i.test(id) ? id.replace(/_ID$/i, '_NAME') : /^ATTENDING_DOCTOR$/i.test(id) ? `${id}_NAME` : ''
-  if (!candidate) return ''
-  return fields.find(field => String(field.id).toLowerCase() === candidate.toLowerCase())?.id || ''
-}
-
-function visibleDimensionValue(row, dimension, fields, rawValue) {
-  const nameField = companionNameField(dimension.field, fields)
-  return nameField ? dimensionValue(row?.[nameField]) ?? rawValue : rawValue
-}
-
 export function compileWidgetData(kind, binding, dataset) {
   const validation = validateWidgetBinding(kind, binding, dataset?.fields)
   if (!dataset || !validation.valid) return { status: 'invalid', message: dataset ? validation.errors.join('；') : '数据源不可用，请重新选择数据源' }
@@ -149,7 +138,7 @@ export function compileWidgetData(kind, binding, dataset) {
   for (const row of rows) {
     if (!row || typeof row !== 'object' || Array.isArray(row)) continue
     const tuple = binding.dimensions.map(dimension => dimensionValue(row?.[dimension.field]))
-    const visibleTuple = binding.dimensions.map((dimension, index) => visibleDimensionValue(row, dimension, dataset.fields, tuple[index]))
+    const visibleTuple = binding.dimensions.map(dimension => visibleDimensionName(row, dimension, dataset))
     const category = binding.dimensions.length ? tuple : ''
     const split = binding.series.length ? dimensionValue(row?.[binding.series[0].field]) : ''
     if (tuple.some(value => value === null || value === '') || split === null || split === '' && binding.series.length) continue
@@ -198,7 +187,10 @@ export function compileWidgetData(kind, binding, dataset) {
 // Chart options are a downstream presentation adapter, not the engine contract.
 export function bindingChartOption(kind, model, options = {}) {
   if (model.status !== 'ready') return {}
-  if (kind === 'pie') return { tooltip: { trigger: 'item' }, legend: { bottom: 0 }, series: [{ type: 'pie', data: model.items }] }
+  if (kind === 'pie') {
+    const tuples = model.dimensionTuples?.filter((_, index) => model.series[0].values[index] !== null) || []
+    return { tooltip: { trigger: 'item' }, legend: { bottom: 0 }, series: [{ type: 'pie', data: model.items.map((item, index) => ({ ...item, dimensionValues: tuples[index] || {} })) }] }
+  }
   if (kind === 'funnel') return { tooltip: { trigger: 'item' }, series: [{ type: 'funnel', left: '12%', top: 12, bottom: 12, width: '76%', data: model.items }] }
   if (kind === 'gauge') return { series: [{ type: 'gauge', progress: { show: true }, detail: { valueAnimation: true, formatter: '{value}' }, data: [{ value: model.series[0]?.values[0], name: model.series[0]?.name }] }] }
   if (kind === 'radar') return { tooltip: {}, legend: { top: 0 }, radar: { indicator: model.categories.map(name => ({ name })) }, series: model.series.map(item => ({ name: item.name, type: 'radar', data: [{ value: item.values }] })) }

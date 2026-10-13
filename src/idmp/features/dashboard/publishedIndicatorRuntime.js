@@ -99,9 +99,19 @@ export function resolvePublishedDashboardPeriodRange(currentRange, options = [],
   const selected = (Array.isArray(currentRange) ? currentRange : []).filter(value => values.includes(value)).sort()
   if (selected.length === 2) return [selected[0], selected[1]]
   if (selected.length === 1) return [selected[0], selected[0]]
-  // A formal dashboard can expose years of common history. Querying that
-  // entire range before the viewer becomes interactive is both surprising and
-  // expensive, so the first load uses the latest common month. Viewers can
-  // still expand the month range explicitly when they want a longer trend.
+  // Callers without an explicit default still fall back to the latest month.
   return [values[0], values[0]]
+}
+
+export function defaultPublishedDashboardPeriodRange(options = [], months = 6) {
+  const values = (Array.isArray(options) ? options : [])
+    .map(option => String(option?.value || ''))
+    .filter(value => /^\d{4}-\d{2}$/.test(value))
+    .sort((left, right) => right.localeCompare(left))
+  if (!values.length) return []
+  const latest = values[0]
+  const [year, month] = latest.split('-').map(Number)
+  const firstMonth = new Date(Date.UTC(year, month - Math.max(1, months), 1)).toISOString().slice(0, 7)
+  const oldestAvailable = values.filter(value => value >= firstMonth && value <= latest).at(-1) || latest
+  return [oldestAvailable, latest]
 }

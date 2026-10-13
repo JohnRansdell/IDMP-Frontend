@@ -12,7 +12,7 @@ test('viewer scene changes never receive a dirty-dialog guard', () => {
 })
 
 test('the shell and dashboard share registry scene codes rather than data-filter values', () => {
-  assert.equal(findLocalScene('performance').dashboardId, 'quality-overview-performance')
+  assert.equal(findLocalScene('performance'), null)
   assert.equal(findLocalScene('quality-safety').name, '质量安全')
 })
 
@@ -27,14 +27,14 @@ test('turning preview off restores production requests and no demo fallback', ()
   assert.deepEqual(dashboardDemoPolicy({ previewMode: '0' }), {
     skipDashboardBootstrap: false, loadPublishedIndicators: true, useDemoOnFailure: false, persistDefaultSchema: true
   })
-  assert.equal(dashboardDemoPolicy({ development: true }).useDemoOnFailure, true)
-  assert.equal(dashboardDemoPolicy({ test: true }).useDemoOnFailure, true)
+  assert.equal(dashboardDemoPolicy({ development: true }).useDemoOnFailure, false)
+  assert.equal(dashboardDemoPolicy({ test: true }).useDemoOnFailure, false)
   assert.equal(dashboardDemoPolicy({ explicit: true }).useDemoOnFailure, true)
 })
 
-test('a missing published dashboard uses the clearly-labeled demo, while other production failures remain errors', () => {
+test('normal use never silently replaces a missing published dashboard with demo data', () => {
   const production = dashboardDemoPolicy({ previewMode: '0' })
-  assert.equal(shouldUseDashboardDemoFallback({ status: 404, path: '/analysis/dashboards/quality-overview' }, production), true)
+  assert.equal(shouldUseDashboardDemoFallback({ status: 404, path: '/analysis/dashboards/quality-overview' }, production), false)
   assert.equal(shouldUseDashboardDemoFallback({ status: 500, path: '/analysis/dashboards/quality-overview' }, production), false)
   assert.equal(shouldUseDashboardDemoFallback({ status: 0 }, production), false)
 })

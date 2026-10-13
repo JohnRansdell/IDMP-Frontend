@@ -27,6 +27,7 @@ const object = value => value && typeof value === 'object' && !Array.isArray(val
 const MOCK_MODE = 'MOCK'
 const MOCK_WIDGET_KEY = '__idmpMockWidget'
 const METRIC_GROUP_KEY = '__idmpMetricGroup'
+const CLICK_ACTION_KEY = '__idmpClickAction'
 
 export function dashboardSummaryToCatalogEntry(item = {}) {
   return {
@@ -144,7 +145,8 @@ export function schemaToDashboardPayload(schema, { resourceVersion, dataSources 
       position: { ...widget.layout }, fieldBindings: config.dataBinding || {},
       query: { ...object(config.backendQuery), resultShape: RESULT_SHAPE_BY_FRONTEND[kind] || 'COMPARISON' },
       filterBindings: object(config.interaction).clickFilter || {}, drill: object(config.interaction).drill || {},
-      chart: { ...(object(config.chart)), ...(indicatorBindings.length ? { indicatorBindings } : {}), ...(widget.type === 'text' ? { text: object(config.text) } : {}), chartKind: kind }, style: object(config.style)
+      chart: { ...(object(config.chart)), ...(indicatorBindings.length ? { indicatorBindings } : {}), ...(widget.type === 'text' ? { text: object(config.text) } : {}), chartKind: kind },
+      style: { ...object(config.style), ...(config.interaction?.clickAction === 'drill' ? { [CLICK_ACTION_KEY]: 'drill' } : {}) }
     }
   }
   return {
@@ -318,7 +320,7 @@ export function applyDefaultDashboardBindings(schema, fieldsBySource = {}) {
 function remoteWidgetToSchemaWidget(widget = {}) {
   const remoteType = String(widget.type || '').toUpperCase()
   const mapped = FRONTEND_TYPE_BY_REMOTE[remoteType] || { type: 'chart', chartKind: remoteType.toLowerCase() || 'line', visualType: remoteType.toLowerCase() || 'line' }
-  const chart = object(widget.chart), query = object(widget.query), style = object(widget.style)
+  const chart = object(widget.chart), query = object(widget.query), style = { ...object(widget.style) }
   const metricGroup = object(style[METRIC_GROUP_KEY])
   if (remoteType === 'TEXT' && chart.chartKind === 'metric-group' && metricGroup.config) {
     const restoredStyle = { ...style }
@@ -343,7 +345,9 @@ function remoteWidgetToSchemaWidget(widget = {}) {
     ...(Object.keys(object(widget.filterBindings)).length ? { clickFilter: widget.filterBindings } : {}),
     ...(Object.keys(object(widget.drill)).length ? { drill: widget.drill } : {})
   }
-  if (Object.keys(interaction).length) interaction.clickAction = interaction.drill?.hierarchy ? 'drill' : interaction.clickFilter?.enabled ? 'cross-filter' : 'none'
+  if (style[CLICK_ACTION_KEY] === 'drill') interaction.clickAction = 'drill'
+  else if (Object.keys(interaction).length) interaction.clickAction = interaction.drill?.hierarchy ? 'drill' : interaction.clickFilter?.enabled ? 'cross-filter' : 'none'
+  delete style[CLICK_ACTION_KEY]
   const binding = frontendBinding(widget.fieldBindings)
   return {
     id: String(widget.code), type: mapped.type, ...(mapped.chartKind ? { chartKind: chart.chartKind || mapped.chartKind } : {}),

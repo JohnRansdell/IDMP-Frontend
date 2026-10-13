@@ -1,4 +1,5 @@
 import { IDMP_CHART_COLORS } from '../../charts/theme.js'
+import { departmentIdentity, normalizeDepartmentDataset } from './dimensionNames.js'
 
 const DASHBOARD_DRILL_LEVELS = new Set([
   'HOSPITAL',
@@ -168,19 +169,21 @@ export function createPublishedIndicatorSources(indicators = [], publishedVersio
   }).filter(Boolean)
 }
 
-export function applyIndicatorAnalysisToSource(source, payload = {}) {
+export function applyIndicatorAnalysisToSource(source, payload = {}, departmentNames = {}, paths = []) {
   if (!source) return source
-  const comparisons = Array.isArray(payload?.dimensionComparison) ? payload.dimensionComparison : []
+  const rawComparisons = Array.isArray(payload?.dimensionComparison) ? payload.dimensionComparison : []
+  const named = normalizeDepartmentDataset({ rows: rawComparisons.map(item => ({ ...(isRecord(item?.dimensions) ? item.dimensions : {}),
+    ...(item.departmentCode != null ? { departmentCode: item.departmentCode } : {}), ...(item.departmentName ? { departmentName: item.departmentName } : {}) })) }, { paths, names: new Map(Object.entries(departmentNames)) })
+  const comparisons = rawComparisons.map((item, index) => ({ ...item, dimensions: named.rows[index] }))
   const overview = resolvePrimaryAnalysisOverview(payload)
   const unit = source.unit || payload?.unit || payload?.displayUnit || overview?.unit || overview?.displayUnit || ''
   const hasData = Boolean(payload?.dataAvailable && overview)
   const trend = payload?.dataAvailable && Array.isArray(payload?.trend) ? payload.trend : []
   const departmentData = comparisons
-    .filter((item) => item?.dimensions?.out_dept_code || item?.dimensions?.out_dept_id)
-    .map((item) => ({
-      name: item.dimensions?.out_dept_name || item.dimensions?.out_dept_code || item.dimensions?.out_dept_id,
-      value: normalizeAnalysisNumber(item?.value, unit)
-    }))
+    .map((item) => {
+      const identity = departmentIdentity(item, paths)
+      return { name: identity.name || (identity.code ? `科室编码：${identity.code}` : ''), value: normalizeAnalysisNumber(item?.value, unit) }
+    })
     .filter((item) => item.name && item.value !== null)
   const bindingRows = payload?.dataAvailable
     ? comparisons.map((item) => ({
@@ -214,7 +217,10 @@ export function applyIndicatorAnalysisToSource(source, payload = {}) {
     bindingRows,
     analysisCurrentRows,
     analysisTrendRows,
-    analysisComparisonRows
+    analysisComparisonRows,
+    analysisDimensionDisplayFields: named.dimensionDisplayFields,
+    analysisDepartmentFields: named.departmentFields,
+    analysisNameDiagnostics: named.nameDiagnostics
   }
 }
 

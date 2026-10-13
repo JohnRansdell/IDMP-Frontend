@@ -120,7 +120,7 @@
     <section ref="sceneComparisonRef" class="surface-card scene-comparison" aria-label="不同场景计算值对比">
       <div class="scene-comparison__head">
         <div class="scene-comparison__label"><span>不同场景对比</span><small>并列展示各场景的原始统计周期，不跨场景重算或强制聚合。</small></div>
-        <div class="scene-comparison__controls">
+        <div v-if="scenarioComparisonScenarios.length || scenarioComparisonOptions.length" class="scene-comparison__controls">
           <el-select v-model="scenarioComparisonSelectedIds" multiple collapse-tags collapse-tags-tooltip clearable filterable placeholder="全部关联场景" :disabled="!scenarioComparisonTarget || !scenarioComparisonOptions.length">
             <el-option v-for="scene in scenarioComparisonOptions" :key="scene.value" :label="scene.label" :value="scene.value" />
           </el-select>
@@ -132,7 +132,16 @@
       <StatePanel v-if="!scenarioComparisonTarget" type="unavailable" title="请选择已发布指标版本后查看场景对比" description="场景对比仅适用于已发布指标版本关联的已发布场景。" />
       <StatePanel v-else-if="scenarioComparisonLoading" type="loading" title="正在读取场景正式结果" />
       <StatePanel v-else-if="scenarioComparisonError" type="error" title="场景对比加载失败" :description="scenarioComparisonError" />
-      <StatePanel v-else-if="scenarioComparisonLoaded && !scenarioComparisonScenarios.length" type="empty" title="暂无已发布场景结果" description="请确认场景已发布、已关联当前指标版本，并已完成场景化正式计算。" />
+      <StatePanel v-else-if="scenarioComparisonLoaded && scenarioComparisonOptionsLoading" type="loading" title="正在确认关联场景" />
+      <StatePanel v-else-if="scenarioComparisonLoaded && scenarioComparisonOptionsError && !scenarioComparisonScenarios.length" type="error" title="关联场景读取失败" :description="scenarioComparisonOptionsError">
+        <template #actions><el-button type="primary" plain @click="loadScenarioComparisonOptions()">重试</el-button></template>
+      </StatePanel>
+      <StatePanel v-else-if="scenarioComparisonLoaded && !scenarioComparisonScenarios.length && hasScenarioComparisonFilters" type="empty" title="当前筛选下没有场景结果" description="可调整场景或时间范围，或清除筛选查看全部关联场景。">
+        <template #actions><el-button type="primary" plain @click="clearScenarioComparisonFilters">清除筛选</el-button></template>
+      </StatePanel>
+      <StatePanel v-else-if="scenarioComparisonLoaded && !scenarioComparisonScenarios.length" type="empty" title="尚未关联可对比的场景" description="先为当前指标配置并发布场景，再回来查看场景结果。">
+        <template #actions><el-button type="primary" plain @click="router.push('/scenarios')">前往场景管理</el-button></template>
+      </StatePanel>
       <div v-if="scenarioComparisonScenarios.length" class="scenario-result-grid">
         <article v-for="scene in scenarioComparisonScenarios" :key="sceneKey(scene)" class="scenario-result-card" :class="{ 'is-clickable': canViewScenarioPeriods(scene), 'has-notice': scenePointNotice(latestScenePoint(scene)) }" :role="canViewScenarioPeriods(scene) ? 'button' : undefined" :tabindex="canViewScenarioPeriods(scene) ? 0 : undefined" @click="openScenarioPeriodsFromCard(scene)" @keydown.enter.prevent="openScenarioPeriodsFromCard(scene)">
           <div class="scenario-result-card__head"><strong :title="sceneTitle(scene)">{{ scene.scenarioName || scene.name || scene.scenarioCode || '未命名场景' }}</strong><StatusBadge :status="scene.resultAvailability" /></div>
@@ -440,6 +449,9 @@ let scenarioComparisonSequence = 0
 const scenarioComparisonSelectedIds = ref(initialScenarioVersionIds())
 const scenarioComparisonPeriodRange = ref([])
 const scenarioComparisonOptions = ref([])
+const scenarioComparisonOptionsLoading = ref(false)
+const scenarioComparisonOptionsError = ref('')
+let scenarioComparisonOptionsSequence = 0
 const scenarioComparisonIdByCode = ref(new Map())
 const scenarioPeriodDrawerOpen = ref(false)
 const selectedScenarioForPeriods = ref(null)
@@ -826,9 +838,18 @@ const scenarioComparisonTarget = computed(() => {
     ? { indicatorId: String(indicatorId), indicatorVersionId: String(indicatorVersionId) }
     : null
 })
-const scenarioComparisonScenarios = computed(() => Array.isArray(scenarioComparison.value?.scenarios)
-  ? scenarioComparison.value.scenarios
-  : [])
+const hasScenarioComparisonFilters = computed(() => scenarioComparisonSelectedIds.value.length > 0 || isCompleteDateRange(scenarioComparisonPeriodRange.value))
+const scenarioComparisonScenarios = computed(() => {
+  const results = Array.isArray(scenarioComparison.value?.scenarios) ? scenarioComparison.value.scenarios : []
+  if (results.length || !scenarioComparisonLoaded.value || scenarioComparisonOptionsLoading.value || scenarioComparisonOptionsError.value || hasScenarioComparisonFilters.value) return results
+  return scenarioComparisonOptions.value.map(option => ({
+    scenarioVersionId: option.value,
+    scenarioCode: option.code || '',
+    scenarioName: option.label,
+    resultAvailability: 'NO_ACTIVE_RESULT',
+    points: []
+  }))
+})
 const selectedScenarioName = computed(() => selectedScenarioForPeriods.value?.scenarioName || selectedScenarioForPeriods.value?.name || selectedScenarioForPeriods.value?.scenarioCode || '场景周期详情')
 const selectedScenarioPoints = computed(() => [...(selectedScenarioForPeriods.value?.points || [])]
   .sort((left, right) => String(right?.periodEnd || right?.periodStart || '').localeCompare(String(left?.periodEnd || left?.periodStart || ''))))
@@ -1049,6 +1070,12 @@ function applyScenarioComparisonFilters() {
   loadScenarioComparison()
 }
 
+function clearScenarioComparisonFilters() {
+  scenarioComparisonSelectedIds.value = []
+  scenarioComparisonPeriodRange.value = []
+  loadScenarioComparison()
+}
+
 async function loadScenarioComparison() {
   if (!validateOptionalDateRange(scenarioComparisonPeriodRange.value, '场景对比时间')) return
   const target = scenarioComparisonTarget.value
@@ -1088,21 +1115,28 @@ function sceneKey(scene) {
 
 async function loadScenarioComparisonOptions(target = scenarioComparisonTarget.value) {
   if (!target?.indicatorId) return
+  const sequence = ++scenarioComparisonOptionsSequence
+  scenarioComparisonOptionsLoading.value = true
+  scenarioComparisonOptionsError.value = ''
   try {
     const records = normalizeList(await fetchIndicatorScenarios(target.indicatorId, { page: 1, size: 200 }))
+    if (sequence !== scenarioComparisonOptionsSequence || target.indicatorVersionId !== scenarioComparisonTarget.value?.indicatorVersionId) return
     const current = new Map(scenarioComparisonOptions.value.map((scene) => [String(scene.value), scene]))
     const byCode = new Map(scenarioComparisonIdByCode.value)
     records.forEach((scene) => {
+      if (Array.isArray(scene.references) && scene.references.length && !scene.references.some(reference => String(reference.indicatorVersionId || '') === target.indicatorVersionId)) return
       const value = scene?.scenarioVersionId || scene?.versionId || scene?.id
       if (!value) return
       const name = scene.scenarioName || scene.name || scene.scenarioCode || String(value)
-      current.set(String(value), { value: String(value), label: name })
+      current.set(String(value), { value: String(value), label: name, code: scene.scenarioCode || '' })
       if (scene.scenarioCode) byCode.set(String(scene.scenarioCode), String(value))
     })
     scenarioComparisonOptions.value = [...current.values()]
     scenarioComparisonIdByCode.value = byCode
-  } catch {
-    // 场景选项缺失不妨碍已有结果展示；没有版本 ID 时禁用补算入口，避免误发起非场景计算。
+  } catch (error) {
+    if (sequence === scenarioComparisonOptionsSequence) scenarioComparisonOptionsError.value = error?.message || '无法读取关联场景'
+  } finally {
+    if (sequence === scenarioComparisonOptionsSequence) scenarioComparisonOptionsLoading.value = false
   }
 }
 
@@ -1959,6 +1993,9 @@ watch(indicatorCode, () => {
   scenarioComparisonSelectedIds.value = []
   scenarioComparisonPeriodRange.value = []
   scenarioComparisonOptions.value = []
+  scenarioComparisonOptionsLoading.value = false
+  scenarioComparisonOptionsError.value = ''
+  scenarioComparisonOptionsSequence += 1
   scenarioComparisonIdByCode.value = new Map()
   scenarioPeriodDrawerOpen.value = false
   selectedScenarioForPeriods.value = null

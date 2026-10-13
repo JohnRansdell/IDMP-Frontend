@@ -215,13 +215,17 @@ function hasAnyKey(keys, candidates) {
 }
 
 function normalizeRecord(item = {}) {
+  const dimensionKey = toOpaqueId(item.dimensionKey ?? item.dimKey ?? item.key)
+  const dimensionName = item.dimensionName || item.dimensionLabel || item.name || item.displayValue || '-'
+  const dimensionLabel = item.dimensionLabel && String(item.dimensionLabel) !== dimensionKey
+    ? item.dimensionLabel : dimensionName
   return {
     ...item,
     resultId: toOpaqueId(item.resultId),
     levelCode: item.levelCode || item.level || '',
-    dimensionKey: toOpaqueId(item.dimensionKey ?? item.dimKey ?? item.key),
-    dimensionName: item.dimensionName || item.dimensionLabel || item.name || item.displayValue || '-',
-    dimensionLabel: item.dimensionLabel || item.dimensionName || item.name || item.displayValue || '-',
+    dimensionKey,
+    dimensionName,
+    dimensionLabel,
     displayValue: item.displayValue ?? item.indicatorValue ?? item.value ?? null,
     indicatorValue: item.indicatorValue ?? item.value ?? null,
     numerator: item.numerator ?? item.numeratorValue ?? null,

@@ -100,10 +100,10 @@ test('FR-M8 acceptance: selector joins system scenes and local catalog with one 
   const blank = createLocalDashboard({ name: 'UAT 空白看板', dashboardType: 'custom', category: 'UAT', scope: 'personal' }, { storage: local, id: 'uat-blank' })
   assert.equal(blank.widgets.length, 0)
   const options = createDashboardSelectorOptions(LOCAL_SCENE_DASHBOARDS, readDashboardCatalog(local))
-  assert.deepEqual(options.map(item => item.name), ['绩效考核', '医院评审', '质量安全', 'UAT 空白看板'])
+  assert.deepEqual(options.map(item => item.name), ['质量安全', 'UAT 空白看板'])
   assert.deepEqual(options.map(item => item.id), [...LOCAL_SCENE_DASHBOARDS.map(item => item.dashboardId), 'uat-blank'])
   assert.equal(dashboardOrigin('uat-blank'), 'local'); assert.equal(shouldSkipRemoteDashboardBootstrap('uat-blank'), true)
-  assert.equal(dashboardOrigin(LOCAL_SCENE_DASHBOARDS[2].dashboardId), 'system-scene'); assert.equal(shouldSkipRemoteDashboardBootstrap(LOCAL_SCENE_DASHBOARDS[2].dashboardId), false)
+  assert.equal(dashboardOrigin(LOCAL_SCENE_DASHBOARDS[0].dashboardId), 'system-scene'); assert.equal(shouldSkipRemoteDashboardBootstrap(LOCAL_SCENE_DASHBOARDS[0].dashboardId), false)
 })
 test('FR-M8 acceptance: valid empty local schema stays empty across persistence recovery', () => {
   const local = storage()

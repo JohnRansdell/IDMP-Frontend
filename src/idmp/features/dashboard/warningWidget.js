@@ -43,11 +43,14 @@ function eventLevel(severity) {
 export function warningEventToDashboardItem(event = {}, config = {}) {
   const source = record(event)
   const presentation = normalizeWarningWidgetConfig(config)
+  const rawEventId = source.id ?? source.eventId
+  const eventId = /^[1-9]\d*$/.test(String(rawEventId ?? '')) ? String(rawEventId) : ''
   const name = text(source.ruleName) || text(source.warningName) || text(source.name) || text(source.warningType) || '预警事件'
   const detail = presentation.showValue ? `当前值 ${valueText(source.actualValue)} / 阈值 ${valueText(source.thresholdValue)}` : ''
   const severity = presentation.showSeverity ? text(source.severity) : ''
   return {
     id: String(source.id || source.eventId || `${name}-${source.triggerTime || ''}`),
+    eventId,
     level: eventLevel(source.severity),
     severity,
     status: text(source.status),

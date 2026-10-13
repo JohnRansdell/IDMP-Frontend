@@ -100,7 +100,7 @@ import { sceneOptions } from '@/idmp/data/demo'
 import { fetchUnreadNotificationCount } from '@/idmp/api/modules/warnings'
 import { fetchDashboardCatalog } from '@/idmp/api/modules/analysisDashboard'
 import { dashboardSummaryToCatalogEntry } from '@/idmp/api/adapters/dashboard'
-import { LOCAL_SCENE_DASHBOARDS } from '@/idmp/features/dashboard/sceneRegistry.js'
+import { visibleDemoSceneDashboards } from '@/idmp/features/dashboard/sceneRegistry.js'
 import { buildPageBreadcrumbs } from '@/router/breadcrumbs.js'
 
 const route = useRoute()
@@ -108,11 +108,16 @@ const router = useRouter()
 const globalScene = ref(sceneOptions[0])
 const isDashboardRoute = computed(() => route.name === 'Dashboard')
 const remoteDashboardOptions = ref([])
+const dashboardDemoScenes = computed(() => visibleDemoSceneDashboards({
+  previewMode: import.meta.env.VITE_DASHBOARD_PREVIEW_MODE,
+  explicit: route.query.dashboardDemo === '1',
+  dashboardId: typeof route.query.id === 'string' ? route.query.id : ''
+}))
 const currentSceneOptions = computed(() => {
   if (!isDashboardRoute.value) return sceneOptions.map(scene => ({ label: scene, value: scene }))
   return [
     ...remoteDashboardOptions.value.map(item => ({ label: item.name, value: item.id })),
-    ...LOCAL_SCENE_DASHBOARDS.map(item => ({ label: `演示 · ${item.name}`, value: item.dashboardId }))
+    ...dashboardDemoScenes.value.map(item => ({ label: `演示 · ${item.name}`, value: item.dashboardId }))
   ]
 })
 const currentScene = computed({
