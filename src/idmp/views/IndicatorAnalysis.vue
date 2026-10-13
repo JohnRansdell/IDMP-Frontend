@@ -422,14 +422,14 @@ import RuntimeParameterFields from '@/idmp/components/RuntimeParameterFields.vue
 import DrillExplorer from '@/idmp/features/analysis/DrillExplorer.vue'
 import IndicatorDrillAnalysis from '@/idmp/features/analysis/IndicatorDrillAnalysis.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
-import { fetchIndicatorAnalysis, fetchIndicatorAvailablePeriod, fetchIndicatorFormula, fetchIndicatorGrainOptions, fetchIndicatorScenarioComparison, fetchIndicatorScenarios, fetchIndicators, fetchIndicatorVersion, fetchIndicatorVersionList, queryIndicatorVersion } from '@/idmp/api/modules/indicators'
+import { fetchIndicatorAnalysis, fetchIndicatorAvailablePeriod, fetchIndicatorGrainOptions, fetchIndicatorScenarioComparison, fetchAllIndicatorScenarios, fetchAllIndicators, fetchIndicatorVersion, fetchAllIndicatorVersions, queryIndicatorVersion } from '@/idmp/api/modules/indicators'
 import { fetchFactorVersion } from '@/idmp/api/modules/factors'
 import { collectFormulaFactorVersionIds, createIndicatorDataExplanation, extractIndicatorFormula, normalizeIndicatorInstantSummary } from '@/idmp/api/adapters/indicator'
 import { deriveDrillPathResultIds, reconcileScenarioPointWithRoot } from '@/idmp/api/adapters/drill'
 import { searchResultDrill } from '@/idmp/api/modules/drill'
 import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
 import { resolveIndicatorCalculationMode } from '@/idmp/features/analysis/calculationMode'
-import { departmentDrillContext, loadDepartmentComparisons, normalizeDepartmentComparisons } from '@/idmp/features/analysis/departmentRanking'
+import { departmentAchievement, departmentDrillContext, loadDepartmentComparisons, normalizeDepartmentComparisons } from '@/idmp/features/analysis/departmentRanking'
 import { DRILL_GRANULARITIES } from '@/idmp/features/analysis/drillPeriods'
 import { useAnalysisPeriod } from '@/idmp/features/analysis/useAnalysisPeriod'
 import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
@@ -752,7 +752,7 @@ const rankTableData = computed(() => {
       numerator: item.numeratorValue == null ? '-' : formatCount(item.numeratorValue),
       denominator: item.denominatorValue == null ? '-' : formatCount(item.denominatorValue),
       change: '-',
-      status: item.qualityStatus === 'PASSED' ? '达标' : '预警',
+      status: departmentAchievement(item, (rankInitialized.value ? rankAnalysis.value : backendAnalysis.value) || {}),
       drillContext: departmentDrillContext(item, backendIndicatorVersion.value?.drillConfig?.drillPaths || [],
         rankInitialized.value ? rankGranularity.value : backendAnalysisGranularity.value)
     }))
@@ -1029,9 +1029,9 @@ const mortalityChainNodes = computed(() => {
 })
 
 const rankStatusTone = (status) => {
-  if (status === '超标') return 'danger'
+  if (status === '超标' || status === '未达标') return 'danger'
   if (status === '预警') return 'warning'
-  return 'success'
+  return status === '达标' ? 'success' : 'neutral'
 }
 
 const changeClass = (change) => {
@@ -1148,7 +1148,7 @@ function sceneKey(scene) {
 async function loadScenarioComparisonOptions(target = scenarioComparisonTarget.value) {
   if (!target?.indicatorId) return
   try {
-    const records = normalizeList(await fetchIndicatorScenarios(target.indicatorId, { page: 1, size: 200 }))
+    const records = await fetchAllIndicatorScenarios(target.indicatorId)
     const current = new Map(scenarioComparisonOptions.value.map((scene) => [String(scene.value), scene]))
     const byCode = new Map(scenarioComparisonIdByCode.value)
     records.forEach((scene) => {
@@ -1615,8 +1615,8 @@ async function loadBackendAnalysisIndicators() {
   indicatorOptionsLoading.value = true
   try {
     const [indicators, publishedVersions] = await Promise.all([
-      fetchIndicators({ page: 1, size: 200 }),
-      fetchIndicatorVersionList({ publicationStatus: 'PUBLISHED', page: 1, size: 200 })
+      fetchAllIndicators(),
+      fetchAllIndicatorVersions({ publicationStatus: 'PUBLISHED' })
     ])
     backendIndicators.value = mergePublishedAnalysisIndicators(
       normalizeList(indicators),
@@ -1921,14 +1921,7 @@ async function refreshMortalityAnalysis({ preserveRangeSummary = false } = {}) {
 
 async function fetchAnalysisIndicatorVersion(versionId) {
   const version = await fetchIndicatorVersion(versionId)
-  let formula = extractIndicatorFormula(version)
-  if (!formula) {
-    try {
-      formula = await fetchIndicatorFormula(versionId)
-    } catch {
-      formula = null
-    }
-  }
+  const formula = extractIndicatorFormula(version)
   return { ...version, formula: formula || version?.formula || version?.formulaAst }
 }
 
