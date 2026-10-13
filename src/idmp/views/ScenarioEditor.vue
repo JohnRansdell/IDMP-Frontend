@@ -43,13 +43,13 @@ import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
 import { useRoute, useRouter } from 'vue-router'
 import PageHeader from '@/idmp/components/PageHeader.vue'
-import { fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
+import { fetchAllIndicatorVersions } from '@/idmp/api/modules/indicators'
 import { createScenarioVersion, fetchScenarioMergedPreview, fetchScenarioVersion, fetchScenarioVersions, publishScenarioVersion, replaceScenarioIndicators, replaceScenarioOverrides, updateScenarioVersion, validateScenarioVersion } from '@/idmp/api/modules/scenarios'
 import { normalizePage, normalizeResourceId, OVERRIDE_TYPES, PERIOD_TYPES, publicationStatusLabel, SCENARIO_TYPES, scenarioDetailToForm, scenarioFormToPatch, scenarioVersionCapabilities, toIndicatorBinding, toOverridePayload } from '@/idmp/api/adapters/scenario'
 
 const route = useRoute()
 const router = useRouter()
-const activeTab = ref('basic')
+const activeTab = ref(['indicators', 'overrides'].includes(route.query.tab) ? route.query.tab : 'basic')
 const saving = ref(false)
 const validating = ref(false)
 const publishing = ref(false)
@@ -58,6 +58,7 @@ const previewLoading = ref(false)
 const indicatorOptions = ref([])
 const preview = ref(null)
 const diagnostics = ref([])
+let loadRevision = 0
 const validationValid = ref(false)
 const validationMessage = ref('')
 const form = reactive({ scenarioId: '', versionId: '', code: '', name: '', type: 'CUSTOM', description: '', governingOrgName: '', defaultPeriodType: 'MONTHLY', defaultParameters: {}, defaultExclusionDsl: { nodeType: 'TRUE' }, defaultExclusionDisplayText: '', defaultDataSourcePriority: {}, displayText: '', effectiveStartDate: '', effectiveEndDate: '', effectiveRange: [], resourceVersion: 0, publicationStatus: 'UNKNOWN', versionNo: '-', indicators: [], overrides: [], defaultExclusionDslText: '{\n  "nodeType": "TRUE"\n}' })
@@ -87,16 +88,23 @@ function applyDetail(detail) {
   validationMessage.value = ''
 }
 async function load() {
+  const request = ++loadRevision
   try {
-    const versions = normalizePage(await fetchIndicatorVersionList({ publicationStatus: 'PUBLISHED', page: 1, size: 200 }))
-    indicatorOptions.value = versions.items
+    const options = await fetchAllIndicatorVersions({ publicationStatus: 'PUBLISHED' })
+    if (request !== loadRevision) return
+    indicatorOptions.value = options
     let versionId = route.query.versionId
     if (!versionId && route.params.scenarioId) {
       const list = await fetchScenarioVersions(route.params.scenarioId)
       versionId = (Array.isArray(list) ? list : []).find((item) => item.publicationStatus === 'DRAFT')?.id || list?.[0]?.id
     }
-    if (versionId) applyDetail(await fetchScenarioVersion(versionId))
-  } catch (error) { ElMessage.error(error?.message || '场景版本加载失败') }
+    if (versionId) {
+      const detail = await fetchScenarioVersion(versionId)
+      if (request !== loadRevision) return
+      applyDetail(detail)
+      applyEntryContext()
+    }
+  } catch (error) { if (request === loadRevision) ElMessage.error(error?.message || '场景版本加载失败') }
 }
 async function startEditing() {
   if (!capabilities.value.canStartEdit || startingEdit.value) return
@@ -108,10 +116,25 @@ async function startEditing() {
       ? await fetchScenarioVersion(draft.id)
       : await createScenarioVersion(form.scenarioId, { copyFromVersionId: form.versionId }, `scenario-edit-${form.scenarioId}-${form.versionId}-${Date.now()}`)
     applyDetail(detail)
-    await router.replace({ name: 'ScenarioEditor', params: { scenarioId: form.scenarioId }, query: { versionId: detail?.version?.id } })
+    applyEntryContext()
+    await router.replace({ name: 'ScenarioEditor', params: { scenarioId: form.scenarioId }, query: { ...route.query, versionId: detail?.version?.id } })
   } catch (error) { ElMessage.error(error?.message || '进入场景编辑失败，当前版本仍可继续查看') } finally { startingEdit.value = false }
 }
-function addOverride() { form.overrides.push({ indicatorVersionId: null, overrideType: 'PARAMETER', targetNodePath: '', overrideValue: '', overrideValueText: '""', displayText: '', priority: 0 }) }
+function applyEntryContext() {
+  if (['indicators', 'overrides'].includes(route.query.tab)) activeTab.value = route.query.tab
+  const id = normalizeResourceId(route.query.indicatorVersionId)
+  if (route.query.linkIndicator !== '1' || !editable.value || !id) return
+  if (!indicatorOptions.value.some(item => normalizeResourceId(item.id) === id)) {
+    ElMessage.warning('该指标版本尚未发布，无法关联到场景')
+    return
+  }
+  if (!selectedIndicatorIds.value.includes(id)) selectedIndicatorIds.value = [...selectedIndicatorIds.value, id]
+}
+function addOverride() {
+  const id = normalizeResourceId(route.query.indicatorVersionId)
+  form.overrides.push({ indicatorVersionId: selectedIndicatorIds.value.includes(id) ? id : null,
+    overrideType: 'PARAMETER', targetNodePath: '', overrideValue: '', overrideValueText: '""', displayText: '', priority: 0 })
+}
 async function ensureDsl() {
   try { form.defaultExclusionDsl = JSON.parse(form.defaultExclusionDslText || '{"nodeType":"TRUE"}') } catch { throw new Error('默认排除规则不是合法 JSON') }
   form.effectiveStartDate = form.effectiveRange?.[0] || ''
@@ -139,6 +162,8 @@ async function validate() { if (!capabilities.value.canValidate) return; validat
 async function publish() { if (!capabilities.value.canPublish || !validationValid.value) return; publishing.value = true; try { const result = await publishScenarioVersion(form.versionId, form.resourceVersion, `scenario-publish-${form.versionId}-${form.resourceVersion}`); applyDetail(result); ElMessage.success('场景版本已发布') } catch (error) { await handleError(error) } finally { publishing.value = false } }
 async function handleError(error) { if (error?.status === 409) { await ElMessageBox.confirm('服务端版本已变化，是否重新加载最新版本？', '版本冲突', { type: 'warning' }).then(() => load()).catch(() => {}) } else { ElMessage.error(error?.message || '操作失败') } }
 watch(() => form.indicators, () => { validationValid.value = false }, { deep: true })
+watch(() => [route.params.scenarioId, route.query.versionId], load)
+watch(() => [route.query.tab, route.query.indicatorVersionId, route.query.linkIndicator], applyEntryContext)
 onMounted(load)
 </script>
 

@@ -179,7 +179,10 @@ export function toIndicatorBinding(item, index) {
     displayOrder: Number(item.displayOrder ?? index),
     required: item.required !== false,
     reportRequirementText: item.reportRequirementText || '',
-    mappingOriginType: item.mappingOriginType || 'MANUAL'
+    mappingOriginType: item.mappingOriginType || 'MANUAL',
+    ...(item.periodType !== undefined ? { periodType: item.periodType } : {}),
+    ...(item.organizationScopeDsl !== undefined ? { organizationScopeDsl: item.organizationScopeDsl } : {}),
+    ...(item.dimensionGrain !== undefined ? { dimensionGrain: [...(item.dimensionGrain || [])] } : {})
   }
 }
 

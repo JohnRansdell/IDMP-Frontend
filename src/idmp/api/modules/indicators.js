@@ -26,10 +26,6 @@ export function fetchIndicatorVersion(versionId, options = {}) {
   return requestJson(`/indicator-versions/${versionId}`, options)
 }
 
-export function fetchIndicatorFormula(versionId) {
-  return requestJson(`/indicator-versions/${versionId}/formula`)
-}
-
 export function preflightIndicatorDrillCapabilities(formula, options = {}) {
   return requestJson('/indicator-versions/drill-capabilities', {
     method: 'POST',
