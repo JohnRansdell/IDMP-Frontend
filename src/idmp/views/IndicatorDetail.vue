@@ -191,9 +191,8 @@ import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import {
   fetchIndicator,
-  fetchIndicatorFormula,
-  fetchIndicators,
-  fetchIndicatorScenarios,
+  fetchAllIndicators as fetchIndicators,
+  fetchAllIndicatorScenarios as fetchIndicatorScenarios,
   fetchIndicatorVersion,
   fetchIndicatorVersions
 } from '@/idmp/api/modules/indicators'
@@ -418,14 +417,7 @@ async function selectVersion(version) {
   if (!versionId) { versionLoading.value = false; return }
   try {
     const versionDetail = await fetchIndicatorVersion(versionId)
-    let formula = extractFormula(versionDetail)
-    if (!formula) {
-      try {
-        formula = await fetchIndicatorFormula(versionId)
-      } catch {
-        formula = null
-      }
-    }
+    const formula = extractFormula(versionDetail)
     if (revision !== versionRevision) return
     selectedVersion.value = {
       ...versionDetail,

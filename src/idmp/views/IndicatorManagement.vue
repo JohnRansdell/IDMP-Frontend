@@ -244,7 +244,7 @@ import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
  import ResourceDeleteDialog from '@/idmp/components/ResourceDeleteDialog.vue'
-import { deleteIndicator, fetchIndicatorDeletionImpact, fetchIndicators, fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
+import { deleteIndicator, fetchIndicatorDeletionImpact, fetchAllIndicators, fetchAllIndicatorVersions } from '@/idmp/api/modules/indicators'
 import { indicatorRows } from '@/idmp/data/demo'
 import { getStatusLabel } from '@/idmp/design/status'
 
@@ -317,8 +317,8 @@ const loadBackendIndicators = async () => {
   loadError.value = ''
   try {
     const [indicators, publishedVersions] = await Promise.all([
-      fetchIndicators({ page: 1, size: 100 }),
-      fetchIndicatorVersionList({ publicationStatus: 'PUBLISHED', page: 1, size: 100 })
+      fetchAllIndicators(),
+      fetchAllIndicatorVersions({ publicationStatus: 'PUBLISHED' })
     ])
     backendIndicatorRows.value = mergePublishedIndicatorVersions(
       normalizeList(indicators).map(toIndicatorRow),

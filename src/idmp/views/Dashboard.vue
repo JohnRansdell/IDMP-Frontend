@@ -517,7 +517,7 @@ import {
 } from '@/idmp/api/adapters/dashboard'
 import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
 import { fetchWarnings } from '@/idmp/api/modules/warnings'
-import { fetchIndicatorAnalysis, fetchIndicatorVersion, fetchIndicators } from '@/idmp/api/modules/indicators'
+import { fetchIndicatorAnalysis, fetchIndicatorVersion, fetchAllIndicators as fetchIndicators } from '@/idmp/api/modules/indicators'
 import { deriveDrillPathResultIds } from '@/idmp/api/adapters/drill'
 import { normalizePage } from '@/idmp/api/adapters/warning'
 import { dashboardTrend, dashboardWarnings as mockDashboardWarnings } from '@/idmp/data/demo'

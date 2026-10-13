@@ -115,7 +115,7 @@ import { fetchDataDomains, fetchPhysicalTableFields, fetchPhysicalTables, fetchS
 import { adaptPhysicalTableList, adaptSemanticFieldList, adaptSourceFieldList } from '@/idmp/api/adapters/meta'
 import { adaptFactorPhysicalFields } from '@/idmp/api/adapters/factorMetadata'
 import { buildFactorTemplateDefinition, templatePeriodField } from '@/idmp/utils/factorTemplateDefinition'
-import { createFactorTemplate, createFactorTemplateVersion, fetchFactorTemplateInstances, fetchFactorTemplateVersion, publishFactorTemplateVersion, updateFactorTemplateVersion, validateFactorTemplateVersion } from '@/idmp/api/modules/factors'
+import { createFactorTemplate, createFactorTemplateVersion, fetchAllFactorTemplateInstances as fetchFactorTemplateInstances, fetchFactorTemplateVersion, publishFactorTemplateVersion, updateFactorTemplateVersion, validateFactorTemplateVersion } from '@/idmp/api/modules/factors'
 
 const route = useRoute()
 const router = useRouter()

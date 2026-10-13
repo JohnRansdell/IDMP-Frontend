@@ -1,4 +1,7 @@
 import { requestJson } from '@/idmp/api/request'
+import { fetchAllPages } from '../pagination.js'
+
+export const fetchAllMappingGroups = (params = {}) => fetchAllPages(fetchMappingGroups, params)
 
 export function fetchMappingGroups(params = {}) {
   return requestJson(withQuery('/mappings/groups', params))

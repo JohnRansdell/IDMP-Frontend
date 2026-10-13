@@ -98,9 +98,9 @@ import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
-import { fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
+import { fetchAllIndicatorVersions } from '@/idmp/api/modules/indicators'
 import { fetchPolicies } from '@/idmp/api/modules/policies'
-import { compareIndicatorMappings, createMapping, createMappingGroup, fetchMapping, fetchMappingGroups, fetchMappings, updateMapping } from '@/idmp/api/modules/mappings'
+import { compareIndicatorMappings, createMapping, createMappingGroup, fetchMapping, fetchAllMappingGroups as fetchMappingGroups, fetchMappings, updateMapping } from '@/idmp/api/modules/mappings'
 import { COMPARABILITY_TYPES, MAPPING_TYPES, comparabilityLabel, formatIndicatorRef, mappingStatusLabel, mappingTypeDescription, mappingTypeLabel, normalizePage, toOpaqueId } from '@/idmp/api/adapters/mapping'
 
 const route = useRoute()
@@ -162,7 +162,7 @@ async function loadPolicyFiles(keyword = '') {
 }
 async function bootstrap() { await Promise.all([loadGroups(), loadPublishedIndicators()]); await loadMappings() }
 async function loadGroups() { groupLoading.value = true; try { groups.value = normalizePage(await fetchMappingGroups({ page: 1, size: 200 })).items } catch (error) { ElMessage.error(error?.message || '语义组加载失败') } finally { groupLoading.value = false } }
-async function loadPublishedIndicators() { try { publishedIndicators.value = normalizeList(await fetchIndicatorVersionList({ publicationStatus: 'PUBLISHED', page: 1, size: 200 })).map(item => ({ ...item, id: toOpaqueId(item.id || item.versionId || item.indicatorVersionId) })).filter(item => item.id) } catch (error) { ElMessage.warning(error?.message || '已发布指标版本列表加载失败；仍可手工输入版本 ID。') } }
+async function loadPublishedIndicators() { try { publishedIndicators.value = (await fetchAllIndicatorVersions({ publicationStatus: 'PUBLISHED' })).map(item => ({ ...item, id: toOpaqueId(item.id || item.versionId || item.indicatorVersionId) })).filter(item => item.id) } catch (error) { ElMessage.warning(error?.message || '已发布指标版本列表加载失败；仍可手工输入版本 ID。') } }
 async function loadMappings() { loading.value = true; try { const page = normalizePage(await fetchMappings({ ...filters, page: mappingPage.value, size: mappingSize.value })); mappings.value = page.items; mappingTotal.value = page.total } catch (error) { mappings.value = []; mappingTotal.value = 0; ElMessage.error(error?.message || '映射列表加载失败') } finally { loading.value = false } }
 function resetFilters() { Object.assign(filters, { groupId: '', policyFileId: '', indicatorVersionId: '', mappingType: '', reviewStatus: '' }); mappingPage.value = 1; loadMappings() }
 function setMappingTypeFilter(mappingType) { filters.mappingType = mappingType; mappingPage.value = 1; loadMappings() }
