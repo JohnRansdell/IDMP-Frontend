@@ -271,15 +271,30 @@
         </el-tab-pane>
 
         <el-tab-pane label="科室排名" name="rank">
+          <div v-if="backendAnalysisGranularity !== 'STATIC' && selectedBackendIndicator" class="rank-period-toolbar">
+            <el-radio-group v-model="rankGranularity" size="small" aria-label="排名统计粒度" @change="loadRankPeriods()">
+              <el-radio-button v-for="item in DRILL_GRANULARITIES" :key="item.value" :value="item.value">{{ item.label }}</el-radio-button>
+            </el-radio-group>
+            <el-select v-model="rankSelectedPeriod" filterable size="small" class="rank-period-select"
+              aria-label="排名统计周期" :placeholder="rankPeriodPlaceholder" :loading="rankLoading"
+              :disabled="!rankPeriodOptions.length" @change="loadSelectedRankPeriod">
+              <el-option v-for="item in rankPeriodOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </div>
           <div class="table-heading">
             <div>
               <h2>科室指标排名</h2>
-              <p v-if="hasBackendRankData">科室下钻正式结果，按 {{ currentProfile.name }} 由高到低排列。</p>
+              <p v-if="hasBackendRankData">{{ rankPeriodDescription }}，按 {{ currentProfile.name }} 由高到低排列。</p>
               <p v-else>当前指标暂无正式科室维度结果。</p>
             </div>
             <StatusBadge :status="hasBackendRankData ? 'ACTIVE' : 'NO_DATA'" :label="hasBackendRankData ? '科室正式结果' : '暂无正式数据'" tone="neutral" />
           </div>
-          <div class="table-scroll rank-table-scroll">
+          <StatePanel v-if="rankLoading" type="loading" title="正在读取科室排名" />
+          <StatePanel v-else-if="rankErrorMessage" type="error" title="科室排名加载失败" :description="rankErrorMessage">
+            <template #actions><el-button size="small" @click="retryRankPeriod">重试</el-button></template>
+          </StatePanel>
+          <StatePanel v-else-if="rankInitialized && !rankPeriodOptions.length" type="empty" :title="`暂无${rankGranularityLabel}正式结果`" description="该粒度尚未生成正式计算结果。" />
+          <div v-else class="table-scroll rank-table-scroll">
             <el-table
               :data="rankTableData"
               empty-text="暂无正式科室维度结果"
@@ -329,9 +344,24 @@
         </el-tab-pane>
 
         <el-tab-pane label="下钻分析" name="drill">
-          <DrillExplorer
+          <IndicatorDrillAnalysis
+            v-if="selectedBackendIndicator && backendAnalysisGranularity !== 'STATIC'"
             ref="drillExplorerRef"
-            v-if="drillResultId"
+            :indicator-id="selectedBackendIndicator.id || selectedBackendIndicator.indicatorId"
+            :indicator-version-id="currentIndicatorVersionId"
+            :indicator-name="currentProfile.name"
+            :enabled="activeTab === 'drill'"
+            :initial-period="backendAnalysis?.overview || {}"
+            :initial-granularity="backendAnalysisGranularity"
+            :initial-result-id="route.query.drillResultId || ''"
+            :start-level="drillStartLevel"
+            :start-parent-keys="drillParentKeys"
+            :max-levels="drillMaxLevels"
+            :configured-paths="backendIndicatorVersion?.drillConfig?.drillPaths || []"
+          />
+          <DrillExplorer
+            ref="staticDrillExplorerRef"
+            v-else-if="drillResultId"
             :result-id="drillResultId"
             :path-result-ids="drillPathResultIds"
             :indicator-name="currentProfile.name"
@@ -399,6 +429,7 @@ import ResultAvailabilityPanel from '@/idmp/components/ResultAvailabilityPanel.v
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import RuntimeParameterFields from '@/idmp/components/RuntimeParameterFields.vue'
 import DrillExplorer from '@/idmp/features/analysis/DrillExplorer.vue'
+import IndicatorDrillAnalysis from '@/idmp/features/analysis/IndicatorDrillAnalysis.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
 import { fetchIndicatorAnalysis, fetchIndicatorAvailablePeriod, fetchIndicatorFormula, fetchIndicatorGrainOptions, fetchIndicatorScenarioComparison, fetchIndicatorScenarios, fetchIndicators, fetchIndicatorVersion, fetchIndicatorVersionList, queryIndicatorVersion } from '@/idmp/api/modules/indicators'
 import { fetchFactorVersion } from '@/idmp/api/modules/factors'
@@ -407,7 +438,9 @@ import { deriveDrillPathResultIds, reconcileScenarioPointWithRoot } from '@/idmp
 import { searchResultDrill } from '@/idmp/api/modules/drill'
 import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
 import { resolveIndicatorCalculationMode } from '@/idmp/features/analysis/calculationMode'
-import { normalizeDepartmentComparisons } from '@/idmp/features/analysis/departmentRanking'
+import { departmentDrillContext, loadDepartmentComparisons, normalizeDepartmentComparisons } from '@/idmp/features/analysis/departmentRanking'
+import { DRILL_GRANULARITIES } from '@/idmp/features/analysis/drillPeriods'
+import { useAnalysisPeriod } from '@/idmp/features/analysis/useAnalysisPeriod'
 import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
 import { getStatusLabel } from '@/idmp/design/status'
 import { periodOptions } from '@/idmp/features/analysis/indicatorProfiles'
@@ -472,6 +505,7 @@ const runtimeQueryResult = ref(null)
 const reportParameterSnapshot = ref({})
 const scenarioComparisonAppliedRange = ref([])
 const drillExplorerRef = ref()
+const staticDrillExplorerRef = ref()
 const pdfExportLoading = ref(false)
 const canExportPdf = computed(() => Boolean(selectedBackendIndicator.value && currentIndicatorVersionId.value)
   && !mortalityChainLoading.value && !rangeSummaryLoading.value && !trendLoading.value && !scenarioComparisonLoading.value)
@@ -610,9 +644,9 @@ const analysisNotice = computed(() => {
 })
 const backendDepartmentComparisons = computed(() =>
   normalizeDepartmentComparisons(
-    backendAnalysis.value?.departmentComparison,
-    backendAnalysis.value?.dimensionComparison,
-    departmentNamesByCode.value
+    (rankInitialized.value ? rankAnalysis.value : backendAnalysis.value)?.departmentComparison,
+    rankInitialized.value ? [] : backendAnalysis.value?.dimensionComparison,
+    rankInitialized.value ? {} : departmentNamesByCode.value
   )
 )
 const backendDimensionResults = computed(() =>
@@ -730,7 +764,9 @@ const rankTableData = computed(() => {
       numerator: item.numeratorValue == null ? '-' : formatCount(item.numeratorValue),
       denominator: item.denominatorValue == null ? '-' : formatCount(item.denominatorValue),
       change: '-',
-      status: item.qualityStatus === 'PASSED' ? '达标' : '预警'
+      status: item.qualityStatus === 'PASSED' ? '达标' : '预警',
+      drillContext: departmentDrillContext(item, backendIndicatorVersion.value?.drillConfig?.drillPaths || [],
+        rankInitialized.value ? rankGranularity.value : backendAnalysisGranularity.value)
     }))
   }
   return []
@@ -830,6 +866,27 @@ const currentIndicatorVersionId = computed(() => String(
   selectedBackendIndicator.value?.currentPublishedVersionId || selectedBackendIndicator.value?.publishedVersionId ||
   selectedBackendIndicator.value?.currentVersionId || ''
 ))
+const rankPeriodProps = computed(() => ({
+  indicatorId: selectedBackendIndicator.value?.id || selectedBackendIndicator.value?.indicatorId || '',
+  indicatorVersionId: currentIndicatorVersionId.value,
+  enabled: activeTab.value === 'rank' && backendAnalysisGranularity.value !== 'STATIC'
+}))
+const { granularity: rankGranularity, selectedPeriod: rankSelectedPeriod, periodOptions: rankPeriodOptions,
+  analysis: rankAnalysis, loading: rankLoading, errorMessage: rankErrorMessage, initialized: rankInitialized,
+  granularityLabel: rankGranularityLabel, periodPlaceholder: rankPeriodPlaceholder,
+  selectedPeriodLabel: rankSelectedPeriodLabel, loadPeriods: loadRankPeriods,
+  loadSelectedPeriod: loadSelectedRankPeriod, retryPeriod: retryRankPeriod } = useAnalysisPeriod({
+    get indicatorId() { return rankPeriodProps.value.indicatorId },
+    get indicatorVersionId() { return rankPeriodProps.value.indicatorVersionId },
+    get enabled() { return rankPeriodProps.value.enabled }
+  }, async (indicatorId, params) => {
+    const data = await fetchIndicatorAnalysis(indicatorId, params)
+    const paths = backendIndicatorVersion.value?.drillConfig?.drillPaths || []
+    return { ...data, departmentComparison: await loadDepartmentComparisons(data, paths, searchResultDrill) }
+  })
+const rankPeriodDescription = computed(() => rankInitialized.value
+  ? `${rankGranularityLabel.value} · ${rankSelectedPeriodLabel.value || '暂无周期'} · 科室正式结果`
+  : `科室正式结果 · ${formatAnalysisPeriod(backendAnalysis.value?.overview) || '静态结果'}`)
 const scenarioComparisonTarget = computed(() => {
   const indicator = selectedBackendIndicator.value
   const indicatorId = indicator?.id || indicator?.indicatorId
@@ -1014,8 +1071,10 @@ async function exportAnalysisPdf() {
   if (!canExportPdf.value || pdfExportLoading.value) return
   pdfExportLoading.value = true
   try {
-    const drill = activeTab.value === 'drill' ? drillExplorerRef.value?.getReportSnapshot() : null
+    const drillExplorer = backendAnalysisGranularity.value === 'STATIC' ? staticDrillExplorerRef.value : drillExplorerRef.value
+    const drill = activeTab.value === 'drill' ? drillExplorer?.getReportSnapshot() : null
     if (drill?.loading) throw new Error('下钻结果仍在加载，请稍后再导出。')
+    if (rankLoading.value) throw new Error('科室排名仍在加载，请稍后再导出。')
     const indicatorId = String(selectedBackendIndicator.value.id || selectedBackendIndicator.value.indicatorId)
     const versionId = currentIndicatorVersionId.value
     const filename = analysisPdfFilename(currentProfile.value.name, versionId)
@@ -1040,7 +1099,7 @@ async function exportAnalysisPdf() {
       trendRows: trendTableRows.value, hasPeerTrend: hasPeerTrend.value, unit: currentProfile.value.unit,
       trendDescription: `统计粒度：${backendAnalysisGranularity.value === 'STATIC' ? '静态' : period.value}；时间范围：${formatRange(analysisPeriodRange.value) || '全部已加载正式周期'}`,
       chartPng: trendTableRows.value.length ? renderAnalysisChartPng(trendOption.value) : null,
-      rankRows: rankTableData.value, scenarioRows: scenarios,
+      rankRows: rankTableData.value, rankDescription: rankErrorMessage.value || rankPeriodDescription.value, scenarioRows: scenarios,
       scenarioDescription: scenarioComparisonError.value || '各场景保留各自原始统计周期，不跨场景合并。',
       provenance: [
         ['计算公式', indicatorDataExplanation.value.formulaText],
@@ -1276,6 +1335,11 @@ function toCalculationDateTime(value) {
 }
 
 const openDepartmentDrill = (row) => {
+  if (backendAnalysisGranularity.value !== 'STATIC' && row.drillContext) {
+    activeTab.value = 'drill'
+    nextTick(() => drillExplorerRef.value?.focusResult?.(row.drillContext))
+    return
+  }
   const canShowDoctors = ['ATTENDING_DOCTOR', 'DOCTOR'].includes(
     String(drillMaxLevels.value.ORGANIZATION || '').toUpperCase()
   )
@@ -1286,6 +1350,7 @@ const openDepartmentDrill = (row) => {
     ? { HOSPITAL_CODE: row.hospitalCode, OUT_DEPT_CODE: row.departmentCode }
     : {}
   activeTab.value = 'drill'
+  nextTick(() => drillExplorerRef.value?.focusInitialResult?.())
 }
 
 function formatCount(value) {
@@ -1848,7 +1913,7 @@ async function refreshMortalityAnalysis({ preserveRangeSummary = false } = {}) {
     }
     if (resolvedAnalysisData?.status === 'fulfilled' && resolvedAnalysisData?.value) {
       backendAnalysis.value = resolvedAnalysisData.value
-      void loadDepartmentNames(resolvedAnalysisData.value, refreshSequence)
+      if (resolvedAnalysisData.value?.granularity === 'STATIC') void loadDepartmentNames(resolvedAnalysisData.value, refreshSequence)
       if (!trendBackendAnalysis.value) trendBackendAnalysis.value = resolvedAnalysisData.value
       if (resolvedAnalysisData.value?.granularity) reportGranularity.value = String(resolvedAnalysisData.value.granularity)
       if (!reportPeriodRange.value.length && resolvedAnalysisData.value?.overview?.periodStart && resolvedAnalysisData.value?.overview?.periodEnd) {
@@ -2914,6 +2979,19 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
     padding: 0;
     color: var(--idmp-text-secondary);
   }
+}
+
+.rank-period-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-bottom: 16px;
+}
+
+.rank-period-select {
+  width: 200px;
+  max-width: 100%;
 }
 
 .rank-table {

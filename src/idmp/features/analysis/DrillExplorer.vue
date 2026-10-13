@@ -6,15 +6,13 @@
           <el-option label="组织维度" value="ORGANIZATION" :disabled="!pathAvailable('ORGANIZATION')" />
           <el-option label="病种维度" value="DISEASE" :disabled="!pathAvailable('DISEASE')" />
           <el-option v-for="path in customPaths" :key="path.pathCode" :label="path.pathName || '自定义路径'" :value="path.pathCode" />
-          <el-option v-if="source !== 'mock'" label="因子结果追溯" value="FACTOR_TRACE" />
-          <el-option label="时间维度（待接入）" value="TIME" disabled />
-          <el-option label="场景维度（待接入）" value="SCENARIO" disabled />
         </el-select>
         <span class="drill-context-bar__period">统计周期：{{ resolvedPeriod }}</span>
         <span class="drill-context-bar__source">{{ source === 'mock' ? '演示数据' : '真实接口' }}</span>
         <el-button v-if="source !== 'mock' && !isFactorTraceMode" size="small" @click="showFactorTrace">
           {{ factorTrace ? '刷新因子追溯' : '查看因子追溯' }}
         </el-button>
+        <el-button v-if="isFactorTraceMode" size="small" @click="returnToDrill">返回下钻</el-button>
       </div>
     </div>
 
@@ -97,7 +95,16 @@
       <StatePanel v-else-if="errorMessage" type="error" title="因子追溯加载失败" :description="errorMessage">
         <template #actions><el-button size="small" @click="loadFactorTrace">重试</el-button></template>
       </StatePanel>
-      <FactorTraceTree v-else-if="factorTrace" :key="`${factorTrace.context?.resultId}-${factorTrace.context?.configSnapshotId}`" :result-id="String(factorTrace.context?.resultId || activeResultId)" :factors="factorTrace.factors || []" />
+      <template v-else-if="factorTrace">
+        <div v-if="traceBatchId" class="factor-trace-batch" aria-label="所属计算批次">
+          <div class="factor-trace-batch__identifier">
+            <span>所属批次</span>
+            <strong class="mono-data">{{ traceBatchId }}</strong>
+          </div>
+          <el-button size="small" @click="openTraceBatch">查看计算批次</el-button>
+        </div>
+        <FactorTraceTree :key="`${factorTrace.context?.resultId}-${factorTrace.context?.configSnapshotId}`" :result-id="String(factorTrace.context?.resultId || activeResultId)" :factors="factorTrace.factors || []" />
+      </template>
     </section>
   </div>
 </template>
@@ -120,6 +127,7 @@ const props = defineProps({
   period: { type: String, default: '2026-06' },
   startLevel: { type: String, default: 'HOSPITAL' },
   startParentKeys: { type: Object, default: () => ({}) },
+  startFilters: { type: Object, default: () => ({}) },
   maxLevels: { type: Object, default: () => ({}) },
   configuredPaths: { type: Array, default: () => [] },
   startPathCode: { type: String, default: '' },
@@ -143,10 +151,11 @@ const loading = ref(false)
 const errorMessage = ref('')
 let drillRequestId = 0
 const factorTrace = ref(null)
+const traceBatchId = computed(() => String(factorTrace.value?.context?.calculationBatchId || ''))
 const factorTraceLoading = ref(false)
 let factorTraceRequestId = 0
 const resolvedPathResultIds = ref({})
-const isFactorTraceMode = computed(() => dimension.value === 'FACTOR_TRACE')
+const isFactorTraceMode = ref(false)
 const statusRecord = computed(() => result.value.records.find(isStatusRecord) || null)
 const memberRecords = computed(() => result.value.records.filter((item) => !isStatusRecord(item)))
 const visibleColumns = computed(() => result.value.columns.filter((column) => (
@@ -210,7 +219,7 @@ function buildPayload() {
   const payload = {
     ...(lastDrillDimension.value.startsWith('CUSTOM_') ? { pathCode: lastDrillDimension.value } : {}),
     parentKeys: parentKeys.value,
-    filters: {},
+    filters: { ...props.startFilters },
     pageNum: 1,
     pageSize: 20,
     sort: [{ field: 'indicatorValue', direction: 'DESC' }]
@@ -299,7 +308,26 @@ async function loadFactorTrace() {
 
 function showFactorTrace() {
   if (props.source === 'mock') return
-  dimension.value = 'FACTOR_TRACE'
+  drillRequestId += 1
+  loading.value = false
+  errorMessage.value = ''
+  factorTrace.value = null
+  isFactorTraceMode.value = true
+  loadFactorTrace()
+}
+
+function returnToDrill() {
+  factorTraceRequestId += 1
+  factorTraceLoading.value = false
+  factorTrace.value = null
+  errorMessage.value = ''
+  isFactorTraceMode.value = false
+  loadDrill()
+}
+
+function openTraceBatch() {
+  if (!traceBatchId.value || factorTraceLoading.value) return
+  router.push({ path: '/calc', query: { batchId: traceBatchId.value }, hash: '#batch-overview' })
 }
 
 function goToBreadcrumb(index) {
@@ -343,7 +371,7 @@ function inferDimensionFromLevel(level) {
     : 'ORGANIZATION'
 }
 
-watch(() => [props.startLevel, props.startParentKeys], ([level, keys]) => {
+watch(() => [props.startLevel, props.startParentKeys, props.startFilters], ([level, keys]) => {
   currentLevel.value = level
   parentKeys.value = { ...keys }
   if (isFactorTraceMode.value) loadFactorTrace()
@@ -367,8 +395,7 @@ watch(() => props.source, (source) => {
   factorTrace.value = null
   errorMessage.value = ''
   if (source === 'mock' && isFactorTraceMode.value) {
-    dimension.value = lastDrillDimension.value
-    return
+    isFactorTraceMode.value = false
   }
   loadDrill()
 })
@@ -379,10 +406,7 @@ watch(dimension, (value) => {
   loading.value = false
   factorTrace.value = null
   errorMessage.value = ''
-  if (value === 'FACTOR_TRACE') {
-    loadFactorTrace()
-    return
-  }
+  isFactorTraceMode.value = false
   lastDrillDimension.value = value
   if (value.startsWith('CUSTOM_')) {
     currentLevel.value = rootForPath(value)
@@ -538,6 +562,33 @@ function rootForPath(pathCode) {
   margin-top: 16px;
   padding: 0 12px 14px;
   border-top: 1px solid var(--idmp-border-subtle);
+}
+
+.factor-trace-batch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 0 0 12px;
+}
+
+.factor-trace-batch__identifier {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.factor-trace-batch__identifier span {
+  color: var(--idmp-text-secondary);
+}
+
+.factor-trace-batch__identifier strong {
+  font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 900px) {

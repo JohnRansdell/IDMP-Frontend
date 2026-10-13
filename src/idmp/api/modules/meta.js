@@ -30,6 +30,26 @@ export function fetchPhysicalTableRelations(physicalTableBindingId, params = {})
   return requestJson(withQuery('/meta/physical-table-relations', { physicalTableBindingId, ...params }))
 }
 
+export function createPhysicalTableRelation(payload) {
+  return requestJson('/meta/physical-table-relations', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export function fetchPhysicalTableRelation(relationId) {
+  return requestJson(`/meta/physical-table-relations/${encodeURIComponent(relationId)}`)
+}
+
+export function updatePhysicalTableRelation(relationId, payload) {
+  return requestJson(`/meta/physical-table-relations/${encodeURIComponent(relationId)}`, { method: 'PATCH', body: JSON.stringify(payload) })
+}
+
+export function validatePhysicalTableRelation(relationId) {
+  return requestJson(`/meta/physical-table-relations/${encodeURIComponent(relationId)}/validate`, { method: 'POST' })
+}
+
+export function publishPhysicalTableRelation(relationId, resourceVersion) {
+  return requestJson(`/meta/physical-table-relations/${encodeURIComponent(relationId)}/publish`, { method: 'POST', body: JSON.stringify({ resourceVersion }) })
+}
+
 export function bindPhysicalTableField(domainId, tableName, payload) {
   return requestJson(`/meta/data-domains/${encodeURIComponent(domainId)}/physical-tables/${encodeURIComponent(tableName)}/semantic-fields`, {
     method: 'POST',

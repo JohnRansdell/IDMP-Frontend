@@ -18,6 +18,26 @@
   <el-drawer v-model="drawerOpen" title="计算节点详情" :size="drawerSize" append-to-body destroy-on-close>
     <template v-if="selectedNode">
       <div class="node-heading"><h3>{{ selectedNode.nodeName || NODE_LABELS[selectedNode.nodeType] || '计算节点' }}</h3><StatusBadge :status="selectedNode.status" :label="specialStatus(selectedNode.status)" /></div>
+      <section class="node-results" aria-label="节点计算结果">
+        <div class="node-results__heading"><h4>计算结果</h4><el-button v-if="canLoadResults" text size="small" :loading="resultsLoading" @click="loadResults">刷新结果</el-button></div>
+        <StatePanel v-if="resultsLoading" type="loading" title="正在读取节点结果" />
+        <StatePanel v-else-if="resultsError" type="error" title="节点结果读取失败" :description="resultsError"><template #actions><el-button size="small" @click="loadResults">重试</el-button></template></StatePanel>
+        <template v-else-if="nodeResults?.summary?.status === 'AVAILABLE'">
+          <div class="node-results__summary"><span>共 {{ nodeResults.results.total }} 条结果</span><span>第 {{ nodeResults.attemptNo }} 次执行</span></div>
+          <el-table :data="nodeResults.results.records || []" size="small" max-height="360" empty-text="当前页暂无结果">
+            <el-table-column v-for="field in resultFields" :key="field" :label="field" min-width="110"><template #default="{ row }">{{ calculationDimensionValue(row, field) }}</template></el-table-column>
+            <el-table-column label="结果值" min-width="120"><template #default="{ row }">{{ calculationResultValue(row) }}</template></el-table-column>
+            <el-table-column v-if="isIndicatorNode" prop="numeratorValue" label="分子" min-width="100" />
+            <el-table-column v-if="isIndicatorNode" prop="denominatorValue" label="分母" min-width="100" />
+            <el-table-column label="结果状态" min-width="100"><template #default="{ row }"><StatusBadge :status="row.outcomeStatus || row.qualityStatus" /></template></el-table-column>
+          </el-table>
+          <el-pagination v-if="Number(nodeResults.results.total) > resultPageSize" :current-page="resultPage" :page-size="resultPageSize" :total="Number(nodeResults.results.total)" layout="prev, pager, next" small @current-change="changeResultPage" />
+        </template>
+        <div v-else class="node-results__empty">
+          <StatusBadge v-if="resultSummary?.status === 'QUALITY' && resultSummary.conclusion" :status="resultSummary.conclusion" />
+          <span v-else>{{ resultSummary?.message || nodeResultLabel(selectedNode) }}</span>
+        </div>
+      </section>
       <dl class="node-details">
         <div><dt>节点类型</dt><dd>{{ NODE_LABELS[selectedNode.nodeType] || '计算节点' }}</dd></div>
         <div><dt>所属目标</dt><dd>{{ targetTitle(selectedTarget, targets.indexOf(selectedTarget)) }}</dd></div>
@@ -56,9 +76,12 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
+import StatePanel from '@/idmp/components/StatePanel.vue'
 import CalculationTargetDag from '@/idmp/components/CalculationTargetDag.vue'
+import { fetchCalcNodeResults } from '@/idmp/api/modules/calculation'
+import { calculationDimensionValue, calculationResultFields, calculationResultValue, nodeResultLabel } from '@/idmp/utils/calculationResults'
 import { NODE_LABELS, targetPeriod, targetTitle } from '@/idmp/utils/calculationGraph'
 const props = defineProps({ targets: { type: Array, default: () => [] }, retryingNodeId: { type: String, default: '' } })
 defineEmits(['retry'])
@@ -66,6 +89,13 @@ const expanded = ref(''), drawerOpen = ref(false), selection = reactive({ target
 const drawerSize = 'min(520px, 100vw)'
 const selectedTarget = computed(() => props.targets.find(t => String(t.targetId) === selection.targetId))
 const selectedNode = computed(() => selectedTarget.value?.nodes?.find(n => String(n.nodeId) === selection.nodeId))
+const nodeResults = ref(null), resultsLoading = ref(false), resultsError = ref(''), resultPage = ref(1)
+const resultPageSize = 20
+let resultRequest = 0, resultAbort
+const isIndicatorNode = computed(() => ['FORMULA', 'INDICATOR'].includes(selectedNode.value?.nodeType))
+const canLoadResults = computed(() => selectedNode.value?.status === 'SUCCEEDED' && ['FACTOR', 'DERIVED_FACTOR', 'FORMULA', 'INDICATOR'].includes(selectedNode.value?.nodeType))
+const resultSummary = computed(() => selectedNode.value?.status === 'SUCCEEDED' ? nodeResults.value?.summary || selectedNode.value?.resultSummary : null)
+const resultFields = computed(() => calculationResultFields(nodeResults.value?.dimensionFields, nodeResults.value?.results?.records))
 watch(() => props.targets, () => {
   if (!props.targets.some(t => String(t.targetId) === expanded.value)) expanded.value = ''
   if (!selectedNode.value) drawerOpen.value = false
@@ -75,6 +105,39 @@ function selectNode(target, node) {
   selection.nodeId = String(node.nodeId)
   drawerOpen.value = true
 }
+watch(() => [drawerOpen.value, selection.targetId, selection.nodeId, selectedNode.value?.attemptNo, selectedNode.value?.status, selectedNode.value?.fencingToken], () => {
+  resultAbort?.abort()
+  resultRequest += 1
+  nodeResults.value = null
+  resultsError.value = ''
+  resultsLoading.value = false
+  resultPage.value = 1
+  if (drawerOpen.value && canLoadResults.value) loadResults()
+})
+async function loadResults() {
+  if (!drawerOpen.value || !canLoadResults.value) return
+  resultAbort?.abort()
+  const request = ++resultRequest, nodeId = selection.nodeId, attempt = selectedNode.value.attemptNo
+  const controller = new AbortController()
+  resultAbort = controller
+  resultsLoading.value = true
+  resultsError.value = ''
+  nodeResults.value = null
+  try {
+    const data = await fetchCalcNodeResults(nodeId, resultPage.value, resultPageSize, { signal: controller.signal })
+    if (request !== resultRequest || controller.signal.aborted) return
+    if (String(data.nodeId) !== nodeId || String(data.targetId) !== selection.targetId || Number(data.attemptNo) !== Number(attempt)) {
+      throw new Error('节点执行状态已变化，请刷新批次后重新查看')
+    }
+    nodeResults.value = data
+  } catch (error) {
+    if (request === resultRequest && !controller.signal.aborted) resultsError.value = error?.message || '节点结果读取失败，请重试'
+  } finally {
+    if (request === resultRequest) resultsLoading.value = false
+  }
+}
+function changeResultPage(page) { resultPage.value = page; loadResults() }
+onBeforeUnmount(() => { resultRequest += 1; resultAbort?.abort() })
 function findDependency(code) { return selectedTarget.value?.nodes?.find(n => n.nodeCode === code) }
 function specialStatus(status) { return { LEASED: '已领取', SKIPPED: '已跳过' }[status] }
 function formatTime(value) { return value ? String(value).replace('T', ' ') : '-' }
@@ -91,6 +154,12 @@ function formatTime(value) { return value ? String(value).replace('T', ' ') : '-
 .target-grain > span:first-child { color: var(--el-text-color-secondary); }
 .node-heading { display: flex; align-items: flex-start; gap: 12px; justify-content: space-between; margin-bottom: 20px; }
 .node-heading h3 { font-size: 17px; margin: 0; overflow-wrap: anywhere; }
+.node-results { margin-bottom: 22px; }
+.node-results__heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.node-results__heading h4 { margin: 0; font-size: 14px; }
+.node-results__summary { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 8px; color: var(--el-text-color-secondary); font-size: 12px; }
+.node-results__empty { color: var(--el-text-color-secondary); font-size: 13px; }
+.node-results :deep(.el-pagination) { margin-top: 12px; justify-content: flex-end; }
 .node-details { margin: 0; }
 .node-details > div { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--el-border-color-lighter); line-height: 1.5; }
 .node-details dt { color: var(--el-text-color-secondary); }

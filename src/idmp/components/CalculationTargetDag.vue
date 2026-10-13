@@ -25,6 +25,7 @@
           :style="{ left: `${node.x - node.width / 2}px`, top: `${node.y - node.height / 2}px` }" @click="$emit('select', node)" @mouseenter="hoveredCode = node.nodeCode" @mouseleave="hoveredCode = ''" @focus="hoveredCode = node.nodeCode" @blur="hoveredCode = ''">
           <span class="dag-node__header"><span class="dag-node__type">{{ NODE_LABELS[node.nodeType] || '计算节点' }}</span><span v-if="node.versionNo" class="dag-node__version">V{{ node.versionNo }}</span></span>
           <span class="dag-node__name" :title="node.nodeName || NODE_LABELS[node.nodeType]">{{ node.nodeName || NODE_LABELS[node.nodeType] || '计算节点' }}</span>
+          <span class="dag-node__result" :title="nodeResultLabel(node)">{{ nodeResultLabel(node) }}</span>
           <span class="dag-node__footer"><StatusBadge :status="node.status" :label="nodeStatusLabel(node.status)" /><span v-if="node.attemptNo > 1" class="dag-node__attempt">第 {{ node.attemptNo }} 次</span></span>
         </button>
       </div>
@@ -38,6 +39,7 @@ import { computed, ref, useId } from 'vue'
 import { RefreshLeft, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import { layoutCalculationGraph, relatedGraphCodes, NODE_LABELS } from '@/idmp/utils/calculationGraph'
+import { nodeResultLabel } from '@/idmp/utils/calculationResults'
 const props = defineProps({ nodes: { type: Array, default: () => [] }, selectedId: { type: [String, Number], default: '' } })
 defineEmits(['select'])
 const markerId = `calc-arrow-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
@@ -67,7 +69,7 @@ function nodeStatusLabel(status) { return { LEASED: '已领取', SKIPPED: '已�
 .dag-edge { fill: none; stroke: #9aa8b8; stroke-width: 1.5; stroke-linejoin: round; transition: opacity 120ms, stroke 120ms; }
 .dag-edge.is-active { stroke: var(--el-color-primary); stroke-width: 2; }
 .dag-edge.is-muted { opacity: 0.3; }
-.dag-node { --node-accent: #57768f; position: absolute; box-sizing: border-box; width: 224px; height: 128px; padding: 12px 14px; display: flex; flex-direction: column; align-items: stretch; gap: 8px; text-align: left; border: 1px solid #dce3eb; border-top: 3px solid var(--node-accent); border-radius: 6px; background: var(--el-bg-color); color: var(--el-text-color-primary); cursor: pointer; font: inherit; box-shadow: 0 2px 5px #24354b06; transition: border-color 120ms, box-shadow 120ms, opacity 120ms; }
+.dag-node { --node-accent: #57768f; position: absolute; box-sizing: border-box; width: 224px; height: 160px; padding: 12px 14px; display: flex; flex-direction: column; align-items: stretch; gap: 8px; text-align: left; border: 1px solid #dce3eb; border-top: 3px solid var(--node-accent); border-radius: 6px; background: var(--el-bg-color); color: var(--el-text-color-primary); cursor: pointer; font: inherit; box-shadow: 0 2px 5px #24354b06; transition: border-color 120ms, box-shadow 120ms, opacity 120ms; }
 .dag-node[data-kind='FACTOR'] { --node-accent: #2b8a7e; }
 .dag-node[data-kind='DERIVED_FACTOR'] { --node-accent: #6e71a7; }
 .dag-node[data-kind='FORMULA'], .dag-node[data-kind='INDICATOR'] { --node-accent: #397cb9; }
@@ -81,4 +83,5 @@ function nodeStatusLabel(status) { return { LEASED: '已领取', SKIPPED: '已�
 .dag-node__name { font-size: 14px; font-weight: 600; line-height: 20px; height: 40px; flex-shrink: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .dag-node__footer { margin-top: auto; min-height: 20px; }
 .dag-node__attempt { color: var(--el-text-color-secondary); font-size: 11px; }
+.dag-node__result { font-size: 13px; line-height: 20px; min-height: 20px; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

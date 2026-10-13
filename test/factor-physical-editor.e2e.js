@@ -31,9 +31,9 @@ function mockBackend() {
   const realFetch = window.fetch.bind(window)
   window.__factorRequests = []
   const mapped = table => table === 'visit' ? [
-    { id: '10', code: 'ADMISSION_TIME', name: '入院时间', sourceFieldName: 'in_date', dataType: 'STRING' },
+    { id: '10', code: 'ADMISSION_TIME', name: '入院时间', sourceFieldName: 'in_date', dataType: 'DATETIME' },
     { id: '11', code: 'DEPARTMENT', name: '科室', sourceFieldName: 'dept_code', dataType: 'STRING' },
-    { id: '12', code: 'COST', name: '费用', sourceFieldName: 'fee', dataType: 'STRING' }
+    { id: '12', code: 'COST', name: '费用', sourceFieldName: 'fee', dataType: 'DECIMAL' }
   ] : [
     { id: '20', code: 'VISIT_KEY', name: '住院号', sourceFieldName: 'visit_id', dataType: 'STRING' },
     { id: '21', code: 'DIAGNOSIS', name: '病种', sourceFieldName: 'diagnosis', dataType: 'STRING' },
@@ -41,10 +41,17 @@ function mockBackend() {
   ]
   const source = table => mapped(table).map(field => ({ columnName: field.sourceFieldName, columnType: ['10', '22'].includes(field.id) ? 'datetime' : field.id === '12' ? 'decimal(12,2)' : 'varchar(40)', comment: field.name }))
   const relation = { id: '100', leftPhysicalTableBindingId: '1', rightPhysicalTableBindingId: '2', leftDomainId: '9', rightDomainId: '9', leftDomainCode: 'VISIT', rightDomainCode: 'VISIT', leftTableName: 'visit', rightTableName: 'diagnosis', joinType: 'LEFT', cardinality: 'MANY_TO_ONE' }
-  let dsl = { primaryDomain: { domainCode: 'VISIT', tableName: 'visit', sourceAlias: 'base' }, calculationMode: 'TEMPORAL', aggregation: { function: 'COUNT_DISTINCT', fieldRef: { sourceAlias: 'join1', fieldCode: 'visit_id' } }, joins: [{ relationId: '100', fromAlias: 'base', sourceAlias: 'join1' }], groupBy: ['dept_code', { sourceAlias: 'join1', fieldCode: 'diagnosis' }], filters: { nodeType: 'AND', children: [{ nodeType: 'PREDICATE', fieldCode: 'in_date', operator: 'BETWEEN', parameter: 'period' }] }, missingRowPolicy: 'ZERO' }
-  const legacyDsl = JSON.parse(JSON.stringify(dsl))
-  const initialDsl = JSON.parse(JSON.stringify(dsl))
-  window.__restoreOriginalDsl = () => { dsl = initialDsl; window.__factorRequests = [] }
+  const relations = JSON.parse(localStorage.getItem('idmp_relation_fixture') || 'null') || [relation]
+  let indicator = JSON.parse(localStorage.getItem('idmp_indicator_fixture') || 'null')
+  window.__rejectRelationValidation = false
+  window.__failRelationPublish = false
+  window.__loseRelationCreateResponse = false
+  window.__failNextFieldLoad = false
+  window.__delayNextFieldLoad = 0
+  const initialDsl = { primaryDomain: { domainCode: 'VISIT', tableName: 'visit', sourceAlias: 'base' }, calculationMode: 'TEMPORAL', aggregation: { function: 'COUNT_DISTINCT', fieldRef: { sourceAlias: 'join1', fieldCode: 'visit_id' } }, joins: [{ relationId: '100', fromAlias: 'base', sourceAlias: 'join1' }], groupBy: ['dept_code', { sourceAlias: 'join1', fieldCode: 'diagnosis' }], filters: { nodeType: 'AND', children: [{ nodeType: 'PREDICATE', fieldCode: 'in_date', operator: 'BETWEEN', parameter: 'period' }] }, missingRowPolicy: 'ZERO' }
+  let dsl = JSON.parse(localStorage.getItem('idmp_factor_dsl_fixture') || 'null') || JSON.parse(JSON.stringify(initialDsl))
+  const legacyDsl = JSON.parse(JSON.stringify(initialDsl))
+  window.__restoreOriginalDsl = () => { dsl = JSON.parse(JSON.stringify(initialDsl)); localStorage.removeItem('idmp_factor_dsl_fixture'); window.__factorRequests = [] }
   legacyDsl.primaryDomain = { domainCode: 'VISIT', semanticTableCode: 'visit', sourceAlias: 'base' }
   legacyDsl.aggregation.fieldRef.fieldCode = 'VISIT_KEY'
   legacyDsl.groupBy = ['DEPARTMENT', { sourceAlias: 'join1', fieldCode: 'DIAGNOSIS' }]
@@ -61,10 +68,56 @@ function mockBackend() {
     else if (p.endsWith('/physical-tables')) data = [{ id: '1', domainId: '9', tableName: 'visit', tableComment: '住院记录', defaultTimeSemanticFieldCode: 'ADMISSION_TIME', status: 'PUBLISHED' }, { id: '2', domainId: '9', tableName: 'diagnosis', tableComment: '诊断记录', status: 'PUBLISHED' }]
     else if (p.includes('/physical-tables/') && p.endsWith('/semantic-fields')) data = mapped(p.split('/').at(-2))
     else if (p.startsWith('/meta/source-tables/') && p.endsWith('/fields')) data = source(p.split('/').at(-2))
-    else if (p === '/meta/physical-table-relations') data = [relation]
+    else if (p === '/meta/physical-table-relations' && init.method === 'POST') {
+      data = { ...relation, ...body, id: String(100 + relations.length), status: 'DRAFT', resourceVersion: 0 }
+      relations.push(data)
+      localStorage.setItem('idmp_relation_fixture', JSON.stringify(relations))
+      if (window.__loseRelationCreateResponse) {
+        window.__loseRelationCreateResponse = false
+        return new Response(JSON.stringify({ code: 'CONFLICT', message: '关联保存暂时失败，请重试' }), { status: 409, headers: { 'Content-Type': 'application/json' } })
+      }
+    }
+    else if (p === '/meta/physical-table-relations') data = relations.filter(item => !url.searchParams.get('status') || item.id === '100' || item.status === url.searchParams.get('status'))
+    else if (p.startsWith('/meta/physical-table-relations/')) {
+      const item = relations.find(item => item.id === p.split('/')[3])
+      if (p.endsWith('/validate')) data = { valid: !window.__rejectRelationValidation, diagnostics: window.__rejectRelationValidation ? [{ severity: 'ERROR', message: '关联字段未发布，请检查字段状态' }] : [] }
+      else if (p.endsWith('/publish')) {
+        if (window.__failRelationPublish) {
+          window.__failRelationPublish = false
+          return new Response(JSON.stringify({ code: 'CONFLICT', message: '关联保存暂时失败，请重试' }), { status: 409, headers: { 'Content-Type': 'application/json' } })
+        }
+        item.status = 'PUBLISHED'; item.resourceVersion++; data = item
+        localStorage.setItem('idmp_relation_fixture', JSON.stringify(relations))
+      } else if (init.method === 'PATCH') { Object.assign(item, body, { status: 'DRAFT', resourceVersion: item.resourceVersion + 1 }); data = item }
+      else data = item
+    }
+    else if (p === '/indicator-versions/drill-capabilities') {
+      if (window.__failNextFieldLoad) {
+        window.__failNextFieldLoad = false
+        return new Response(JSON.stringify({ code: 'INTERNAL_ERROR', message: '物理字段加载失败，请重试' }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+      }
+      const refs = []
+      const collect = node => { if (!node) return; if (node.nodeType === 'FACTOR_REF') refs.push(node.factorVersionId); collect(node.left); collect(node.right) }
+      collect(body.formula.root)
+      const ids = [...new Set(refs.flatMap(id => id === 'COMPOSITE' ? ['LEAF_A', 'LEAF_B'] : [id]))]
+      data = { factorVersionIds: ids, dimensions: [
+        { pathCode: 'TIME', supported: true, maxLevel: 'DAY', levels: [{ code: 'YEAR', name: '年度' },{ code: 'QUARTER', name: '季度' },{ code: 'MONTH', name: '月度' },{ code: 'DAY', name: '日' }], limitingFactors: [] },
+        { pathCode: 'ORGANIZATION', supported: false, maxLevel: 'HOSPITAL', levels: [], limitingFactors: [{ factorVersionId: ids[0], reason: '缺少默认组织维度' }] },
+        ...(body.drillPaths || []).filter(path=>path.pathCode.startsWith('CUSTOM_')).map(path=>({pathCode:path.pathCode,supported:true,maxLevel:path.maxLevel,levels:path.levels.map(level=>({code:level.levelCode,name:level.levelName})),limitingFactors:[]}))
+      ], fieldOptions: ids.map(id => ({ factorVersionId: id, factorName: `因子 ${id}`, fields: [
+        { tableName: 'visit', columnName: 'dept_code', fieldReference: 'base.dept_code' },
+        ...(id === '10' ? [{ tableName: 'diagnosis', columnName: 'department_id', fieldReference: 'join1.department_id' }, { tableName: 'visit', columnName: 'dept_code', fieldReference: 'join2.dept_code' }] : [])
+      ] })) }
+      const responseDelay = window.__delayNextFieldLoad
+      window.__delayNextFieldLoad = 0
+      if (responseDelay) await new Promise(resolve => setTimeout(resolve, responseDelay))
+    }
+    else if (p === '/indicators' && init.method === 'POST') { indicator = { ...body, id: '200', status: 'DRAFT', resourceVersion: 0 }; localStorage.setItem('idmp_indicator_fixture', JSON.stringify(indicator)); data = indicator }
+    else if (p === '/indicators/200') data = indicator
+    else if (p === '/indicators/200/versions') data = []
     else if (p.includes('/value-set')) data = p.includes('/11/') ? { bound: true, valueSet: { id: '90' }, publishedVersion: { id: '91', matchMode: 'EXACT', items: [{ code: 'D1', label: '内科' }] } } : { bound: false }
-    else if (p === '/factors' && init.method === 'POST') { dsl = body.dsl; data = { id: '1', draftVersionId: '3', status: 'DRAFT', resourceVersion: 1 } }
-    else if (p === '/factors/1') { if (body) dsl = body.dsl; data = { id: '1', code: 'FACTOR_TEST', name: '物理字段因子', draftVersionId: '3', status: 'DRAFT', resourceVersion: 1 } }
+    else if (p === '/factors' && init.method === 'POST') { dsl = body.dsl; localStorage.setItem('idmp_factor_dsl_fixture', JSON.stringify(dsl)); data = { id: '1', draftVersionId: '3', status: 'DRAFT', resourceVersion: 1 } }
+    else if (p === '/factors/1') { if (body) { dsl = body.dsl; localStorage.setItem('idmp_factor_dsl_fixture', JSON.stringify(dsl)) } data = { id: '1', code: 'FACTOR_TEST', name: '物理字段因子', draftVersionId: '3', status: 'DRAFT', resourceVersion: 1 } }
     else if (p === '/factors/1/versions') data = [{ id: '3', versionNo: 1, publicationStatus: 'DRAFT' }]
     else if (p === '/factor-versions/3') data = { id: '3', dsl, publicationStatus: 'DRAFT' }
     else if (p === '/factors/2' || p === '/factors/3') data = { id: p.split('/').at(-1), code: 'EXISTING', name: '已有因子', draftVersionId: p.endsWith('/2') ? '4' : '5', status: 'DRAFT' }
@@ -122,6 +175,9 @@ try {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false })
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${appPort}/factor/edit/new` })
   await waitFor(()=>evaluate(`!!document.querySelector('.definition-kind-selector')`))
+  assert.match(await evaluate(`document.querySelector('input[aria-label="因子编码"]').value`), /^FACTOR_[0-9A-F]{32}$/)
+  assert.equal(await evaluate(`document.querySelector('input[aria-label="因子编码"]').disabled`), false)
+  await evaluate(`(() => {const input=document.querySelector('input[aria-label="因子编码"]');input.value='FACTOR_MANUAL_CODE';input.dispatchEvent(new Event('input',{bubbles:true}))})()`)
   assert.equal(await evaluate(`document.querySelector('.definition-kind-selector').closest('section').querySelector('h2').textContent`), '基础信息')
   assert.equal(await evaluate(`document.querySelector('.definition-kind-selector .is-active').textContent`), '原子因子')
   await click(`document.querySelectorAll('.definition-kind-selector .el-radio-button')[1]`)
@@ -190,14 +246,20 @@ try {
   await click(button('保存因子定义'))
   await waitFor(()=>evaluate(`window.__factorRequests.some(r=>r.path==='/factors'&&r.method==='POST')`))
   const created = await evaluate(`window.__factorRequests.find(r=>r.path==='/factors'&&r.method==='POST').body.dsl`)
+  assert.equal(await evaluate(`window.__factorRequests.find(r=>r.path==='/factors'&&r.method==='POST').body.code`), 'FACTOR_MANUAL_CODE')
   assert.deepEqual(created.primaryDomain, { domainCode: 'VISIT', tableName: 'visit' })
   assert.equal(created.periodColumn, 'in_date')
   assert.deepEqual(created.filters, { nodeType: 'TRUE' })
   await waitFor(()=>evaluate(`location.pathname==='/factor/edit/1'&&document.querySelector('.page-toolbar')?.textContent.includes('保存修改')`))
   await delay(300); await fixture()
+  assert.equal(await evaluate(`document.querySelector('input[aria-label="因子编码"]').disabled`), true)
   await click(button('添加关联表'))
+  await waitFor(()=>evaluate(`!!document.querySelector('.join-mode')`))
+  assert.equal(await evaluate(`document.querySelector('.join-mode .is-checked').textContent`), '复用已有表关系')
+  assert.equal(await evaluate(`!!document.querySelector('.inline-relation-editor')`), false)
   await choose(`document.querySelector('.join-row .el-select')`, 'diagnosis（LEFT')
   await waitFor(()=>evaluate(`window.__factorFixture.fields.length===6`))
+  assert.match(await evaluate(`document.querySelector('.join-target').textContent`), /关联到diagnosis左关联 · 多对一/)
   await choose(`document.querySelector('.time-binding .el-select')`, 'diagnosis.diagnosis_time')
   assert.equal(await evaluate(`window.__factorFixture.dslForm.periodColumn`), 'join1.diagnosis_time')
   assert.doesNotMatch(await evaluate(`document.querySelector('.time-binding .el-select').textContent`), /join1\./)
@@ -232,6 +294,70 @@ try {
   assert.equal(updated.periodColumn, 'in_date')
   assert.deepEqual(updated.filters, { nodeType: 'TRUE' })
   assert.deepEqual(updated.groupBy, ['dept_code', { sourceAlias: 'join1', fieldCode: 'diagnosis' }])
+  // 直接在关联区域配置，无需提前登记关系；校验和发布失败可继续使用原草稿。
+  await delay(800)
+  await click(`document.querySelector('.join-row-actions button[title="删除关联表"]')`)
+  await waitFor(()=>evaluate(`window.__factorFixture.joins.length===0`))
+  await click(button('添加关联表'))
+  await waitFor(()=>evaluate(`!!document.querySelector('.join-mode')`))
+  await click(`Array.from(document.querySelectorAll('.join-mode .el-radio')).find(el=>el.textContent.trim()==='创建并使用新表关系')`)
+  await waitFor(()=>evaluate(`!!document.querySelector('.inline-relation-editor')&&!window.__factorFixture.loading.relations`))
+  assert.equal(await evaluate(`!!document.querySelector('.join-reuse')`), false)
+  await click(button('保存并使用关联'))
+  await waitFor(()=>evaluate(`document.querySelector('.inline-relation-editor .el-alert')?.textContent.includes('物理表')`))
+  await choose(`document.querySelectorAll('.relation-settings .el-select')[1]`, '诊断记录')
+  await choose(`document.querySelectorAll('.relation-settings .el-select')[3]`, '多对一')
+  await choose(`document.querySelectorAll('.relation-key-row .el-select')[0]`, 'visit.fee')
+  await choose(`document.querySelectorAll('.relation-key-row .el-select')[1]`, 'diagnosis.visit_id')
+  await click(button('保存并使用关联'))
+  await waitFor(()=>evaluate(`document.querySelector('.inline-relation-editor .el-alert')?.textContent.includes('类型不一致')`))
+  assert.equal(await evaluate(`window.__factorRequests.filter(r=>r.path==='/meta/physical-table-relations'&&r.method==='POST').length`), 0)
+  await choose(`document.querySelectorAll('.relation-key-row .el-select')[0]`, 'visit.dept_code')
+  await choose(`document.querySelectorAll('.relation-key-row .el-select')[1]`, 'diagnosis.diagnosis ·')
+  await click(button('添加字段'))
+  await choose(`document.querySelectorAll('.relation-key-row .el-select')[2]`, 'visit.in_date')
+  await choose(`document.querySelectorAll('.relation-key-row .el-select')[3]`, 'diagnosis.diagnosis_time')
+  await click(`Array.from(document.querySelectorAll('.join-mode .el-radio')).find(el=>el.textContent.trim()==='复用已有表关系')`)
+  await waitFor(()=>evaluate(`!!document.querySelector('.join-reuse')`))
+  assert.equal(await evaluate(`document.querySelector('.inline-relation-editor').getBoundingClientRect().height`), 0)
+  await click(`Array.from(document.querySelectorAll('.join-mode .el-radio')).find(el=>el.textContent.trim()==='创建并使用新表关系')`)
+  assert.equal(await evaluate(`document.querySelectorAll('.relation-key-row').length`), 2)
+  assert.match(await evaluate(`document.querySelectorAll('.relation-key-row .el-select')[0].textContent`), /visit.dept_code/)
+  for (const viewport of [{width:1440,height:1000,mobile:false},{width:390,height:844,mobile:true}]) {
+    await cdp.send('Emulation.setDeviceMetricsOverride',{...viewport,deviceScaleFactor:1})
+    await evaluate(`document.querySelector('.inline-relation-editor').scrollIntoView({block:'center',behavior:'instant'})`)
+    await delay(150)
+    assert.equal(await evaluate(`document.documentElement.scrollWidth>innerWidth`), false)
+    const fits = await evaluate(`Array.from(document.querySelectorAll('.inline-relation-editor .el-select')).every(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.left>=0&&r.right<=innerWidth})`)
+    assert.equal(fits, true)
+    await writeFile(`.tmp/factor-physical-browser/inline-relation-${viewport.mobile?'mobile':'desktop'}.png`,Buffer.from((await cdp.send('Page.captureScreenshot',{format:'png'})).data,'base64'))
+  }
+  await cdp.send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,mobile:false,deviceScaleFactor:1})
+  await evaluate(`window.__rejectRelationValidation=true;window.__loseRelationCreateResponse=true`)
+  await click(button('保存并使用关联'))
+  await waitFor(()=>evaluate(`document.querySelector('.inline-relation-editor .el-alert')?.textContent.includes('暂时失败')`))
+  await click(button('保存并使用关联'))
+  await waitFor(()=>evaluate(`document.querySelector('.inline-relation-editor .el-alert')?.textContent.includes('关联字段未发布')`))
+  assert.equal(await evaluate(`window.__factorFixture.joins[0].relationId`), '')
+  assert.equal(await evaluate(`window.__factorRequests.filter(r=>r.path.endsWith('/101/publish')).length`), 0)
+  await evaluate(`window.__rejectRelationValidation=false;window.__failRelationPublish=true`)
+  await click(button('保存并使用关联'))
+  await waitFor(()=>evaluate(`document.querySelector('.inline-relation-editor .el-alert')?.textContent.includes('暂时失败')`))
+  assert.equal(await evaluate(`window.__factorFixture.joins[0].relationId`), '')
+  await click(button('保存并使用关联'))
+  await waitFor(()=>evaluate(`!document.querySelector('.inline-relation-editor')&&window.__factorFixture.joins[0].relationId==='101'&&window.__factorFixture.fields.length===6`))
+  assert.equal(await evaluate(`window.__factorRequests.filter(r=>r.path==='/meta/physical-table-relations'&&r.method==='POST').length`), 1)
+  const relationRequest = await evaluate(`window.__factorRequests.find(r=>r.path==='/meta/physical-table-relations'&&r.method==='POST').body`)
+  assert.match(relationRequest.code, /^JOIN_[A-Fa-f0-9]{32}$/)
+  assert.deepEqual(relationRequest.leftKeySpec, {fieldCodes:['DEPARTMENT','ADMISSION_TIME']})
+  assert.deepEqual(relationRequest.rightKeySpec, {fieldCodes:['DIAGNOSIS','DIAGNOSIS_TIME']})
+  await evaluate(`window.__factorRequests=[];window.__factorFixture.dslForm.aggregation='COUNT';window.__factorFixture.dslForm.fieldCode='';window.__factorFixture.dslForm.periodColumn='in_date'`)
+  await click(button('保存修改'))
+  await waitFor(()=>evaluate(`window.__factorRequests.some(r=>r.path==='/factors/1'&&r.method==='PATCH')`))
+  assert.deepEqual(await evaluate(`window.__factorRequests.find(r=>r.path==='/factors/1'&&r.method==='PATCH').body.dsl.joins`), [{relationId:'101',fromAlias:'base',sourceAlias:'join1'}])
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${appPort}/factor/edit/1` })
+  await waitFor(()=>evaluate(`document.querySelector('.join-target strong')?.textContent==='diagnosis'`)); await fixture()
+  assert.equal(await evaluate(`window.__factorFixture.joins[0].relationId`), '101')
   assert.equal(await evaluate(`window.__factorRequests.some(r=>r.path.includes('semantic-tables')||r.path.includes('semantic-table-relations'))`), false)
   await mkdir('.tmp/factor-physical-browser', { recursive: true })
   await evaluate(`window.scrollTo(0,0)`)
@@ -280,9 +406,181 @@ try {
   assert.equal(await evaluate(`window.__indicator.indicatorCalculationMode`), 'TEMPORAL')
   assert.equal(await evaluate(`window.__indicator.canPublishIndicatorVersion`), true)
   assert.equal(await evaluate(`window.__indicator.publishPanelDescription.includes('缺少统计周期')`), false)
+  await evaluate(`window.__indicator.activeTab='formula'`)
+  await waitFor(()=>evaluate(`window.__indicator.factorFieldState.status==='ready'`))
+  assert.equal(await evaluate(`window.__factorRequests.filter(r=>r.path==='/indicator-versions/drill-capabilities').some(r=>r.body.drillPaths!==undefined)`), false, '候选字段自动加载不应提交下钻配置或标记预检完成')
+  assert.equal(await evaluate(`window.__indicator.drillCapability.status`), 'idle')
+  await evaluate(`window.__indicator.selectedDrillPaths=[{pathCode:'CUSTOM_TEST',pathName:'科室下钻',maxLevel:'DEPT',levels:[{levelCode:'ROOT',levelName:'全院'},{levelCode:'DEPT',levelName:'科室',dimensionFieldCode:'科室'}]}]`)
+  assert.deepEqual(await evaluate(`Array.from(window.__indicator.indicatorDimensionGrain)`), [])
+  await waitFor(()=>evaluate(`document.querySelector('.bindings .bindings__field-select input')?.disabled===true`))
+  await choose(`document.querySelector('.bindings .bindings__table-select')`, 'visit（base）')
+  await choose(`document.querySelector('.bindings .bindings__field-select')`, 'dept_code')
+  assert.equal(await evaluate(`window.__indicator.factorDimensionBindings['10'].科室`), 'base.dept_code', '不配置组合粒度且未手动预检时也能选择下钻字段')
+  await choose(`document.querySelector('.bindings .bindings__table-select')`, 'diagnosis')
+  assert.equal(await evaluate(`window.__indicator.factorDimensionBindings['10'].科室`), undefined, '切换物理表应清除旧字段映射')
+  await click(`document.querySelector('.bindings .bindings__field-select')`)
+  await waitFor(()=>evaluate(`Array.from(document.querySelectorAll('.el-select-dropdown__item')).some(el=>el.textContent.trim()==='department_id'&&el.getBoundingClientRect().height>0)`))
+  assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll('.el-select-dropdown__item')).filter(el=>el.getBoundingClientRect().height>0).map(el=>el.textContent.trim())`), ['department_id'], '只展示所选物理表的字段')
+  await click(`Array.from(document.querySelectorAll('.el-select-dropdown__item')).find(el=>el.textContent.trim()==='department_id'&&el.getBoundingClientRect().height>0)`)
+  assert.equal(await evaluate(`window.__indicator.factorDimensionBindings['10'].科室`), 'join1.department_id')
+  await choose(`document.querySelector('.bindings .bindings__table-select')`, 'visit（join2）')
+  await choose(`document.querySelector('.bindings .bindings__field-select')`, 'dept_code')
+  assert.equal(await evaluate(`window.__indicator.factorDimensionBindings['10'].科室`), 'join2.dept_code', '同表 JOIN 的引用不能被替换为主表引用')
+  await choose(`document.querySelector('.bindings .bindings__table-select')`, 'visit（base）')
+  await choose(`document.querySelector('.bindings .bindings__field-select')`, 'dept_code')
+  await evaluate(`window.__indicator.factorDimensionBindings={'10':{科室:'join1.department_id'}}`)
+  await waitFor(()=>evaluate(`document.querySelector('.bindings .bindings__table-select .el-select__placeholder')?.textContent.trim()==='diagnosis'`))
+  await waitFor(()=>evaluate(`document.querySelector('.bindings .bindings__field-select .el-select__placeholder')?.textContent.trim()==='department_id'`))
+  await evaluate(`document.querySelector('.bindings .bindings__field-select').dispatchEvent(new MouseEvent('mouseenter',{bubbles:true}))`)
+  await click(`document.querySelector('.bindings .bindings__field-select .el-select__clear')`)
+  await waitFor(()=>evaluate(`window.__indicator.factorDimensionBindings['10'].科室===undefined`))
+  assert.equal(await evaluate(`document.querySelector('.bindings .bindings__table-select .el-select__placeholder')?.textContent.trim()`), 'diagnosis', '清空回显字段后应保留当前物理表')
+  await choose(`document.querySelector('.bindings .bindings__table-select')`, 'visit（base）')
+  await choose(`document.querySelector('.bindings .bindings__field-select')`, 'dept_code')
+  for (const viewport of [{width:1440,height:1000,mobile:false},{width:390,height:844,mobile:true}]) {
+    await cdp.send('Emulation.setDeviceMetricsOverride',{...viewport,deviceScaleFactor:1})
+    await evaluate(`document.querySelector('.bindings').scrollIntoView({block:'center',behavior:'instant'})`)
+    await delay(150)
+    const bounds = await evaluate(`(() => {const row=document.querySelector('.bindings__selectors');return [...row.children].map(el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width}})})()`)
+    assert.ok(bounds.every(rect=>rect.width>0&&rect.left>=0&&rect.right<=viewport.width), '物理表和字段选择框不能超出视口')
+    assert.ok(viewport.mobile ? bounds[1].top>=bounds[0].bottom : bounds[1].left>=bounds[0].right, '桌面并排、手机上下排列，不能重叠')
+    await writeFile(`.tmp/factor-physical-browser/dimension-table-field-${viewport.mobile?'mobile':'desktop'}.png`,Buffer.from((await cdp.send('Page.captureScreenshot',{format:'png'})).data,'base64'))
+  }
+  await evaluate(`window.__indicator.selectedDrillPaths=[{pathCode:'CUSTOM_TEST',pathName:'科室医生下钻',maxLevel:'DOCTOR',levels:[{levelCode:'ROOT',levelName:'全院'},{levelCode:'DEPT',levelName:'科室',dimensionFieldCode:'科室'},{levelCode:'DOCTOR',levelName:'医生',dimensionFieldCode:'医生'}]}];window.__indicator.indicatorDimensionGrain=['科室','病种']`)
+  await waitFor(()=>evaluate(`document.querySelectorAll('.bindings').length===2`))
+  assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll('.drill-field-bindings .el-form-item__label')).map(el=>el.textContent.trim())`), ['科室','医生'], '下钻区域只显示路径需要的字段')
+  assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll('.grain-field-bindings .el-form-item__label')).map(el=>el.textContent.trim())`), ['科室','病种'], '组合粒度区域只显示组合粒度字段')
+  assert.equal(await evaluate(`document.querySelector('.drill-field-bindings h4').textContent`), '下钻字段映射')
+  assert.equal(await evaluate(`document.querySelector('.grain-field-bindings h4').textContent`), '组合粒度字段映射')
+  const headingStyles = await evaluate(`(() => {const style=selector=>{const el=document.querySelector(selector),css=getComputedStyle(el);return {fontSize:css.fontSize,fontWeight:css.fontWeight,lineHeight:css.lineHeight,color:css.color}};return {drill:style('.custom-paths__heading h3'),grain:style('.grouping-section__title'),drillMapping:style('.drill-field-bindings h4'),grainMapping:style('.grain-field-bindings h4'),nested:!!document.querySelector('[aria-label="下钻配置"] > .drill-field-bindings')&&!!document.querySelector('[aria-label="组合粒度配置"] > .grain-field-bindings')}})()`)
+  assert.deepEqual(headingStyles.drill, headingStyles.grain, '下钻路径和组合粒度标题应使用一致的字号、字重、行高和颜色')
+  assert.deepEqual(headingStyles.drillMapping, headingStyles.grainMapping, '两处字段映射的标题格式应一致')
+  assert.ok(parseFloat(headingStyles.drillMapping.fontSize) < parseFloat(headingStyles.drill.fontSize), '字段映射标题字号应小于所属配置标题')
+  assert.equal(headingStyles.nested, true, '字段映射应嵌套在各自的配置区域内')
+  await choose(`document.querySelector('.grain-field-bindings .bindings__table-select')`, 'diagnosis')
+  await waitFor(()=>evaluate(`document.querySelector('.drill-field-bindings .bindings__table-select .el-select__placeholder').textContent.trim()==='diagnosis'`))
+  assert.equal(await evaluate(`window.__indicator.factorDimensionBindings['10'].科室`), undefined, '切换组合粒度的表也应清空共享维度的旧字段')
+  await choose(`document.querySelector('.grain-field-bindings .bindings__field-select')`, 'department_id')
+  await waitFor(()=>evaluate(`document.querySelector('.drill-field-bindings .bindings__field-select .el-select__placeholder').textContent.trim()==='department_id'`))
+  await choose(`document.querySelector('.drill-field-bindings .bindings__table-select')`, 'visit（join2）')
+  await waitFor(()=>evaluate(`document.querySelector('.grain-field-bindings .bindings__table-select .el-select__placeholder').textContent.trim()==='visit（join2）'`))
+  await choose(`document.querySelector('.drill-field-bindings .bindings__field-select')`, 'dept_code')
+  await waitFor(()=>evaluate(`document.querySelector('.grain-field-bindings .bindings__field-select .el-select__placeholder').textContent.trim()==='dept_code'`))
+  assert.equal(await evaluate(`window.__indicator.factorDimensionBindings['10'].科室`), 'join2.dept_code', '两个入口修改同一份因子维度映射')
+  assert.deepEqual(await evaluate(`Array.from(window.__indicator.customGroupingFields)`), ['科室','医生','病种'], '提交字段仍为两个配置的去重并集')
+  for (const viewport of [{width:1440,height:1100,mobile:false},{width:390,height:844,mobile:true}]) {
+    await cdp.send('Emulation.setDeviceMetricsOverride',{...viewport,deviceScaleFactor:1})
+    await evaluate(`document.querySelector('.grain-field-bindings').scrollIntoView({block:'center',behavior:'instant'})`)
+    await delay(150)
+    await writeFile(`.tmp/factor-physical-browser/separate-dimension-bindings-${viewport.mobile?'mobile':'desktop'}.png`,Buffer.from((await cdp.send('Page.captureScreenshot',{format:'png'})).data,'base64'))
+  }
+  await evaluate(`window.__indicator.indicatorDimensionGrain=['病种']`)
+  await waitFor(()=>evaluate(`document.querySelectorAll('.grain-field-bindings .el-form-item').length===1`))
+  assert.equal(await evaluate(`window.__indicator.activeFactorDimensionBindings()['10'].科室`), 'join2.dept_code', '从组合粒度移除科室不能丢弃下钻仍需的映射')
+  await evaluate(`window.__indicator.selectedDrillPaths=[]`)
+  await waitFor(()=>evaluate(`!document.querySelector('.drill-field-bindings')&&!!document.querySelector('.grain-field-bindings')`))
+  await choose(`document.querySelector('.grain-field-bindings .bindings__table-select')`, 'visit（base）')
+  await choose(`document.querySelector('.grain-field-bindings .bindings__field-select')`, 'dept_code')
+  assert.deepEqual(await evaluate(`window.__indicator.activeFactorDimensionBindings()`), {'10':{病种:'base.dept_code'}}, '仅组合粒度时仅提交其有效映射')
+  await evaluate(`window.__indicator.selectedDrillPaths=[{pathCode:'CUSTOM_TEST',pathName:'科室下钻',maxLevel:'DEPT',levels:[{levelCode:'ROOT',levelName:'全院'},{levelCode:'DEPT',levelName:'科室',dimensionFieldCode:'科室'}]}];window.__indicator.indicatorDimensionGrain=[]`)
+  await waitFor(()=>evaluate(`!!document.querySelector('.drill-field-bindings')&&!document.querySelector('.grain-field-bindings')`))
+  await choose(`document.querySelector('.drill-field-bindings .bindings__table-select')`, 'visit（base）')
+  await choose(`document.querySelector('.drill-field-bindings .bindings__field-select')`, 'dept_code')
+  await evaluate(`window.__failNextFieldLoad=true;window.__indicator.numeratorFactors=[{code:'NEW_FACTOR',name:'新因子',versionId:'20'}]`)
+  await waitFor(()=>evaluate(`window.__indicator.factorFieldState.status==='error'`))
+  await waitFor(()=>evaluate(`document.querySelector('.bindings input[role="combobox"]')?.disabled===true`))
+  await click(button('重新加载'))
+  await waitFor(()=>evaluate(`window.__indicator.factorFieldState.status==='ready'`))
+  assert.deepEqual(await evaluate(`Array.from(window.__indicator.factorFieldState.factorVersionIds)`), ['20'])
+  await evaluate(`window.__delayNextFieldLoad=700;window.__indicator.numeratorFactors=[{code:'OLD_FACTOR',versionId:'30'}]`)
+  await waitFor(()=>evaluate(`window.__factorRequests.some(r=>r.path==='/indicator-versions/drill-capabilities'&&r.body.formula.root.factorVersionId==='30')`))
+  assert.equal(await evaluate(`window.__indicator.factorFieldState.status`), 'loading')
+  await evaluate(`window.__indicator.numeratorFactors=[{code:'LATEST_FACTOR',versionId:'40'}]`)
+  await waitFor(()=>evaluate(`window.__indicator.factorFieldState.status==='ready'`))
+  await delay(800)
+  assert.deepEqual(await evaluate(`Array.from(window.__indicator.factorFieldState.factorVersionIds)`), ['40'], '旧请求晚返回不能覆盖新因子的候选字段')
+  await evaluate(`window.__indicator.numeratorFactors=[{code:'COMPOSITE_FACTOR',versionId:'COMPOSITE'}]`)
+  await waitFor(()=>evaluate(`window.__indicator.factorFieldState.status==='ready'`))
+  assert.deepEqual(await evaluate(`window.__indicator.dimensionBindingFactors.map(item=>item.versionId)`), ['LEAF_A','LEAF_B'], '复合因子应映射原子依赖的物理字段')
+  await evaluate(`window.__indicator.numeratorFactors=[];window.__indicator.denominatorFactors=[]`)
+  await waitFor(()=>evaluate(`window.__indicator.factorFieldState.status==='idle'`))
+  assert.deepEqual(await evaluate(`Array.from(window.__indicator.factorFieldState.fieldOptions)`), [])
+  assert.equal(await evaluate(`document.querySelector('.bindings')?.textContent.includes('尚未选择因子')`), true)
+  await evaluate(`window.__indicator.numeratorFactors=[{code:'SQL_FACTOR',name:'SQL 因子',versionId:'10',dsl:{definitionType:'SQL',periodColumn:'b.in_date'}}];window.__indicator.denominatorFactors=[{code:'DENOMINATOR',name:'分母',versionId:'20'}]`)
+  await waitFor(()=>evaluate(`window.__indicator.factorFieldState.status==='ready'`))
+  await choose(`document.querySelectorAll('.bindings .bindings__field-select')[1]`, 'dept_code')
+  await click(button('预检系统默认下钻能力'))
+  await waitFor(()=>evaluate(`window.__indicator.drillCapability.status==='ready'`))
+  const checkedMapping = await evaluate(`window.__factorRequests.find(r=>r.path==='/indicator-versions/drill-capabilities'&&r.body.drillPaths?.length)`)
+  assert.equal(checkedMapping.body.formula.root.operator, 'DIV')
+  assert.deepEqual(checkedMapping.body.factorDimensionBindings, { '10': { 科室: 'base.dept_code' }, '20': { 科室: 'base.dept_code' } }, '配置完成后的预检应包含真实公式和逐因子映射')
+  assert.equal(await evaluate(`!!document.querySelector('[aria-label="下钻配置"] [aria-label="自定义路径校验结果"]')`), true, '自定义路径校验属于自定义下钻配置')
+  const customResult = await evaluate(`document.querySelector('[aria-label="自定义路径校验结果"] .el-table').innerText`)
+  const defaultResult = await evaluate(`document.querySelector('[aria-label="系统默认下钻能力预检"] .el-table').innerText`)
+  assert.ok(customResult.includes('科室下钻')&&customResult.includes('校验通过')&&customResult.includes('科室'))
+  assert.ok(!defaultResult.includes('科室下钻'), '系统默认预检不应混入自定义路径')
+  assert.ok(defaultResult.includes('缺少默认组织维度'), '系统默认路径仍展示限制原因')
+  assert.equal(await evaluate(`document.querySelector('[aria-label="自定义路径校验结果"] input[type="checkbox"]')`), null, '自定义路径结果不再重复提供启用开关')
+  await evaluate(`window.__indicator.drillCapability.dimensions=window.__indicator.drillCapability.dimensions.map(row=>row.pathCode==='CUSTOM_TEST'?{...row,maxLevel:'ROOT',limitingFactors:[{factorVersionId:'10',reason:'医生字段尚未映射'}]}:row)`)
+  await waitFor(()=>evaluate(`document.querySelector('[aria-label="自定义路径校验结果"] .el-table').innerText.includes('未完全支持')`))
+  assert.ok((await evaluate(`document.querySelector('[aria-label="自定义路径校验结果"] .el-table').innerText`)).includes('全院'), '自定义层级显示业务名称，而非内部层级编码')
+  await click(button('校验自定义路径'))
+  await waitFor(()=>evaluate(`document.querySelector('[aria-label="自定义路径校验结果"] .el-table')?.innerText.includes('校验通过')`))
+  for (const viewport of [{width:1440,height:1100,mobile:false},{width:390,height:844,mobile:true}]) {
+    await cdp.send('Emulation.setDeviceMetricsOverride',{...viewport,deviceScaleFactor:1})
+    await evaluate(`document.querySelector('[aria-label="自定义路径校验结果"]').scrollIntoView({block:'center',behavior:'instant'})`)
+    await delay(150)
+    await writeFile(`.tmp/factor-physical-browser/custom-drill-validation-${viewport.mobile?'mobile':'desktop'}.png`,Buffer.from((await cdp.send('Page.captureScreenshot',{format:'png'})).data,'base64'))
+    await evaluate(`document.querySelector('[aria-label="系统默认下钻能力预检"]').scrollIntoView({block:'center',behavior:'instant'})`)
+    await delay(150)
+    await writeFile(`.tmp/factor-physical-browser/default-drill-preflight-${viewport.mobile?'mobile':'desktop'}.png`,Buffer.from((await cdp.send('Page.captureScreenshot',{format:'png'})).data,'base64'))
+  }
+  await evaluate(`window.__indicator.invalidateGroupingConfiguration()`)
+  await waitFor(()=>evaluate(`document.querySelector('[aria-label="自定义路径校验结果"]').innerText.includes('待重新校验')`))
+  assert.ok((await evaluate(`document.querySelector('[aria-label="系统默认下钻能力预检"]').innerText`)).includes('待重新预检'))
+  await evaluate(`window.__indicator.drillCapability.status='error';window.__indicator.drillCapability.errorMessage='下钻校验失败，请重试'`)
+  await waitFor(()=>evaluate(`document.querySelector('[aria-label="自定义路径校验结果"]').innerText.includes('下钻校验失败，请重试')`))
+  assert.ok((await evaluate(`document.querySelector('[aria-label="系统默认下钻能力预检"]').innerText`)).includes('下钻校验失败，请重试'))
+  await evaluate(`window.__indicator.denominatorFactors=[];window.__indicator.selectedDrillPaths=[]`)
+  await waitFor(()=>evaluate(`window.__indicator.factorFieldState.status==='ready'`))
+  assert.equal(await evaluate(`document.querySelector('[aria-label="自定义路径校验结果"]')`), null, '没有自定义路径时不显示其校验区域')
+  for (const viewport of [{width:1440,height:1000,mobile:false},{width:390,height:844,mobile:true}]) {
+    await cdp.send('Emulation.setDeviceMetricsOverride',{...viewport,deviceScaleFactor:1})
+    await waitFor(()=>evaluate(`document.querySelector('.factor-library__footer')?.getBoundingClientRect().height>0`))
+    await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`)
+    await waitFor(()=>evaluate(`parseFloat(getComputedStyle(document.querySelector('.factor-library__footer button')).paddingLeft)===${viewport.mobile?8:15}`))
+    await evaluate(`document.querySelector('.factor-library__footer').scrollIntoView({block:'center',behavior:'instant'})`)
+    const layout = await evaluate(`(() => {const footer=document.querySelector('.factor-library__footer'),buttons=footer.querySelectorAll('button');const a=buttons[0].getBoundingClientRect(),b=buttons[1].getBoundingClientRect();return {alignment:Math.abs(a.top+a.height/2-b.top-b.height/2),gap:b.left-a.right,width:footer.clientWidth,buttons:[...buttons].map(el=>({width:el.getBoundingClientRect().width,padding:getComputedStyle(el).padding,minWidth:getComputedStyle(el).minWidth})),wrapper:getComputedStyle(buttons[1].parentElement).minWidth}})()`)
+    assert.ok(layout.alignment < 1, `因子操作按钮应水平居中对齐: ${JSON.stringify(layout)}`)
+    assert.ok(Math.abs(layout.gap-12) < 1, '因子操作按钮间距应为 12px')
+    await writeFile(`.tmp/factor-physical-browser/factor-actions-${viewport.mobile?'mobile':'desktop'}.png`,Buffer.from((await cdp.send('Page.captureScreenshot',{format:'png'})).data,'base64'))
+  }
+  const generatedIndicatorCode = await evaluate(`document.querySelector('input[aria-label="指标编码"]').value`)
+  assert.match(generatedIndicatorCode, /^INDICATOR_[0-9A-F]{32}$/)
+  assert.equal(await evaluate(`document.querySelector('input[aria-label="指标编码"]').disabled`), false)
+  await evaluate(`Object.assign(window.__indicator.form,{name:'自动编码验收',definition:'自动编码验收定义',sources:['HIS']});window.__indicator.indicatorWorkflow.versionId='';window.__indicator.activeTab='basic'`)
+  await click(button('保存基本信息'))
+  await waitFor(()=>evaluate(`window.__factorRequests.some(r=>r.path==='/indicators'&&r.method==='POST')`))
+  assert.equal(await evaluate(`window.__factorRequests.find(r=>r.path==='/indicators'&&r.method==='POST').body.code`), generatedIndicatorCode)
+  await waitFor(()=>evaluate(`location.pathname==='/indicator/edit/200'`))
+  assert.equal(await evaluate(`document.querySelector('input[aria-label="指标编码"]').disabled`), true)
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${appPort}/indicator/edit/new` })
+  await waitFor(()=>evaluate(`!!document.querySelector('input[aria-label="指标编码"]')`))
+  await evaluate(`(() => {let c=document.querySelector('.editor-page').__vueParentComponent;while(c&&c.type.__name!=='IndicatorEditor')c=c.parent;window.__indicator=c.setupState;Object.assign(window.__indicator.form,{name:'手动编码验收',definition:'手动编码验收定义',sources:['HIS']});const input=document.querySelector('input[aria-label="指标编码"]');input.value='INDICATOR_MANUAL_CODE';input.dispatchEvent(new Event('input',{bubbles:true}))})()`)
+  await click(button('保存基本信息'))
+  await waitFor(()=>evaluate(`window.__factorRequests.some(r=>r.path==='/indicators'&&r.method==='POST')`))
+  assert.equal(await evaluate(`window.__factorRequests.find(r=>r.path==='/indicators'&&r.method==='POST').body.code`), 'INDICATOR_MANUAL_CODE')
+  await waitFor(()=>evaluate(`location.pathname==='/indicator/edit/200'`))
+  await cdp.send('Page.navigate', { url: `http://127.0.0.1:${appPort}/indicator/edit/200` })
+  await waitFor(()=>evaluate(`document.querySelector('input[aria-label="指标编码"]')?.value==='INDICATOR_MANUAL_CODE'`))
+  assert.equal(await evaluate(`document.querySelector('input[aria-label="指标编码"]').disabled`), true)
+  await waitFor(()=>evaluate(`(() => {let c=document.querySelector('.editor-page').__vueParentComponent;while(c&&c.type.__name!=='IndicatorEditor')c=c.parent;return c.setupState.indicatorWorkflow.indicatorId==='200'&&!c.setupState.editLoadState.loading})()`))
+  assert.equal(await evaluate(`document.querySelector('input[aria-label="指标编码"]').value`), 'INDICATOR_MANUAL_CODE')
+  assert.equal(await evaluate(`document.querySelector('input[aria-label="指标编码"]').disabled`), true)
   assert.deepEqual(cdp.errors, [])
   console.log('PASS: physical table creation, field types, value sets, JOIN hydration/save, desktop/mobile screenshots; no legacy table APIs')
 } catch (error) {
+  if (cdp) await writeFile('.tmp/factor-physical-browser/failure.png', Buffer.from((await cdp.send('Page.captureScreenshot', {format:'png'})).data,'base64'))
   if (cdp) console.error(await evaluate(`document.body.innerText`).catch(()=>''))
   throw error
 } finally { cdp?.socket.close(); chrome?.kill(); server?.kill() }
