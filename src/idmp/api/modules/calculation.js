@@ -12,8 +12,8 @@ export function fetchAsyncTask(taskId) {
   return requestJson(`/async-tasks/${taskId}`)
 }
 
-export function fetchCalcBatch(batchId) {
-  return requestJson(`/calc/batches/${batchId}`)
+export function fetchCalcBatch(batchId, options = {}) {
+  return requestJson(`/calc/batches/${batchId}`, options)
 }
 
 export function fetchCalcNodeResults(nodeId, pageNum = 1, pageSize = 20, options = {}) {

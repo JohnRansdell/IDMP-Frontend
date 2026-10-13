@@ -248,7 +248,7 @@ export function resolvePrimaryAnalysisOverview(payload = {}) {
 }
 
 export function getVisualizationTitle(sourceName, visualType) {
-  if (visualType === 'bar') return `${sourceName}科室对比`
+  if (visualType === 'bar') return `${sourceName}对比`
   if (visualType === 'line') return `${sourceName}趋势`
   if (visualType === 'pie') return `${sourceName}构成`
   if (visualType === 'table') return `${sourceName}数据明细`

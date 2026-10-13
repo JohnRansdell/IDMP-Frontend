@@ -169,12 +169,13 @@ export function compileWidgetData(kind, binding, dataset) {
         return compare * (sort.direction === 'desc' ? -1 : 1)
       })
     }
-    if (kind === 'bar') {
+    if (kind === 'bar' && !binding.dimensions.some(dimension => dataset.fields.find(field => field.id === dimension.field)?.semanticType === 'time')) {
       order = order.filter(index => series.some(item => {
         const value = item.values[index]
         return typeof value === 'number' && Number.isFinite(value) && value !== 0
       }))
-      if (!order.length) return { status: 'empty', message: '当前维度暂无非零数据' }
+      // Zero is a valid result. Keep the categories when the whole comparison is zero.
+      if (!order.length) order = categoryKeys.map((_, index) => index).filter(index => series.some(item => typeof item.values[index] === 'number' && Number.isFinite(item.values[index])))
     }
     const categoryValues = [...categories.values()]
     const sortedCategories = order.map(index => Array.isArray(categoryValues[index].visible) ? categoryValues[index].visible.join(' / ') : String(categoryValues[index].visible))

@@ -16,8 +16,8 @@ export async function searchResultDrill(resultId, payload = {}, options = {}) {
   }).then(adaptDrillResult)
 }
 
-export function fetchResultFactors(resultId) {
-  return requestJson(`/analysis/results/${encodeURIComponent(resultId)}/factors`)
+export function fetchResultFactors(resultId, options = {}) {
+  return requestJson(`/analysis/results/${encodeURIComponent(resultId)}/factors`, options)
 }
 
 export function fetchResultFactorDependencies(resultId, factorResultId) {

@@ -134,7 +134,7 @@
             :primary-kpi="visibleKpis[0]"
             :supporting-kpis="visibleKpis.slice(1)"
             :warnings="getWidgetWarnings(widget)"
-            :warning-state="getWarningWidgetState(widget)"
+            :warning-state="getWarningWidgetState(widget)" @warning-retry="refreshWarningWidgets" @metric-item-retry="retryMetricGroupItem"
             :ranking="departmentRanking"
             :department="department"
             :updated-at="dashboardQueryLabel"
@@ -196,14 +196,14 @@
         <h2>组件库</h2><p>选择指标后，点击组件卡片可在画布上放置；也可自动添加。</p>
         <input v-model="librarySearch" class="studio-search" placeholder="搜索组件…" aria-label="搜索组件" />
         <label class="studio-field-label">数据来源</label>
-        <el-select v-model="selectedDataCode" aria-label="指标数据" :loading="dashboardLoading || indicatorCatalogLoading" @change="handleSelectedDataSourceChange">
+        <el-select v-model="selectedDataCode" aria-label="指标数据" :loading="dashboardLoading || indicatorCatalogLoading" @visible-change="visible => visible && loadPublishedIndicatorCatalog()" @change="handleSelectedDataSourceChange">
           <el-option-group v-if="catalogIndicatorSources.length" label="已发布指标">
             <el-option v-for="source in catalogIndicatorSources" :key="source.code" :label="source.name" :value="source.code" />
           </el-option-group>
           <el-option-group v-if="dashboardStatus === 'demo'" label="验收数据 / 演示数据">
             <el-option v-for="source in acceptanceIndicatorSources" :key="source.code" :label="source.name" :value="source.code" />
           </el-option-group>
-          <el-option-group v-if="visibleDashboardIndicatorSources.length" :label="dashboardStatus === 'demo' ? '当前看板演示指标' : '正式看板汇总指标'">
+          <el-option-group v-if="dashboardStatus === 'demo' && visibleDashboardIndicatorSources.length" :label="dashboardStatus === 'demo' ? '当前看板演示指标' : '正式看板汇总指标'">
             <el-option v-for="source in visibleDashboardIndicatorSources" :key="source.code" :label="source.name" :value="source.code" />
           </el-option-group>
         </el-select>
@@ -222,14 +222,14 @@
           </StudioHoverPreview>
         </section>
         <p v-if="!filteredLibrary.length">没有匹配的组件</p>
-        <el-button data-testid="dashboard-add-widget" type="primary" plain :disabled="!selectedDataSource && !['text', 'metric-group', 'warnings'].includes(addWidgetType)" :icon="Plus" @click="addDashboardWidget">添加组件</el-button>
+        <el-button data-testid="dashboard-add-widget" type="primary" plain :disabled="!selectedDataSource && !['text', 'metric-group', 'warnings', 'ranking'].includes(addWidgetType)" :icon="Plus" @click="addDashboardWidget">添加组件</el-button>
         <p v-if="drawPlacementMode && pendingLibraryWidget" class="studio-placement-hint" role="status">正在放置 {{ pendingLibraryWidget.title || libraryItems.find(item => item.type === addWidgetType)?.name }}：点击画布空白处放置，拖拽可指定大小；按 Esc 取消。</p>
         <section class="studio-template-library" aria-label="布局模板">
           <div class="studio-template-library__heading"><h3>设计模板</h3><span><button type="button" @click="newDashboardForm('blank')">空白看板</button><button type="button" @click="saveCurrentLayoutAsTemplate">保存当前布局</button></span></div>
           <p>选择后查看用途与构图；系统模板与本地模板相互独立。</p>
           <StudioHoverPreview v-for="template in layoutTemplates" :key="template.id" :template="template">
             <article :data-template-id="template.id" class="studio-template-item" :class="{ 'is-selected': selectedTemplateId === template.id }" tabindex="0" @click="selectedTemplateId = template.id">
-              <div class="studio-template-preview" aria-hidden="true"><i v-for="(widget, index) in template.widgets" :key="index" :style="templatePreviewStyle(widget)" /></div>
+              <div class="studio-template-preview" :style="templatePreviewBoardStyle(template)" aria-hidden="true"><i v-for="(widget, index) in template.widgets" :key="index" :style="templatePreviewStyle(widget)" /></div>
               <div><strong>{{ template.name }}</strong><small>{{ template.description }}</small><span v-if="template.tags" class="studio-template-tags"><em v-for="tag in template.tags.slice(0, 3)" :key="tag">{{ tag }}</em><em v-if="template.density">{{ template.density }}</em></span></div>
               <div class="studio-template-item__actions"><button type="button" @click.stop="applyLayoutTemplate(template)">使用</button><button v-if="!template.id.startsWith('builtin-')" type="button" class="is-danger" @click.stop="removeLocalLayoutTemplate(template.id)">删除</button></div>
             </article>
@@ -289,7 +289,7 @@
             :primary-kpi="visibleKpis[0]"
             :supporting-kpis="visibleKpis.slice(1)"
             :warnings="getWidgetWarnings(widget)"
-            :warning-state="getWarningWidgetState(widget)"
+            :warning-state="getWarningWidgetState(widget)" @warning-retry="refreshWarningWidgets" @metric-item-retry="retryMetricGroupItem"
             :ranking="departmentRanking"
             :department="department"
             :updated-at="dashboardQueryLabel"
@@ -343,24 +343,30 @@
               <section v-if="activeDesignerWidget.type === 'text'" class="dashboard-style-form dashboard-text-content"><h3>内容</h3><label>标题<input :value="activeDesignerWidget.config?.text?.title || ''" @input="updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, text: { ...widget.config?.text, title: $event.target.value } } }))" /></label><label>正文<textarea aria-label="文本正文" :value="activeDesignerWidget.config?.text?.body || ''" @input="updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, text: { ...widget.config?.text, body: $event.target.value } } }))" /></label><small>可输入多行看板说明、数据口径或业务提示。</small></section>
               <label v-if="activeWidgetVisualizationOptions.length" class="studio-field-label">展示形式</label>
               <el-select v-if="activeWidgetVisualizationOptions.length" v-model="activeWidgetVisualizationType" aria-label="选中组件展示形式"><el-option v-for="option in activeWidgetVisualizationOptions" :key="option.value" :label="option.label" :value="option.value" /></el-select>
-              <MetricGroupInspector v-if="activeDesignerWidget.type === 'metric-group'" :widget="activeDesignerWidget" :sources="availableIndicatorSources" :get-datasets="getBindingDatasets" :selected-item-id="selectedMetricItemId" @change="updateMetricGroupConfig" @select-item="selectedMetricItemId = $event" />
+              <section v-if="activeDesignerWidget.type === 'ranking'" class="dashboard-style-form">
+                <label>排名方式<select :value="activeDesignerWidget.config?.ranking?.mode || 'categories'" @change="updateDesignerRankingMode($event.target.value)"><option value="categories">单指标按科室／分类排名</option><option value="indicators">多指标排名（逐项添加）</option></select></label>
+                <label v-if="activeDesignerWidget.config?.ranking?.mode === 'indicators'">数值排序<select :value="activeDesignerWidget.config.ranking.direction || 'desc'" @change="updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, ranking: { ...widget.config.ranking, direction: $event.target.value } } }))"><option value="desc">从高到低</option><option value="asc">从低到高</option></select></label>
+                <small v-if="activeDesignerWidget.config?.ranking?.mode === 'indicators'">相同单位和统计周期的指标一起排名；不同单位或周期分别展示。</small>
+              </section>
+              <MetricGroupInspector v-if="activeDesignerWidget.type === 'metric-group' || (activeDesignerWidget.type === 'ranking' && activeDesignerWidget.config?.ranking?.mode === 'indicators')" :widget="activeDesignerWidget" :sources="selectableIndicatorSources" :get-datasets="getBindingDatasets" :selected-item-id="selectedMetricItemId" :source-loading="indicatorCatalogLoading" :source-error="indicatorCatalogError" @refresh-sources="loadPublishedIndicatorCatalog" @change="updateMetricGroupConfig" @select-item="selectedMetricItemId = $event" />
               <WarningWidgetInspector v-else-if="activeDesignerWidget.type === 'warnings'" :model-value="activeDesignerWidget.config?.warning" @update:model-value="updateWarningWidgetConfig" />
-              <div v-else-if="['kpi', 'primary', 'supporting', 'chart', 'ranking'].includes(activeDesignerWidget.type)" class="dashboard-style-form">
+              <div v-else-if="['kpi', 'primary', 'supporting', 'chart', 'ranking'].includes(activeDesignerWidget.type) && !(activeDesignerWidget.type === 'ranking' && activeDesignerWidget.config?.ranking?.mode === 'indicators')" class="dashboard-style-form">
                 <label class="studio-field-label" for="dashboard-widget-source">指标数据</label>
-                <el-select id="dashboard-widget-source" class="dashboard-widget-source-select" :title="getWidgetSource(activeDesignerWidget)?.name || ''" :model-value="activeDesignerWidget.sourceCode || ''" aria-label="组件指标数据" data-testid="dashboard-widget-source" filterable clearable :loading="designerSourceLoadingId === String(activeDesignerWidget.id)" placeholder="选择指标数据" @change="changeDesignerWidgetSource">
-                  <el-option v-for="source in availableIndicatorSources" :key="source.code" :label="source.name" :value="source.code" />
+                <el-select id="dashboard-widget-source" class="dashboard-widget-source-select" :title="getWidgetSource(activeDesignerWidget)?.name || ''" :model-value="activeDesignerWidget.sourceCode || ''" aria-label="组件指标数据" data-testid="dashboard-widget-source" filterable clearable :loading="indicatorCatalogLoading || designerSourceLoadingId === String(activeDesignerWidget.id)" placeholder="选择指标数据" @visible-change="visible => visible && loadPublishedIndicatorCatalog()" @change="changeDesignerWidgetSource">
+                  <el-option v-for="source in selectableIndicatorSources" :key="source.code" :label="source.name" :value="source.code" />
                 </el-select>
                 <small v-if="!activeDesignerWidget.sourceCode">请选择指标，再配置下方字段。</small>
+                <small v-else-if="Object.hasOwn(remoteSourcePeriodOptions, activeDesignerWidget.sourceCode) && !remoteSourcePeriodOptions[activeDesignerWidget.sourceCode].length">该指标暂未提供可用期间结果，请先计算并激活正式结果。</small>
                 <small v-else-if="suggestDesignerWidgetPeriod(activeDesignerWidget.sourceCode)">该指标在当前看板周期无数据；组件将使用 {{ suggestDesignerWidgetPeriod(activeDesignerWidget.sourceCode).periodStart.slice(0, 7) }} 的独立周期。</small>
               </div>
               <dl v-else class="dashboard-property-list"><dt>指标</dt><dd>{{ activeDesignerWidget.sourceName || activeDesignerWidget.sourceCode || '未绑定' }}</dd><dt>展示类型</dt><dd>{{ activeDesignerWidget.chartKind || activeDesignerWidget.type }}</dd></dl>
               <MultiIndicatorInspector
                 v-if="activeDesignerWidget.sourceCode && activeDesignerWidget.type === 'chart' && ['line', 'bar', 'table', 'radar'].includes(activeDesignerWidget.chartKind)"
                 :widget="activeDesignerWidget"
-                :sources="availableIndicatorSources"
+                :sources="selectableIndicatorSources"
                 @change="updateDesignerIndicatorBindings"
               />
-              <BindingInspector v-if="activeDesignerWidget.sourceCode && !['text', 'metric-group', 'warnings'].includes(activeDesignerWidget.type)" :key="`${activeDesignerWidget.id}-${activeDesignerWidget.sourceCode}-${activeDesignerWidget.config?.indicatorBindings?.length || 0}`" :widget="activeDesignerWidget" :datasets="getBindingDatasets(activeDesignerWidget)" @change="updateDesignerBinding" @query-change="updateDesignerQuery" />
+              <BindingInspector v-if="activeDesignerWidget.sourceCode && !['text', 'metric-group', 'warnings'].includes(activeDesignerWidget.type) && !(activeDesignerWidget.type === 'ranking' && activeDesignerWidget.config?.ranking?.mode === 'indicators')" :key="`${activeDesignerWidget.id}-${activeDesignerWidget.sourceCode}-${activeDesignerWidget.config?.indicatorBindings?.length || 0}`" :widget="activeDesignerWidget" :datasets="getBindingDatasets(activeDesignerWidget)" @change="updateDesignerBinding" @query-change="updateDesignerQuery" />
               <MapConfigInspector v-if="activeDesignerWidget.type === 'chart' && activeDesignerWidget.chartKind === 'map'" :model-value="activeDesignerWidget.config?.chart" @change="updateDesignerChartConfig" />
               <ComponentScopeInspector
                 v-if="!['text', 'metric-group'].includes(activeDesignerWidget.type) && (activeDesignerWidget.type === 'warnings' || activeDesignerWidget.sourceCode)"
@@ -369,7 +375,7 @@
               />
             </el-tab-pane>
             <el-tab-pane label="样式" name="style">
-              <MetricGroupInspector v-if="activeDesignerWidget.type === 'metric-group'" section="style" :widget="activeDesignerWidget" :sources="availableIndicatorSources" :get-datasets="getBindingDatasets" :selected-item-id="selectedMetricItemId" @change="updateMetricGroupConfig" />
+              <MetricGroupInspector v-if="activeDesignerWidget.type === 'metric-group'" section="style" :widget="activeDesignerWidget" :sources="selectableIndicatorSources" :get-datasets="getBindingDatasets" :selected-item-id="selectedMetricItemId" @change="updateMetricGroupConfig" />
               <section class="dashboard-precise-layout">
                 <h3>位置与尺寸</h3>
                 <label>X<input :value="activeDesignerWidget.layout.x" type="number" :disabled="activeDesignerWidget.config?.locked" @change="commitPreciseLayout({ x: $event.target.value })" /></label>
@@ -425,7 +431,7 @@
         <DashboardContextBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :interactions="activeInteractionFilters" :drill-states="drillRuntimeState" :widgets="designerWidgets" @clear-filters="filterRuntimeValues = initialFilterValues(globalFilterDefinitions)" @clear-interactions="clearAllInteractionFilters" @clear-drills="clearAllWidgetDrills" />
         <div class="dashboard-preview-frame">
         <DashboardCanvas v-if="studioPreview" :style="dashboardCanvasStyle" :widgets="previewWidgets" :columns="24" :float="editingDashboardSchema?.layout?.float === true" :editable="false">
-          <template #default="{ widget }"><WidgetRenderer :widget="widget" :primary-kpi="visibleKpis[0]" :supporting-kpis="visibleKpis.slice(1)" :warnings="getWidgetWarnings(widget)" :warning-state="getWarningWidgetState(widget)" :ranking="departmentRanking" :department="department" :updated-at="dashboardQueryLabel" :interactive="widget.type !== 'warnings'" :get-widget-kpi="getWidgetKpi" :get-title="getWidgetTitle" :get-description="getWidgetDescription" :get-icon="getWidgetIcon" :get-chart-option="getWidgetChartOption" :is-chart-empty="isChartEmpty" :get-chart-aria-label="getWidgetChartAriaLabel" :get-table-columns="getWidgetTableColumns" :get-table-rows="getWidgetTableRows" :get-pie-drill-targets="getWidgetPieDrillTargets" :get-pie-drill-source="getWidgetPieDrillSource" @chart-click="handleWidgetChartClick" /></template>
+          <template #default="{ widget }"><WidgetRenderer :widget="widget" :primary-kpi="visibleKpis[0]" :supporting-kpis="visibleKpis.slice(1)" :warnings="getWidgetWarnings(widget)" :warning-state="getWarningWidgetState(widget)" @warning-retry="refreshWarningWidgets" @metric-item-retry="retryMetricGroupItem" :ranking="departmentRanking" :department="department" :updated-at="dashboardQueryLabel" :interactive="widget.type !== 'warnings'" :get-widget-kpi="getWidgetKpi" :get-title="getWidgetTitle" :get-description="getWidgetDescription" :get-icon="getWidgetIcon" :get-chart-option="getWidgetChartOption" :is-chart-empty="isChartEmpty" :get-chart-aria-label="getWidgetChartAriaLabel" :get-table-columns="getWidgetTableColumns" :get-table-rows="getWidgetTableRows" :get-pie-drill-targets="getWidgetPieDrillTargets" :get-pie-drill-source="getWidgetPieDrillSource" @chart-click="handleWidgetChartClick" /></template>
         </DashboardCanvas>
         </div>
       </el-dialog>
@@ -513,10 +519,11 @@ import { initialFilterValues } from '@/idmp/features/dashboard/filterEngine.js'
 import { dashboardFilterCatalog, deriveDependentFilterOptions, normalizeDependentFilterValues } from '@/idmp/features/dashboard/queryAdapter.js'
 import { provide } from 'vue'
 import { compareDashboardGridMembership } from '@/idmp/features/dashboard/gridMembership.js'
-import { createWidgetBindingDatasets } from '@/idmp/features/dashboard/fieldCatalog.js'
+import { createWidgetBindingDatasets, numericValue } from '@/idmp/features/dashboard/fieldCatalog.js'
 import { bindingKind, emptyBinding } from '@/idmp/features/dashboard/bindingEngine.js'
 import { resolveDrillHierarchy } from '@/idmp/features/dashboard/drillDown.js'
 import { departmentFilterOptions, MORTALITY_SOURCE } from '@/idmp/features/dashboard/formalGlobalFilters.js'
+import { singleIndicatorTemplatePlan } from '@/idmp/features/dashboard/templateBinding.js'
 import { createDefaultBinding } from '@/idmp/features/dashboard/smartDefaultBinding.js'
 import { createMultiIndicatorDataset, multiIndicatorMeasureField, normalizeIndicatorBindings } from '@/idmp/features/dashboard/multiIndicator.js'
 import { buildRemoteFilterOptionQuery, buildRemoteWidgetQuery, resolveDashboardQueryState } from '@/idmp/features/dashboard/remoteQuery.js'
@@ -531,7 +538,7 @@ import {
   applyDefaultDashboardBindings, dashboardDataSourceToFrontend, dashboardDetailMeta,
   dashboardDetailToSchema, dashboardFieldsToFrontend, dashboardSummaryToCatalogEntry,
   isMockDashboardDetail, schemaToDashboardPayload, schemaToMockDashboardPayload,
-  selectDashboardVersion, sortDashboardDataSourcesByIndicatorCreatedAt, widgetResultToDataset
+  currentPublishedDashboardDataSources, selectDashboardVersion, sortDashboardDataSourcesByIndicatorCreatedAt, widgetResultToDataset
 } from '@/idmp/api/adapters/dashboard'
 import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
 import { fetchWarnings } from '@/idmp/api/modules/warnings'
@@ -540,6 +547,7 @@ import { deriveDrillPathResultIds } from '@/idmp/api/adapters/drill'
 import { searchResultDrill } from '@/idmp/api/modules/drill'
 import { initialBackendChartNavigation, loadBackendChartLevel, loadBackendChartRoot, resolveChartDrillPath } from '@/idmp/features/dashboard/backendChartDrill.js'
 import { collectDepartmentNames, departmentIdentity, normalizeDepartmentDataset } from '@/idmp/features/dashboard/dimensionNames.js'
+import { explainComparisonAvailability } from '@/idmp/features/dashboard/comparisonAvailability.js'
 import { normalizePage } from '@/idmp/api/adapters/warning'
 import { dashboardTrend, dashboardWarnings as mockDashboardWarnings } from '@/idmp/data/demo'
 import { mockDashboardDepartmentRanking, mockIndicatorDataSources } from '@/idmp/features/dashboard/mockData'
@@ -556,6 +564,7 @@ import { canApplyDashboardLoad, canRefreshRemoteDashboard, createDashboardSelect
 import { dashboardDemoPolicy, shouldUseDashboardDemoFallback } from '@/idmp/features/dashboard/demoPolicy.js'
 import { createDashboardEditingSnapshot } from '@/idmp/features/dashboard/editSession.js'
 import { buildPublishedIndicatorAnalysisQuery, buildPublishedIndicatorTrendPreviewQuery, createPublishedDashboardPeriodOptions, dateRangeForMonths, defaultPublishedDashboardPeriodRange, resolvePublishedDashboardPeriod, resolvePublishedDashboardPeriodRange, schemaPublishedIndicatorSourceCodes, suggestIndependentWidgetPeriod } from '@/idmp/features/dashboard/publishedIndicatorRuntime.js'
+import { dashboardWidgetResultShape, isPeriodField } from '@/idmp/features/dashboard/periodFields.js'
 import { dashboardActiveId, dashboardRequestedId, dashboardSceneCode, designerImmersive, notifyDashboardCatalogChanged } from '@/idmp/layout/shellState.js'
 import { createQualitySafetyDemoSchema } from '@/idmp/features/dashboard/acceptanceExample.js'
 import { createMetricGroupConfig, duplicateMetricGroupItem, METRIC_GROUP_ADD_SELECTION, metricGroupItemWidget, metricGroupSourceCodes, removeMetricGroupItem, reorderMetricGroupItem } from '@/idmp/features/dashboard/metricGroup.js'
@@ -690,6 +699,7 @@ const libraryItems = [
   { group: '分析图表', type: 'heatmap', name: '热力图', hint: '维度 · 数值矩阵', icon: '▦' },
   { group: '展示', type: 'gauge', name: '仪表盘', hint: '单值 · 进度展示', icon: '◌' },
   { group: '展示', type: 'map', name: '地图 / 区域分布', hint: '区域维度 · 数值度量', icon: '⌖' },
+  { group: '展示', type: 'ranking', name: '排名列表', hint: '逐项添加指标排名 · 科室/分类排名', icon: '≡' },
   { group: '展示', type: 'table', name: '数据表格', hint: '明细 · 分组数值', icon: '▤' },
   { group: '展示', type: 'warnings', name: '预警事件', hint: '监控 · 事件列表与状态', icon: '!' },
   { group: '展示', type: 'text', name: '文本', hint: '文本说明 · 口径与提示', icon: 'T' }
@@ -814,7 +824,10 @@ const availableIndicatorSources = computed(() => {
   const sources = [...(dashboardStatus.value === 'demo' ? acceptanceIndicatorSources : []), ...visibleDashboardIndicatorSources.value, ...catalogIndicatorSources.value]
   return [...new Map(sources.map(source => [source.code, source])).values()]
 })
+const selectableIndicatorSources = computed(() => dashboardStatus.value === 'demo' ? availableIndicatorSources.value : catalogIndicatorSources.value)
 const indicatorCatalogLoading = ref(false)
+const indicatorCatalogError = ref('')
+let indicatorCatalogRequest = null
 const indicatorHydrationRequests = new Map()
 const dashboardIndicatorVersionRequests = new Map()
 const dashboardStatus = ref('select')
@@ -1217,8 +1230,10 @@ async function changeDesignerWidgetSource(code) {
     const datasets = !resolvedSource ? [] : resolvedSource.origin === 'dashboard-data-source'
       ? [{ id: 'backend', label: `${resolvedSource.name} · 正式结果`, fields: dashboardFieldsToFrontend(remoteFieldCatalog.value[resolvedSource.code] || []), rows: [] }]
       : createWidgetBindingDatasets(resolvedSource, { result: dashboardQueryResult.value, demo: dashboardStatus.value === 'demo', months: dashboardTrend.months })
+    const templatePlan = resolvedSource ? singleIndicatorTemplatePlan(current, datasets) : null
+    if (templatePlan && !templatePlan.binding) throw new Error('该指标没有可用的数值字段，请先生成正式计算结果。')
     const dataBinding = resolvedSource
-      ? createDefaultBinding(bindingKind(current), datasets) || emptyBinding(datasets[0]?.id || 'backend')
+      ? templatePlan?.binding || createDefaultBinding(bindingKind(current), datasets) || emptyBinding(datasets[0]?.id || 'backend')
       : null
     const independentPeriod = resolvedSource?.origin === 'dashboard-data-source' ? suggestDesignerWidgetPeriod(resolvedSource.code) : null
     editingDashboardSchema.value = updateDashboardWidget(editingDashboardSchema.value, widgetId, widget => {
@@ -1226,7 +1241,18 @@ async function changeDesignerWidgetSource(code) {
       delete config.dataBinding
       delete config.indicatorBindings
       delete config.backendQuery
+      delete config.analysisIndicatorVersionId
+      delete config.dataSource
+      if (templatePlan) delete config.tableColumns
       const nextWidget = { ...widget }
+      if (templatePlan) {
+        nextWidget.type = templatePlan.type
+        nextWidget.visualType = templatePlan.visualType
+        if (templatePlan.chartKind) nextWidget.chartKind = templatePlan.chartKind
+        else delete nextWidget.chartKind
+        const slotTitle = widget.config?.templateSlot?.title
+        if (resolvedSource && (!widget.title || widget.title === slotTitle || widget.title === getVisualizationTitle(widget.sourceName, bindingKind(widget)))) nextWidget.title = getVisualizationTitle(resolvedSource.name, bindingKind(nextWidget))
+      }
       delete nextWidget.kpiIndex
       delete nextWidget.sourceCode
       delete nextWidget.sourceName
@@ -1235,7 +1261,9 @@ async function changeDesignerWidgetSource(code) {
         ...(resolvedSource ? { sourceCode: resolvedSource.code, sourceName: resolvedSource.name } : {}),
         config: {
           ...config,
+          ...(resolvedSource?.indicatorVersionId ? { analysisIndicatorVersionId: resolvedSource.indicatorVersionId } : {}),
           ...(dataBinding ? { dataBinding } : {}),
+          ...(templatePlan?.chartKind === 'table' && dataBinding ? { tableColumns: [dataBinding.dimensions[0]?.field, datasets.some(dataset => dataset.fields.some(field => field.id === 'displayValue')) ? 'displayValue' : dataBinding.measures[0]?.field].filter(Boolean) } : {}),
           ...(independentPeriod ? { backendQuery: independentPeriod } : {})
         }
       }
@@ -1249,7 +1277,8 @@ async function changeDesignerWidgetSource(code) {
     remoteMultiIndicatorDatasets.value = nextMulti
     if (resolvedSource?.origin === 'dashboard-data-source') {
       const updated = designerWidgets.value.find(widget => String(widget.id) === widgetId)
-      if (updated) void previewRemoteWidget(updated)
+      if (updated) await previewRemoteWidget(updated, { templateAutoConfigure: Boolean(templatePlan) })
+      if (templatePlan?.fallback) ElMessage.info('该指标没有时间字段，已改为指标卡展示。')
     }
   } catch (error) {
     if (designerSourceSelectionGenerations.get(widgetId) === generation) ElMessage.warning(error?.message || '指标数据字段暂不可用，请稍后重试')
@@ -1351,6 +1380,8 @@ const dashboardQueryLabel = computed(() => {
 
 const warningWidgetRuntime = ref({})
 let warningWidgetLoadGeneration = 0
+let warningWidgetAbortController = null
+const warningQueryWidgets = computed(() => (isEditing.value ? designerWidgets.value : viewerWidgets.value).filter(widget => widget.type === 'warnings'))
 const dashboardWarnings = computed(() => dashboardStatus.value === 'ready' ? [] : mockDashboardWarnings)
 function getWidgetWarnings(widget) {
   if (widget?.type !== 'warnings') return dashboardWarnings.value
@@ -1368,21 +1399,24 @@ function getWarningWidgetState(widget) {
   if (widget?.type !== 'warnings') return { status: 'ready', total: 0, error: '' }
   if (dashboardStatus.value === 'demo') return { status: 'ready', total: getWidgetWarnings(widget).length, error: '' }
   if (dashboardStatus.value !== 'ready') return { status: 'idle', total: 0, error: '' }
-  return warningWidgetRuntime.value[String(widget.id)] || { status: 'loading', total: 0, error: '' }
+  return warningWidgetRuntime.value[String(widget.id)] || { status: 'idle', total: 0, error: '' }
 }
 async function refreshWarningWidgets() {
-  const widgets = viewerWidgets.value.filter(widget => widget.type === 'warnings')
+  const widgets = warningQueryWidgets.value
   const generation = ++warningWidgetLoadGeneration
+  warningWidgetAbortController?.abort()
   if (dashboardStatus.value !== 'ready' || !widgets.length) {
     warningWidgetRuntime.value = {}
     return
   }
+  const controller = new AbortController()
+  warningWidgetAbortController = controller
   const loading = Object.fromEntries(widgets.map(widget => [String(widget.id), { status: 'loading', records: [], total: 0, error: '' }]))
   warningWidgetRuntime.value = loading
   await Promise.all(widgets.map(async (widget) => {
     try {
       const config = normalizeWarningWidgetConfig(widget.config?.warning)
-      const page = normalizePage(await fetchWarnings(warningWidgetQuery(config)))
+      const page = normalizePage(await fetchWarnings(warningWidgetQuery(config), { signal: controller.signal, timeoutMs: 20000 }))
       if (generation !== warningWidgetLoadGeneration) return
       warningWidgetRuntime.value = { ...warningWidgetRuntime.value, [String(widget.id)]: { status: 'ready', records: page.records.map(item => warningEventToDashboardItem(item, config)), total: page.total, error: '' } }
     } catch (error) {
@@ -1391,8 +1425,7 @@ async function refreshWarningWidgets() {
     }
   }))
 }
-watch(() => JSON.stringify(viewerWidgets.value.filter(widget => widget.type === 'warnings').map(widget => ({ id: widget.id, warning: widget.config?.warning }))), () => { void refreshWarningWidgets() }, { immediate: true })
-watch(() => dashboardStatus.value, () => { void refreshWarningWidgets() })
+watch(() => JSON.stringify([dashboardStatus.value, isEditing.value, warningQueryWidgets.value.map(widget => ({ id: widget.id, warning: normalizeWarningWidgetConfig(widget.config?.warning) }))]), () => { void refreshWarningWidgets() }, { immediate: true })
 const departmentRanking = computed(() => {
   const rows = normalizeRanking(dashboardQueryResult.value?.departmentRanking, 'live')
   if (rows.length) return rows
@@ -1453,7 +1486,10 @@ const activeWidgetVisualizationType = computed({
     if (!widget || !getWidgetVisualizationTypes(widget).includes(nextType)) return
     const nextTypeName = nextType === 'kpi' ? (widget.kpiIndex === 0 ? 'primary' : 'kpi') : 'chart'
     const constraints = getWidgetGridConstraints({ type: nextTypeName, chartKind: nextType })
+    const config = { ...widget.config }
+    delete config.templateSlot
     updateDesignerWidget({
+      config,
       type: nextTypeName,
       visualType: nextType,
       ...(nextType === 'kpi' ? {} : { chartKind: nextType }),
@@ -1631,14 +1667,22 @@ function getWidgetChartOption(widget) {
   })
 }
 function updateMetricGroupConfig(config) {
-  updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, ...config } }))
+  updateDesignerWidget(widget => ({ ...widget, ...(widget.type === 'ranking' && config.metricGroup?.title ? { title: config.metricGroup.title } : {}), config: { ...widget.config, ...config } }))
+}
+function updateDesignerRankingMode(mode) {
+  selectedMetricItemId.value = ''
+  updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, ranking: { ...widget.config?.ranking, mode }, ...(mode === 'indicators' ? { metricGroup: widget.config?.metricGroup || { ...createMetricGroupConfig(), title: widget.title || '指标排名' } } : {}) } }))
+}
+function retryMetricGroupItem(group, itemId) {
+  const item = group.config?.metricGroup?.items?.find(item => item.id === itemId)
+  if (item) void previewMetricGroupItem(group, item)
 }
 function selectMetricGroupItem(itemId) { selectedMetricItemId.value = itemId }
 function updateWarningWidgetConfig(config) {
   updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, warning: createWarningWidgetConfig(config) } }))
 }
 function mutateMetricGroup(mutator) {
-  if (activeDesignerWidget.value?.type !== 'metric-group') return null
+  if (!['metric-group', 'ranking'].includes(activeDesignerWidget.value?.type)) return null
   let result
   updateDesignerWidget(widget => {
     result = mutator(widget.config?.metricGroup || {})
@@ -1792,12 +1836,12 @@ function addDashboardWidget() {
 let designerWidgetSequence = 0
 async function prepareDesignerWidget(type = addWidgetType.value) {
   let source = selectedDataSource.value
-  if (!source && !['text', 'metric-group', 'warnings'].includes(type)) {
+  if (!source && !['text', 'metric-group', 'warnings', 'ranking'].includes(type)) {
     ElMessage.warning('请先选择指标数据')
     return null
   }
   try {
-    if (source && !['text', 'metric-group', 'warnings'].includes(type)) {
+    if (source && !['text', 'metric-group', 'warnings', 'ranking'].includes(type)) {
       await ensureRemoteDataSourceFields(source.code, { required: source.origin === 'dashboard-data-source' })
       // Published widgets use the formal field catalog and preview endpoint.
       // Analysis snapshots can be empty or expose different field capabilities.
@@ -1815,6 +1859,8 @@ async function prepareDesignerWidget(type = addWidgetType.value) {
     ? { id, type: 'text', title: '说明', visualType: 'text', config: { text: { title: '看板说明', body: '请输入数据口径、业务提示或分区说明。', align: 'left', fontSize: 14, fontWeight: 400 } }, layout: getDefaultGridLayout('text') }
     : type === 'warnings'
     ? { id, type: 'warnings', title: '预警事件', visualType: 'warnings', config: { warning: createWarningWidgetConfig() }, layout: getDefaultGridLayout('warnings') }
+    : type === 'ranking'
+    ? { id, type: 'ranking', title: '指标排名', visualType: 'ranking', config: { ranking: { mode: 'indicators', direction: 'desc' }, metricGroup: { ...createMetricGroupConfig(), title: '指标排名' } }, layout: getDefaultGridLayout('ranking') }
     : type === 'kpi'
     ? { id, type: 'kpi', sourceCode: source.code, sourceName: source.name, visualType: 'kpi', config: {}, layout: getDefaultGridLayout('kpi') }
     : { id, type: 'chart', chartKind: type, title: getVisualizationTitle(source.name, type), sourceCode: source.code, sourceName: source.name, visualType: type, config: {}, layout: getDefaultGridLayout({ type: 'chart', chartKind: type }) }
@@ -1822,10 +1868,10 @@ async function prepareDesignerWidget(type = addWidgetType.value) {
   const defaultDatasets = source?.origin === 'dashboard-data-source'
     ? [{ id: 'backend', label: `${source.name} · 正式结果`, fields: dashboardFieldsToFrontend(remoteFieldCatalog.value[source.code] || []), rows: [] }]
     : getBindingDatasets(normalizedMetadata)
-  const dataBinding = !['text', 'metric-group', 'warnings'].includes(type)
+  const dataBinding = !['text', 'metric-group', 'warnings', 'ranking'].includes(type)
     ? createDefaultBinding(bindingKind(normalizedMetadata), defaultDatasets) || emptyBinding(defaultDatasets[0]?.id || 'backend')
     : null
-  const independentPeriod = source?.origin === 'dashboard-data-source' ? suggestDesignerWidgetPeriod(source.code) : null
+  const independentPeriod = source?.origin === 'dashboard-data-source' && !['text', 'metric-group', 'warnings', 'ranking'].includes(type) ? suggestDesignerWidgetPeriod(source.code) : null
   const widget = { ...normalizedMetadata, config: { ...normalizedMetadata.config, ...(dataBinding ? { dataBinding } : {}), ...(independentPeriod ? { backendQuery: independentPeriod } : {}) }, layout: metadata.layout }
   return widget
 }
@@ -1953,9 +1999,15 @@ async function deleteSelectedDesignerWidgets() {
   })
 }
 
+function templatePreviewBoardStyle(template) {
+  const rows = Math.max(1, ...template.widgets.map(widget => Number(widget.layout?.y || 0) + Number(widget.layout?.h || 1)))
+  return { background: template.appearance?.background?.value || '#f8fafc', gridTemplateRows: `repeat(${rows},minmax(0,1fr))`, height: '64px' }
+}
 function templatePreviewStyle(widget) {
   const layout = widget?.layout || {}
-  return { gridColumn: `${Number(layout.x) + 1} / span ${Number(layout.w)}`, gridRow: `${Number(layout.y) + 1} / span ${Number(layout.h)}` }
+  const style = widget.config?.style || {}
+  const accent = style.kpi?.valueColor || ({ medicalBlue: '#1261a6', blueTeal: '#187f91', green: '#357b62', warm: '#c56b3f', colorful: '#65548c' }[style.palettePreset]) || '#4f8196'
+  return { gridColumn: `${Number(layout.x) + 1} / span ${Number(layout.w)}`, gridRow: `${Number(layout.y) + 1} / span ${Number(layout.h)}`, background: accent, opacity: widget.type === 'text' ? 0.3 : widget.chartKind === 'table' ? 0.55 : 0.85 }
 }
 
 function refreshLocalLayoutTemplates() { localLayoutTemplates.value = readLocalLayoutTemplates(localStorage) }
@@ -2091,6 +2143,35 @@ function openWidgetConfig(widgetId) {
 
 async function handleWidgetBindingAction(widget, action) {
   if (!isEditing.value) return
+  if (action === 'time-axis') {
+    openWidgetConfig(widget.id)
+    const binding = widget.config?.dataBinding
+    const fields = getBindingDatasets(widget).find(dataset => dataset.id === binding?.dataset)?.fields || []
+    const time = fields.find(field => field.id.toLowerCase() === 'periodstart') || fields.find(field => isPeriodField(field.id))
+    if (!binding || !time) { ElMessage.warning('当前结果没有可用的统计时间字段'); return }
+    const nextBinding = {
+      ...binding,
+      dimensions: [{ field: time.id, label: time.label, granularity: 'raw' }, ...binding.dimensions.slice(1)],
+      sort: [{ field: time.id, direction: 'asc' }]
+    }
+    const sourceName = getWidgetSource(widget)?.name || widget.sourceName
+    const title = sourceName && widget.title === `${sourceName}科室对比` ? `${sourceName}周期对比` : widget.title
+    updateDesignerWidget({ title, config: { ...widget.config, dataBinding: nextBinding } })
+    // Filters and deliberate component period constraints are retained.
+    // Changing the axis switches the preview's result shape to TREND.
+    void previewRemoteWidget(designerWidgets.value.find(item => String(item.id) === String(widget.id)))
+    ElMessage.info('已切换统计时间轴；如只显示一个点，请将组件周期设为多个已计算月份')
+    return
+  }
+  if (action === 'kpi') {
+    openWidgetConfig(widget.id)
+    const fields = getBindingDatasets(widget).find(dataset => dataset.id === widget.config?.dataBinding?.dataset)?.fields || []
+    const nextBinding = createDefaultBinding('kpi', [{ id: widget.config?.dataBinding?.dataset || 'backend', fields }])
+    if (!nextBinding) { ElMessage.warning('当前指标没有可用于指标卡的数值字段'); return }
+    updateDesignerWidget({ type: 'kpi', visualType: 'kpi', title: getWidgetSource(widget)?.name || widget.sourceName || widget.title, config: { ...widget.config, dataBinding: { ...nextBinding, ...(widget.config?.dataBinding?.filters ? { filters: widget.config.dataBinding.filters } : {}) } } })
+    void previewRemoteWidget(designerWidgets.value.find(item => String(item.id) === String(widget.id)))
+    return
+  }
   if (action === 'configure') {
     openWidgetConfig(widget.id)
     return
@@ -2116,6 +2197,7 @@ async function handleWidgetBindingAction(widget, action) {
 }
 
 function beginDashboardEdit(schema = dashboardSchema.value) {
+  void loadPublishedIndicatorCatalog()
   try {
     editingDashboardSchema.value = createDashboardEditingSnapshot(schema, loadDesignerSchema)
   } catch {
@@ -2744,23 +2826,54 @@ function normalizeList(payload) {
   return payload?.records || payload?.rows || payload?.list || payload?.data?.records || payload?.data?.rows || payload?.data?.list || []
 }
 
-async function loadPublishedIndicatorCatalog() {
-  indicatorCatalogLoading.value = true
-  try {
-    const [sources, indicators] = await Promise.all([
-      fetchDashboardDataSources(),
-      fetchIndicators({ page: 1, size: 100 }).catch(() => [])
-    ])
-    const orderedSources = sortDashboardDataSourcesByIndicatorCreatedAt(sources, normalizeList(indicators))
-    catalogIndicatorSources.value = orderedSources.map(dashboardDataSourceToFrontend)
-    if (!selectedDataSourceManuallySelected && catalogIndicatorSources.value.length) selectedDataCode.value = catalogIndicatorSources.value[0].code
-    else if (!selectedDataSource.value) selectedDataCode.value = catalogIndicatorSources.value[0]?.code || availableIndicatorSources.value[0]?.code || ''
-    await refreshSchemaPublishedIndicatorSources()
-  } catch {
-    // Catalog availability must not replace the current dashboard data path.
-  } finally {
-    indicatorCatalogLoading.value = false
+async function fetchCompleteIndicatorCatalog() {
+  const indicators = []
+  let page = 1
+  while (true) {
+    const response = await fetchIndicators({ page, size: 100 }, { cache: 'no-store' })
+    const records = normalizeList(response)
+    indicators.push(...records)
+    const total = Number(response?.total ?? response?.data?.total)
+    if (!records.length || (Number.isFinite(total) ? indicators.length >= total : records.length < 100)) break
+    page += 1
   }
+  return indicators
+}
+
+async function loadPublishedIndicatorCatalog() {
+  if (indicatorCatalogRequest) return indicatorCatalogRequest
+  indicatorCatalogLoading.value = true
+  indicatorCatalogError.value = ''
+  indicatorCatalogRequest = (async () => {
+    try {
+      const [sources, indicators] = await Promise.all([
+        fetchDashboardDataSources({ cache: 'no-store' }),
+        fetchCompleteIndicatorCatalog()
+      ])
+      const currentSources = currentPublishedDashboardDataSources(sources, indicators)
+      const orderedSources = sortDashboardDataSourcesByIndicatorCreatedAt(currentSources, indicators)
+      const nextSources = orderedSources.map(dashboardDataSourceToFrontend)
+      // Retain fields only for the same published version. A refreshed catalog
+      // must not describe a new version with the old version's cached fields.
+      const previousSources = new Map(catalogIndicatorSources.value.map(source => [source.code, source]))
+      for (const source of nextSources) {
+        if (previousSources.get(source.code)?.indicatorVersionId === source.indicatorVersionId) continue
+        delete remoteFieldCatalog.value[source.code]
+        delete remoteSourcePeriodOptions.value[source.code]
+      }
+      catalogIndicatorSources.value = nextSources
+      if (dashboardStatus.value !== 'demo' && !nextSources.some(source => source.code === selectedDataCode.value)) selectedDataCode.value = nextSources[0]?.code || ''
+      await refreshSchemaPublishedIndicatorSources()
+      return true
+    } catch (error) {
+      indicatorCatalogError.value = error?.message || '指标目录刷新失败，请重试。'
+      return false
+    } finally {
+      indicatorCatalogLoading.value = false
+      indicatorCatalogRequest = null
+    }
+  })()
+  return indicatorCatalogRequest
 }
 
 async function ensureRemoteDataSourceFields(code, { required = false } = {}) {
@@ -2835,7 +2948,7 @@ async function loadRemoteFilterOptions() {
   if (generation === remoteFilterOptionGeneration) remoteFilterOptions.value = next
 }
 
-async function previewRemoteWidget(widget) {
+async function previewRemoteWidget(widget, { templateAutoConfigure = false } = {}) {
   if (!widget?.sourceCode) return
   const widgetId = String(widget.id)
   const generation = (remoteWidgetPreviewGenerations.get(widgetId) || 0) + 1
@@ -2864,11 +2977,39 @@ async function previewRemoteWidget(widget) {
     const { widgetCodes, ...baseQuery } = planned.query
     const query = buildPublishedIndicatorTrendPreviewQuery(widget, baseQuery)
     const result = await previewDashboardWidget({ widget: payload, ...query })
-    const dataset = await normalizeDashboardWidgetDataset(widget, widgetResultToDataset({ ...result, appliedGlobalFilterFields: Object.keys(query.filters) }, fields, 'backend'), query)
+    let dataset = await normalizeDashboardWidgetDataset(widget, widgetResultToDataset({ ...result, appliedGlobalFilterFields: Object.keys(query.filters) }, fields, 'backend'), query)
+    // Auto setup is limited to an explicit source choice in a built-in slot.
+    // Viewer refresh and manually configured charts never change their type.
+    if (templateAutoConfigure && widget.type === 'chart' && widget.config?.templateSlot?.binding === 'period' && dataset.status !== 'ERROR') {
+      const binding = widget.config.dataBinding
+      const hasPeriodValues = (dataset.rows || []).some(row => binding?.dimensions?.every(dimension => row[dimension.field] !== null && row[dimension.field] !== undefined && row[dimension.field] !== '') && binding?.measures?.some(measure => numericValue(row[measure.field]) !== null))
+      if (!hasPeriodValues) {
+        const overviewBinding = createDefaultBinding('kpi', [{ id: 'backend', fields: dataset.fields }])
+        if (overviewBinding) {
+          try {
+            const overview = await previewDashboardWidget({ widget: { ...payload, type: 'KPI', fieldBindings: overviewBinding, query: { resultShape: 'OVERVIEW' }, chart: { chartKind: 'kpi' } }, ...query })
+            if (remoteWidgetPreviewGenerations.get(widgetId) !== generation) return
+            const overviewDataset = widgetResultToDataset({ ...overview, appliedGlobalFilterFields: Object.keys(query.filters) }, fields, 'backend')
+            if (overviewDataset.status !== 'ERROR' && overviewDataset.rows?.some(row => numericValue(row[overviewBinding.measures[0].field]) !== null)) {
+              editingDashboardSchema.value = updateDashboardWidget(editingDashboardSchema.value, widgetId, current => {
+                const next = { ...current, type: 'kpi', visualType: 'kpi', config: { ...current.config, dataBinding: overviewBinding } }
+                delete next.chartKind
+                if (current.title === getVisualizationTitle(current.sourceName, bindingKind(current))) next.title = current.sourceName
+                delete next.config.tableColumns
+                return next
+              })
+              markDashboardDirty()
+              dataset = overviewDataset
+              ElMessage.info('该指标暂无期间序列，已改为指标卡展示正式汇总值。')
+            }
+          } catch { /* Keep the original empty result when the overview probe fails. */ }
+        }
+      }
+    }
     if (remoteWidgetPreviewGenerations.get(widgetId) !== generation) return
     remoteWidgetDatasets.value = {
       ...remoteWidgetDatasets.value,
-      [widgetId]: dataset
+      [widgetId]: { ...dataset, componentQueryScope: { ...widget.config?.backendQuery, periodStart: query.periodStart, periodEnd: query.periodEnd } }
     }
   } catch (error) {
     if (remoteWidgetPreviewGenerations.get(widgetId) !== generation) return
@@ -2897,7 +3038,7 @@ async function previewMetricGroupItem(group, item) {
   widget.config = {
     ...widget.config,
     dataBinding: binding || emptyBinding('backend'),
-    ...(independentPeriod ? { backendQuery: independentPeriod } : {})
+    backendQuery: ['FIXED', 'INDEPENDENT'].includes(group.config?.backendQuery?.periodMode) ? group.config.backendQuery : independentPeriod || group.config?.backendQuery || {}
   }
   await previewRemoteWidget(widget)
 }
@@ -2929,7 +3070,7 @@ async function hydrateIndicatorSource(source) {
     const hydrated = { ...applyIndicatorAnalysisToSource(source, analysisPayload, Object.fromEntries(departmentNames.names), paths), analysisLoaded: true }
     hydrated.analysisNameDiagnostics = [...new Set([...(hydrated.analysisNameDiagnostics || []), ...versionDiagnostics, ...departmentNames.diagnostics])]
     hydrated.analysisQueryKey = queryKey
-    catalogIndicatorSources.value = catalogIndicatorSources.value.map(item => item.code === hydrated.code ? hydrated : item)
+    catalogIndicatorSources.value = catalogIndicatorSources.value.map(item => item.code === hydrated.code && item.indicatorVersionId === hydrated.indicatorVersionId ? hydrated : item)
     return hydrated
   }).finally(() => indicatorHydrationRequests.delete(requestKey))
   indicatorHydrationRequests.set(requestKey, request)
@@ -2977,16 +3118,29 @@ async function normalizeDashboardWidgetDataset(widget, dataset, query) {
     const normalized = normalizeDepartmentDataset(dataset, { paths })
     const names = collectDepartmentNames(normalized.rows, paths)
     const codes = normalized.rows.map(row => departmentIdentity(row, paths).code).filter(code => code && !names.has(code))
-    if (!codes.length) return normalized
+    if (!codes.length) return explainDashboardComparison(widget, normalized, query)
     const analysis = await fetchIndicatorAnalysis(source.analysisIndicatorId, {
       periodStart: query?.periodStart, periodEnd: query?.periodEnd, granularity: query?.granularity || 'MONTHLY',
       indicatorVersionId: widget.config?.analysisIndicatorVersionId || source.analysisIndicatorVersionId || source.indicatorVersionId
     })
     const resolved = await loadDashboardDepartmentNames(analysis, paths, codes, widget.config?.dataBinding?.dimensions?.[0]?.field)
-    return normalizeDepartmentDataset(dataset, { paths, ...resolved })
+    return explainDashboardComparison(widget, normalizeDepartmentDataset(dataset, { paths, ...resolved }), query)
   } catch (error) {
-    return normalizeDepartmentDataset(dataset, { diagnostics: [`科室名称读取失败：${error?.message || '指标配置不可用'}`] })
+    return explainDashboardComparison(widget, normalizeDepartmentDataset(dataset, { diagnostics: [`科室名称读取失败：${error?.message || '指标配置不可用'}`] }), query)
   }
+}
+
+async function explainDashboardComparison(widget, dataset, query) {
+  return explainComparisonAvailability(widget, dataset, async () => {
+    const payload = schemaToDashboardPayload({ ...(editingDashboardSchema.value || dashboardSchema.value), widgets: [widget] }, { dataSources: availableIndicatorSources.value }).widgets[0]
+    const fieldBindings = createDefaultBinding('kpi', [{ id: 'backend', fields: dataset.fields || [] }])
+    if (!fieldBindings) return { rows: [], fields: [], status: 'EMPTY' }
+    const { widgetCodes, ...scope } = query || {}
+    const overview = await previewDashboardWidget({
+      widget: { ...payload, type: 'KPI', fieldBindings, query: { ...payload.query, resultShape: 'OVERVIEW' }, chart: { chartKind: 'kpi' } }, ...scope
+    })
+    return { ...widgetResultToDataset(overview, remoteFieldCatalog.value[widget.sourceCode], 'backend'), kpiMeasureField: fieldBindings.measures[0].field }
+  })
 }
 
 async function refreshSchemaPublishedIndicatorSources() {
@@ -3057,12 +3211,9 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
     }
     const requiresSourceCatalog = rawSchema.widgets.some(widget => normalizeIndicatorBindings(widget.config?.indicatorBindings, widget).length > 1)
     if (requiresSourceCatalog || rawSchema.widgets.some(widget => widget.chartKind === 'pie')) {
-      const sources = await fetchDashboardDataSources({ signal }).catch(error => {
-        if (signal?.aborted || requiresSourceCatalog) throw error
-        return []
-      })
+      const loaded = await loadPublishedIndicatorCatalog()
       if (!isCurrentLoad()) return
-      catalogIndicatorSources.value = (Array.isArray(sources) ? sources : []).map(dashboardDataSourceToFrontend)
+      if (!loaded && requiresSourceCatalog) throw new Error(indicatorCatalogError.value || '指标目录暂不可用')
     }
     const sourceCodes = [...new Set(rawSchema.widgets.flatMap(widget => [widget.sourceCode, ...normalizeIndicatorBindings(widget.config?.indicatorBindings, widget).map(binding => binding.sourceCode), ...metricGroupSourceCodes(widget)]).filter(Boolean))]
     const metadataEntries = await Promise.all(sourceCodes.map(async code => {
@@ -3178,7 +3329,7 @@ async function queryRemoteDashboardByPeriod(schema, signal, dashboardId) {
   const widgets = uniqueDashboardQueryWidgets(schema)
   const fullRange = dateRangeForMonths([startMonth, endMonth])
   const parts = await mapWithConcurrency(widgets, 3, async widget => {
-    const trend = String(widget.config?.backendQuery?.resultShape || '').toUpperCase() === 'TREND'
+    const trend = dashboardWidgetResultShape(widget) === 'TREND'
     const range = trend ? fullRange : dateRangeForMonths([endMonth, endMonth])
     if (normalizeIndicatorBindings(widget.config?.indicatorBindings, widget).length > 1) {
       try {
@@ -3287,7 +3438,7 @@ async function buildDashboardWidgetDatasets(schema, result) {
     const dataset = widgetResultToDataset(dashboardWidgetResult(result, schema.widgets, widget), remoteFieldCatalog.value[widget.sourceCode], 'backend')
     const source = getWidgetSource(widget)
     const selectedMonth = remotePeriodRange.value.at(-1)
-    const query = buildPublishedIndicatorAnalysisQuery(source, selectedMonth ? [selectedMonth, selectedMonth] : remotePeriodRange.value)
+    const query = buildPublishedIndicatorAnalysisQuery(source, dashboardWidgetResultShape(widget) === 'TREND' ? remotePeriodRange.value : selectedMonth ? [selectedMonth, selectedMonth] : remotePeriodRange.value)
     const planned = buildRemoteWidgetQuery(widget, remoteWidgetQueryContext(query, widget.sourceCode, schema))
     return [String(widget.id), await normalizeDashboardWidgetDataset(widget, dataset, planned.query || query)]
   })
@@ -3331,6 +3482,7 @@ async function refreshRemoteDashboardData() {
 function dashboardWidgetQuerySignature(widget = {}) {
   return JSON.stringify({
     sourceCode: widget.sourceCode || '',
+    resultShape: dashboardWidgetResultShape(widget),
     indicatorVersionId: widget.config?.analysisIndicatorVersionId || '',
     dataBinding: widget.config?.dataBinding || {},
     backendQuery: widget.config?.backendQuery || {},
@@ -3527,14 +3679,14 @@ const metricGroupPreviewKey = computed(() => JSON.stringify({
   period: remotePeriodRange.value,
   department: department.value,
   filters: filterRuntimeValues.value,
-  sources: availableIndicatorSources.value.filter(source => source.origin === 'dashboard-data-source').map(source => source.code),
+  sources: availableIndicatorSources.value.filter(source => source.origin === 'dashboard-data-source').map(source => [source.code, source.indicatorVersionId]),
   groups: ((isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.widgets || [])
-    .filter(widget => widget.type === 'metric-group')
-    .map(widget => ({ id: widget.id, items: (widget.config?.metricGroup?.items || []).map(item => ({ id: item.id, sourceCode: item.sourceCode, dataBinding: item.dataBinding })) }))
+    .filter(widget => widget.type === 'metric-group' || (widget.type === 'ranking' && widget.config?.ranking?.mode === 'indicators'))
+    .map(widget => ({ id: widget.id, backendQuery: widget.config?.backendQuery, query: widget.config?.query, items: (widget.config?.metricGroup?.items || []).map(item => ({ id: item.id, sourceCode: item.sourceCode, dataBinding: item.dataBinding })) }))
 }))
 watch(metricGroupPreviewKey, () => {
   for (const group of (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.widgets || []) {
-    if (group.type !== 'metric-group') continue
+    if (group.type !== 'metric-group' && !(group.type === 'ranking' && group.config?.ranking?.mode === 'indicators')) continue
     for (const item of group.config?.metricGroup?.items || []) void previewMetricGroupItem(group, item)
   }
 }, { immediate: true })
@@ -3591,6 +3743,7 @@ onDeactivated(() => {
 })
 onActivated(() => {
   if (!dashboardDeactivatedAt) return
+  void loadPublishedIndicatorCatalog()
   addDashboardListeners()
   designerImmersive.value = isEditing.value
   if (Date.now() - dashboardDeactivatedAt > 30_000 && isFormalRemoteDashboard.value) {
@@ -3639,6 +3792,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   designerImmersive.value = false
+  warningWidgetLoadGeneration += 1
+  warningWidgetAbortController?.abort()
   dashboardAbortController?.abort()
   globalThis.clearTimeout(remoteFilterReloadTimer)
   removeDashboardListeners()

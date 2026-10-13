@@ -5,8 +5,8 @@
       <aside v-if="visible" class="studio-hover-preview__panel" :class="{ 'is-template': template }" :style="panelStyle" role="tooltip" @mouseenter="clearTimer" @mouseleave="scheduleClose">
         <template v-if="template">
           <header><span>模板预览</span><strong>{{ template.name }}</strong></header>
-          <div class="studio-hover-preview__board" :class="{ 'is-dark': templateIsDark }" :style="{ ...templateSurfaceStyle, gridTemplateRows: 'repeat(30,minmax(0,1fr))' }" aria-hidden="true">
-            <div v-for="(item, index) in template.widgets" :key="index" class="studio-hover-preview__mini-card" :class="`is-${templateWidgetKind(item)}`" :style="templateGridStyle(item)">
+          <div class="studio-hover-preview__board" :class="{ 'is-dark': templateIsDark }" :style="{ ...templateSurfaceStyle, gridTemplateRows: `repeat(${templateRowCount},minmax(0,1fr))` }" aria-hidden="true">
+            <div v-for="(item, index) in template.widgets" :key="index" class="studio-hover-preview__mini-card" :class="[`is-${templateWidgetKind(item)}`, `is-variant-${item.config?.style?.kpiVariant || 'standard'}`]" :style="templateGridStyle(item)">
               <strong>{{ templateWidgetLabel(item) }}</strong>
               <span class="studio-hover-preview__mini-viz"><i v-for="part in 5" :key="part" /></span>
             </div>
@@ -71,6 +71,7 @@ let timer
 const panelStyle = computed(() => ({ left: `${position.left}px`, top: `${position.top}px` }))
 const linePoints = Object.freeze([{ x: 5, y: 58 }, { x: 42, y: 46 }, { x: 78, y: 52 }, { x: 116, y: 22 }, { x: 154, y: 34 }, { x: 195, y: 13 }, { x: 235, y: 27 }])
 const scatterPoints = Object.freeze([{ x: 25, y: 57, r: 4 }, { x: 48, y: 45, r: 5 }, { x: 72, y: 61, r: 3 }, { x: 94, y: 37, r: 4 }, { x: 121, y: 48, r: 6 }, { x: 148, y: 25, r: 4 }, { x: 178, y: 34, r: 5 }, { x: 207, y: 16, r: 4 }, { x: 222, y: 43, r: 3 }])
+const templateRowCount = computed(() => Math.max(1, ...(props.template?.widgets || []).map(widget => Number(widget.layout?.y || 0) + Number(widget.layout?.h || 1))))
 const templateSurfaceStyle = computed(() => {
   const background = props.template?.appearance?.background?.value
   return { background: typeof background === 'string' && background ? background : '#ffffff' }
@@ -83,6 +84,8 @@ function templateGridStyle(widget = {}) {
     gridColumn: `${Number(layout.x) + 1} / span ${Number(layout.w) || 1}`,
     gridRow: `${Number(layout.y) + 1} / span ${Number(layout.h) || 1}`,
     background: style.background || undefined,
+    color: style.kpi?.titleColor || style.text?.titleColor || undefined,
+    '--mini-accent': style.kpi?.valueColor || ({ medicalBlue: '#1261a6', blueTeal: '#187f91', green: '#357b62', warm: '#c56b3f', colorful: '#65548c' }[style.palettePreset]) || '#4f8196',
     borderColor: style.borderColor || undefined,
     borderRadius: `${Math.min(6, Math.max(1, Number(style.borderRadius) / 3 || 3))}px`
   }
@@ -127,4 +130,5 @@ onBeforeUnmount(clearTimer)
 .studio-hover-preview__widget-demo.is-bar,.studio-hover-preview__widget-demo.is-line,.studio-hover-preview__widget-demo.is-scatter,.studio-hover-preview__widget-demo.is-heatmap { display:grid; grid-template-columns:1fr; grid-template-rows:1fr auto; justify-items:center; gap:5px; padding:8px 14px; }.studio-hover-preview__bar { display:flex; align-items:end; justify-content:center; gap:12px; width:235px; height:68px; border-bottom:1px solid #9fb9c2; }.studio-hover-preview__bar i { width:22px; border-radius:3px 3px 0 0; background:linear-gradient(#69b7ba,#347f8d); }.studio-hover-preview__line,.studio-hover-preview__scatter { width:240px; height:76px; overflow:visible; }.studio-hover-preview__line .grid { fill:none; stroke:#d8e6e9; stroke-width:1; }.studio-hover-preview__line polyline { fill:none; stroke:#268e9a; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; }.studio-hover-preview__line circle { fill:#fff; stroke:#268e9a; stroke-width:2; }.studio-hover-preview__scatter .axis { fill:none; stroke:#9eb8c0; stroke-width:1; }.studio-hover-preview__scatter circle { fill:#338c99; opacity:.72; }.studio-hover-preview__heatmap { display:grid; grid-template-columns:repeat(6,28px); grid-auto-rows:13px; gap:3px; padding:5px; border-left:1px solid #9fb9c2; border-bottom:1px solid #9fb9c2; }.studio-hover-preview__heatmap i { display:block; background:#258b98; border-radius:2px; }
 .studio-preview-fade-enter-active,.studio-preview-fade-leave-active { transition:opacity .14s ease,transform .14s ease; }.studio-preview-fade-enter-from,.studio-preview-fade-leave-to { opacity:0; transform:translateY(4px); }
 @media (prefers-reduced-motion: reduce) { .studio-preview-fade-enter-active,.studio-preview-fade-leave-active { transition:none; } }
+.studio-hover-preview__mini-card .studio-hover-preview__mini-viz i { background:var(--mini-accent,#4f8196); }.studio-hover-preview__mini-card.is-kpi.is-variant-hero .studio-hover-preview__mini-viz { align-items:center; justify-content:center; }.studio-hover-preview__mini-card.is-kpi.is-variant-hero .studio-hover-preview__mini-viz i:first-child { width:65%; height:12px; }.studio-hover-preview__mini-card.is-kpi.is-variant-minimal { text-align:center; border-color:transparent; }.studio-hover-preview__mini-card.is-kpi.is-variant-minimal .studio-hover-preview__mini-viz { justify-content:center; }
 </style>

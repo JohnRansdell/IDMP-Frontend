@@ -5,8 +5,9 @@
       <section v-for="item in items" :key="item.id" class="metric-group__item" :class="[`is-${item.status}`, `is-${item.emphasis}`, `is-align-${item.align}`, `is-tone-${item.tone || 'neutral'}`, `is-variant-${item.kpiVariant}`, { 'is-selected': designer && item.id === selectedItemId }]" :style="{ gridColumn: `span ${item.layout.span}` }" :title="item.message || undefined" :draggable="designer" @click.stop="select(item.id)" @dragstart="draggedId = item.id" @dragover.prevent @drop="drop(item.id)">
         <div v-if="designer" class="metric-group__item-tools"><button type="button" class="metric-group__drag" aria-label="拖动排序" title="拖动排序">⋮⋮</button><button type="button" aria-label="复制指标" title="复制指标" @click.stop="$emit('duplicate', item.id)">⧉</button><button type="button" aria-label="删除指标" title="删除指标" @click.stop="$emit('remove', item.id)">×</button></div>
         <div class="metric-group__item-head"><span>{{ item.label }}</span><i :class="`is-${item.status}`" /></div>
-        <strong>{{ item.value }}<small v-if="item.unit">{{ item.unit }}</small></strong>
-        <div class="metric-group__comparison" :class="`is-${clinicalTrendTone(item.status)}`" :style="{ color: style.kpi.trendColor || undefined }"><span>同比 {{ comparison(item.yoy, item.comparisonUnit || item.unit) }}</span><span>环比 {{ comparison(item.mom, item.comparisonUnit || item.unit) }}</span></div>
+        <strong>{{ item.value }}<small v-if="item.unit && item.loadStatus === 'READY'">{{ item.unit }}</small></strong>
+        <div v-if="item.loadStatus === 'ERROR'" class="metric-group__error"><span :title="item.message">{{ item.message }}</span><button type="button" @pointerdown.stop @click.stop="emit('retry', item.id)">重试</button></div>
+        <div v-if="item.loadStatus !== 'ERROR' && item.loadStatus !== 'LOADING'" class="metric-group__comparison" :class="`is-${clinicalTrendTone(item.status)}`" :style="{ color: style.kpi.trendColor || undefined }"><span>同比 {{ comparison(item.yoy, item.comparisonUnit || item.unit) }}</span><span>环比 {{ comparison(item.mom, item.comparisonUnit || item.unit) }}</span></div>
       </section>
     </div>
     <button v-else-if="designer" class="metric-group__empty" type="button" @click="$emit('add')">+ 添加第一个指标</button>
@@ -16,40 +17,21 @@
 
 <script setup>
 import { computed, inject, ref } from 'vue'
-import { compileWidgetData, formatDashboardKpiMetric } from '../bindingEngine.js'
-import { createDefaultBinding } from '../smartDefaultBinding.js'
-import { queryWidgetDatasetWithRuntime } from '../queryAdapter.js'
+import { metricItemModel } from '../metricItemModel.js'
 import { clinicalTrendTone } from '../chartTheme.js'
 import { formatKpiComparison } from '../visualization.js'
-import { metricGroupItemWidget, normalizeMetricGroupConfig } from '../metricGroup.js'
+import { normalizeMetricGroupConfig } from '../metricGroup.js'
 import { resolveWidgetVisualStyle } from '../visualStyle.js'
 
 const props = defineProps({ widget: { type: Object, required: true }, getWidgetKpi: { type: Function, required: true }, designer: { type: Boolean, default: false }, selectedItemId: { type: String, default: '' } })
-const emit = defineEmits(['select-item', 'duplicate', 'remove', 'add', 'reorder'])
+const emit = defineEmits(['select-item', 'duplicate', 'remove', 'add', 'reorder', 'retry'])
 const getDatasets = inject('dashboardBindingDatasets', () => [])
 const filters = inject('dashboardFilterContext', { definitions: { value: [] }, values: { value: {} }, interactions: { value: {} } })
 const draggedId = ref('')
 const config = computed(() => normalizeMetricGroupConfig(props.widget.config?.metricGroup))
 const style = computed(() => resolveWidgetVisualStyle(props.widget))
 const groupStyle = computed(() => ({ '--metric-value': style.value.kpi.valueColor || '#153b5d', '--metric-title': style.value.kpi.titleColor || '#52636c', '--metric-trend': style.value.kpi.trendColor || '#78878e', '--metric-border': props.widget.config?.style?.borderColor || '#e3e9eb' }))
-const items = computed(() => config.value.items.map(item => {
-  const virtual = metricGroupItemWidget(props.widget, item); const fallback = props.getWidgetKpi(virtual)
-  const datasets = getDatasets(virtual)
-  const binding = item.dataBinding || createDefaultBinding('kpi', datasets)
-  if (!binding) {
-    const pending = datasets.find(dataset => ['LOADING', 'ERROR'].includes(dataset.status))
-    return { ...fallback, ...item, value: pending?.status === 'LOADING' ? '加载中' : pending?.status === 'ERROR' ? '加载失败' : fallback.value, unit: item.unit || fallback.unit, message: pending?.message || '' }
-  }
-  const source = datasets.find(dataset => dataset.id === binding.dataset)
-  const dataset = queryWidgetDatasetWithRuntime(source, virtual, { definitions: filters.definitions.value, values: filters.values.value, interactions: filters.interactions?.value || {} })
-  const model = compileWidgetData('kpi', binding, dataset)
-  if (model.status !== 'ready') return { ...fallback, ...item, value: dataset?.status === 'LOADING' ? '加载中' : dataset?.status === 'ERROR' ? '加载失败' : '暂无数据', unit: item.unit || '', status: 'info', message: model.message || dataset?.message || '请配置数据字段' }
-  const measure = binding.measures?.[0]
-  const row = measure?.aggregation === 'direct' && dataset?.rows?.length === 1 ? dataset.rows[0] : null
-  const displayValue = String(measure?.field || '').toLowerCase() === 'value' ? row?.displayValue : null
-  const display = formatDashboardKpiMetric(model.value, { unit: item.unit || model.unit || '', displayValue })
-  return { ...fallback, ...item, value: display.value, unit: display.unit, status: fallback.status || 'info' }
-}))
+const items = computed(() => config.value.items.map(item => metricItemModel(props.widget, item, props.getWidgetKpi, getDatasets, { definitions: filters.definitions.value, values: filters.values.value, interactions: filters.interactions?.value || {} })))
 const comparison = formatKpiComparison
 function select(id) { if (props.designer) emit('select-item', id) }
 function drop(targetId) { if (props.designer && draggedId.value && draggedId.value !== targetId) emit('reorder', { itemId: draggedId.value, targetId }); draggedId.value = '' }
@@ -67,4 +49,5 @@ function drop(targetId) { if (props.designer && draggedId.value && draggedId.val
   .metric-group__item,.metric-group__item.is-hero,.metric-group__item.is-variant-hero { padding:6px 8px; }
   .metric-group__item strong,.metric-group__item.is-emphasis strong,.metric-group__item.is-hero strong,.metric-group__item.is-variant-hero strong { margin:4px 0 0; font-size:20px; }
 }
+.metric-group__error { display:flex; align-items:start; gap:5px; font-size:10px; color:var(--metric-title); }.metric-group__error span { display:-webkit-box; flex:1; overflow:hidden; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow-wrap:anywhere; }.metric-group__error button { flex:0 0 auto; border:0; padding:0; background:transparent; color:var(--db-accent,#1261a6); cursor:pointer; }
 </style>

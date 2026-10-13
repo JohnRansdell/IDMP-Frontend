@@ -1,9 +1,9 @@
 <template>
   <article class="dashboard-renderer-card db-kpi-card kpi-presentation" :class="[{ 'is-clickable': clickable }, `is-variant-${resolvedVariant}`]" @click="clickable && $emit('click')">
-    <div class="kpi-presentation__head" :style="{ color: colors.title || undefined }"><span>{{ model.title || '指标' }}</span><span class="kpi-presentation__dot" :class="`is-${model.status || 'info'}`" /></div>
-    <strong data-testid="binding-kpi-value" :style="{ color: colors.value || undefined }">{{ model.value || '暂无数据' }}<small v-if="model.unit">{{ model.unit }}</small></strong>
-    <div v-if="model.change" class="kpi-presentation__change" :class="`is-${model.status || 'info'}`" :style="{ color: colors.trend || undefined }">{{ model.change }}</div>
-    <div class="kpi-presentation__comparisons" :style="{ color: colors.trend || undefined }"><span>同比 {{ comparison(model.yoy, model.comparisonUnit || model.unit) }}</span><span>环比 {{ comparison(model.mom, model.comparisonUnit || model.unit) }}</span><b v-if="model.trendDirection" :aria-label="`趋势：${trendLabel}`">{{ trendArrow }}</b></div>
+    <div class="kpi-presentation__head" :style="{ color: presentationColors.title || undefined }"><span>{{ model.title || '指标' }}</span><span class="kpi-presentation__dot" :class="`is-${model.status || 'info'}`" /></div>
+    <strong data-testid="binding-kpi-value" :style="{ color: presentationColors.value || undefined }">{{ model.value || '暂无数据' }}<small v-if="model.unit">{{ model.unit }}</small></strong>
+    <div v-if="model.change" class="kpi-presentation__change" :class="`is-${model.status || 'info'}`" :style="{ color: presentationColors.trend || undefined }">{{ model.change }}</div>
+    <div class="kpi-presentation__comparisons" :style="{ color: presentationColors.trend || undefined }"><span>同比 {{ comparison(model.yoy, model.comparisonUnit || model.unit) }}</span><span>环比 {{ comparison(model.mom, model.comparisonUnit || model.unit) }}</span><b v-if="model.trendDirection" :aria-label="`趋势：${trendLabel}`">{{ trendArrow }}</b></div>
     <div v-if="model.target" class="kpi-presentation__target">{{ model.target }}</div>
   </article>
 </template>
@@ -15,6 +15,7 @@ import { formatKpiComparison } from '../visualization.js'
 
 const props = defineProps({ model: { type: Object, default: () => ({}) }, variant: { type: String, default: 'standard' }, colors: { type: Object, default: () => ({}) }, clickable: { type: Boolean, default: false } })
 defineEmits(['click'])
+const presentationColors = computed(() => ({ title: props.colors.titleColor || props.colors.title, value: props.colors.valueColor || props.colors.value, trend: props.colors.trendColor || props.colors.trend }))
 const resolvedVariant = computed(() => normalizeKpiVariant(props.variant))
 const comparison = formatKpiComparison
 const trendArrow = computed(() => ({ up: '↑', down: '↓', flat: '↔' }[props.model.trendDirection] || '↔'))

@@ -21,6 +21,7 @@ const rankByName = (field, tokens) => {
   return index < 0 ? tokens.length : index
 }
 const identifierPenalty = field => /(?:^|_)(?:code|id)$/i.test(String(field?.id || '')) ? 1 : 0
+const metadataDimension = field => /^(periodType|qualityStatus|scenarioVersionId|snapshotId|resultId|improvementDirection|achievementStatus|achievementReason)$/i.test(field.id)
 const sortByPreference = (fields, tokens) => fields.map((field, index) => ({ field, index, rank: rankByName(field, tokens), identifierPenalty: identifierPenalty(field) }))
   .sort((left, right) => left.rank - right.rank || left.identifierPenalty - right.identifierPenalty || left.index - right.index).map(item => item.field)
 const candidates = (datasets, kind) => {
@@ -32,25 +33,29 @@ const candidates = (datasets, kind) => {
   return [...datasets].sort((left, right) => rank(left) - rank(right))
 }
 
-export function createDefaultBinding(kind, datasets = [], { datasetId = '' } = {}) {
+export function createDefaultBinding(kind, datasets = [], { datasetId = '', preferTime = false } = {}) {
   const sources = datasetId ? datasets.filter(dataset => dataset.id === datasetId) : candidates(datasets, kind)
   for (const source of sources) {
     if (!source?.id || !Array.isArray(source.fields)) continue
-    const fields = source.fields
-    const dimensions = sortByPreference(fields.filter(field => field.semanticType === 'dimension'), ['科室', 'department', '病区', 'ward', '分类', 'category', '名称', 'name'])
+    // Catalogs may advertise optional department/scenario fields which are
+    // absent in this result. Prefer fields that actually have values, while
+    // keeping catalog-only defaults available before the first query.
+    const populated = (source.rows || []).length ? source.fields.filter(field => source.rows.some(row => row?.[field.id] !== null && row?.[field.id] !== undefined && row?.[field.id] !== '')) : []
+    const fields = populated.length ? populated : source.fields
+    const dimensions = sortByPreference(fields.filter(field => field.semanticType === 'dimension' && field.groupable !== false && !metadataDimension(field)), ['科室', 'department', '病区', 'ward', '分类', 'category', '名称', 'name'])
     const times = sortByPreference(fields.filter(field => field.semanticType === 'time'), ['月份', 'month', '期间', 'period', '日期', 'date', '时间', 'time'])
-    const measures = sortByPreference(fields.filter(field => field.semanticType === 'measure'), ['指标值', 'value', '数量', 'count', '发生率', 'rate', '金额', 'amount'])
+    const measures = sortByPreference(fields.filter(field => field.semanticType === 'measure' && (!field.dataType || field.dataType === 'number')), ['指标值', 'value', '数量', 'count', '发生率', 'rate', '金额', 'amount'])
     const category = dimensions[0] || times[0]
     const timeOrCategory = times[0] || category
     const base = emptyBinding(source.id)
     if (['kpi', 'gauge'].includes(kind) && measures[0]) return { ...base, measures: [measure(measures[0])] }
     if (['line', 'bar', 'table', 'ranking', 'pie', 'funnel', 'radar'].includes(kind)) {
-      const selected = kind === 'line' ? timeOrCategory : category
+      const selected = kind === 'line' || preferTime ? timeOrCategory : category
       if (selected && measures[0]) return {
         ...base,
         dimensions: [dimension(selected)],
         measures: [measure(measures[0])],
-        ...(kind === 'line' && selected.semanticType === 'time' ? { sort: [{ field: selected.id, direction: 'asc' }] } : {})
+        ...((kind === 'line' || preferTime) && selected.semanticType === 'time' ? { sort: [{ field: selected.id, direction: 'asc' }] } : {})
       }
     }
     if (kind === 'scatter' && measures.length >= 2) return { ...base, measures: [measure(measures[0]), measure(measures[1])] }

@@ -40,11 +40,10 @@ export function suggestIndependentWidgetPeriod(options = [], dashboardRange = []
     .filter(value => /^\d{4}-\d{2}$/.test(value)).sort()
   if (selected.length && months.some(month => month >= selected[0] && month <= selected[selected.length - 1])) return null
   const month = months[0]
-  const [year, number] = month.split('-').map(Number)
   return {
     periodMode: 'INDEPENDENT',
     periodStart: `${month}-01`,
-    periodEnd: new Date(Date.UTC(year, number, 0)).toISOString().slice(0, 10),
+    periodEnd: nextMonthStart(month),
     granularity: 'MONTHLY'
   }
 }

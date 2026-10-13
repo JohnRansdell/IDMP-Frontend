@@ -88,10 +88,13 @@ try {
     const widget=id=>({id,type:'chart',chartKind:'pie',sourceCode:'fixture',config:{dataBinding:{dataset:'backend',dimensions:[{field:'科室'}],measures:[{field:'value',aggregation:'sum'}],series:[],sort:[]},interaction:{clickAction:'drill'}}});
     document.querySelector('#app')?.__vue_app__?.unmount();
     document.body.innerHTML='<main id="department-test" style="display:flex;gap:16px;padding:20px"></main>';
-    const app=createApp({render:()=>h('div',{style:'display:flex;gap:16px'},[
+    window.__comparisonActions=[];
+    const app=createApp({render:()=>h('div',{style:'display:grid;grid-template-columns:560px 560px;gap:16px'},[
       h('section',{id:'viewer',style:'width:560px;height:450px'},[h(BindingWidget,{widget:widget('viewer'),title:'中药费用比例构成',interactive:true})]),
-      h('section',{id:'preview',style:'width:560px;height:450px'},[h(BindingWidget,{widget:widget('preview'),title:'中药费用比例构成 · 编辑预览',designer:true})])])});
-    app.provide('dashboardBindingDatasets',()=>[named]);
+      h('section',{id:'preview',style:'width:560px;height:450px'},[h(BindingWidget,{widget:widget('preview'),title:'中药费用比例构成 · 编辑预览',designer:true})]),
+      h('section',{id:'zero-bar',style:'width:560px;height:450px'},[h(BindingWidget,{widget:{...widget('zero-bar'),chartKind:'bar'},title:'全零科室对比',designer:true})]),
+      h('section',{id:'summary-bar',style:'width:560px;height:450px'},[h(BindingWidget,{widget:{...widget('summary-bar'),chartKind:'bar'},title:'只有汇总值的科室对比',designer:true,onAction:action=>window.__comparisonActions.push(action)})])])});
+    app.provide('dashboardBindingDatasets',widget=>[widget.id==='zero-bar'?{...named,rows:named.rows.map(row=>({...row,value:0}))}:widget.id==='summary-bar'?{...named,rows:[],comparisonAvailability:{status:'SUMMARY_ONLY'}}:named]);
     app.provide('dashboardSupportsBackendDrill',()=>true);
     app.provide('dashboardResolveWidgetDrill',async()=>({resultId:'root',indicatorVersionId:'version',path,configuredPaths:[path]}));
     app.use(ElementPlus).mount('#department-test');
@@ -99,6 +102,11 @@ try {
   await waitFor(async () => (await readLabels('viewer'))?.[0] === '血管外科' && (await readLabels('preview'))?.[0] === '血管外科', 'viewer and preview labels')
   assert.deepEqual(await readLabels('viewer'), ['血管外科'])
   assert.deepEqual(await readLabels('preview'), ['血管外科'])
+  await waitFor(()=>evaluate(`document.querySelector('#zero-bar .binding-zero-notice')?.innerText.includes('均为 0')`),'all-zero comparison is displayed')
+  assert.equal(await evaluate(`document.querySelector('#zero-bar .idmp-chart').__vueParentComponent.props.option.series[0].data[0].value`),0)
+  assert.ok(await evaluate(`document.querySelector('#summary-bar').innerText.includes('当前仅有指标汇总结果')`))
+  await evaluate(`Array.from(document.querySelectorAll('#summary-bar button')).find(button=>button.textContent==='改为指标卡').click()`)
+  assert.deepEqual(await evaluate(`window.__comparisonActions`),['kpi'])
   await clickSlice('viewer')
   await waitFor(async () => (await readLabels('viewer'))?.[0] === '王医生', 'doctor drill labels')
   await evaluate(`Array.from(document.querySelectorAll('#viewer .backend-chart-drill__path button')).find(button=>button.textContent==='全部科室').click()`)

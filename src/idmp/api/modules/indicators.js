@@ -1,8 +1,8 @@
 import { requestJson, requestPdf } from '@/idmp/api/request'
 import { normalizeIndicatorAnalysisParams, normalizeIndicatorRangeSummaryParams } from '@/idmp/api/adapters/indicator'
 
-export function fetchIndicators(params = {}) {
-  return requestJson(withQuery('/indicators', params))
+export function fetchIndicators(params = {}, options = {}) {
+  return requestJson(withQuery('/indicators', params), options)
 }
 
 export function fetchIndicator(indicatorId) {
@@ -131,11 +131,11 @@ export function fetchIndicatorAvailablePeriod(versionId) {
   return requestJson(`/indicator-versions/${encodeURIComponent(versionId)}/available-period`)
 }
 
-export function fetchIndicatorAnalysis(indicatorId, params = {}) {
+export function fetchIndicatorAnalysis(indicatorId, params = {}, options = {}) {
   return requestJson(withQuery(
     `/analysis/indicators/${indicatorId}/analysis`,
     normalizeIndicatorAnalysisParams(params)
-  ))
+  ), options)
 }
 
 export function exportIndicatorAnalysisPdf(indicatorId, report) {

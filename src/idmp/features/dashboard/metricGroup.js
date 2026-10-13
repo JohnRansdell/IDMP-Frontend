@@ -103,7 +103,7 @@ export function metricGroupItemWidget(group, item) {
     id: `${group.id}::${item.id}`, type: 'kpi', title: item.label,
     sourceCode: item.sourceCode, sourceName: item.sourceName,
     layout: group.layout,
-    config: { ...(item.dataBinding ? { dataBinding: item.dataBinding } : {}), query: plain(group.config?.query), style: { kpiVariant: normalizeKpiVariant(item.kpiVariant) } }
+    config: { ...(item.dataBinding ? { dataBinding: item.dataBinding } : {}), query: plain(group.config?.query), backendQuery: plain(group.config?.backendQuery), style: { kpiVariant: normalizeKpiVariant(item.kpiVariant) } }
   }
 }
 

@@ -54,6 +54,8 @@ export function warningEventToDashboardItem(event = {}, config = {}) {
     level: eventLevel(source.severity),
     severity,
     status: text(source.status),
+    name,
+    detail,
     text: [name, detail].filter(Boolean).join(' · '),
     time: presentation.showTime ? (text(source.triggerTime) || text(source.createdAt) || '-') : ''
   }

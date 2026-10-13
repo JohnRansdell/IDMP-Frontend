@@ -24,25 +24,25 @@
       </template>
     </template>
     <template v-else-if="!selectedItem">
-      <h3>指标组</h3>
-      <p class="metric-group-inspector__hint">管理组标题与指标。点击画布中的指标可进入单项编辑。</p>
-      <label>组标题<input :value="config.title" @input="patch({ title: $event.target.value })" /></label>
+      <h3>{{ widget.type === 'ranking' ? '排名指标' : '指标组' }}</h3>
+      <p class="metric-group-inspector__hint">管理标题与指标。点击画布中的指标可进入单项编辑。</p>
+      <label>{{ widget.type === 'ranking' ? '标题' : '组标题' }}<input :value="config.title" @input="patch({ title: $event.target.value })" /></label>
       <label>副标题（可选）<input :value="config.subtitle" @input="patch({ subtitle: $event.target.value })" /></label>
       <h3>指标（{{ config.items.length }}）</h3>
       <p v-if="!config.items.length" class="metric-group-inspector__empty">还没有指标。点击“添加指标”选择来源。</p>
       <div class="metric-group-inspector__items"><button v-for="(item, index) in config.items" :key="item.id" type="button" @click="select(item.id)"><span>{{ index + 1 }}. {{ item.label }}</span><small>{{ item.sourceName || '未绑定' }}</small></button></div>
       <template v-if="isAdding">
-        <label>选择指标来源<select data-testid="metric-group-source-picker" value="" @change="addSelectedSource($event.target.value)"><option value="">请选择指标</option><option v-for="source in sources" :key="source.code" :value="source.code">{{ source.name }}</option></select></label>
+        <label>选择指标来源</label><IndicatorSourcePicker test-id="metric-group-source-picker" :sources="sources" :loading="sourceLoading" :error="sourceError" @change="addSelectedSource" @refresh="emit('refresh-sources')" />
         <p v-if="!sources.length" class="metric-group-inspector__empty">暂无可用指标来源。</p>
         <button type="button" @click="select('')">取消添加</button>
       </template>
       <button v-else data-testid="metric-group-add-item" type="button" @click="add">+ 添加指标</button>
     </template>
     <template v-else>
-      <button class="metric-group-inspector__back" type="button" @click="select('')">返回指标组</button>
+      <button class="metric-group-inspector__back" type="button" @click="select('')">{{ widget.type === 'ranking' ? '返回排名列表' : '返回指标组' }}</button>
       <h3>指标</h3>
       <p class="metric-group-inspector__hint">正在编辑 {{ selectedItem.label }}。数据绑定继续复用现有 KPI 规则。</p>
-      <label>指标来源<select :value="selectedItem.sourceCode" @change="changeSource($event.target.value)"><option value="">未绑定</option><option v-for="source in sources" :key="source.code" :value="source.code">{{ source.name }}</option></select></label>
+      <label>指标来源</label><IndicatorSourcePicker :model-value="selectedItem.sourceCode" :current-name="selectedItem.sourceName" :sources="sources" :loading="sourceLoading" :error="sourceError" @change="changeSource" @refresh="emit('refresh-sources')" />
       <label>名称<input data-testid="metric-item-label" :value="selectedItem.label" @input="patchItem({ label: $event.target.value })" /></label>
       <label>单位<input :value="selectedItem.unit || ''" @input="patchItem({ unit: $event.target.value })" /></label>
       <div class="metric-group-inspector__order"><button type="button" :disabled="selectedIndex === 0" @click="move(-1)">上移</button><button type="button" :disabled="selectedIndex === config.items.length - 1" @click="move(1)">下移</button><button data-testid="metric-group-add-item" type="button" @click="add">+ 添加指标</button><button data-testid="metric-item-duplicate" type="button" @click="duplicate">复制指标</button><button data-testid="metric-item-delete" type="button" class="is-danger" @click="remove">删除</button></div>
@@ -54,11 +54,12 @@
 <script setup>
 import { computed, ref } from 'vue'
 import BindingInspector from './BindingInspector.vue'
+import IndicatorSourcePicker from './IndicatorSourcePicker.vue'
 import KpiVariantPicker from './KpiVariantPicker.vue'
 import { addMetricGroupItem, applyMetricGroupPreset, duplicateMetricGroupItem, METRIC_GROUP_ADD_SELECTION, METRIC_GROUP_PRESETS, metricGroupItemWidget, moveMetricGroupItem, normalizeMetricGroupConfig, removeMetricGroupItem } from '../metricGroup.js'
 
-const props = defineProps({ widget: { type: Object, required: true }, sources: { type: Array, default: () => [] }, getDatasets: { type: Function, required: true }, selectedItemId: { type: String, default: '' }, section: { type: String, default: 'data' } })
-const emit = defineEmits(['change', 'select-item'])
+const props = defineProps({ widget: { type: Object, required: true }, sources: { type: Array, default: () => [] }, getDatasets: { type: Function, required: true }, selectedItemId: { type: String, default: '' }, section: { type: String, default: 'data' }, sourceLoading: Boolean, sourceError: { type: String, default: '' } })
+const emit = defineEmits(['change', 'select-item', 'refresh-sources'])
 const config = computed(() => normalizeMetricGroupConfig(props.widget.config?.metricGroup))
 const presets = METRIC_GROUP_PRESETS
 const selectedPresetId = ref('')
@@ -86,7 +87,7 @@ function move(offset) { change(moveMetricGroupItem(config.value, selectedItem.va
 function changeSource(code) {
   const source = props.sources.find(item => item.code === code) || {}
   const item = selectedItem.value
-  const usesDefaultLabel = (!item.sourceCode && /^指标 \d+$/.test(item.label)) || (Boolean(item.sourceCode) && item.label === item.sourceName)
+  const usesDefaultLabel = (!item.sourceCode && /^(?:指标|核心指标|关键指标|绩效指标|科室指标|专题指标)\s*\d+$/.test(item.label)) || (Boolean(item.sourceCode) && item.label === item.sourceName)
   patchItem({
     ...(usesDefaultLabel && source.name ? { label: source.name } : {}),
     sourceCode: code, sourceName: source.name || '', unit: source.unit || item.unit, dataBinding: undefined
