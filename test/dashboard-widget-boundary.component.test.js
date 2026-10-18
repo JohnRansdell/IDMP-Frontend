@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { JSDOM } from 'jsdom'
 import { compileScript, parse } from '@vue/compiler-sfc'
+import { toUserMessage } from '../src/idmp/utils/userMessage.js'
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost/' })
 Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, SVGElement: dom.window.SVGElement, Element: dom.window.Element, Node: dom.window.Node, Document: dom.window.Document, Text: dom.window.Text, Comment: dom.window.Comment })
 Object.defineProperty(globalThis, 'navigator', { configurable: true, value: dom.window.navigator })
@@ -19,9 +20,10 @@ async function loadClientSfc(file) {
     const aliases = bindings.split(',').map((binding) => binding.trim().replace(/\s+as\s+/, ': ')).join(', ')
     return `const { ${aliases} } = globalThis.__dashboardBoundaryVue`
   })
-  compiled = compiled.replaceAll('import.meta.env.DEV', 'false').replace('export default', 'return')
+  compiled = compiled.replace(/^import \{ toUserMessage \} from ['"][^'"]+userMessage\.js['"]\s*$/gm, '')
+    .replaceAll('import.meta.env.DEV', 'false').replace('export default', 'return')
   globalThis.__dashboardBoundaryVue = vue
-  return Function(compiled)()
+  return Function('toUserMessage', compiled)(toUserMessage)
 }
 
 const Boundary = await loadClientSfc(fileURLToPath(new URL('../src/idmp/features/dashboard/components/DashboardWidgetBoundary.vue', import.meta.url)))
@@ -44,10 +46,11 @@ test('Widget boundary preserves parent and siblings around a throwing widget', a
   assert.match(wrapper.text(), /该组件暂时无法显示/)
   wrapper.unmount()
 })
-test('Widget boundary renders designer-safe fallback', async () => {
+test('Widget boundary renders a readable designer fallback without exposing raw errors', async () => {
   const wrapper = mount(Boundary, { props: { designer: true }, slots: { default: () => h(ThrowingWidget) } })
   await nextTick()
   assert.match(wrapper.text(), /组件渲染失败/)
-  assert.match(wrapper.text(), /intentional widget failure/)
+  assert.match(wrapper.text(), /组件暂时无法显示，请检查组件配置或重新加载。/)
+  assert.doesNotMatch(wrapper.text(), /intentional widget failure/)
   wrapper.unmount()
 })

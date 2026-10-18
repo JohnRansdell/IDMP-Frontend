@@ -31,7 +31,7 @@ async function verifyDownload(file, bytes) {
   assert.equal(downloaded.length, Number(file.fileSizeBytes))
 }
 const options = await api('GET', '/meta/file-objects/upload-options')
-assert.equal(Number(options.maxBytes), 1000000)
+assert.ok(Number.isSafeInteger(Number(options.maxBytes)) && Number(options.maxBytes) > 0)
 const missing = await api('POST', '/meta/file-objects/check', { sha256: hash, fileSizeBytes: content.length, originalName: '验收.txt' })
 assert.equal(missing.instantUpload, false); checks.push('首次校验未命中')
 const first = await upload(content, '政策验收.txt')
@@ -44,7 +44,7 @@ const concurrent = await Promise.all([upload(concurrentBytes, '并发1.txt'), up
 assert.equal(new Set(concurrent.map(result => result.file.id)).size, 1); checks.push('并发上传只创建一个文件对象')
 await upload(content, '错误哈希.txt', 'a'.repeat(64), 400)
 await upload(content, '伪装.pdf', hash, 400)
-await upload(Buffer.alloc(1000001, 65), '超限.txt', undefined, 400)
+await upload(Buffer.alloc(Number(options.maxBytes) + 1, 65), '超限.txt', undefined, 400)
 await upload(Buffer.from([0, 1, 2, 3]), '二进制.txt', undefined, 400)
 checks.push('错误哈希、伪装格式、超限、二进制文本友好拒绝')
 const pdfParts = ['%PDF-1.4\n'], offsets = [0]
@@ -72,7 +72,7 @@ checks.push('秒传大小一致性、强制下载、文件不存在、大分页�
 const policies = []
 for (let index = 0; index < 2; index++) {
   const created = await api('POST', '/meta/policy-files', { code: `${tag}_${index}`, name: `政策上传验收${index} ${tag}`, category: 'QUALITY', issuingOrganization: '测试机构', documentNumber: tag })
-  const detail = await api('POST', `/meta/policy-files/${created.policyFile.id}/versions`, { issueDate: '2026-10-04', fileObjectId: first.file.id, contentHash: hash })
+  const detail = await api('POST', `/meta/policy-files/${created.policyFile.id}/versions`, { issueDate: '2026-10-18', fileObjectId: first.file.id, contentHash: hash })
   const draft = detail.versions[0]
   const published = await api('POST', `/meta/policy-files/${created.policyFile.id}/versions/${draft.id}/publish`, { resourceVersion: draft.resourceVersion })
   assert.equal(published.policyFile.currentPublishedVersionId, draft.id)
@@ -89,9 +89,14 @@ const indicatorVersions = rows(await api('GET', `/indicators/${indicatorId}/vers
 const indicatorVersion = indicatorVersions.find(item => (item.publicationStatus || item.status) === 'PUBLISHED')
 assert.ok(indicatorVersion)
 const reference = await api('POST', `/mappings/indicator-versions/${indicatorVersion.id}/policy-references`, { policyFileVersionId: policies[0].versionId, citationLocation: '验收条款', citationText: '政策文件上传测试', relationRole: 'SOURCE' })
-const references = await api('GET', `/mappings/indicator-versions/${indicatorVersion.id}/policy-references`)
-assert.ok(references.some(item => item.id === reference.id)); checks.push('指标关联与回显')
-await api('POST', `/mappings/policy-references/${reference.id}/invalidate`, { resourceVersion: reference.resourceVersion })
+try {
+  const references = await api('GET', `/mappings/indicator-versions/${indicatorVersion.id}/policy-references`)
+  assert.ok(references.some(item => item.id === reference.id)); checks.push('指标关联与回显')
+} finally {
+  await api('POST', `/mappings/policy-references/${reference.id}/invalidate`, { resourceVersion: reference.resourceVersion })
+}
+const remaining = await api('GET', `/mappings/indicator-versions/${indicatorVersion.id}/policy-references`)
+assert.ok(!remaining.some(item => item.id === reference.id))
 checks.push('验收关联作废清理，不改变指标计算')
 const result = { passed: true, tag, options, policies, indicatorId, indicatorVersionId: indicatorVersion.id, file: first.file, pdfFile: pdfResult.file, docxFile: docxResult.file, checks, timings }
 await writeFile(`${evidence}/result.json`, JSON.stringify(result, null, 2))

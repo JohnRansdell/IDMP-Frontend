@@ -94,6 +94,12 @@ const routes = [
         meta: { title: '从模板创建因子', activeMenu: '/factor', breadcrumb: [B.home, B.factors, B.factorTemplates, '创建因子'] }
       },
       {
+        path: 'factor/view/:id',
+        name: 'FactorDetail',
+        component: () => import('@/idmp/views/FactorDetail.vue'),
+        meta: { title: '因子详情', activeMenu: '/factor', breadcrumb: [B.home, B.factors, '因子详情'] }
+      },
+      {
         path: 'factor/edit/:id?',
         name: 'FactorEditor',
         component: () => import('@/idmp/views/FactorEditor.vue'),

@@ -102,10 +102,11 @@ export function trialIndicatorVersion(versionId, payload, idempotencyKey) {
   })
 }
 
-export function queryIndicatorVersion(versionId, payload) {
+export function queryIndicatorVersion(versionId, payload, options = {}) {
   return requestJson(`/indicator-versions/${encodeURIComponent(versionId)}/query`, {
     method: 'POST',
     timeoutMs: 120000,
+    cache: options.cache,
     body: JSON.stringify(payload)
   })
 }
@@ -124,7 +125,7 @@ export function fetchIndicatorTrialResults(versionId, batchId, page = 1, size = 
 }
 
 export function fetchIndicatorScenarios(indicatorId, params = {}) {
-  return requestJson(withQuery(`/indicators/${encodeURIComponent(indicatorId)}/scenarios`, params))
+  return requestJson(withQuery(`/indicators/${encodeURIComponent(indicatorId)}/scenarios`, params), { cache: 'no-store' })
 }
 
 export function fetchIndicatorAvailablePeriod(versionId) {

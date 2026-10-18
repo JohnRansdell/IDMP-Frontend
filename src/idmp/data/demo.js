@@ -110,17 +110,6 @@ export const editorFactors = [
   { code: 'F-008', name: '医疗收入总额', aggregation: 'SUM', category: '费用', domain: '费用明细' }
 ]
 
-export const editorSceneRows = [
-  { name: '三级公立医院绩效考核', code: 'KH', exclusion: '默认', override: '默认', report: '按年度上报' },
-  { name: '三级医院评审', code: 'YS', exclusion: '+自定义', override: '有覆盖', report: '按病种分别统计' },
-  { name: '专业质控', code: 'ZK', exclusion: '默认', override: '默认', report: '按季度上报' }
-]
-
-export const editorPolicyRows = [
-  { policy: '国家三级公立医院绩效考核操作手册', version: '2024版', code: 'KH-02', originalName: '手术患者并发症发生率', chapter: '医疗质量-质量安全', relation: '主要来源' },
-  { policy: '三级综合医院医疗质量管理与控制指标', version: '2011版', code: 'MORT-03', originalName: '手术患者并发症发生率', chapter: '住院死亡类指标', relation: '参考' }
-]
-
 export const sceneIndicators = [
   { code: 'KH-01', name: '门诊人次数与出院人次数比', version: 'V2024', exclusion: '默认', override: '无', report: '按年度', latest: '1.82', tone: 'normal' },
   { code: 'KH-02', name: '手术患者并发症发生率', version: 'V2024', exclusion: '+自定义', override: '有覆盖', report: '按年度', latest: '2.3% ↑', tone: 'warning' },

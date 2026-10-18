@@ -51,7 +51,7 @@ export function fetchMappingsByIndicatorVersion(indicatorVersionId) {
 }
 
 export function fetchPolicyReferences(indicatorVersionId) {
-  return requestJson(`/mappings/indicator-versions/${encodeURIComponent(indicatorVersionId)}/policy-references`)
+  return requestJson(`/mappings/indicator-versions/${encodeURIComponent(indicatorVersionId)}/policy-references`, { cache: 'no-store' })
 }
 
 export function createPolicyReference(indicatorVersionId, payload) {

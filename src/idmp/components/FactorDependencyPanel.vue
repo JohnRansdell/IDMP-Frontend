@@ -7,13 +7,13 @@
       <el-table-column prop="factorName" label="因子" min-width="200" />
       <el-table-column prop="factorVersionId" label="版本 ID" min-width="180" />
       <el-table-column label="关系" width="120"><template #default="{row}">{{ relation(row) }}</template></el-table-column>
-      <el-table-column label="状态" width="110"><template #default="{ row }">{{ getStatusLabel(row.status) }}</template></el-table-column>
+      <el-table-column label="状态" width="110"><template #default="{ row }">{{ getStatusLabel(row.status || row.publicationStatus) }}</template></el-table-column>
       <el-table-column label="操作" width="110"><template #default="{ row }"><el-button link type="primary" @click="open(row)">查看因子</el-button></template></el-table-column>
     </el-table>
   </section>
 </template>
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { fetchFactorDependencyGraph, fetchFactorImpactAnalysis, fetchFactorVersion } from '@/idmp/api/modules/factors'
@@ -31,6 +31,7 @@ function relation(row) {
 }
 async function load() {
   const token = ++sequence; loading.value = true; error.value = ''; graph.value = null
+  if (!props.versionId) { loading.value = false; return }
   try {
     const data = await (mode.value === 'upstream' ? fetchFactorDependencyGraph : fetchFactorImpactAnalysis)(props.versionId)
     if (token === sequence) graph.value = data
@@ -38,10 +39,12 @@ async function load() {
   finally { if (token === sequence) loading.value = false }
 }
 async function open(row) {
-  try { const version = await fetchFactorVersion(row.factorVersionId); await router.push({ path: `/factor/edit/${version.factorId}`, query: { factorVersionId: String(row.factorVersionId) } }) }
+  const token = sequence
+  try { const version = await fetchFactorVersion(row.factorVersionId); if (token !== sequence) return; if (!version.factorId) throw new Error('未找到对应因子'); await router.push({ name: 'FactorDetail', params: { id: String(version.factorId) }, query: { factorVersionId: String(row.factorVersionId) } }) }
   catch (e) { ElMessage.error(e?.message || '因子版本读取失败') }
 }
 watch(() => [props.versionId, props.artifactId], load, { immediate: true })
+onBeforeUnmount(() => { sequence++ })
 </script>
 <style scoped>
 .dependency-panel { margin-bottom: 16px; padding: 18px; }

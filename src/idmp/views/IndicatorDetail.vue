@@ -100,7 +100,10 @@
           <div class="section-title compact"><div><h2>关联场景</h2><p class="section-title__description">按指标主 ID 反查当前有效场景，并展示实际引用的指标版本。</p></div></div>
           <StatePanel v-if="scenarioLoading" type="loading" title="正在加载关联场景" />
           <StatePanel v-else-if="scenarioError" type="error" title="关联场景加载失败" :description="scenarioError" />
-          <StatePanel v-else-if="!scenarioRows.length" type="empty" title="暂无关联场景" description="该有效指标当前没有场景引用。" />
+          <div v-else-if="!scenarioRows.length" class="related-scenarios__empty" role="status">
+            <span>暂无关联场景，配置并发布场景后可在此查看。</span>
+            <el-button type="primary" link size="small" @click="router.push({ name: 'ScenarioList' })">前往场景管理</el-button>
+          </div>
           <el-table v-else :data="scenarioRows" size="small" table-layout="fixed">
             <el-table-column prop="code" label="场景编码" min-width="180" />
             <el-table-column prop="name" label="场景名称" min-width="180" />
@@ -289,7 +292,7 @@ async function openFactorEditor(versionId) {
     const factorVersion = await loadFormulaFactorVersion(versionId)
     if (selectedVersionId.value !== indicatorVersionId || route.fullPath !== origin) return
     if (!factorVersion?.factorId) throw new Error('未找到对应的因子，请刷新后重试。')
-    await router.push({ name: 'FactorEditor', params: { id: String(factorVersion.factorId) }, query: { factorVersionId: versionId } })
+    await router.push({ name: 'FactorDetail', params: { id: String(factorVersion.factorId) }, query: { factorVersionId: versionId } })
   } catch (error) {
     if (selectedVersionId.value === indicatorVersionId && route.fullPath === origin) ElMessage.error(error?.message || '暂时无法打开因子，请稍后重试。')
   } finally { factorNavigationPending.value = '' }
@@ -563,6 +566,7 @@ onMounted(loadIndicatorDetail)
 .detail-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
+  align-items: start;
   gap: 16px;
 }
 
@@ -619,13 +623,29 @@ onMounted(loadIndicatorDetail)
   }
 }
 
+.related-scenarios {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--idmp-border-subtle);
+}
+
+.related-scenarios__empty {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  min-height: 32px;
+  color: var(--idmp-text-secondary);
+  font-size: 13px;
+}
+
 .detail-side {
   display: grid;
   align-content: start;
   gap: 16px;
 }
 
-.formula-definition { margin: 24px 0; padding-top: 20px; border-top: 1px solid var(--idmp-border-subtle); min-width: 0; scroll-margin-top: 80px; }
+.formula-definition { margin: 24px 0 0; padding-top: 20px; border-top: 1px solid var(--idmp-border-subtle); min-width: 0; scroll-margin-top: 80px; }
 .formula-definition h2 { margin: 0 0 18px; font-size: 15px; }
 .formula-expression { display: flex; align-items: center; gap: 16px; max-width: 100%; margin: 0; font-size: 15px; font-weight: 500; line-height: 1.7; color: var(--idmp-text-primary); overflow-wrap: anywhere; }
 .formula-expression > span { min-width: 0; }

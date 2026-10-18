@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
-import { api } from './system-test-client.mjs'
+import { api, base } from './system-test-client.mjs'
 
 const evidence = resolve('.tmp/policy-browser'), tag = `BROWSER_${Date.now()}`
 await mkdir(evidence, { recursive: true })
@@ -12,6 +12,8 @@ const text = `政策文件浏览器验收\n${tag}\n文件内容应正确显示�
 await writeFile(fixture, text)
 const live = JSON.parse(await readFile('.tmp/policy-live/result.json', 'utf8'))
 const profile = await mkdtemp(join(tmpdir(), 'idmp-policy-'))
+const appPort = 41875
+const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--port', String(appPort), '--strictPort'], { windowsHide: true, stdio: 'ignore', env: { ...process.env, VITE_API_BASE_URL: '/api/v1', VITE_API_PROXY_TARGET: base.replace(/\/api\/v1\/?$/, '') } })
 const debugPort = 41819
 const chrome = spawn('C:/Program Files/Google/Chrome/Application/chrome.exe', ['--headless=new', `--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`, '--no-first-run', 'about:blank'], { windowsHide: true, stdio: 'ignore' })
 let socket, id = 0
@@ -38,6 +40,7 @@ async function selectFile() {
 }
 async function noMessageError() { assert.equal(await evaluate(`document.querySelector('.el-message--error')?.textContent||''`), '') }
 try {
+  await waitFor(async () => { try { return (await fetch(`http://127.0.0.1:${appPort}`)).ok } catch { return false } }, 'Vite')
   let target
   await waitFor(async () => { try { target = (await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json()).find(page => page.type === 'page'); return !!target } catch { return false } }, 'Chrome')
   socket = new WebSocket(target.webSocketDebuggerUrl)
@@ -51,7 +54,7 @@ try {
   await send('Page.enable'); await send('Runtime.enable'); await send('DOM.enable')
   await send('Page.addScriptToEvaluateOnNewDocument', { source: `window.__policyCalls=[];const f=window.fetch.bind(window);window.fetch=async(...args)=>{const r=await f(...args);window.__policyCalls.push({url:String(args[0]),method:args[1]?.method||'GET',status:r.status});return r}` })
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, mobile: false, deviceScaleFactor: 1 })
-  await send('Page.navigate', { url: 'http://127.0.0.1:5173/policies' })
+  await send('Page.navigate', { url: `http://127.0.0.1:${appPort}/policies` })
   await waitFor(() => evaluate(`!!document.querySelector('.policy-page')&&!document.querySelector('.el-loading-mask')`), 'Policy page')
   await evaluate(`window.__policy=document.querySelector('.policy-page').__vueParentComponent.setupState`)
   await click('新建政策文件')
@@ -62,7 +65,7 @@ try {
   await selectFile()
   await waitFor(() => evaluate(`!!window.__policy.uploaded&&!window.__policy.uploading`), 'First upload')
   assert.equal(await evaluate(`window.__policy.uploadState`), '上传完成')
-  await evaluate(`window.__policy.versionForm.issueDate='2026-10-04'`)
+  await evaluate(`window.__policy.versionForm.issueDate='2026-10-18'`)
   await click('保存草稿')
   await waitFor(() => evaluate(`window.__policy.detail?.versions?.length===1&&!window.__policy.saving`), 'Draft version')
   await click('发布')
@@ -94,7 +97,7 @@ try {
   await screenshot('list-desktop.png')
   const own = await evaluate(`({policyId:window.__policy.detail.policyFile.id,versionId:window.__policy.detail.versions[0].id})`)
   for (const [kind, file] of [['pdf', live.pdfFile], ['docx', live.docxFile]]) {
-    const detail = await api('POST', `/meta/policy-files/${own.policyId}/versions`, { issueDate: '2026-10-04', fileObjectId: file.id, contentHash: file.sha256 })
+    const detail = await api('POST', `/meta/policy-files/${own.policyId}/versions`, { issueDate: '2026-10-18', fileObjectId: file.id, contentHash: file.sha256 })
     const version = detail.versions.find(version => version.fileObjectId === file.id)
     await evaluate(`window.__policy.viewerId='${version.id}'`)
     await waitFor(() => evaluate(kind === 'pdf' ? `!!document.querySelector('.policy-viewer iframe')?.src.startsWith('blob:')` : `document.querySelector('.policy-viewer')?.textContent.includes('此文件格式需下载查看')`), `${kind} preview`)
@@ -105,7 +108,7 @@ try {
   }
   const reference = await api('POST', `/mappings/indicator-versions/${live.indicatorVersionId}/policy-references`, { policyFileVersionId: own.versionId, relationRole: 'SOURCE', citationText: '浏览器关联查看验收' })
   try {
-    await send('Page.navigate', { url: `http://127.0.0.1:5173/indicator/view/${live.indicatorId}?versionId=${live.indicatorVersionId}` })
+    await send('Page.navigate', { url: `http://127.0.0.1:${appPort}/indicator/view/${live.indicatorId}?versionId=${live.indicatorVersionId}` })
     await waitFor(() => evaluate(`!!document.querySelector('.policy-reference-form')`), 'Published indicator detail')
     await evaluate(`document.querySelector('.policy-reference-form .el-select__wrapper').click()`)
     await waitFor(() => evaluate(`Array.from(document.querySelectorAll('.el-select-dropdown__item')).some(el=>el.textContent.includes('${tag}'))`), 'Policy picker names')
@@ -124,4 +127,4 @@ try {
     await writeFile(join(evidence, 'failure.json'), JSON.stringify(await evaluate(`({url:location.href,text:document.body.innerText,requests:window.__policyCalls})`), null, 2))
   }
   throw error
-} finally { socket?.close(); chrome.kill() }
+} finally { socket?.close(); chrome.kill(); server.kill() }

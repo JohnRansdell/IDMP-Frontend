@@ -51,11 +51,11 @@ test('published mortality fields produce ready-to-preview chart and table defaul
   assert.equal(line.measures[0].field, 'value')
 })
 
-test('saved backend widgets without bindings recover the same smart defaults', () => {
+test('saved backend widgets recover groupable department defaults and otherwise fall back to time', () => {
   const fields = [
     { code: 'value', name: '指标值', dataType: 'DECIMAL', role: 'MEASURE', aggregations: ['NONE'] },
     { code: 'periodStart', name: '统计开始时间', dataType: 'DATETIME', role: 'DIMENSION' },
-    { code: 'OUT_DEPT_NAME', name: '出院科室', dataType: 'STRING', role: 'DIMENSION' }
+    { code: 'OUT_DEPT_NAME', name: '出院科室', dataType: 'STRING', role: 'DIMENSION', groupable: true }
   ]
   const schema = {
     widgets: [
@@ -69,6 +69,12 @@ test('saved backend widgets without bindings recover the same smart defaults', (
   assert.equal(restored.widgets[1].config.dataBinding.dimensions[0].field, 'periodStart')
   assert.equal(restored.widgets[2].config.dataBinding.dimensions[0].field, 'OUT_DEPT_NAME')
   assert.ok(restored.widgets.every(widget => widget.config.dataBinding.measures[0].field === 'value'))
+
+  const timeOnly = applyDefaultDashboardBindings(schema, {
+    mortality: fields.map(field => ({ ...field, groupable: false }))
+  })
+  assert.ok(timeOnly.widgets.every(widget => widget.config.dataBinding.dimensions[0].field === 'periodStart'), 'a catalog department field without grouping capability is not a classification default')
+  assert.ok(schema.widgets.every(widget => !widget.config.dataBinding), 'recovering defaults must not mutate the saved schema')
 })
 
 test('saved bindings recover when a backend field no longer supports their aggregation', () => {

@@ -26,10 +26,10 @@ test('published dashboard widgets support a bounded inclusive month range', () =
   })
 })
 
-test('a newly added source outside the dashboard range gets only its own latest month', () => {
+test('a newly added source outside the dashboard range gets its latest month as a half-open period', () => {
   const options = [{ value: '2026-09' }, { value: '2026-08' }]
   assert.deepEqual(suggestIndependentWidgetPeriod(options, ['2026-01', '2026-03']), {
-    periodMode: 'INDEPENDENT', periodStart: '2026-09-01', periodEnd: '2026-09-30', granularity: 'MONTHLY'
+    periodMode: 'INDEPENDENT', periodStart: '2026-09-01', periodEnd: '2026-10-01', granularity: 'MONTHLY'
   })
   assert.equal(suggestIndependentWidgetPeriod(options, ['2026-08', '2026-10']), null)
   assert.equal(suggestIndependentWidgetPeriod([], ['2026-01', '2026-03']), null)
