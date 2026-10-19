@@ -1,3 +1,5 @@
+import { arithmeticFormulaError, arithmeticFactorIds } from './arithmeticFormula.js'
+
 const factorId = node => node?.nodeType === 'FACTOR_REF' ? String(node.factorVersionId ?? node.versionId ?? node.refVersionId ?? '') : ''
 
 function additiveFactors(node) {
@@ -19,10 +21,11 @@ export function parseEditorFormula(formula) {
   }
   const additive = additiveFactors(root)
   if (additive) return { mode: '加法合成型', left: additive, right: [] }
-  if (root.nodeType !== 'BINARY' || !['DIV', 'SUB', 'MUL'].includes(root.operator)) return null
+  const advanced = () => arithmeticFormulaError(root) ? null : { mode: '嵌套公式型', left: arithmeticFactorIds(root), right: [] }
+  if (root.nodeType !== 'BINARY' || !['DIV', 'SUB', 'MUL'].includes(root.operator)) return advanced()
   const left = additiveFactors(root.left)
   const right = additiveFactors(root.right)
-  if (!left || !right) return null
+  if (!left || !right) return advanced()
   const mode = root.operator === 'DIV'
     ? (percent ? (left.length + right.length > 2 ? '复合比率型' : '简单比率型') : (left.length + right.length > 2 ? '复合比值型' : '比值型'))
     : '多因子计算型'

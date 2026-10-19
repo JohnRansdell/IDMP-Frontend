@@ -143,7 +143,7 @@
 
       <el-tab-pane label="2 公式与试算" name="formula">
         <section class="surface-card formula-card">
-          <el-alert v-if="unsupportedFormula" title="当前公式包含嵌套运算或常量，暂不支持在此编辑；原公式不会被修改。" type="warning" :closable="false" />
+          <el-alert v-if="unsupportedFormula" title="当前公式含暂不支持的节点类型；原公式不会被修改。" type="warning" :closable="false" />
           <h2>计算模式</h2>
           <div class="formula-modes">
             <el-button
@@ -152,7 +152,7 @@
               :disabled="unsupportedFormula"
               :type="formulaMode === mode.name ? 'primary' : 'default'"
               :aria-pressed="formulaMode === mode.name ? 'true' : 'false'"
-              @click="formulaMode = mode.name"
+              @click="selectFormulaMode(mode.name)"
             >
               {{ mode.name }}
             </el-button>
@@ -163,7 +163,16 @@
           </div>
 
           <h2 class="formula-section-title">公式编辑器</h2>
-          <div class="formula-builder">
+          <div v-if="activeMode.kind === 'advanced'" class="advanced-formula-builder">
+            <IndicatorFormulaNodeEditor v-model="advancedFormulaRoot" :factors="advancedFactorOptions" :disabled="indicatorWorkflow.published" />
+            <div class="formula-settings">
+              <label>展示格式</label><el-select :model-value="advancedFormulaPayload.display.format" :disabled="indicatorWorkflow.published" aria-label="嵌套公式展示格式" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, format: $event }"><el-option label="数值" value="NUMBER" /><el-option label="百分比" value="PERCENT" /><el-option v-if="savedFormulaDisplay?.format === 'DECIMAL'" label="数值" value="DECIMAL" /></el-select>
+              <label>展示乘数</label><el-input :model-value="String(advancedFormulaPayload.display.multiplier ?? '1')" :disabled="indicatorWorkflow.published" aria-label="展示乘数" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, multiplier: $event }" />
+              <label>小数位数</label><el-input-number :model-value="advancedFormulaPayload.display.scale ?? 2" :disabled="indicatorWorkflow.published" :min="0" :max="12" :precision="0" aria-label="展示小数位数" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, scale: $event }" />
+              <el-select :model-value="advancedFormulaPayload.display.roundingMode || 'HALF_UP'" :disabled="indicatorWorkflow.published" aria-label="展示舍入方式" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, roundingMode: $event }"><el-option v-for="[code, label] in roundingModes" :key="code" :value="code" :label="label" /></el-select>
+            </div>
+          </div>
+          <div v-else class="formula-builder">
             <div v-if="activeMode.kind === 'statistic'" class="formula-settings formula-settings--top">
               <label>统计方法</label>
               <el-select v-model="statisticOperator" aria-label="选择统计方法">
@@ -242,7 +251,7 @@
           </div>
 
           <div class="factor-library">
-            <div class="factor-library__head">
+            <div v-if="activeMode.kind !== 'advanced'" class="factor-library__head">
               <h3><el-icon><Box /></el-icon>可用因子（拖拽到上方编辑器槽位）</h3>
               <div class="factor-tools">
                 <el-input
@@ -258,7 +267,7 @@
                 </el-select>
               </div>
             </div>
-            <div class="factor-grid" v-loading="workflowLoading.factors">
+            <div v-if="activeMode.kind !== 'advanced'" class="factor-grid" v-loading="workflowLoading.factors">
               <article
                 v-for="factor in availableFactors"
                 :key="factor.code"
@@ -274,7 +283,7 @@
                 <el-button text type="primary" @click="quickAdd(factor)">添加</el-button>
               </article>
             </div>
-            <div class="factor-library__footer">
+            <div v-if="activeMode.kind !== 'advanced'" class="factor-library__footer">
               <el-button :icon="Plus" @click="router.push('/factor')">前往因子管理</el-button>
               <el-tooltip content="当前后端尚未提供因子导入接口">
                 <span
@@ -491,13 +500,14 @@
           <div class="formula-preview">
             <div>
               <span>公式预览</span>
-              <strong>指标值 = {{ formulaPreview }}</strong>
+              <IndicatorFormulaExpression v-if="advancedFormulaValid" :formula="advancedFormulaPayload" :factors="advancedFactorOptions" />
+              <strong v-else>指标值 = {{ formulaPreview }}</strong>
             </div>
             <div class="validation-state" :class="{ 'is-invalid': !formulaValid }">
               <el-icon><CircleCheckFilled v-if="formulaValid" /><CircleCloseFilled v-else /></el-icon>
-              <span>{{ formulaValid ? '本地结构检查通过：分子和分母均非空；类型、单位和依赖仍须服务端校验' : '本地结构检查未通过：请补充分子和分母因子' }}</span>
+              <span>{{ formulaValid ? '本地结构检查通过；类型、单位和依赖仍须服务端校验' : (activeMode.kind === 'advanced' ? advancedFormulaError : '本地结构检查未通过：请补充公式因子') }}</span>
             </div>
-            <div class="formula-settings">
+            <div v-if="activeMode.kind !== 'advanced'" class="formula-settings">
               <label>分母为零策略</label>
               <el-select v-model="zeroStrategy" aria-label="分母为零策略">
                 <el-option label="返回空值" value="返回 NULL" />
@@ -505,7 +515,7 @@
                 <el-option label="标记异常" value="标记异常" />
               </el-select>
               <label>展示格式</label>
-              <span>百分比</span><i /> <span>乘数：100</span><i /> <span>精度：2位</span>
+              <span>{{ activeMode.multiplier ? '百分比' : '数值' }}</span><i /> <span>乘数：{{ activeMode.multiplier ? 100 : 1 }}</span><i /> <span>精度：{{ savedFormulaDisplay?.scale ?? 2 }}位</span>
             </div>
           </div>
         </section>
@@ -718,6 +728,9 @@ import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
 import { factorCalculationMode } from '@/idmp/utils/factorPeriod'
 import { newResourceCode } from '@/idmp/utils/resourceCode'
 import { parseEditorFormula, zeroPolicy, zeroPolicyLabel } from '@/idmp/features/indicator/formulaEditor'
+import { arithmeticFormulaError, arithmeticDisplayError, arithmeticFactorIds, arithmeticFormulaText, buildArithmeticFormula, cloneFormula, createArithmeticNode, roundingModes } from '@/idmp/features/indicator/arithmeticFormula'
+import IndicatorFormulaNodeEditor from '@/idmp/components/IndicatorFormulaNodeEditor.vue'
+import IndicatorFormulaExpression from '@/idmp/components/IndicatorFormulaExpression.vue'
 import { configurableSourceFactors, activeSourceBindings } from '@/idmp/utils/derivedFactor'
 import { fetchPublishedFactorVersions } from '@/idmp/api/modules/factors'
 import RuntimeParameterFields from '@/idmp/components/RuntimeParameterFields.vue'
@@ -821,7 +834,8 @@ const editLoadState = reactive({
   message: ''
 })
 
-const selectedFormulaFactors = computed(() => [
+const selectedFormulaFactors = computed(() => activeMode.value.kind === 'advanced'
+  ? arithmeticFactorIds(advancedFormulaRoot.value).map(id => findFactorByVersionId(id) || createFormulaFactorPlaceholder('引用因子', id)) : [
   ...numeratorFactors.value,
   ...denominatorFactors.value
 ])
@@ -1118,6 +1132,7 @@ function syncCategorySelection(path = form.categoryPath) {
 }
 
 const formulaModes = [
+  { name: '嵌套公式型', kind: 'advanced', description: '嵌套四则运算、数字常量与舍入', factorRequirement: '完整的嵌套公式' },
   { name: '简单比率型', kind: 'ratio', description: '一个分子 ÷ 一个分母 × 100%，适用于最基本的百分比指标', leftLabel: '分子', leftHint: '拖入一个因子', leftPlaceholder: '从下方拖入分子因子', rightLabel: '分母', rightHint: '拖入一个因子', rightPlaceholder: '从下方拖入分母因子', showRight: true, multiplier: '100%', factorRequirement: '一个分子和一个分母' },
   { name: '加法合成型', kind: 'add', description: '多个同量纲因子相加，适用于总量类指标', leftLabel: '参与合成的因子', leftHint: '可拖入多个因子', leftPlaceholder: '从下方拖入一个或多个因子', showRight: false, multiplier: '', factorRequirement: '至少一个参与合成的因子' },
   { name: '复合比率型', kind: 'ratio', description: '多个因子分别汇总后相除，并按百分比展示，适用于综合比率指标', leftLabel: '分子因子', leftHint: '可拖入多个因子', leftPlaceholder: '从下方拖入一个或多个分子因子', rightLabel: '分母因子', rightHint: '可拖入多个因子', rightPlaceholder: '从下方拖入一个或多个分母因子', showRight: true, multiplier: '100%', factorRequirement: '至少一个分子和一个分母因子' },
@@ -1144,6 +1159,25 @@ const savedFormulaDisplay = ref(null)
 const savedFormulaDefinition = ref(null)
 const savedEditorFormulaSignature = ref('')
 const savedCalculationDescription = ref(null)
+const advancedFormulaRoot = ref(null)
+const advancedFormulaError = computed(() => arithmeticFormulaError(advancedFormulaRoot.value) || arithmeticDisplayError(savedFormulaDisplay.value || {}))
+const advancedFormulaValid = computed(() => activeMode.value.kind === 'advanced' && !advancedFormulaError.value)
+const advancedFactorOptions = computed(() => {
+  const factors = new Map(backendEditorFactors.value.map(factor => [String(factor.versionId), factor]))
+  for (const factor of numeratorFactors.value) if (!factors.has(String(factor.versionId))) factors.set(String(factor.versionId), factor)
+  return [...factors.values()]
+})
+const advancedFormulaPayload = computed(() => ({ ...savedFormulaDefinition.value, root: advancedFormulaRoot.value, display: savedFormulaDisplay.value || { format: 'NUMBER', multiplier: '1', scale: 2, roundingMode: 'HALF_UP' } }))
+
+function selectFormulaMode(name) {
+  if (name === formulaMode.value) return
+  if (name === '嵌套公式型') {
+    const formula = formulaValid.value ? createIndicatorFormulaPayload(0).formula : null
+    advancedFormulaRoot.value = cloneFormula(formula?.root || createArithmeticNode('BINARY'))
+    if (formula?.display) savedFormulaDisplay.value = cloneFormula(formula.display)
+  }
+  formulaMode.value = name
+}
 
 const selectedFactorCodes = computed(() => new Set([
   ...numeratorFactors.value.map(item => item.code),
@@ -1160,6 +1194,7 @@ const availableFactors = computed(() => factorLibraryRows.value.filter(item => {
 
 const formulaValid = computed(() => {
   if (unsupportedFormula.value) return false
+  if (activeMode.value.kind === 'advanced') return !advancedFormulaError.value && selectedFormulaFactors.value.length > 0
   if (activeMode.value.kind === 'add' || activeMode.value.kind === 'statistic') return numeratorFactors.value.length > 0
   return numeratorFactors.value.length > 0 && denominatorFactors.value.length > 0
 })
@@ -1168,6 +1203,7 @@ const formulaOperatorLabel = computed(() => {
   return '÷'
 })
 const formulaPreview = computed(() => {
+  if (activeMode.value.kind === 'advanced') return arithmeticFormulaText(advancedFormulaRoot.value, advancedFactorOptions.value)
   const leftText = numeratorFactors.value.map(item => item.name).join(' + ') || activeMode.value.leftPlaceholder
   const left = numeratorFactors.value.length > 1 && activeMode.value.showRight ? `(${leftText})` : leftText
   if (!activeMode.value.showRight) return activeMode.value.kind === 'statistic' ? `${statisticOperator.value}（${left}）` : left
@@ -1416,6 +1452,7 @@ watch(indicatorDimensionGrain, () => {
 watch(
   () => [
     formulaMode.value, customOperator.value, statisticOperator.value, zeroStrategy.value,
+    JSON.stringify(advancedFormulaRoot.value), JSON.stringify(savedFormulaDisplay.value),
     ...numeratorFactors.value.map((factor) => String(factor.versionId || factor.code || '')),
     '|',
     ...denominatorFactors.value.map((factor) => String(factor.versionId || factor.code || ''))
@@ -1645,6 +1682,7 @@ function hydrateFormulaFactors(formula) {
     unsupportedFormula.value = Boolean(formula && !parsed)
     savedFormulaDisplay.value = formula?.display ? { ...formula.display } : null
     savedFormulaDefinition.value = formula ? JSON.parse(JSON.stringify(formula)) : null
+    advancedFormulaRoot.value = parsed?.mode === '嵌套公式型' ? cloneFormula(formula.root || formula) : null
     savedEditorFormulaSignature.value = ''
     numeratorFactors.value = []
     denominatorFactors.value = []
@@ -1667,6 +1705,7 @@ function hydrateFormulaFactors(formula) {
 
 function editorFormulaSignature() {
   return JSON.stringify([formulaMode.value, customOperator.value, statisticOperator.value, zeroStrategy.value,
+    advancedFormulaRoot.value, savedFormulaDisplay.value,
     numeratorFactors.value.map(factor => String(factor.versionId)), denominatorFactors.value.map(factor => String(factor.versionId))])
 }
 
@@ -2493,6 +2532,9 @@ function createIndicatorFormulaPayload(resourceVersion) {
   if (!formulaValid.value) throw new Error(`请按${activeMode.value.factorRequirement}选择已发布因子`)
   if (savedFormulaDefinition.value && savedEditorFormulaSignature.value === editorFormulaSignature()) {
     return { resourceVersion, formula: JSON.parse(JSON.stringify(savedFormulaDefinition.value)) }
+  }
+  if (activeMode.value.kind === 'advanced') {
+    return { resourceVersion, formula: buildArithmeticFormula(advancedFormulaRoot.value, advancedFormulaPayload.value) }
   }
   const factorRef = (factor, index) => ({ nodeId: `factor_${index}_${factor.versionId}`, nodeType: 'FACTOR_REF', factorVersionId: String(factor.versionId) })
   const combine = (factors, operator, prefix) => combineFormulaNodes(
@@ -3543,12 +3585,17 @@ onMounted(async () => {
 
   > div:first-child {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
     gap: 14px;
 
     span { color: var(--idmp-text-helper); }
     strong { color: var(--idmp-text-primary); }
   }
+}
+
+.advanced-formula-builder .formula-settings {
+  .el-select, .el-input, .el-input-number { width: 180px; max-width: 100%; margin-right: 0; }
 }
 
 .validation-state {

@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { parseEditorFormula, zeroPolicy, zeroPolicyLabel } from '../src/idmp/features/indicator/formulaEditor.js'
+import { buildArithmeticFormula, cloneFormula } from '../src/idmp/features/indicator/arithmeticFormula.js'
 import { combineFormulaNodes } from '../src/idmp/api/adapters/indicator.js'
 import { departmentAchievement } from '../src/idmp/features/analysis/departmentRanking.js'
 import { computed, ref } from 'vue'
@@ -16,7 +17,8 @@ const factor = id => ({ versionId: id, code: id, name: id })
 const node = id => ({ nodeType: 'FACTOR_REF', factorVersionId: id })
 const add = (left, right) => ({ nodeType: 'BINARY', operator: 'ADD', left, right })
 function editor() {
-  const scope = { parseEditorFormula, zeroPolicy, zeroPolicyLabel, combineFormulaNodes,
+  const scope = { parseEditorFormula, zeroPolicy, zeroPolicyLabel, combineFormulaNodes, buildArithmeticFormula, cloneFormula,
+    advancedFormulaRoot: ref(null), advancedFormulaPayload: ref({}),
     formulaValid: ref(true), activeMode: ref({ kind: 'ratio', multiplier: '100%' }),
     numeratorFactors: ref([]), denominatorFactors: ref([]), zeroStrategy: ref('返回 NULL'),
     unsupportedFormula: ref(false), formulaHydrating: ref(false), savedFormulaDisplay: ref(null),
@@ -26,6 +28,31 @@ function editor() {
     findFactorByVersionId: factor, createFormulaFactorPlaceholder: (_, id) => factor(id) }
   return { scope, ...Function(...Object.keys(scope), `${body('editorFormulaSignature')}\n${body('hydrateFormulaFactors')}\n${body('createIndicatorFormulaPayload')}\n${body('applySelectedFactorReferences')}\nreturn {hydrateFormulaFactors,createIndicatorFormulaPayload,applySelectedFactorReferences}`)(...Object.values(scope)) }
 }
+
+test('nested arithmetic and ROUND hydrate factor references and save the exact original definition', () => {
+  const e = editor()
+  const formula = { schemaVersion: '1.0', calculationMode: 'TEMPORAL', root: {
+    nodeId: 'round', nodeType: 'FUNCTION', functionCode: 'ROUND', scale: 2, roundingMode: 'HALF_UP', arguments: [{
+      nodeId: 'multiply', nodeType: 'BINARY', operator: 'MUL', left: {
+        nodeId: 'divide', nodeType: 'BINARY', operator: 'DIV', zeroDenominatorPolicy: 'ERROR',
+        left: { nodeId: 'subtract', nodeType: 'BINARY', operator: 'SUB', left: node('A'), right: add(node('B'), node('C')) }, right: node('D')
+      }, right: { nodeId: 'constant', nodeType: 'CONST', value: '100', typeDescriptor: { valueType: 'DECIMAL', dimension: 'ONE', unit: 'ONE' } }
+    }] }, display: { format: 'NUMBER', multiplier: '1', scale: 3, roundingMode: 'HALF_EVEN' } }
+  e.hydrateFormulaFactors(formula)
+  assert.equal(e.scope.unsupportedFormula.value, false)
+  assert.equal(e.scope.formulaMode.value, '嵌套公式型')
+  assert.deepEqual(e.scope.numeratorFactors.value.map(f => f.versionId), ['A', 'B', 'C', 'D'])
+  assert.deepEqual(e.createIndicatorFormulaPayload(3), { resourceVersion: 3, formula })
+  e.scope.activeMode.value = { kind: 'advanced' }
+  e.scope.advancedFormulaPayload.value = formula
+  e.scope.advancedFormulaRoot.value.arguments[0].right.value = '200'
+  const output = e.createIndicatorFormulaPayload(4).formula
+  assert.equal(output.root.arguments[0].right.value, '200')
+  assert.equal(formula.root.arguments[0].right.value, '100')
+  assert.equal(output.root.arguments[0].left.zeroDenominatorPolicy, 'ERROR')
+  assert.deepEqual(output.display, formula.display)
+  assert.equal(output.calculationMode, 'TEMPORAL')
+})
 
 test('hydrates both sides of (A+B)/(C+D) and does not collapse them after the library loads', () => {
   const e = editor()
@@ -53,10 +80,10 @@ test('all denominator policies hydrate and are submitted without substitution', 
   }
 })
 
-test('preserves non-percent compound ratios and protects unrepresentable formulas', () => {
+test('preserves non-percent compound ratios and protects unsupported node types', () => {
   assert.equal(parseEditorFormula({ root: { nodeType: 'BINARY', operator: 'DIV', left: add(node('A'), node('B')), right: node('C') } }).mode, '复合比值型')
   const e = editor()
-  e.hydrateFormulaFactors({ root: { nodeType: 'BINARY', operator: 'SUB', left: node('A'), right: { nodeType: 'BINARY', operator: 'DIV', left: node('B'), right: node('C') } } })
+  e.hydrateFormulaFactors({ root: { nodeType: 'UNKNOWN' } })
   assert.equal(e.scope.unsupportedFormula.value, true)
   assert.throws(() => e.createIndicatorFormulaPayload(0), /当前公式不支持/)
 })
