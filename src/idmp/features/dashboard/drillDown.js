@@ -29,6 +29,7 @@ export function resolveDrillClickValue(params, effective, model) {
   return tuple?.[field] ?? params?.name
 }
 export function effectiveDrill(widget, dataset, state = initialDrillState()) {
+  if (dataset?.rowMode === 'PROJECTED') return { dataset, binding: widget.config?.dataBinding, hierarchy: [], path: [] }
   const hierarchy = resolveDrillHierarchy(widget.config?.interaction?.drill?.hierarchy, dataset?.fields)
   if (!hierarchy.length || !dataset) return { dataset, binding: widget.config?.dataBinding, hierarchy, path: [] }
   const path = (state.path || []).slice(0, Math.max(0, hierarchy.length - 1))

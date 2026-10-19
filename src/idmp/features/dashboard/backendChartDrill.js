@@ -15,6 +15,7 @@ export function resolveChartDrillPath(paths = [], field = '') {
 }
 
 export function initialBackendChartNavigation(root) {
+  if (root.initialNavigation) return root.initialNavigation
   if (root.levels) {
     const level = root.levels.find(isDepartmentLevel) || root.levels[1]
     if (!level) throw new Error('当前下钻路径没有可展示的成员层级')
@@ -23,8 +24,51 @@ export function initialBackendChartNavigation(root) {
   return { currentLevel: 'OUT_DEPT', parentKeys: { HOSPITAL_CODE: root.hospitalCode }, label: '全部科室' }
 }
 
+export function projectedDrillNavigation(row, path, context) {
+  const levels = path?.levels?.length ? path.levels : path?.pathCode === 'ORGANIZATION' ? [
+    { levelCode: 'HOSPITAL', dimensionFieldCode: 'HOSPITAL_CODE' },
+    { levelCode: 'OUT_DEPT', dimensionFieldCode: 'OUT_DEPT_CODE', displayFieldCode: 'OUT_DEPT_NAME' },
+    { levelCode: 'MEDICAL_GROUP', dimensionFieldCode: 'MEDICAL_GROUP_CODE', displayFieldCode: 'MEDICAL_GROUP_NAME' },
+    { levelCode: 'ATTENDING_DOCTOR', dimensionFieldCode: 'ATTENDING_DOCTOR', displayFieldCode: 'ATTENDING_DOCTOR_NAME' }
+  ].filter(level => Object.hasOwn(context.fieldLevels || {}, level.dimensionFieldCode)) : []
+  const keys = new Map(Object.keys(row).map(field => [field.toLowerCase(), field]))
+  const parents = { ...context.parentKeys }
+  let index = Math.max(0, levels.findIndex(level => level.levelCode === context.currentLevel))
+  const maxIndex = levels.findIndex(level => level.levelCode === path?.maxLevel)
+  const lastIndex = maxIndex < 0 ? levels.length - 1 : maxIndex
+  while (index < lastIndex) {
+    const level = levels[index]
+    const identity = level.memberKeyFieldCode || level.dimensionFieldCode
+    const value = row[keys.get(String(identity).toLowerCase())] ?? parents[identity]
+    if (value === null || value === undefined || value === '') break
+    parents[identity] = String(value)
+    for (const field of [level.dimensionFieldCode, level.displayFieldCode].filter(Boolean)) {
+      const companion = row[keys.get(field.toLowerCase())]
+      if (companion !== null && companion !== undefined && companion !== '') parents[field] = String(companion)
+    }
+    index += 1
+  }
+  const filters = Object.fromEntries(Object.entries(context.filters || {}).filter(([field, values]) => {
+    const parent = Object.entries(parents).find(([key]) => key.toLowerCase() === field.toLowerCase())?.[1]
+    return parent === undefined || !(Array.isArray(values) ? values : [values]).some(value => String(value) === String(parent))
+  }))
+  return { filters, ...(levels[index] ? { initialNavigation: { currentLevel: levels[index].levelCode, parentKeys: parents, label: '所选成员' } } : {}) }
+}
+
 export async function loadBackendChartRoot(search, target, { signal } = {}) {
   if (!target?.resultId) throw new Error('当前指标没有组织下钻结果')
+  if (target.drillContext) {
+    const context = target.drillContext
+    if (!context.snapshotId) throw new Error('组件下钻快照缺失')
+    const path = target.path
+    const levels = path?.levels || []
+    const maxIndex = levels.findIndex(level => level.levelCode === path.maxLevel)
+    return { resultId: context.resultId, snapshotId: context.snapshotId, indicatorVersionId: target.indicatorVersionId,
+      ...(path?.pathCode && levels.length ? { pathCode: path.pathCode, levels: maxIndex >= 0 ? levels.slice(0, maxIndex + 1) : levels } : {}),
+      parentKeys: context.parentKeys, hospitalCode: context.parentKeys?.HOSPITAL_CODE,
+      filters: context.filters || {}, departmentNames: target.departmentNames, maxLevel: path?.maxLevel || '',
+      ...(target.selectedRow ? projectedDrillNavigation(target.selectedRow, path, context) : {}) }
+  }
   if (target.path?.pathCode && target.path.pathCode !== 'ORGANIZATION') {
     const path = target.path
     const maxIndex = (path.levels || []).findIndex(level => level.levelCode === path.maxLevel)
@@ -79,7 +123,7 @@ export async function loadBackendChartLevel(search, root, navigation, { signal }
   for (let pageNum = 1; ; pageNum += 1) {
     signal?.throwIfAborted()
     const result = await search(root.resultId, {
-      ...(root.pathCode ? { pathCode: root.pathCode } : {}), currentLevel: level, parentKeys, filters: {}, pageNum, pageSize: PAGE_SIZE, snapshotId: root.snapshotId
+      ...(root.pathCode ? { pathCode: root.pathCode } : {}), currentLevel: level, parentKeys, filters: root.filters || {}, pageNum, pageSize: PAGE_SIZE, snapshotId: root.snapshotId
     }, { source: 'live', signal })
     checkLevel(result, root, level, parentKeys)
     const pageInfo = result.pageInfo || {}

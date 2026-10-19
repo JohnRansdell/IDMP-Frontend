@@ -251,6 +251,8 @@ export function widgetResultToDataset(result = {}, fields = [], id = 'backend') 
       trendDirection: result.comparison?.trendDirection || result.trendDirection || null
     },
     status: result.status || 'EMPTY',
+    rowMode: result.rowMode || 'UNPROJECTED',
+    serverCalculated: true,
     appliedGlobalFilterFields: result.appliedGlobalFilterFields || [],
     message: result.message || '',
     resultId: stringId(result.resultId),

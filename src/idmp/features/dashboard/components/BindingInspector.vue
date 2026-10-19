@@ -70,6 +70,7 @@ const directValueWarning = computed(() => {
     interactions: globalContext.interactions?.value || {}
   })
   const preview = compileWidgetData(bindingKind(props.widget), binding.value, filteredDataset)
+  if (dataset.serverCalculated && preview.status === 'invalid') return preview.message
   return preview.status === 'invalid' && String(preview.message || '').startsWith('直接值遇到多行')
     ? '当前筛选后，同一个 X 轴与系列组合对应多条记录，直接值无法确定唯一数值。请增加区分维度，或改用平均值、求和、最大值、最小值等聚合方式。'
     : ''

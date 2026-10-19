@@ -33,6 +33,12 @@ export function multiIndicatorMeasureField(sourceCode) {
   return `indicator__${String(sourceCode || '').replace(/[^A-Za-z0-9_]/g, '_')}`
 }
 
+export function singleIndicatorProjectionBinding(binding = {}, fields = []) {
+  const dimensions = new Set(fields.filter(field => String(field.role).toUpperCase() !== 'MEASURE').map(field => field.code || field.id))
+  return { ...binding, measures: [{ field: 'value', aggregation: 'direct' }],
+    filters: (binding.filters || []).filter(condition => dimensions.has(condition.field)) }
+}
+
 export function validateIndicatorBindings(value, kind = '') {
   if (value === undefined) return []
   if (!Array.isArray(value)) return ['indicatorBindings must be an array']
@@ -136,6 +142,9 @@ export function createMultiIndicatorDataset(widget, datasetsBySource) {
     label: `多指标组合 · ${bindings.length} 项`,
     fields,
     rows: [...rowsByKey.values()],
+    serverCalculated: sources.every(item => item.dataset.serverCalculated === true),
+    rowMode: sources.every(item => item.dataset.rowMode === 'PROJECTED') ? 'PROJECTED' : 'UNPROJECTED',
+    componentMeasureFiltersPending: true,
     status: rowsByKey.size ? 'READY' : 'EMPTY',
     message: rowsByKey.size ? '' : '所选指标在当前周期没有可对齐的正式结果。'
   }

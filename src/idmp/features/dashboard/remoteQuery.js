@@ -28,7 +28,7 @@ function intersectValues(left, right) {
   return intersection.length ? (intersection.length === 1 ? intersection[0] : intersection) : null
 }
 
-export function buildRemoteWidgetQuery(widget, { periodStart, periodEnd, definitions = [], values = {}, fields = [], department = '' } = {}) {
+export function buildRemoteWidgetQuery(widget, { periodStart, periodEnd, definitions = [], values = {}, fields = [], department = '', interactions = {} } = {}) {
   const scope = widget?.config?.backendQuery || {}
   const filters = {}
   const localQuery = widget?.config?.query || {}
@@ -56,6 +56,11 @@ export function buildRemoteWidgetQuery(widget, { periodStart, periodEnd, definit
     }
   }
   addFilter('deptCode', department)
+  if (localQuery.respondToInteractionFilters !== false) for (const interaction of Object.values(interactions)) {
+    if (!interaction?.id || localQuery.ignoredInteractionFilterIds?.includes(interaction.id) || !interaction.targetWidgetIds?.includes(String(widget.id))) continue
+    const error = addFilter(interaction.field, interaction.value, true)
+    if (error) return error.includes('没有交集') ? { empty: true } : { error }
+  }
 
   let start = periodStart
   let end = periodEnd
