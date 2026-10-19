@@ -2,6 +2,7 @@ import { normalizeDashboardSchema } from '../../features/dashboard/schema.js'
 import { createDefaultBinding, preferredMeasureAggregation } from '../../features/dashboard/smartDefaultBinding.js'
 import { singleIndicatorTemplatePlan } from '../../features/dashboard/templateBinding.js'
 import { dashboardWidgetResultShape, isPeriodField, normalizePeriodDataset } from '../../features/dashboard/periodFields.js'
+import { immutableResultRows, transformResultRows } from '../../features/dashboard/resultRows.js'
 
 const FRONTEND_TYPE_BY_REMOTE = Object.freeze({
   KPI: { type: 'kpi', visualType: 'kpi' },
@@ -222,6 +223,9 @@ export function dashboardFieldsToFrontend(fields = []) {
 export function widgetResultToDataset(result = {}, fields = [], id = 'backend') {
   const mapDefinition = object(result.mapDefinition)
   const datasetFields = dashboardFieldsToFrontend(mergeDashboardFields(fields, result.fields))
+  const sourceRows = Array.isArray(result.rows) ? result.rows : []
+  const normalizedRows = transformResultRows(sourceRows, `adapter:${JSON.stringify(datasetFields.map(field => field.id))}`, () =>
+    normalizePeriodDataset({ fields: datasetFields, rows: sourceRows.map(row => alignDashboardRowFields(row, datasetFields)) }).rows)
   const timeComparison = object(result.timeComparison)
   const relativeChange = entry => {
     if (!entry || typeof entry !== 'object') return undefined
@@ -235,11 +239,11 @@ export function widgetResultToDataset(result = {}, fields = [], id = 'backend') 
   const timeYoy = relativeChange(timeComparison.yearOverYear)
   const timeMom = relativeChange(timeComparison.periodOverPeriod || timeComparison.monthOverMonth)
   const hasTimeComparison = timeYoy !== undefined || timeMom !== undefined
-  return normalizePeriodDataset({
+  return {
     id,
     label: '正式指标结果',
-    fields: datasetFields,
-    rows: (Array.isArray(result.rows) ? result.rows : []).map(row => alignDashboardRowFields(row, datasetFields)),
+    fields: normalizePeriodDataset({ fields: datasetFields }).fields,
+    rows: Object.isFrozen(normalizedRows) ? normalizedRows : immutableResultRows(normalizedRows),
     comparison: {
       yoy: timeYoy !== undefined ? timeYoy : result.comparison?.yoy ?? result.yoy ?? null,
       mom: timeMom !== undefined ? timeMom : result.comparison?.mom ?? result.mom ?? null,
@@ -255,7 +259,7 @@ export function widgetResultToDataset(result = {}, fields = [], id = 'backend') 
       name: String(mapDefinition.name || result.mapName || 'idmp-map'),
       geoJSON: mapDefinition.geoJSON || mapDefinition.geoJson
     } : null
-  })
+  }
 }
 
 function mergeDashboardFields(catalogFields, resultFields) {

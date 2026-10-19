@@ -124,6 +124,41 @@ export function formatDashboardKpiMetric(value, { unit = '', displayValue } = {}
   return { value: formatDashboardMetric(value), unit: visibleUnit }
 }
 const dimensionValue = value => ['string', 'boolean'].includes(typeof value) || (typeof value === 'number' && Number.isFinite(value)) ? value : null
+const groupedRows = new WeakMap()
+
+function groupWidgetRows(rows, binding, dataset) {
+  const cacheable = Object.isFrozen(rows)
+  const key = cacheable ? JSON.stringify([binding.dimensions, binding.series, dataset.dimensionDisplayFields, dataset.departmentFields]) : ''
+  const cached = cacheable && groupedRows.get(rows)?.get(key)
+  if (cached) return cached
+  const categories = new Map(), groups = new Map(), splits = new Map()
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) continue
+    const tuple = binding.dimensions.map(dimension => dimensionValue(row[dimension.field]))
+    const category = binding.dimensions.length ? tuple : ''
+    const split = binding.series.length ? dimensionValue(row[binding.series[0].field]) : ''
+    if (tuple.some(value => value === null || value === '') || split === null || split === '' && binding.series.length) continue
+    const categoryKey = JSON.stringify(category), splitKey = JSON.stringify(split)
+    categories.set(categoryKey, { raw: category, row })
+    splits.set(splitKey, split)
+    const groupKey = JSON.stringify([categoryKey, splitKey])
+    if (!groups.has(groupKey)) groups.set(groupKey, [])
+    groups.get(groupKey).push(row)
+  }
+  // 名称解析按分类执行一次，而不是对每条组合粒度明细重复构造映射。
+  for (const item of categories.values()) {
+    item.visible = binding.dimensions.map(dimension => visibleDimensionName(item.row, dimension, dataset))
+    delete item.row
+  }
+  const result = { categories, groups, splits }
+  if (cacheable) {
+    let cache = groupedRows.get(rows)
+    if (!cache) { cache = new Map(); groupedRows.set(rows, cache) }
+    cache.set(key, result)
+    if (cache.size > 16) cache.delete(cache.keys().next().value)
+  }
+  return result
+}
 
 export function compileWidgetData(kind, binding, dataset) {
   const validation = validateWidgetBinding(kind, binding, dataset?.fields)
@@ -134,21 +169,7 @@ export function compileWidgetData(kind, binding, dataset) {
     const points = rows.map(row => [numericValue(row?.[x.field]), numericValue(row?.[y.field])]).filter(point => point[0] !== null && point[1] !== null)
     return points.length ? { status: 'ready', categories: [], series: [{ name: `${x.label || x.field} / ${y.label || y.field}`, values: points }], items: [] } : { status: 'empty', message: '暂无可用数值点' }
   }
-  const categories = new Map(), groups = new Map(), splits = new Map()
-  for (const row of rows) {
-    if (!row || typeof row !== 'object' || Array.isArray(row)) continue
-    const tuple = binding.dimensions.map(dimension => dimensionValue(row?.[dimension.field]))
-    const visibleTuple = binding.dimensions.map(dimension => visibleDimensionName(row, dimension, dataset))
-    const category = binding.dimensions.length ? tuple : ''
-    const split = binding.series.length ? dimensionValue(row?.[binding.series[0].field]) : ''
-    if (tuple.some(value => value === null || value === '') || split === null || split === '' && binding.series.length) continue
-    const categoryKey = JSON.stringify(category), splitKey = JSON.stringify(split)
-    categories.set(categoryKey, { raw: category, visible: visibleTuple })
-    splits.set(splitKey, split)
-    const key = JSON.stringify([categoryKey, splitKey])
-    if (!groups.has(key)) groups.set(key, [])
-    groups.get(key).push(row)
-  }
+  const { categories, groups, splits } = groupWidgetRows(rows, binding, dataset)
   try {
     const categoryKeys = [...categories.keys()]
     const series = [...splits].flatMap(([splitKey, split]) => binding.measures.map(measure => ({

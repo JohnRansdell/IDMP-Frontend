@@ -453,7 +453,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, shallowRef, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
@@ -743,8 +743,8 @@ let selectedDataSourceManuallySelected = false
 const addWidgetType = ref('kpi')
 const indicatorDataSources = ref([])
 const catalogIndicatorSources = ref([])
-const remoteWidgetDatasets = ref({})
-const remoteMultiIndicatorDatasets = ref({})
+const remoteWidgetDatasets = shallowRef({})
+const remoteMultiIndicatorDatasets = shallowRef({})
 const remoteWidgetPreviewGenerations = new Map()
 const designerSourceLoadingId = ref('')
 const designerSourceSelectionGenerations = new Map()

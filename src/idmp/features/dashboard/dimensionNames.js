@@ -1,3 +1,5 @@
+import { transformResultRows } from './resultRows.js'
+
 // Member codes remain query keys. Display fields and labels never replace them.
 export const DEPARTMENT_FIELD_PAIRS = [
   ['科室', '科室名称'], ['科室编码', '科室名称'], ['出院科室编码', '出院科室名称'],
@@ -11,6 +13,7 @@ export const isMemberName = (value, code) => Boolean(text(value) && text(value) 
 
 export function dimensionFieldValue(row, field) {
   for (const values of [row, row?.dimensions, row?.dimensionValues]) {
+    if (values && Object.hasOwn(values, field) && values[field] != null) return values[field]
     const key = Object.keys(values || {}).find(key => key.toLowerCase() === String(field || '').toLowerCase())
     if (key !== undefined && values[key] != null) return values[key]
   }
@@ -36,7 +39,10 @@ function departmentMappings(paths = []) {
 }
 
 export function departmentIdentity(row, paths = []) {
-  const mappings = departmentMappings(paths).reverse()
+  return resolveDepartmentIdentity(row, departmentMappings(paths).reverse())
+}
+
+function resolveDepartmentIdentity(row, mappings) {
   for (const [field, displayField] of mappings) {
     const code = dimensionFieldValue(row, field)
     if (code === undefined || code === '') continue
@@ -53,8 +59,9 @@ export function departmentIdentity(row, paths = []) {
 
 export function collectDepartmentNames(rows = [], paths = []) {
   const names = new Map()
+  const mappings = departmentMappings(paths).reverse()
   for (const row of rows) {
-    const { code, name } = departmentIdentity(row, paths)
+    const { code, name } = resolveDepartmentIdentity(row, mappings)
     if (code && name) names.set(code, name)
   }
   return names
@@ -62,18 +69,28 @@ export function collectDepartmentNames(rows = [], paths = []) {
 
 export function normalizeDepartmentDataset(dataset, { paths = [], names = new Map(), diagnostics = [] } = {}) {
   if (!dataset) return dataset
-  const localNames = collectDepartmentNames(dataset.rows, paths)
   const missing = new Set()
-  const rows = (dataset.rows || []).map(row => {
-    const { code, name, displayField } = departmentIdentity(row, paths)
-    if (!code) return row
-    if (name && isMemberName(dimensionFieldValue(row, displayField), code)) return row
-    const candidate = name || localNames.get(code) || names.get(code)
-    const resolved = isMemberName(candidate, code) ? candidate : ''
-    if (!resolved) { missing.add(code); return row }
-    const field = Object.keys(row).find(key => key.toLowerCase() === String(displayField).toLowerCase()) || displayField || 'departmentName'
-    return { ...row, [field]: resolved }
+  const mappings = departmentMappings(paths).reverse()
+  const sourceRows = dataset.rows || []
+  const rows = transformResultRows(sourceRows, `department:${JSON.stringify([paths, [...names]])}`, () => {
+    const localNames = collectDepartmentNames(sourceRows, paths)
+    const normalized = sourceRows.map(row => {
+      const { code, name, displayField } = resolveDepartmentIdentity(row, mappings)
+      if (!code) return row
+      if (name && isMemberName(dimensionFieldValue(row, displayField), code)) return row
+      const candidate = name || localNames.get(code) || names.get(code)
+      const resolved = isMemberName(candidate, code) ? candidate : ''
+      if (!resolved) return row
+      const field = Object.keys(row).find(key => key.toLowerCase() === String(displayField).toLowerCase()) || displayField || 'departmentName'
+      return { ...row, [field]: resolved }
+    })
+    return normalized.every((row, index) => row === sourceRows[index]) ? sourceRows : normalized
   })
+  // 诊断也从共享行计算，避免缓存命中时丢失缺失名称提示。
+  for (const row of rows) {
+    const { code, name } = resolveDepartmentIdentity(row, mappings)
+    if (code && !name) missing.add(code)
+  }
   const displayFields = { ...dimensionDisplayFields(paths), ...dataset.dimensionDisplayFields }
   const identifiers = new Set([...Object.keys(displayFields), ...Object.values(displayFields)].map(field => String(field).toLowerCase()))
   return {

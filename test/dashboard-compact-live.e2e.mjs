@@ -77,7 +77,7 @@ try {
   assert.equal(probe.scopes, 6166)
   assert.equal(probe.exactIds, true)
   assert.ok(Math.abs(Number(probe.value) - 55 / 14187) < 1e-8)
-  assert.ok(requests.some(request => request.body && JSON.parse(request.body).responseFormat === 'COMPACT'))
+  assert.ok(requests.some(request => request.body && JSON.parse(request.body).responseFormat === 'COLUMNAR'))
   const views = []
   for (const [name, width, height, mobile] of [['desktop', 1440, 1000, false], ['mobile', 390, 844, true]]) {
     await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile })
