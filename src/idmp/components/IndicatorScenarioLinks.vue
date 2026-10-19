@@ -21,8 +21,8 @@
 <script setup>
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchIndicatorScenarios } from '@/idmp/api/modules/indicators'
-import { fetchScenarios, fetchScenarioVersions, fetchScenarioVersion, replaceScenarioIndicators } from '@/idmp/api/modules/scenarios'
+import { fetchAllIndicatorScenarios } from '@/idmp/api/modules/indicators'
+import { fetchAllScenarios, fetchScenarioVersions, fetchScenarioVersion, replaceScenarioIndicators } from '@/idmp/api/modules/scenarios'
 import { appendScenarioIndicator } from '@/idmp/features/indicator/editorWorkflow'
 const props = defineProps({ indicatorId: { type: String, default: '' }, versionId: { type: String, default: '' }, published: Boolean })
 const router = useRouter()
@@ -36,14 +36,14 @@ async function loadLinks() {
   links.value = []; loading.value = !!props.indicatorId; error.value = ''
   if (!props.indicatorId) return
   try {
-    const result = await fetchIndicatorScenarios(props.indicatorId, { page: 1, size: 100 })
+    const result = await fetchAllIndicatorScenarios(props.indicatorId)
     if (revision === linksRevision) links.value = rows(result).filter(row => !row.references || row.references.some(ref => String(ref.indicatorVersionId) === props.versionId))
   } catch (e) { if (revision === linksRevision) error.value = e.message }
   finally { if (revision === linksRevision) loading.value = false }
 }
 async function search(name) {
   const revision = ++searchRevision; searching.value = true
-  try { const result = await fetchScenarios({ name, page: 1, size: 100 }); if (revision === searchRevision) options.value = rows(result) }
+  try { const result = await fetchAllScenarios({ name }); if (revision === searchRevision) options.value = rows(result) }
   catch (e) { if (revision === searchRevision) error.value = e.message }
   finally { if (revision === searchRevision) searching.value = false }
 }

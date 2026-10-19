@@ -1,5 +1,10 @@
 import { requestJson, requestPdf } from '@/idmp/api/request'
 import { normalizeIndicatorAnalysisParams, normalizeIndicatorRangeSummaryParams } from '@/idmp/api/adapters/indicator'
+import { fetchAllPages } from '../pagination.js'
+
+export const fetchAllIndicators = (params = {}) => fetchAllPages(fetchIndicators, params)
+export const fetchAllIndicatorVersions = (params = {}) => fetchAllPages(fetchIndicatorVersionList, params)
+export const fetchAllIndicatorScenarios = (id, params = {}) => fetchAllPages(page => fetchIndicatorScenarios(id, page), params)
 
 export function fetchIndicators(params = {}, options = {}) {
   return requestJson(withQuery('/indicators', params), options)
@@ -19,10 +24,6 @@ export function fetchIndicatorVersionList(params = {}) {
 
 export function fetchIndicatorVersion(versionId, options = {}) {
   return requestJson(`/indicator-versions/${versionId}`, options)
-}
-
-export function fetchIndicatorFormula(versionId) {
-  return requestJson(`/indicator-versions/${versionId}/formula`)
 }
 
 export function preflightIndicatorDrillCapabilities(formula, options = {}) {

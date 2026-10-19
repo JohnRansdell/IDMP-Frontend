@@ -30,6 +30,18 @@ export function normalizeDepartmentComparisons(rows, dimensionRows = [], namesBy
   return normalizedDirect.length ? normalizedDirect : normalize(fallbackRows)
 }
 
+export function departmentAchievement(row, analysis = {}) {
+  const assessment = (analysis.targetAssessments || []).find(item => row.resultId != null && String(item.resultId) === String(row.resultId))?.assessment
+  const labels = { MET: '达标', NOT_MET: '未达标', NOT_CONFIGURED: '未配置目标', NOT_CALCULABLE: '无法判定' }
+  if (labels[assessment?.status]) return labels[assessment.status]
+  const target = analysis.performanceTarget
+  if (target?.targetValue == null || !['HIGHER_IS_BETTER', 'LOWER_IS_BETTER'].includes(target.improvementDirection)) return '未配置目标'
+  if (row.value == null || !Number.isFinite(Number(row.value)) || !Number.isFinite(Number(target.targetValue))) return '无法判定'
+  const met = target.improvementDirection === 'HIGHER_IS_BETTER'
+    ? Number(row.value) >= Number(target.targetValue) : Number(row.value) <= Number(target.targetValue)
+  return met ? '达标' : '未达标'
+}
+
 export function departmentDrillDefinition(paths = []) {
   for (const path of paths) {
     const index = (path.levels || []).findIndex(level =>

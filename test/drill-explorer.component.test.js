@@ -22,7 +22,7 @@ const Select = vue.defineComponent({ props: ['modelValue'], emits: ['update:mode
   setup: (props, { slots }) => () => vue.h('div', { 'data-path': props.modelValue }, slots.default?.()) })
 const Button = vue.defineComponent({ setup: (_, { slots }) => () => vue.h('button', slots.default?.()) })
 
-function create(fetchResultFactors = async () => ({ context: {}, factors: [] }), props = {}) {
+function create(fetchResultFactors = async () => ({ context: {}, factors: [] }), props = {}, drillResponse = {}) {
   const requests = []
   const component = Function('vue', 'deps', `const { useRoute, useRouter, StatePanel, FactorTraceTree, searchResultDrill, fetchResultFactors, limitDrillNextLevels, isStatusRecord, getStatusLabel } = deps;\n${bindings}\n${code}`)(vue, {
     useRoute: () => ({ query: {} }), useRouter: () => ({ push() {}, replace() {} }),
@@ -30,7 +30,7 @@ function create(fetchResultFactors = async () => ({ context: {}, factors: [] }),
     FactorTraceTree: vue.defineComponent({ setup: () => () => vue.h('div', 'trace-tree') }),
     searchResultDrill: async (id, payload) => {
       requests.push({ id, payload })
-      return { context: {}, breadcrumb: [], summary: {}, columns: [], records: [], nextLevels: [], pageInfo: {} }
+      return { context: {}, breadcrumb: [], summary: {}, columns: [], records: [], nextLevels: [], pageInfo: {}, ...drillResponse }
     },
     fetchResultFactors, limitDrillNextLevels: levels => levels, isStatusRecord: () => false, getStatusLabel: value => value
   })
@@ -39,7 +39,7 @@ function create(fetchResultFactors = async () => ({ context: {}, factors: [] }),
       startParentKeys: { OUT_DEPT_CODE: '17' }, startFilters: { OUT_DEPT_CODE: '17' },
       configuredPaths: [{ pathCode: 'CUSTOM_DEPT', pathName: '科室下钻', levels: [{ levelCode: 'ROOT' }, { levelCode: 'DEPT' }] }], embedded: true, ...props },
     global: { components: { ElSelect: Select, ElButton: Button },
-      stubs: { ElOption: true, ElTable: true, ElTableColumn: true }, directives: { loading() {} } }
+      stubs: { ElOption: true, ElTable: true, ElTableColumn: true, ElPagination: true }, directives: { loading() {} } }
   })
   return { wrapper, requests }
 }
@@ -86,5 +86,39 @@ test('choosing another drill path exits trace mode without leaving an internal v
   assert.equal(wrapper.find('section[aria-label="因子结果追溯"]').exists(), false)
   assert.equal(requests.at(-1).payload.currentLevel, 'ALL_SINGLE_DISEASE')
   assert.ok(button(wrapper, '查看因子追溯'))
+  wrapper.unmount()
+})
+
+test('backend pagination and sorting retain drill context and reset pages on context changes', async () => {
+  const { wrapper, requests } = create(undefined, {}, { pageInfo: { total: 53 }, records: [{ dimensionKey: '17' }] })
+  await flushPromises()
+  const pagination = wrapper.findComponent({ name: 'ElPagination' })
+  pagination.vm.$emit('current-change', 3)
+  await flushPromises()
+  assert.equal(requests.at(-1).payload.pageNum, 3)
+  assert.deepEqual(requests.at(-1).payload.parentKeys, { OUT_DEPT_CODE: '17' })
+  wrapper.findComponent({ name: 'ElTable' }).vm.$emit('sort-change', { prop: 'indicatorValue', order: 'ascending' })
+  await flushPromises()
+  assert.equal(requests.at(-1).payload.pageNum, 1)
+  assert.deepEqual(requests.at(-1).payload.sort, [{ field: 'indicatorValue', direction: 'ASC' }])
+  pagination.vm.$emit('size-change', 50)
+  await flushPromises()
+  assert.equal(requests.at(-1).payload.pageSize, 50)
+  pagination.vm.$emit('current-change', 2)
+  await flushPromises()
+  await wrapper.setProps({ resultId: 'new-period-result' })
+  await flushPromises()
+  assert.equal(requests.at(-1).id, 'new-period-result')
+  assert.equal(requests.at(-1).payload.pageNum, 1)
+  assert.deepEqual(requests.at(-1).payload.sort, [{ field: 'indicatorValue', direction: 'DESC' }])
+  wrapper.unmount()
+})
+
+test('clearing a custom sort requests the backend default order', async () => {
+  const { wrapper, requests } = create(undefined, {}, { pageInfo: { total: 53 }, records: [{}] })
+  await flushPromises()
+  wrapper.findComponent({ name: 'ElTable' }).vm.$emit('sort-change', { prop: 'indicatorValue', order: null })
+  await flushPromises()
+  assert.deepEqual(requests.at(-1).payload.sort, [])
   wrapper.unmount()
 })

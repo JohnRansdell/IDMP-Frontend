@@ -1,4 +1,9 @@
 import { requestJson } from '@/idmp/api/request'
+import { fetchAllPages } from '../pagination.js'
+
+export const fetchAllFactors = (params = {}) => fetchAllPages(fetchFactors, params)
+export const fetchAllFactorTemplates = (params = {}) => fetchAllPages(fetchFactorTemplates, params)
+export const fetchAllFactorTemplateInstances = (versionId, params = {}) => fetchAllPages(page => fetchFactorTemplateInstances(versionId, page), params)
 
 export function fetchFactors(params = {}) {
   return requestJson(withQuery('/factors', params))

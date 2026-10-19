@@ -18,8 +18,10 @@ export function serializeFilterNode(node, fields = []) {
   if (!node) return { nodeType: 'TRUE' }
   if (node.nodeType === 'TRUE') return { nodeType: 'TRUE' }
   if (node.nodeType === 'PREDICATE') {
-    if (node.left || node.right || node.expressionType) {
-      throw new Error('当前因子包含高级表达式，简化编辑器无法无损保存；请使用高级表达式编辑器或 DSL API 修改。')
+    if (node.left || node.right) return {
+      nodeType: 'PREDICATE', operator: node.operator,
+      left: serializeExpression(node.left || { expressionType: 'FIELD', fieldCode: node.fieldCode }),
+      ...(node.parameter ? { parameter: node.parameter } : node.right ? { right: serializeExpression(node.right) } : {})
     }
     const reference = serializeFieldReference(node.fieldCode)
     const result = { nodeType: 'PREDICATE', ...(typeof reference === 'string' ? { fieldCode: reference } : { fieldRef: reference }), operator: node.operator }
@@ -45,12 +47,12 @@ export function serializeFilterNode(node, fields = []) {
 }
 
 
-export function buildFactorDsl({ domainCode, tableName, semanticTableCode, sourceAlias = 'base', joins = [], aggregation, fieldCode, groupBy = [], filters, fields = [], periodColumn = '', missingRowPolicy = null, calculationMode = 'TEMPORAL' }) {
+export function buildFactorDsl({ domainCode, tableName, semanticTableCode, sourceAlias = 'base', joins = [], aggregation, fieldCode, fieldExpression, groupBy = [], filters, fields = [], periodColumn = '', missingRowPolicy = null, calculationMode = 'TEMPORAL' }) {
   const mode = String(calculationMode).toUpperCase()
   const period = canonicalPeriodColumn(periodColumn, filters, fields)
   const businessFilters = withoutLegacyPeriod(filters)
   const fieldReference = serializeFieldReference(fieldCode)
-  const aggregationNode = aggregation === 'COUNT'
+  const aggregationNode = fieldExpression ? { function: aggregation, fieldExpression: serializeExpression(fieldExpression) } : aggregation === 'COUNT'
     ? { function: 'COUNT', ...(fieldCode ? (typeof fieldReference === 'string' ? { fieldCode: fieldReference } : { fieldRef: fieldReference }) : {}) }
     : { function: aggregation, ...(typeof fieldReference === 'string' ? { fieldCode: fieldReference } : { fieldRef: fieldReference }) }
   return {
@@ -58,27 +60,48 @@ export function buildFactorDsl({ domainCode, tableName, semanticTableCode, sourc
     dslType: 'FACTOR',
     calculationMode: mode,
     ...(mode === 'TEMPORAL' && period ? { periodColumn: period } : {}),
-    primaryDomain: { domainCode, ...(tableName ? { tableName } : semanticTableCode ? { semanticTableCode } : {}), ...(joins.length ? { sourceAlias } : {}) },
-    ...(joins.length ? { joins: joins.map(({ relationId, fromAlias, sourceAlias: joinedAlias }) => ({ relationId: String(relationId), fromAlias, sourceAlias: joinedAlias })) } : {}),
+    primaryDomain: { ...(domainCode ? { domainCode } : {}), ...(tableName ? { tableName } : semanticTableCode ? { semanticTableCode } : {}), ...(joins.length ? { sourceAlias } : {}) },
+    ...(joins.length ? { joins: joins.map(({ relationId, fromAlias, sourceAlias: joinedAlias, tableName, joinType, cardinality, keys }) => ({
+      ...(relationId ? { relationId: String(relationId) } : { tableName, joinType, cardinality, keys: (keys || []).map(({ fromField, targetField }) => ({ fromField, targetField })) }), fromAlias, sourceAlias: joinedAlias
+    })) } : {}),
     filters: serializeFilterNode(businessFilters, fields),
     aggregation: aggregationNode,
     groupBy: groupBy.map(serializeFieldReference),
-    parameters: mode === 'TEMPORAL' && period ? [{ code: 'period', type: 'PERIOD', source: 'RUNTIME' }, ...collectParameters(businessFilters)] : collectParameters(businessFilters),
+    parameters: mode === 'TEMPORAL' && period ? [{ code: 'period', type: 'PERIOD', source: 'RUNTIME' }, ...collectParameters(businessFilters, [], fields)] : collectParameters(businessFilters, [], fields),
     ...(missingRowPolicy ? { missingRowPolicy: String(missingRowPolicy) } : {}),
     output: { valueType: 'DECIMAL', semanticKind: 'MEASURE', dimension: aggregationNode.function, nullable: false }
   }
 }
 
-// The visual editor currently models field/value predicates. Do not let an
-// edit of a server DSL containing richer expressions silently erase it.
+// 仅开放能够无损回显的受控表达式，未知类型继续阻止覆盖保存。
 export function hasUnsupportedFactorDslExpressions(dsl = {}) {
-  return containsTypedExpression(dsl?.filters)
+  return containsUnsupportedExpression(dsl?.filters) || (dsl.aggregation?.fieldExpression && !supportedExpression(dsl.aggregation.fieldExpression)) || false
 }
 
-function containsTypedExpression(node) {
+function containsUnsupportedExpression(node) {
   if (!node || typeof node !== 'object') return false
-  if (node.nodeType === 'PREDICATE' && (node.left || node.right || node.expressionType)) return true
-  return containsTypedExpression(node.child) || (node.children || []).some(containsTypedExpression)
+  if (node.nodeType === 'PREDICATE' && (node.left && !supportedExpression(node.left) || node.right && !supportedExpression(node.right))) return true
+  return containsUnsupportedExpression(node.child) || (node.children || []).some(containsUnsupportedExpression)
+}
+
+export function supportedExpression(node, depth = 0) {
+  if (!node || depth > 12) return false
+  if (['FIELD', 'LITERAL'].includes(node.expressionType)) return true
+  if (node.expressionType === 'BINARY') return ['ADD', 'SUBTRACT', 'MULTIPLY', 'DIVIDE'].includes(node.operator) && (node.operator !== 'DIVIDE' || !node.zeroDenominatorPolicy || node.zeroDenominatorPolicy === 'RETURN_NULL') && supportedExpression(node.left, depth + 1) && supportedExpression(node.right, depth + 1)
+  if (node.expressionType === 'FUNCTION') return ['LEFT', 'SUBSTRING', 'TRIM', 'UPPER', 'LOWER'].includes(node.function) && Array.isArray(node.arguments) && node.arguments.every(item => supportedExpression(item, depth + 1))
+  return node.expressionType === 'RANGE' && supportedExpression(node.start, depth + 1) && supportedExpression(node.end, depth + 1)
+}
+
+export function serializeExpression(node) {
+  if (!supportedExpression(node)) throw new Error('包含无法编辑的表达式，请通过原创建方式修改')
+  if (node.expressionType === 'FIELD') {
+    const reference = serializeFieldReference(node.fieldRef || node.fieldCode)
+    return { expressionType: 'FIELD', ...(typeof reference === 'string' ? { fieldCode: reference } : { fieldRef: reference }) }
+  }
+  if (node.expressionType === 'LITERAL') return { expressionType: 'LITERAL', dataType: node.dataType, value: node.value, ...(node.dataType === 'DURATION' ? { unit: node.unit || 'HOUR' } : {}) }
+  if (node.expressionType === 'BINARY') return { expressionType: 'BINARY', operator: node.operator, left: serializeExpression(node.left), right: serializeExpression(node.right), ...(node.operator === 'DIVIDE' ? { zeroDenominatorPolicy: 'RETURN_NULL' } : {}) }
+  if (node.expressionType === 'FUNCTION') return { expressionType: 'FUNCTION', function: node.function, arguments: node.arguments.map(serializeExpression) }
+  return { expressionType: 'RANGE', bounds: node.bounds || 'CLOSED', start: serializeExpression(node.start), end: serializeExpression(node.end) }
 }
 
 export function serializeFieldReference(value) {
@@ -89,28 +112,91 @@ export function serializeFieldReference(value) {
   return { sourceAlias: text.slice(0, separator), fieldCode: text.slice(separator + 1) }
 }
 
-export function collectParameters(node, result = []) {
-  if (!node) return result
-  if (node.nodeType === 'PREDICATE' && node.parameter && !result.some((item) => item.code === node.parameter)) {
-    result.push({ code: node.parameter, type: 'PERIOD', source: 'RUNTIME' })
+export function editableFilterTree(node, parameters = [], referenceKey = value => typeof value === 'string' ? value : `${value?.sourceAlias ? `${value.sourceAlias}.` : ''}${value?.fieldName || value?.fieldCode || ''}`) {
+  const visit = item => {
+    const result = JSON.parse(JSON.stringify(item))
+    result.id = `filter-${Date.now()}-${Math.random()}`
+    if (item.nodeType === 'PREDICATE') {
+      result.fieldCode = referenceKey(item.fieldRef || item.fieldCode)
+      if (item.parameter) result.parameterDefinition = parameters.find(parameter => parameter.code === item.parameter)
+    }
+    if (item.children) result.children = item.children.map(visit)
+    if (item.child) { result.child = visit(item.child); if (!['AND', 'OR'].includes(result.child.nodeType)) result.child = { nodeType: 'AND', children: [result.child] } }
+    return result
   }
-  ;(node.children || []).forEach((child) => collectParameters(child, result))
-  if (node.child) collectParameters(node.child, result)
+  if (!node || node.nodeType === 'TRUE') return { nodeType: 'AND', children: [] }
+  const result = visit(node)
+  return ['AND', 'OR'].includes(result.nodeType) ? result : { nodeType: 'AND', children: [result] }
+}
+
+export function describeFieldExpression(node, fields = []) {
+  if (!node) return '未完成表达式'
+  if (node.expressionType === 'FIELD') {
+    const ref = node.fieldRef || node.fieldCode
+    const code = typeof ref === 'string' ? ref : `${ref?.sourceAlias ? `${ref.sourceAlias}.` : ''}${ref?.fieldName || ref?.fieldCode || ''}`
+    return fields.find(field => field.code === code)?.label || code || '未选择字段'
+  }
+  if (node.expressionType === 'LITERAL') return `${node.value ?? ''}${node.dataType === 'DURATION' ? ({ SECOND: '秒', MINUTE: '分钟', HOUR: '小时', DAY: '天' })[node.unit || 'HOUR'] : ''}`
+  if (node.expressionType === 'BINARY') return `（${describeFieldExpression(node.left, fields)} ${{ ADD: '+', SUBTRACT: '-', MULTIPLY: '×', DIVIDE: '÷' }[node.operator] || '?'} ${describeFieldExpression(node.right, fields)}）`
+  if (node.expressionType === 'FUNCTION') return `${({ LEFT: '取左侧字符', SUBSTRING: '截取文本', TRIM: '去两端空格', UPPER: '转大写', LOWER: '转小写' })[node.function] || node.function}（${(node.arguments || []).map(item => describeFieldExpression(item, fields)).join('，')}）`
+  return `${['OPEN', 'HALF_CLOSED'].includes(node.bounds) ? '(' : '['}${describeFieldExpression(node.start, fields)}, ${describeFieldExpression(node.end, fields)}${['OPEN', 'HALF_OPEN'].includes(node.bounds) ? ')' : ']'}`
+}
+
+export function runtimeParameterDefinition(node, fields = []) {
+  const field = fields.find(item => item.code === node.fieldCode)
+  const type = node.parameterDefinition?.type || field?.dataType || 'STRING'
+  return { code: node.parameter, type: ['CODE', 'VALUE_SET'].includes(type) ? 'STRING' : type === 'NUMBER' ? 'DECIMAL' : type, source: 'RUNTIME', required: node.parameterDefinition?.required === true, parameterMode: node.parameterDefinition?.parameterMode || 'TEMPORARY' }
+}
+
+export function collectParameters(node, result = [], fields = []) {
+  if (!node) return result
+  if (node.nodeType === 'PREDICATE' && node.parameter) {
+    const definition = node.parameter === 'period' ? { code: 'period', type: 'PERIOD', source: 'RUNTIME' } : runtimeParameterDefinition(node, fields)
+    const previous = result.find(item => item.code === node.parameter)
+    if (!previous || JSON.stringify(previous) !== JSON.stringify(definition)) result.push(definition)
+  }
+  ;(node.children || []).forEach((child) => collectParameters(child, result, fields))
+  if (node.child) collectParameters(node.child, result, fields)
   return result
 }
 
 export function validateFilterNode(node, errors = [], fields = []) {
   if (!node) return ['请至少添加一条统计范围条件']
+  if (node.nodeType === 'TRUE') return errors
   if (node.nodeType === 'PREDICATE') {
-    if (!node.fieldCode) errors.push('请选择筛选字段')
+    if (node.valueSource === 'PARAMETER' && !node.parameter) errors.push('请填写运行参数名称')
+    if (!node.fieldCode && !node.left) errors.push('请选择筛选字段')
     else if (!node.operator) errors.push('请选择该字段的判断方式')
+    else if (node.left || node.right) {
+      validateExpression(node.left || { expressionType: 'FIELD', fieldCode: node.fieldCode }, errors, fields)
+      if (!node.parameter && !['IS_NULL', 'IS_NOT_NULL'].includes(node.operator)) validateExpression(node.right, errors, fields)
+    }
+    else if (['IS_NULL', 'IS_NOT_NULL'].includes(node.operator)) return errors
     else if (node.operator === 'BETWEEN' && !node.parameter && isContinuousField(fields.find((item) => item.code === node.fieldCode))) validateContinuousRange(node, fields.find((item) => item.code === node.fieldCode), errors)
     else if (node.operator === 'IN_VALUE_SET' ? isEmptyFilterValue(node.itemCodes) : (!node.parameter && isEmptyFilterValue(node.value))) errors.push('请填写或选择条件值')
+    if (node.parameter && node.parameter !== 'period' && (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(node.parameter) || ['periodStart', 'periodEnd'].includes(node.parameter))) errors.push('运行参数名称不合法或与系统统计周期参数重名')
     return errors
   }
   if (node.nodeType === 'NOT') return validateFilterNode(node.child, errors, fields)
   if (!(node.children || []).length) errors.push('条件组不能为空')
   ;(node.children || []).forEach((child) => validateFilterNode(child, errors, fields))
+  const definitions = collectParameters(node, [], fields)
+  if (new Set(definitions.map(item => item.code)).size !== definitions.length && !errors.includes('同名运行参数的类型、必填性和用途必须一致')) errors.push('同名运行参数的类型、必填性和用途必须一致')
+  return errors
+}
+
+export function validateExpression(node, errors = [], fields = [], depth = 0) {
+  if (!supportedExpression(node, depth)) { errors.push('表达式不完整或不受支持'); return errors }
+  if (node.expressionType === 'FIELD') {
+    const ref = node.fieldRef || node.fieldCode
+    const key = typeof ref === 'string' ? ref : ref?.sourceAlias ? `${ref.sourceAlias}.${ref.fieldName || ref.fieldCode}` : ref?.fieldName || ref?.fieldCode
+    if (!key || fields.length && !fields.some(field => field.code === key)) errors.push('请选择当前参与计算的物理字段')
+  } else if (node.expressionType === 'LITERAL') {
+    if (isEmptyFilterValue(node.value)) errors.push('请填写表达式常量')
+  } else if (node.expressionType === 'BINARY') {
+    validateExpression(node.left, errors, fields, depth + 1); validateExpression(node.right, errors, fields, depth + 1)
+  } else if (node.expressionType === 'FUNCTION') node.arguments.forEach(item => validateExpression(item, errors, fields, depth + 1))
+  else { validateExpression(node.start, errors, fields, depth + 1); validateExpression(node.end, errors, fields, depth + 1) }
   return errors
 }
 

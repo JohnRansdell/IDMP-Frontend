@@ -22,7 +22,7 @@ import { useRouter } from 'vue-router'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
-import { fetchFactorTemplates, fetchFactorTemplateVersions } from '@/idmp/api/modules/factors'
+import { fetchAllFactorTemplates as fetchFactorTemplates, fetchFactorTemplateVersions } from '@/idmp/api/modules/factors'
 import { computed } from 'vue'
 const router = useRouter(); const loading = ref(false); const rows = ref([]); const filters = reactive({ code: '', name: '', publicationStatus: '' })
 // 当前为产品演示环境：开放模板生命周期入口，服务端仍负责最终权限校验。

@@ -24,6 +24,15 @@ test('scenario page adapter accepts the page shape returned by the current serve
   })
 })
 
+test('saving associations preserves per-indicator configuration returned by the backend', () => {
+  const configured = { indicatorVersionId: '102027642458358230', periodType: 'QUARTERLY',
+    organizationScopeDsl: { nodeType: 'TRUE' }, dimensionGrain: ['科室'], displayOrder: 2 }
+  const binding = toIndicatorBinding(configured, 0)
+  assert.equal(binding.periodType, configured.periodType)
+  assert.deepEqual(binding.organizationScopeDsl, configured.organizationScopeDsl)
+  assert.deepEqual(binding.dimensionGrain, configured.dimensionGrain)
+})
+
 test('scenario adapter preserves resource IDs beyond the JavaScript safe integer range', () => {
   const id = '102027642458358230'
 

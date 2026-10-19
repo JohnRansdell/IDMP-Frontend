@@ -174,7 +174,7 @@ import StatePanel from '@/idmp/components/StatePanel.vue'
   import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
  import ResourceDeleteDialog from '@/idmp/components/ResourceDeleteDialog.vue'
- import { deleteFactor, fetchFactorDeletionImpact, fetchFactors } from '@/idmp/api/modules/factors'
+ import { deleteFactor, fetchFactorDeletionImpact, fetchAllFactors } from '@/idmp/api/modules/factors'
 import { getStatusLabel } from '@/idmp/design/status'
 import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
 import { getFactorTypeLabel } from '@/idmp/utils/factorType'
@@ -268,8 +268,7 @@ async function loadBackendFactors() {
   loadError.value = ''
   selectedRows.value = []
   try {
-    const request = fetchFactors({ page: 1, size: 100 })
-    const payload = await request
+    const payload = await fetchAllFactors()
     const rows = normalizeList(payload).map(toFactorRow)
     backendFactorRows.value = rows
     sourceMode.value = 'live'

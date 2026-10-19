@@ -112,14 +112,14 @@ test('advanced server-side predicate expressions are never silently flattened on
     left: { expressionType: 'FIELD', fieldRef: { sourceAlias: 'transfer', fieldCode: 'IN_DEPT_DATE' } },
     right: { expressionType: 'FIELD', fieldRef: { sourceAlias: 'admission', fieldCode: 'IN_DATE' } }
   }
-  assert.equal(hasUnsupportedFactorDslExpressions({ filters }), true)
-  assert.throws(() => buildFactorDsl({
+  assert.equal(hasUnsupportedFactorDslExpressions({ filters }), false)
+  assert.deepEqual(buildFactorDsl({
     domainCode: 'JOIN_TRANSFER',
     semanticTableCode: 'TRANSFER',
     aggregation: 'COUNT',
     groupBy: [],
     filters
-  }), /无法无损保存/)
+  }).filters, filters)
 })
 
 test('existing missing-row policy is preserved when the visual editor saves a factor', () => {

@@ -516,7 +516,7 @@ import {
   currentPublishedDashboardDataSources, selectDashboardVersion, sortDashboardDataSourcesByIndicatorCreatedAt, widgetResultToDataset
 } from '@/idmp/api/adapters/dashboard'
 import { fetchWarnings } from '@/idmp/api/modules/warnings'
-import { fetchIndicatorAnalysis, fetchIndicatorVersion, fetchIndicators } from '@/idmp/api/modules/indicators'
+import { fetchIndicatorAnalysis, fetchIndicatorVersion, fetchAllIndicators as fetchIndicators } from '@/idmp/api/modules/indicators'
 import { deriveDrillPathResultIds } from '@/idmp/api/adapters/drill'
 import { searchResultDrill } from '@/idmp/api/modules/drill'
 import { initialBackendChartNavigation, loadBackendChartLevel, loadBackendChartRoot, resolveChartDrillPath } from '@/idmp/features/dashboard/backendChartDrill.js'

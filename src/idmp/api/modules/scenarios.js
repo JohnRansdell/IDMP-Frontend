@@ -1,4 +1,7 @@
 import { requestJson } from '@/idmp/api/request'
+import { fetchAllPages } from '../pagination.js'
+
+export const fetchAllScenarios = (params = {}) => fetchAllPages(fetchScenarios, params)
 
 export function fetchScenarios(params = {}) {
   return requestJson(withQuery('/scenarios', params))

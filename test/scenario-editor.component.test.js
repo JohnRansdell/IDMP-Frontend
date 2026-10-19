@@ -37,7 +37,7 @@ function create(overrides = {}, status = 'DRAFT') {
     useRouter: () => ({ push: target => navigations.push(target), replace: async () => {} }),
     ElMessage: { success: value => messages.push(value), error: value => messages.push(value) },
     ElMessageBox: { confirm: async () => {} },
-    fetchIndicatorVersionList: async () => [
+    fetchAllIndicatorVersions: async () => [
       { id: '100000000000000001', indicatorId: '40', indicatorName: '测试指标', versionNo: 1, publicationStatus: 'PUBLISHED' },
       { id: '100000000000000002', indicatorId: '41', indicatorName: '第二个指标', versionNo: 2, publicationStatus: 'PUBLISHED' },
       { id: '100000000000000003', indicatorName: '草稿指标', publicationStatus: 'DRAFT' }

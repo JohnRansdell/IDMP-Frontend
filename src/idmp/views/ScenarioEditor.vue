@@ -46,15 +46,15 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
 import { useRoute, useRouter } from 'vue-router'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
-import { fetchIndicatorVersion, fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
+import { fetchIndicatorVersion, fetchAllIndicatorVersions } from '@/idmp/api/modules/indicators'
 import { createScenarioVersion, fetchScenarioVersion, fetchScenarioVersions, publishScenarioVersion, replaceScenarioIndicators, updateScenarioVersion, validateScenarioVersion } from '@/idmp/api/modules/scenarios'
-import { normalizePage, normalizeResourceId, PERIOD_TYPES, publicationStatusLabel, SCENARIO_TYPES, scenarioDetailToForm, scenarioFormToPatch, scenarioVersionCapabilities, toIndicatorBinding } from '@/idmp/api/adapters/scenario'
+import { normalizeResourceId, PERIOD_TYPES, publicationStatusLabel, SCENARIO_TYPES, scenarioDetailToForm, scenarioFormToPatch, scenarioVersionCapabilities, toIndicatorBinding } from '@/idmp/api/adapters/scenario'
 
 const route = useRoute()
 const router = useRouter()
@@ -65,6 +65,7 @@ const startingEdit = ref(false)
 const indicatorOptions = ref([])
 const pendingIndicatorId = ref('')
 const openingIndicatorId = ref('')
+let loadRevision = 0
 const form = reactive({ scenarioId: '', versionId: '', code: '', name: '', type: 'CUSTOM', description: '', governingOrgName: '', defaultPeriodType: 'MONTHLY', defaultParameters: {}, defaultDataSourcePriority: {}, displayText: '', effectiveStartDate: '', effectiveEndDate: '', effectiveRange: [], resourceVersion: 0, publicationStatus: 'UNKNOWN', versionNo: '-', indicators: [] })
 const capabilities = computed(() => scenarioVersionCapabilities(form.publicationStatus))
 const editable = computed(() => capabilities.value.canEdit && !saving.value && !publishing.value)
@@ -121,16 +122,24 @@ function applyDetail(detail) {
   pendingIndicatorId.value = ''
 }
 async function load() {
+  const request = ++loadRevision
   try {
-    const versions = normalizePage(await fetchIndicatorVersionList({ publicationStatus: 'PUBLISHED', page: 1, size: 200 }))
-    indicatorOptions.value = versions.items
+    const options = await fetchAllIndicatorVersions({ publicationStatus: 'PUBLISHED' })
+    if (request !== loadRevision) return
+    indicatorOptions.value = options
     let versionId = route.query.versionId
     if (!versionId && route.params.scenarioId) {
       const list = await fetchScenarioVersions(route.params.scenarioId)
+      if (request !== loadRevision) return
       versionId = (Array.isArray(list) ? list : []).find((item) => item.publicationStatus === 'DRAFT')?.id || list?.[0]?.id
     }
-    if (versionId) applyDetail(await fetchScenarioVersion(versionId))
-  } catch (error) { ElMessage.error(error?.message || '场景版本加载失败') }
+    if (versionId) {
+      const detail = await fetchScenarioVersion(versionId)
+      if (request !== loadRevision) return
+      applyDetail(detail)
+      applyEntryContext()
+    }
+  } catch (error) { if (request === loadRevision) ElMessage.error(error?.message || '场景版本加载失败') }
 }
 async function startEditing() {
   if (!capabilities.value.canStartEdit || startingEdit.value) return
@@ -142,7 +151,8 @@ async function startEditing() {
       ? await fetchScenarioVersion(draft.id)
       : await createScenarioVersion(form.scenarioId, { copyFromVersionId: form.versionId }, `scenario-edit-${form.scenarioId}-${form.versionId}-${Date.now()}`)
     applyDetail(detail)
-    await router.replace({ name: 'ScenarioEditor', params: { scenarioId: form.scenarioId }, query: { versionId: detail?.version?.id } })
+    applyEntryContext()
+    await router.replace({ name: 'ScenarioEditor', params: { scenarioId: form.scenarioId }, query: { ...route.query, versionId: detail?.version?.id } })
   } catch (error) { ElMessage.error(error?.message || '进入场景编辑失败，当前版本仍可继续查看') } finally { startingEdit.value = false }
 }
 async function persistDraft() {
@@ -183,7 +193,21 @@ async function publish() {
   } catch (error) { await handleError(error) } finally { publishing.value = false }
 }
 async function handleError(error) { if (error?.status === 409) { await ElMessageBox.confirm('服务端版本已变化，是否重新加载最新版本？', '版本冲突', { type: 'warning' }).then(() => load()).catch(() => {}) } else { ElMessage.error(error?.message || '操作失败') } }
-onMounted(load)
+function applyEntryContext() {
+  if (['indicators', 'overrides'].includes(route.query.tab)) activeTab.value = 'indicators'
+  const id = normalizeResourceId(route.query.indicatorVersionId)
+  if (route.query.linkIndicator !== '1' || !editable.value || !id) return
+  if (form.indicators.some(item => normalizeResourceId(item.indicatorVersionId) === id)) return
+  const option = availableIndicatorOptions.value.find(item => optionVersionId(item) === id)
+  if (!option) {
+    ElMessage.warning('该指标版本尚未发布，无法关联到场景')
+    return
+  }
+  form.indicators.push(toIndicatorBinding(option, form.indicators.length))
+}
+watch(() => [route.params.scenarioId, route.query.versionId], load, { immediate: true })
+watch(() => [route.query.tab, route.query.indicatorVersionId, route.query.linkIndicator], applyEntryContext)
+onBeforeUnmount(() => { loadRevision++ })
 </script>
 
 <style scoped>

@@ -57,7 +57,7 @@
     </section>
     <StatePanel v-else-if="!loading && !memberRecords.length" type="empty" title="当前层暂无数据" description="当前口径下没有可展示的记录。" />
     <div v-else class="table-scroll">
-      <el-table v-loading="loading" :data="memberRecords" table-layout="fixed" class="analysis-table drill-data-table">
+      <el-table v-loading="loading" :data="memberRecords" table-layout="fixed" class="analysis-table drill-data-table" @sort-change="changeSort">
         <el-table-column
           v-for="column in visibleColumns"
           :key="column.field"
@@ -79,6 +79,19 @@
           </template>
         </el-table-column>
       </el-table>
+    </div>
+
+    <div v-if="!errorMessage && !statusRecord && Number(result.pageInfo.total) > 0" class="drill-pagination">
+      <el-pagination
+        :current-page="pageNum"
+        :page-size="pageSize"
+        :total="Number(result.pageInfo.total) || 0"
+        :page-sizes="[20, 50, 100]"
+        :disabled="loading"
+        layout="total, prev, pager, next, sizes"
+        @current-change="changePage"
+        @size-change="changePageSize"
+      />
     </div>
 
     <div v-if="currentLevel === 'DOCTOR' || currentLevel === 'CASE'" class="drill-access-hint">
@@ -149,6 +162,9 @@ const parentKeys = ref({ ...props.startParentKeys })
 const result = ref(emptyResult())
 const loading = ref(false)
 const errorMessage = ref('')
+const pageNum = ref(1)
+const pageSize = ref(20)
+const sort = ref([{ field: 'indicatorValue', direction: 'DESC' }])
 let drillRequestId = 0
 const factorTrace = ref(null)
 const traceBatchId = computed(() => String(factorTrace.value?.context?.calculationBatchId || ''))
@@ -220,12 +236,36 @@ function buildPayload() {
     ...(lastDrillDimension.value.startsWith('CUSTOM_') ? { pathCode: lastDrillDimension.value } : {}),
     parentKeys: parentKeys.value,
     filters: { ...props.startFilters },
-    pageNum: 1,
-    pageSize: 20,
-    sort: [{ field: 'indicatorValue', direction: 'DESC' }]
+    pageNum: pageNum.value,
+    pageSize: pageSize.value,
+    sort: sort.value
   }
   if (currentLevel.value) payload.currentLevel = currentLevel.value
   return payload
+}
+
+function resetPaging() {
+  pageNum.value = 1
+  sort.value = [{ field: 'indicatorValue', direction: 'DESC' }]
+}
+
+function changePage(page) {
+  if (pageNum.value === page) return
+  pageNum.value = page
+  loadDrill()
+}
+
+function changePageSize(size) {
+  if (pageSize.value === size) return
+  pageSize.value = size
+  pageNum.value = 1
+  loadDrill()
+}
+
+function changeSort({ prop, order }) {
+  sort.value = prop && order ? [{ field: prop, direction: order === 'ascending' ? 'ASC' : 'DESC' }] : []
+  pageNum.value = 1
+  loadDrill()
 }
 
 async function loadDrill() {
@@ -265,6 +305,7 @@ function resolveCanonicalRootResultId() {
 function openNextLevel(row) {
   const nextLevel = availableNextLevels.value[0]
   if (!nextLevel) return
+  resetPaging()
   const nextKeys = { ...parentKeys.value }
   const parentKey = parentKeyForLevel(currentLevel.value)
   if (parentKey && row.dimensionKey) nextKeys[parentKey] = row.dimensionKey
@@ -333,6 +374,7 @@ function openTraceBatch() {
 function goToBreadcrumb(index) {
   const item = result.value.breadcrumb[index]
   if (!item) return
+  resetPaging()
   currentLevel.value = item.level
   const nextKeys = {}
   result.value.breadcrumb.slice(0, index).forEach((ancestor) => {
@@ -372,12 +414,14 @@ function inferDimensionFromLevel(level) {
 }
 
 watch(() => [props.startLevel, props.startParentKeys, props.startFilters], ([level, keys]) => {
+  resetPaging()
   currentLevel.value = level
   parentKeys.value = { ...keys }
   if (isFactorTraceMode.value) loadFactorTrace()
   else loadDrill()
 }, { deep: true })
 watch(() => [props.resultId, props.pathResultIds, props.configuredPaths], () => {
+  resetPaging()
   resolvedPathResultIds.value = {}
   if (!pathAvailable(lastDrillDimension.value)) {
     const nextDimension = customPaths.value[0]?.pathCode || (pathAvailable('ORGANIZATION') ? 'ORGANIZATION' : 'DISEASE')
@@ -390,6 +434,7 @@ watch(() => [props.resultId, props.pathResultIds, props.configuredPaths], () => 
   else loadDrill()
 }, { deep: true })
 watch(() => props.source, (source) => {
+  resetPaging()
   factorTraceRequestId += 1
   factorTraceLoading.value = false
   factorTrace.value = null
@@ -400,6 +445,7 @@ watch(() => props.source, (source) => {
   loadDrill()
 })
 watch(dimension, (value) => {
+  resetPaging()
   factorTraceRequestId += 1
   factorTraceLoading.value = false
   drillRequestId += 1
@@ -432,6 +478,13 @@ function rootForPath(pathCode) {
 </script>
 
 <style scoped>
+.drill-pagination {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 16px;
+  overflow-x: auto;
+}
+
 .drill-context-bar,
 .drill-table-heading {
   display: flex;

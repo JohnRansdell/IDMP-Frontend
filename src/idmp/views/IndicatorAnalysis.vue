@@ -382,14 +382,14 @@ import RuntimeParameterFields from '@/idmp/components/RuntimeParameterFields.vue
 import DrillExplorer from '@/idmp/features/analysis/DrillExplorer.vue'
 import IndicatorDrillAnalysis from '@/idmp/features/analysis/IndicatorDrillAnalysis.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
-import { fetchIndicatorAnalysis, fetchIndicatorAvailablePeriod, fetchIndicatorFormula, fetchIndicatorGrainOptions, fetchIndicators, fetchIndicatorVersion, fetchIndicatorVersionList, queryIndicatorVersion } from '@/idmp/api/modules/indicators'
+import { fetchIndicatorAnalysis, fetchIndicatorAvailablePeriod, fetchIndicatorGrainOptions, fetchAllIndicators, fetchIndicatorVersion, fetchAllIndicatorVersions, queryIndicatorVersion } from '@/idmp/api/modules/indicators'
 import { fetchFactorVersion } from '@/idmp/api/modules/factors'
 import { collectFormulaFactorVersionIds, createIndicatorDataExplanation, extractIndicatorFormula, normalizeIndicatorInstantSummary } from '@/idmp/api/adapters/indicator'
 import { deriveDrillPathResultIds } from '@/idmp/api/adapters/drill'
 import { searchResultDrill } from '@/idmp/api/modules/drill'
 import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
 import { resolveIndicatorCalculationMode } from '@/idmp/features/analysis/calculationMode'
-import { departmentDrillContext, loadDepartmentComparisons, normalizeDepartmentComparisons } from '@/idmp/features/analysis/departmentRanking'
+import { departmentAchievement, departmentDrillContext, loadDepartmentComparisons, normalizeDepartmentComparisons } from '@/idmp/features/analysis/departmentRanking'
 import { DRILL_GRANULARITIES } from '@/idmp/features/analysis/drillPeriods'
 import { useAnalysisPeriod } from '@/idmp/features/analysis/useAnalysisPeriod'
 import CalculationDiagnostics from '@/idmp/features/analysis/CalculationDiagnostics.vue'
@@ -750,7 +750,7 @@ const rankTableData = computed(() => {
       numerator: item.numeratorValue == null ? '-' : formatCount(item.numeratorValue),
       denominator: item.denominatorValue == null ? '-' : formatCount(item.denominatorValue),
       change: '-',
-      status: item.qualityStatus === 'PASSED' ? '达标' : '预警',
+      status: departmentAchievement(item, (rankInitialized.value ? rankAnalysis.value : backendAnalysis.value) || {}),
       drillContext: departmentDrillContext(item, backendIndicatorVersion.value?.drillConfig?.drillPaths || [],
         rankInitialized.value ? rankGranularity.value : backendAnalysisGranularity.value)
     }))
@@ -916,9 +916,9 @@ const trendOption = computed(() => ({
 }))
 
 const rankStatusTone = (status) => {
-  if (status === '超标') return 'danger'
+  if (status === '超标' || status === '未达标') return 'danger'
   if (status === '预警') return 'warning'
-  return 'success'
+  return status === '达标' ? 'success' : 'neutral'
 }
 
 const changeClass = (change) => {
@@ -1266,8 +1266,8 @@ async function loadBackendAnalysisIndicators() {
   indicatorOptionsLoading.value = true
   try {
     const [indicators, publishedVersions] = await Promise.all([
-      fetchIndicators({ page: 1, size: 200 }),
-      fetchIndicatorVersionList({ publicationStatus: 'PUBLISHED', page: 1, size: 200 })
+      fetchAllIndicators(),
+      fetchAllIndicatorVersions({ publicationStatus: 'PUBLISHED' })
     ])
     backendIndicators.value = mergePublishedAnalysisIndicators(
       normalizeList(indicators),
@@ -1558,14 +1558,7 @@ async function refreshIndicatorAnalysis({ preserveRangeSummary = false } = {}) {
 
 async function fetchAnalysisIndicatorVersion(versionId) {
   const version = await fetchIndicatorVersion(versionId)
-  let formula = extractIndicatorFormula(version)
-  if (!formula) {
-    try {
-      formula = await fetchIndicatorFormula(versionId)
-    } catch {
-      formula = null
-    }
-  }
+  const formula = extractIndicatorFormula(version)
   return { ...version, formula: formula || version?.formula || version?.formulaAst }
 }
 

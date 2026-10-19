@@ -78,7 +78,7 @@
                 </el-radio-group>
               </el-form-item>
               <el-form-item label="计量单位" prop="unit">
-                <el-select v-model="form.unit">
+                <el-select v-model="form.unit" placeholder="未设置">
                   <el-option label="百分比（%）" value="百分比（%）" />
                   <el-option label="比值" value="比值" />
                   <el-option label="人次" value="人次" />
@@ -87,7 +87,7 @@
                 </el-select>
               </el-form-item>
               <el-form-item label="指标导向" prop="direction">
-                <el-select v-model="form.direction">
+                <el-select v-model="form.direction" placeholder="未设置">
                   <el-option label="逐步降低 ↓" value="逐步降低 ↓" />
                   <el-option label="逐步提高 ↑" value="逐步提高 ↑" />
                   <el-option label="监测比较" value="监测比较" />
@@ -154,6 +154,7 @@
 
       <el-tab-pane label="2 公式与试算" name="formula">
         <section class="surface-card formula-card">
+          <el-alert v-if="unsupportedFormula" title="当前公式含暂不支持的节点类型；原公式不会被修改。" type="warning" :closable="false" />
           <div class="notice-strip is-warning formula-contract-note">
             <el-icon><InfoFilled /></el-icon>
             <span>
@@ -165,9 +166,10 @@
             <el-button
               v-for="mode in formulaModes"
               :key="mode.name"
+              :disabled="unsupportedFormula"
               :type="formulaMode === mode.name ? 'primary' : 'default'"
               :aria-pressed="formulaMode === mode.name ? 'true' : 'false'"
-              @click="formulaMode = mode.name"
+              @click="selectFormulaMode(mode.name)"
             >
               {{ mode.name }}
             </el-button>
@@ -178,7 +180,19 @@
           </div>
 
           <h2 class="formula-section-title">公式编辑器</h2>
-          <div class="formula-builder">
+          <div v-if="activeMode.kind === 'advanced'" class="formula-builder advanced-formula-builder">
+            <div class="advanced-formula-preview" aria-label="实时公式预览">
+              <span>指标值</span><strong>{{ formulaPreview }}</strong>
+            </div>
+            <IndicatorFormulaComposer v-model="advancedFormulaRoot" :factors="advancedFactorOptions" :disabled="indicatorWorkflow.published" :loading="workflowLoading.factors" />
+            <div class="advanced-display-settings">
+              <label>展示格式<el-select :model-value="advancedFormulaPayload.display.format" :disabled="indicatorWorkflow.published" aria-label="嵌套公式展示格式" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, format: $event }"><el-option label="数值" value="NUMBER" /><el-option label="百分比" value="PERCENT" /><el-option v-if="savedFormulaDisplay?.format === 'DECIMAL'" label="数值" value="DECIMAL" /></el-select></label>
+              <label>展示乘数<el-input :model-value="String(advancedFormulaPayload.display.multiplier ?? '1')" :disabled="indicatorWorkflow.published" aria-label="展示乘数" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, multiplier: $event }" /></label>
+              <label>小数位数<el-input-number :model-value="advancedFormulaPayload.display.scale ?? 2" :disabled="indicatorWorkflow.published" :min="0" :max="12" :precision="0" aria-label="展示小数位数" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, scale: $event }" /></label>
+              <label>舍入方式<el-select :model-value="advancedFormulaPayload.display.roundingMode || 'HALF_UP'" :disabled="indicatorWorkflow.published" aria-label="展示舍入方式" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, roundingMode: $event }"><el-option v-for="[code, label] in roundingModes" :key="code" :value="code" :label="label" /></el-select></label>
+            </div>
+          </div>
+          <div v-else class="formula-builder">
             <div v-if="activeMode.kind === 'statistic'" class="formula-settings formula-settings--top">
               <label>统计方法</label>
               <el-select v-model="statisticOperator" aria-label="选择统计方法">
@@ -257,7 +271,7 @@
           </div>
 
           <div class="factor-library">
-            <div class="factor-library__head">
+            <div v-if="activeMode.kind !== 'advanced'" class="factor-library__head">
               <h3><el-icon><Box /></el-icon>可用因子（拖拽到上方编辑器槽位）</h3>
               <div class="factor-tools">
                 <el-input
@@ -273,7 +287,7 @@
                 </el-select>
               </div>
             </div>
-            <div class="factor-grid" v-loading="workflowLoading.factors">
+            <div v-if="activeMode.kind !== 'advanced'" class="factor-grid" v-loading="workflowLoading.factors">
               <article
                 v-for="factor in availableFactors"
                 :key="factor.code"
@@ -289,7 +303,7 @@
                 <el-button text type="primary" @click="quickAdd(factor)">添加</el-button>
               </article>
             </div>
-            <div class="factor-library__footer">
+            <div v-if="activeMode.kind !== 'advanced'" class="factor-library__footer">
               <el-button :icon="Plus" @click="router.push('/factor')">前往因子管理</el-button>
               <el-tooltip content="当前后端尚未提供因子导入接口">
                 <span
@@ -434,7 +448,7 @@
                 </el-table>
                 <div class="workflow-trial-results__footer">
                   <span>{{ selectedIndicatorTrialTarget.periodStart || indicatorTrialResultSet.periodStart || '-' }} 至 {{ selectedIndicatorTrialTarget.periodEnd || indicatorTrialResultSet.periodEnd || '-' }}</span>
-                  <span>第 {{ selectedIndicatorTrialTarget.pageNum }} / {{ selectedIndicatorTrialTarget.pages || 1 }} 页，每页 {{ selectedIndicatorTrialTarget.pageSize }} 条</span>
+                  <el-pagination :current-page="selectedIndicatorTrialTarget.pageNum" :page-size="selectedIndicatorTrialTarget.pageSize" :total="selectedIndicatorTrialTarget.total" :disabled="workflowLoading.result" layout="total, prev, pager, next" @current-change="loadIndicatorTrialPage" />
                 </div>
               </template>
             </section>
@@ -499,13 +513,14 @@
           <div class="formula-preview">
             <div>
               <span>公式预览</span>
-              <strong>指标值 = {{ formulaPreview }}</strong>
+              <IndicatorFormulaExpression v-if="advancedFormulaValid" :formula="advancedFormulaPayload" :factors="advancedFactorOptions" />
+              <strong v-else>指标值 = {{ formulaPreview }}</strong>
             </div>
             <div class="validation-state" :class="{ 'is-invalid': !formulaValid }">
               <el-icon><CircleCheckFilled v-if="formulaValid" /><CircleCloseFilled v-else /></el-icon>
-              <span>{{ formulaValid ? '本地结构检查通过：分子和分母均非空；类型、单位和依赖仍须服务端校验' : '本地结构检查未通过：请补充分子和分母因子' }}</span>
+              <span>{{ formulaValid ? '本地结构检查通过；类型、单位和依赖仍须服务端校验' : (activeMode.kind === 'advanced' ? advancedFormulaError : '本地结构检查未通过：请补充公式因子') }}</span>
             </div>
-            <div class="formula-settings">
+            <div v-if="activeMode.kind !== 'advanced'" class="formula-settings">
               <label>分母为零策略</label>
               <el-select v-model="zeroStrategy" aria-label="分母为零策略">
                 <el-option label="返回空值" value="返回 NULL" />
@@ -513,7 +528,7 @@
                 <el-option label="标记异常" value="标记异常" />
               </el-select>
               <label>展示格式</label>
-              <span>百分比</span><i /> <span>乘数：100</span><i /> <span>精度：2位</span>
+              <span>{{ activeMode.multiplier ? '百分比' : '数值' }}</span><i /> <span>乘数：{{ activeMode.multiplier ? 100 : 1 }}</span><i /> <span>精度：{{ savedFormulaDisplay?.scale ?? 2 }}位</span>
             </div>
           </div>
         </section>
@@ -616,6 +631,7 @@ import {
 } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
+import IndicatorScenarioLinks from '@/idmp/components/IndicatorScenarioLinks.vue'
 import ResultAvailabilityPanel from '@/idmp/components/ResultAvailabilityPanel.vue'
 import { API_BASE_URL } from '@/idmp/api/request'
 import { resourceConflictEditorPath, resolveResourceConflict } from '@/idmp/api/adapters/resourceConflict'
@@ -625,8 +641,7 @@ import {
   createIndicatorVersion,
   fetchIndicatorAnalysis,
   fetchIndicator,
-  fetchIndicatorFormula,
-  fetchIndicators,
+  fetchAllIndicators as fetchIndicators,
   fetchIndicatorVersion,
   fetchIndicatorVersions,
   fetchIndicatorTrialResults,
@@ -655,13 +670,16 @@ import { createCalcBatch, fetchAsyncTask, fetchCalcBatch } from '@/idmp/api/modu
 import IndicatorPolicySources from '@/idmp/components/IndicatorPolicySources.vue'
 import IndicatorPolicyBasis from '@/idmp/components/IndicatorPolicyBasis.vue'
 import { useIndicatorPolicySources } from '@/idmp/features/indicator/useIndicatorPolicySources'
-import IndicatorScenarioLinks from '@/idmp/components/IndicatorScenarioLinks.vue'
 import { restorePolicyDrafts } from '@/idmp/features/indicator/editorWorkflow'
 import { getStatusLabel } from '@/idmp/design/status'
 import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
 import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
 import { factorCalculationMode } from '@/idmp/utils/factorPeriod'
 import { newResourceCode } from '@/idmp/utils/resourceCode'
+import { parseEditorFormula, zeroPolicy, zeroPolicyLabel } from '@/idmp/features/indicator/formulaEditor'
+import { arithmeticFormulaError, arithmeticDisplayError, arithmeticFactorIds, arithmeticFormulaText, buildArithmeticFormula, cloneFormula, createArithmeticNode, roundingModes } from '@/idmp/features/indicator/arithmeticFormula'
+import IndicatorFormulaComposer from '@/idmp/components/IndicatorFormulaComposer.vue'
+import IndicatorFormulaExpression from '@/idmp/components/IndicatorFormulaExpression.vue'
 import { configurableSourceFactors, activeSourceBindings } from '@/idmp/utils/derivedFactor'
 import { fetchFactorVersion, fetchPublishedFactorVersions } from '@/idmp/api/modules/factors'
 import RuntimeParameterFields from '@/idmp/components/RuntimeParameterFields.vue'
@@ -770,7 +788,8 @@ const editLoadState = reactive({
   message: ''
 })
 
-const selectedFormulaFactors = computed(() => [
+const selectedFormulaFactors = computed(() => activeMode.value.kind === 'advanced'
+  ? arithmeticFactorIds(advancedFormulaRoot.value).map(id => findFactorByVersionId(id) || createFormulaFactorPlaceholder('引用因子', id)) : [
   ...numeratorFactors.value,
   ...denominatorFactors.value
 ])
@@ -926,9 +945,9 @@ const form = reactive({
   categoryPath: [...defaultCategoryPath],
   categoryMain: defaultCategoryPath[0],
   categorySub: defaultCategoryPath[1],
-  attribute: '定量',
-  unit: '百分比（%）',
-  direction: '逐步降低 ↓',
+  attribute: isNew.value ? '定量' : '',
+  unit: isNew.value ? '百分比（%）' : '',
+  direction: isNew.value ? '逐步降低 ↓' : '',
   definition: '',
   significance: '',
   sources: [],
@@ -981,18 +1000,18 @@ const editorStatusLabel = computed(() => ({
 }[editorStatus.value] || getStatusLabel(editorStatus.value)))
 
 const required = message => ({ required: true, message, trigger: ['blur', 'change'] })
-const rules = {
+const rules = computed(() => ({
   code: [required('请输入指标编码'), { pattern: /^[A-Z][A-Z0-9_]{0,63}$/, message: '编码须以大写字母开头，仅含大写字母、数字和下划线，最长 64 位', trigger: ['blur', 'change'] }],
   name: [required('请输入指标名称')],
   categoryPath: [required('请选择指标分类')],
-  attribute: [required('请选择指标属性')],
-  unit: [required('请选择计量单位')],
-  direction: [required('请选择指标导向')],
+  attribute: isNew.value ? [required('请选择指标属性')] : [],
+  unit: isNew.value ? [required('请选择计量单位')] : [],
+  direction: isNew.value ? [required('请选择指标导向')] : [],
   definition: [required('请输入指标定义')],
   sources: [required('请选择至少一个数据来源')],
   period: [required('请选择统计周期')],
   policyDrafts: [{ validator: (_rule, _value, done) => policySourceState.loading || policySourceState.saving ? done(new Error('请等待政策来源读取或保存完成')) : policySourceState.error ? done(new Error(policySourceState.error)) : policySourceState.count > 0 ? done() : done(new Error('请选择至少一份政策文件来源；依据说明选填')), trigger: 'change' }]
-}
+}))
 
 function findCategoryPath(target, options, trail = []) {
   const needle = String(target || '').trim()
@@ -1063,12 +1082,14 @@ function syncCategorySelection(path = form.categoryPath) {
 }
 
 const formulaModes = [
+  { name: '嵌套公式型', kind: 'advanced', description: '嵌套四则运算、数字常量与舍入', factorRequirement: '完整的嵌套公式' },
   { name: '简单比率型', kind: 'ratio', description: '一个分子 ÷ 一个分母 × 100%，适用于最基本的百分比指标', leftLabel: '分子', leftHint: '拖入一个因子', leftPlaceholder: '从下方拖入分子因子', rightLabel: '分母', rightHint: '拖入一个因子', rightPlaceholder: '从下方拖入分母因子', showRight: true, multiplier: '100%', factorRequirement: '一个分子和一个分母' },
   { name: '加法合成型', kind: 'add', description: '多个同量纲因子相加，适用于总量类指标', leftLabel: '参与合成的因子', leftHint: '可拖入多个因子', leftPlaceholder: '从下方拖入一个或多个因子', showRight: false, multiplier: '', factorRequirement: '至少一个参与合成的因子' },
   { name: '复合比率型', kind: 'ratio', description: '多个因子分别汇总后相除，并按百分比展示，适用于综合比率指标', leftLabel: '分子因子', leftHint: '可拖入多个因子', leftPlaceholder: '从下方拖入一个或多个分子因子', rightLabel: '分母因子', rightHint: '可拖入多个因子', rightPlaceholder: '从下方拖入一个或多个分母因子', showRight: true, multiplier: '100%', factorRequirement: '至少一个分子和一个分母因子' },
   { name: '多因子计算型', kind: 'custom', description: '选择两组因子及运算符，构成可计算的自定义表达式', leftLabel: '左侧因子', leftHint: '可拖入多个因子', leftPlaceholder: '从下方拖入左侧因子', rightLabel: '右侧因子', rightHint: '可拖入多个因子', rightPlaceholder: '从下方拖入右侧因子', showRight: true, multiplier: '', factorRequirement: '左、右两侧各至少一个因子' },
   { name: '统计量型', kind: 'statistic', description: '选择一个或多个因子，并指定平均数、中位数或分位数等统计方法', leftLabel: '统计对象', leftHint: '可拖入多个因子', leftPlaceholder: '从下方拖入一个或多个统计对象', showRight: false, multiplier: '', factorRequirement: '至少一个统计对象' },
-  { name: '比值型', kind: 'ratio', description: '分子 ÷ 分母，不自动转换为百分比', leftLabel: '分子', leftHint: '拖入一个因子', leftPlaceholder: '从下方拖入分子因子', rightLabel: '分母', rightHint: '拖入一个因子', rightPlaceholder: '从下方拖入分母因子', showRight: true, multiplier: '', factorRequirement: '一个分子和一个分母' }
+  { name: '比值型', kind: 'ratio', description: '分子 ÷ 分母，不自动转换为百分比', leftLabel: '分子', leftHint: '拖入一个因子', leftPlaceholder: '从下方拖入分子因子', rightLabel: '分母', rightHint: '拖入一个因子', rightPlaceholder: '从下方拖入分母因子', showRight: true, multiplier: '', factorRequirement: '一个分子和一个分母' },
+  { name: '复合比值型', kind: 'ratio', description: '两组因子分别汇总后相除', leftLabel: '分子因子', leftHint: '可拖入多个因子', leftPlaceholder: '选择分子因子', rightLabel: '分母因子', rightHint: '可拖入多个因子', rightPlaceholder: '选择分母因子', showRight: true, multiplier: '', factorRequirement: '至少一个分子和一个分母因子' }
 ]
 const formulaMode = ref('简单比率型')
 const activeMode = computed(() => formulaModes.find(item => item.name === formulaMode.value))
@@ -1082,6 +1103,31 @@ const factorCategory = ref('')
 const factorLibraryRows = computed(() => backendEditorFactors.value)
 const factorCategories = computed(() => [...new Set(factorLibraryRows.value.map(item => item.category).filter(Boolean))])
 const zeroStrategy = ref('返回 NULL')
+const unsupportedFormula = ref(false)
+const formulaHydrating = ref(false)
+const savedFormulaDisplay = ref(null)
+const savedFormulaDefinition = ref(null)
+const savedEditorFormulaSignature = ref('')
+const savedCalculationDescription = ref(null)
+const advancedFormulaRoot = ref(null)
+const advancedFormulaError = computed(() => arithmeticFormulaError(advancedFormulaRoot.value) || arithmeticDisplayError(savedFormulaDisplay.value || {}))
+const advancedFormulaValid = computed(() => activeMode.value.kind === 'advanced' && !advancedFormulaError.value)
+const advancedFactorOptions = computed(() => {
+  const factors = new Map(backendEditorFactors.value.map(factor => [String(factor.versionId), factor]))
+  for (const factor of numeratorFactors.value) if (!factors.has(String(factor.versionId))) factors.set(String(factor.versionId), factor)
+  return [...factors.values()]
+})
+const advancedFormulaPayload = computed(() => ({ ...savedFormulaDefinition.value, root: advancedFormulaRoot.value, display: savedFormulaDisplay.value || { format: 'NUMBER', multiplier: '1', scale: 2, roundingMode: 'HALF_UP' } }))
+
+function selectFormulaMode(name) {
+  if (name === formulaMode.value) return
+  if (name === '嵌套公式型') {
+    const formula = formulaValid.value ? createIndicatorFormulaPayload(0).formula : null
+    advancedFormulaRoot.value = cloneFormula(formula?.root || createArithmeticNode('FACTOR_REF'))
+    if (formula?.display) savedFormulaDisplay.value = cloneFormula(formula.display)
+  }
+  formulaMode.value = name
+}
 
 const selectedFactorCodes = computed(() => new Set([
   ...numeratorFactors.value.map(item => item.code),
@@ -1097,6 +1143,8 @@ const availableFactors = computed(() => factorLibraryRows.value.filter(item => {
 }))
 
 const formulaValid = computed(() => {
+  if (unsupportedFormula.value) return false
+  if (activeMode.value.kind === 'advanced') return !advancedFormulaError.value && selectedFormulaFactors.value.length > 0
   if (activeMode.value.kind === 'add' || activeMode.value.kind === 'statistic') return numeratorFactors.value.length > 0
   return numeratorFactors.value.length > 0 && denominatorFactors.value.length > 0
 })
@@ -1105,9 +1153,12 @@ const formulaOperatorLabel = computed(() => {
   return '÷'
 })
 const formulaPreview = computed(() => {
-  const left = numeratorFactors.value.map(item => item.name).join(' + ') || activeMode.value.leftPlaceholder
+  if (activeMode.value.kind === 'advanced') return arithmeticFormulaText(advancedFormulaRoot.value, advancedFactorOptions.value)
+  const leftText = numeratorFactors.value.map(item => item.name).join(' + ') || activeMode.value.leftPlaceholder
+  const left = numeratorFactors.value.length > 1 && activeMode.value.showRight ? `(${leftText})` : leftText
   if (!activeMode.value.showRight) return activeMode.value.kind === 'statistic' ? `${statisticOperator.value}（${left}）` : left
-  const right = denominatorFactors.value.map(item => item.name).join(' + ') || activeMode.value.rightPlaceholder
+  const rightText = denominatorFactors.value.map(item => item.name).join(' + ') || activeMode.value.rightPlaceholder
+  const right = denominatorFactors.value.length > 1 ? `(${rightText})` : rightText
   return `${left} ${formulaOperatorLabel.value} ${right}${activeMode.value.multiplier ? ` × ${activeMode.value.multiplier}` : ''}`
 })
 const indicatorTrialButtonLabel = computed(() => {
@@ -1350,6 +1401,8 @@ watch(indicatorDimensionGrain, () => {
 
 watch(
   () => [
+    formulaMode.value, customOperator.value, statisticOperator.value, zeroStrategy.value,
+    JSON.stringify(advancedFormulaRoot.value), JSON.stringify(savedFormulaDisplay.value),
     ...numeratorFactors.value.map((factor) => String(factor.versionId || factor.code || '')),
     '|',
     ...denominatorFactors.value.map((factor) => String(factor.versionId || factor.code || ''))
@@ -1357,6 +1410,11 @@ watch(
   () => {
     resetDrillCapability()
     workflowLoading.capability = false
+    if (!formulaHydrating.value && indicatorWorkflow.versionId && !indicatorWorkflow.published) {
+      indicatorWorkflow.formulaSaved = false
+      indicatorWorkflow.compiled = false
+      resetIndicatorTrialAfterPeriodChange()
+    }
   },
   { flush: 'sync' }
 )
@@ -1380,6 +1438,7 @@ const dragFactor = factor => {
 }
 
 const dropFactor = target => {
+  if (unsupportedFormula.value) return
   if (!draggedFactor.value) return
   const list = target === 'numerator' ? numeratorFactors : denominatorFactors
   const opposite = target === 'numerator' ? denominatorFactors : numeratorFactors
@@ -1450,18 +1509,8 @@ function refreshSelectedFactorReferences() {
 }
 
 function applySelectedFactorReferences() {
-  const numerator = findFactorByVersionId(deathFactorVersionId.value)
-  const denominator = findFactorByVersionId(dischargeFactorVersionId.value)
-  if (numerator) {
-    numeratorFactors.value = [numerator]
-  } else if (deathFactorVersionId.value) {
-    numeratorFactors.value = [createFormulaFactorPlaceholder('分子因子', deathFactorVersionId.value)]
-  }
-  if (denominator) {
-    denominatorFactors.value = [denominator]
-  } else if (dischargeFactorVersionId.value) {
-    denominatorFactors.value = [createFormulaFactorPlaceholder('分母因子', dischargeFactorVersionId.value)]
-  }
+  numeratorFactors.value = numeratorFactors.value.map(factor => findFactorByVersionId(factor.versionId) || factor)
+  denominatorFactors.value = denominatorFactors.value.map(factor => findFactorByVersionId(factor.versionId) || factor)
 }
 
 function findFactorByVersionId(versionId) {
@@ -1481,13 +1530,14 @@ function createFormulaFactorPlaceholder(label, versionId) {
 }
 
 function hydrateIndicatorSummary(item) {
+  savedCalculationDescription.value = item.calculationDescription || null
   form.code = item.code || routeIndicatorKey.value
   form.name = item.name || ''
-  form.shortName = item.shortName || item.name || ''
+  form.shortName = item.shortName ?? ''
   syncCategorySelection(resolveCategoryPath(item))
-  form.attribute = item.attribute || form.attribute || '定量'
-  form.unit = item.unit || form.unit || '百分比（%）'
-  form.direction = item.direction || form.direction || '监测比较'
+  form.attribute = item.attribute ?? ''
+  form.unit = item.unit ?? ''
+  form.direction = item.direction ?? ''
   form.definition = item.description || item.definition || ''
   form.significance = item.significance || item.meaning || ''
   savedDataSources.value = normalizeIndicatorDataSources(item.dataSources || item.sources || (item.source ? [item.source] : []))
@@ -1556,32 +1606,37 @@ function extractFormula(payload) {
 }
 
 function hydrateFormulaFactors(formula) {
-  const root = formula?.root || formula
-  const refs = collectFactorRefs(root)
-  const operator = String(root?.operator || '').toUpperCase()
-  const displayFormat = String(formula?.display?.format || '').toUpperCase()
-  if (root?.nodeType === 'STATISTIC') {
-    formulaMode.value = '统计量型'
-    statisticOperator.value = root.operator || 'AVG'
-    numeratorFactors.value = refs.map(id => findFactorByVersionId(id) || createFormulaFactorPlaceholder('统计对象', id))
+  formulaHydrating.value = true
+  try {
+    const parsed = parseEditorFormula(formula)
+    unsupportedFormula.value = Boolean(formula && !parsed)
+    savedFormulaDisplay.value = formula?.display ? { ...formula.display } : null
+    savedFormulaDefinition.value = formula ? JSON.parse(JSON.stringify(formula)) : null
+    advancedFormulaRoot.value = parsed?.mode === '嵌套公式型' ? cloneFormula(formula.root || formula) : null
+    savedEditorFormulaSignature.value = ''
+    numeratorFactors.value = []
     denominatorFactors.value = []
-    return
+    deathFactorVersionId.value = ''
+    dischargeFactorVersionId.value = ''
+    if (!parsed) return
+    formulaMode.value = parsed.mode
+    customOperator.value = parsed.operator || 'ADD'
+    statisticOperator.value = parsed.statistic || 'AVG'
+    zeroStrategy.value = zeroPolicyLabel(parsed.policy)
+    numeratorFactors.value = parsed.left.map(id => findFactorByVersionId(id) || createFormulaFactorPlaceholder('左侧因子', id))
+    denominatorFactors.value = parsed.right.map(id => findFactorByVersionId(id) || createFormulaFactorPlaceholder('右侧因子', id))
+    deathFactorVersionId.value = parsed.left[0] || ''
+    dischargeFactorVersionId.value = parsed.right[0] || ''
+    savedEditorFormulaSignature.value = editorFormulaSignature()
+  } finally {
+    formulaHydrating.value = false
   }
-  if (operator === 'ADD') {
-    formulaMode.value = '加法合成型'
-    numeratorFactors.value = refs.map(id => findFactorByVersionId(id) || createFormulaFactorPlaceholder('参与合成的因子', id))
-    denominatorFactors.value = []
-    return
-  }
-  if (['SUB', 'MUL'].includes(operator)) {
-    formulaMode.value = '多因子计算型'
-    customOperator.value = operator
-  } else if (operator === 'DIV') {
-    formulaMode.value = displayFormat === 'PERCENT' ? '简单比率型' : '比值型'
-  }
-  if (refs[0]) deathFactorVersionId.value = toOpaqueId(refs[0])
-  if (refs[1]) dischargeFactorVersionId.value = toOpaqueId(refs[1])
-  applySelectedFactorReferences()
+}
+
+function editorFormulaSignature() {
+  return JSON.stringify([formulaMode.value, customOperator.value, statisticOperator.value, zeroStrategy.value,
+    advancedFormulaRoot.value, savedFormulaDisplay.value,
+    numeratorFactors.value.map(factor => String(factor.versionId)), denominatorFactors.value.map(factor => String(factor.versionId))])
 }
 
 function collectFactorRefs(node, refs = []) {
@@ -1656,14 +1711,7 @@ async function loadEditableIndicatorVersion(indicatorId) {
   if (!latestVersionId) return
 
   const detail = await fetchIndicatorVersion(latestVersionId)
-  let formula = extractFormula(detail)
-  if (!formula) {
-    try {
-      formula = await fetchIndicatorFormula(latestVersionId)
-    } catch {
-      formula = null
-    }
-  }
+  const formula = extractFormula(detail)
   hydrateIndicatorVersion({
     ...detail,
     formula: formula || detail.formula || detail.formulaAst
@@ -1721,6 +1769,10 @@ async function saveIndicatorBasicInfo() {
     const indicator = await createIndicator({
       code: form.code,
       name: form.name,
+      shortName: form.shortName,
+      attribute: form.attribute,
+      unit: form.unit,
+      direction: form.direction,
       description: form.definition || null,
       category: categoryPath[categoryPath.length - 1] || '',
       categoryMain: categoryPath[0] || '',
@@ -1751,6 +1803,9 @@ async function saveIndicatorBasicInfo() {
 function applySavedIndicatorMetadata(updated, hasDraftVersion) {
   form.code = updated?.code ?? form.code
   form.name = updated?.name ?? form.name
+  for (const key of ['shortName', 'attribute', 'unit', 'direction']) {
+    if (updated && Object.hasOwn(updated, key)) form[key] = updated[key] ?? ''
+  }
   syncCategorySelection(resolveCategoryPath(updated, form.categoryPath))
   indicatorWorkflow.masterResourceVersion = resolveResourceVersion(updated, indicatorWorkflow.masterResourceVersion)
   savedBasicSignature = basicMetadataSignature()
@@ -2200,6 +2255,8 @@ async function loadIndicatorTrialResultOnly() {
     return
   }
 
+  const versionId = indicatorWorkflow.versionId
+  const batchId = indicatorWorkflow.batchId
   workflowLoading.result = true
   try {
     recordWorkflowRequest({
@@ -2214,7 +2271,8 @@ async function loadIndicatorTrialResultOnly() {
       ElMessage.info('试算仍在处理中，请稍后再查看结果')
       return
     }
-    const resultSet = await fetchIndicatorTrialResults(indicatorWorkflow.versionId, indicatorWorkflow.batchId)
+    const resultSet = await fetchIndicatorTrialResults(versionId, batchId)
+    if (versionId !== indicatorWorkflow.versionId || batchId !== indicatorWorkflow.batchId) return
     indicatorWorkflow.trialAvailability = resolveResultAvailability({ ...resultSet, batchStatus })
     const normalized = normalizeIndicatorTrialResults(resultSet)
     indicatorTrialResultSet.value = normalized
@@ -2232,6 +2290,26 @@ async function loadIndicatorTrialResultOnly() {
     indicatorTrialResultsLoaded.value = false
     recordWorkflowError(error)
     ElMessage.error(error?.message || '试算结果读取失败')
+  } finally {
+    workflowLoading.result = false
+  }
+}
+
+async function loadIndicatorTrialPage(page) {
+  if (workflowLoading.result || !selectedIndicatorTrialTarget.value) return
+  const versionId = indicatorWorkflow.versionId
+  const batchId = indicatorWorkflow.batchId
+  const key = selectedIndicatorTrialTargetKey.value
+  const size = selectedIndicatorTrialTarget.value.pageSize
+  workflowLoading.result = true
+  try {
+    const normalized = normalizeIndicatorTrialResults(await fetchIndicatorTrialResults(versionId, batchId, page, size))
+    if (versionId !== indicatorWorkflow.versionId || batchId !== indicatorWorkflow.batchId) return
+    const target = normalized.targets.find(item => item.key === key)
+    if (!target) throw new Error('该计算目标的结果暂不可用，请重新读取')
+    indicatorTrialTargets.value = indicatorTrialTargets.value.map(item => item.key === key ? target : item)
+  } catch (error) {
+    ElMessage.error(error?.message || '试算结果翻页失败，请重试')
   } finally {
     workflowLoading.result = false
   }
@@ -2400,7 +2478,14 @@ function isOptimisticLockError(error) {
 }
 
 function createIndicatorFormulaPayload(resourceVersion) {
+  if (unsupportedFormula.value) throw new Error('当前公式不支持在此编辑，请保留原定义或通过原创建方式修改')
   if (!formulaValid.value) throw new Error(`请按${activeMode.value.factorRequirement}选择已发布因子`)
+  if (savedFormulaDefinition.value && savedEditorFormulaSignature.value === editorFormulaSignature()) {
+    if (savedFormulaDefinition.value.root?.nodeType !== 'STATISTIC') return { resourceVersion, formula: JSON.parse(JSON.stringify(savedFormulaDefinition.value)) }
+  }
+  if (activeMode.value.kind === 'advanced') {
+    return { resourceVersion, formula: buildArithmeticFormula(advancedFormulaRoot.value, advancedFormulaPayload.value) }
+  }
   const factorRef = (factor, index) => ({ nodeId: `factor_${index}_${factor.versionId}`, nodeType: 'FACTOR_REF', factorVersionId: String(factor.versionId) })
   const combine = (factors, operator, prefix) => combineFormulaNodes(
     factors.map((factor, index) => factorRef(factor, `${prefix}_${index}`)),
@@ -2410,11 +2495,11 @@ function createIndicatorFormulaPayload(resourceVersion) {
   const left = combine(numeratorFactors.value, 'ADD', 'left')
   let root
   if (activeMode.value.kind === 'add') root = left
-  else if (activeMode.value.kind === 'statistic') root = { nodeId: 'statistic_root', nodeType: 'STATISTIC', operator: statisticOperator.value, children: numeratorFactors.value.map((factor, index) => factorRef(factor, `stat_${index}`)) }
+  else if (activeMode.value.kind === 'statistic') root = { nodeId: 'statistic_root', nodeType: 'FUNCTION', functionCode: statisticOperator.value === 'P90' ? 'PERCENTILE' : statisticOperator.value, ...(statisticOperator.value === 'P90' ? { percentile: '0.9' } : {}), arguments: numeratorFactors.value.map((factor, index) => factorRef(factor, `stat_${index}`)) }
   else {
     const right = combine(denominatorFactors.value, 'ADD', 'right')
     const operator = activeMode.value.kind === 'custom' ? customOperator.value : 'DIV'
-    root = { nodeId: 'formula_root', nodeType: 'BINARY', operator, left, right, ...(operator === 'DIV' ? { zeroDenominatorPolicy: 'RETURN_NULL' } : {}) }
+    root = { nodeId: 'formula_root', nodeType: 'BINARY', operator, left, right, ...(operator === 'DIV' ? { zeroDenominatorPolicy: zeroPolicy(zeroStrategy.value) } : {}) }
   }
   const percent = activeMode.value.multiplier === '100%'
   return {
@@ -2423,7 +2508,7 @@ function createIndicatorFormulaPayload(resourceVersion) {
       schemaVersion: '1.0',
       astType: 'INDICATOR_FORMULA',
       root,
-      display: { format: percent ? 'PERCENT' : 'DECIMAL', multiplier: percent ? '100' : '1', scale: 2, roundingMode: 'HALF_UP' }
+      display: { scale: 2, roundingMode: 'HALF_UP', ...savedFormulaDisplay.value, format: percent ? 'PERCENT' : 'DECIMAL', multiplier: percent ? '100' : '1' }
     }
   }
 }
@@ -2433,6 +2518,10 @@ function createIndicatorMetadataPayload({ includeVersionMetadata = true } = {}) 
   return {
     resourceVersion: indicatorWorkflow.masterResourceVersion,
     name: form.name,
+    shortName: form.shortName,
+    attribute: form.attribute,
+    unit: form.unit,
+    direction: form.direction,
     category: categoryPath[categoryPath.length - 1] || '',
     categoryMain: categoryPath[0] || '',
     categorySub: categoryPath[1] || '',
@@ -2443,7 +2532,7 @@ function createIndicatorMetadataPayload({ includeVersionMetadata = true } = {}) 
       ? indicatorWorkflow.resourceVersion : indicatorWorkflow.metadataResourceVersion,
       definition: form.definition || null,
       meaning: form.significance || null,
-      calculationDescription: formulaValid.value ? formulaPreview.value : null,
+      calculationDescription: unsupportedFormula.value ? savedCalculationDescription.value : (formulaValid.value ? formulaPreview.value : null),
       statisticalPeriod: toApiStatisticalPeriod(form.period),
       dataSources: buildIndicatorDataSources(form.sources, savedDataSources.value)
     } : {})
@@ -2484,11 +2573,14 @@ function restoreIndicatorEditorForm() {
     form.policyDrafts = restorePolicyDrafts(saved, indicatorWorkflow.versionId)
     if (!indicatorWorkflow.versionId) {
       const persistedCode = indicatorWorkflow.indicatorId ? form.code : ''
+      const persistedPresentation = indicatorWorkflow.indicatorId
+        ? Object.fromEntries(['shortName', 'attribute', 'unit', 'direction'].map(key => [key, form[key]])) : null
       const savedForm = { ...saved.form }
       delete savedForm.policies
       delete savedForm.policyDrafts
       Object.assign(form, savedForm)
       if (persistedCode) form.code = persistedCode
+      if (persistedPresentation) Object.assign(form, persistedPresentation)
       syncCategorySelection(form.categoryPath)
     }
     if (saved.openFormula) activeTab.value = 'formula'
@@ -3473,12 +3565,37 @@ onMounted(async () => {
 
   > div:first-child {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
     gap: 14px;
 
     span { color: var(--idmp-text-helper); }
     strong { color: var(--idmp-text-primary); }
   }
+}
+
+.advanced-formula-preview {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--idmp-border-soft);
+  font-size: 13px;
+  span { color: var(--idmp-text-helper); }
+  strong { min-width: 0; font-weight: 500; overflow-wrap: anywhere; color: var(--idmp-text-primary); }
+}
+
+.advanced-display-settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+  gap: 14px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--idmp-border-soft);
+  label { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 12px; color: var(--idmp-text-helper); }
+  .el-select, .el-input, .el-input-number { width: 100%; min-width: 0; }
 }
 
 .validation-state {
