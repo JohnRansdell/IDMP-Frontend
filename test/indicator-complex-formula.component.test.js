@@ -369,7 +369,20 @@ test('nested mode shares the formula editor surface and keeps a live preview adj
   const view = await readFile(new URL('../src/idmp/views/IndicatorEditor.vue', import.meta.url), 'utf8')
   assert.match(view, /class="formula-builder advanced-formula-builder"/)
   assert.match(view, /class="advanced-formula-preview" aria-label="实时公式预览"/)
-  assert.match(view, /class="advanced-display-settings"/)
+})
+
+test('nested display controls belong to the bottom formula preview rather than the factor editor', async () => {
+  const view = await readFile(new URL('../src/idmp/views/IndicatorEditor.vue', import.meta.url), 'utf8')
+  const { descriptor } = parse(view)
+  const document = new JSDOM(descriptor.template.content).window.document
+  const settings = document.querySelector('.advanced-display-settings')
+  assert.equal(document.querySelectorAll('.advanced-display-settings').length, 1)
+  assert.equal(settings.parentElement.className, 'formula-preview')
+  assert.equal(settings.getAttribute('v-if'), "activeMode.kind === 'advanced'")
+  assert.equal(document.querySelector('.advanced-formula-builder .advanced-display-settings'), null)
+  for (const label of ['嵌套公式展示格式', '展示乘数', '展示小数位数', '展示舍入方式']) {
+    assert.equal(settings.querySelector(`[aria-label="${label}"]`).getAttribute(':disabled'), 'indicatorWorkflow.published')
+  }
 })
 
 test('factor palette follows both calculation modes and formula workspace without changing selection behavior', async () => {

@@ -185,12 +185,6 @@
               <span>指标值</span><strong>{{ formulaPreview }}</strong>
             </div>
             <IndicatorFormulaComposer v-model="advancedFormulaRoot" :factors="advancedFactorOptions" :disabled="indicatorWorkflow.published" :loading="workflowLoading.factors" />
-            <div class="advanced-display-settings">
-              <label>展示格式<el-select :model-value="advancedFormulaPayload.display.format" :disabled="indicatorWorkflow.published" aria-label="嵌套公式展示格式" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, format: $event }"><el-option label="数值" value="NUMBER" /><el-option label="百分比" value="PERCENT" /><el-option v-if="savedFormulaDisplay?.format === 'DECIMAL'" label="数值" value="DECIMAL" /></el-select></label>
-              <label>展示乘数<el-input :model-value="String(advancedFormulaPayload.display.multiplier ?? '1')" :disabled="indicatorWorkflow.published" aria-label="展示乘数" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, multiplier: $event }" /></label>
-              <label>小数位数<el-input-number :model-value="advancedFormulaPayload.display.scale ?? 2" :disabled="indicatorWorkflow.published" :min="0" :max="12" :precision="0" aria-label="展示小数位数" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, scale: $event }" /></label>
-              <label>舍入方式<el-select :model-value="advancedFormulaPayload.display.roundingMode || 'HALF_UP'" :disabled="indicatorWorkflow.published" aria-label="展示舍入方式" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, roundingMode: $event }"><el-option v-for="[code, label] in roundingModes" :key="code" :value="code" :label="label" /></el-select></label>
-            </div>
           </div>
           <div v-else class="formula-builder">
             <div v-if="activeMode.kind === 'statistic'" class="formula-settings formula-settings--top">
@@ -516,7 +510,13 @@
               <el-icon><CircleCheckFilled v-if="formulaValid" /><CircleCloseFilled v-else /></el-icon>
               <span>{{ formulaValid ? '本地结构检查通过；类型、单位和依赖仍须服务端校验' : (activeMode.kind === 'advanced' ? advancedFormulaError : '本地结构检查未通过：请补充公式因子') }}</span>
             </div>
-            <div v-if="activeMode.kind !== 'advanced'" class="formula-settings">
+            <div v-if="activeMode.kind === 'advanced'" class="advanced-display-settings" role="group" aria-label="公式展示设置">
+              <label>展示格式<el-select :model-value="advancedFormulaPayload.display.format" :disabled="indicatorWorkflow.published" aria-label="嵌套公式展示格式" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, format: $event }"><el-option label="数值" value="NUMBER" /><el-option label="百分比" value="PERCENT" /><el-option v-if="savedFormulaDisplay?.format === 'DECIMAL'" label="数值" value="DECIMAL" /></el-select></label>
+              <label>展示乘数<el-input :model-value="String(advancedFormulaPayload.display.multiplier ?? '1')" :disabled="indicatorWorkflow.published" aria-label="展示乘数" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, multiplier: $event }" /></label>
+              <label>小数位数<el-input-number :model-value="advancedFormulaPayload.display.scale ?? 2" :disabled="indicatorWorkflow.published" :min="0" :max="12" :precision="0" aria-label="展示小数位数" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, scale: $event }" /></label>
+              <label>舍入方式<el-select :model-value="advancedFormulaPayload.display.roundingMode || 'HALF_UP'" :disabled="indicatorWorkflow.published" aria-label="展示舍入方式" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, roundingMode: $event }"><el-option v-for="[code, label] in roundingModes" :key="code" :value="code" :label="label" /></el-select></label>
+            </div>
+            <div v-else class="formula-settings">
               <label>分母为零策略</label>
               <el-select v-model="zeroStrategy" aria-label="分母为零策略">
                 <el-option label="返回空值" value="返回 NULL" />
