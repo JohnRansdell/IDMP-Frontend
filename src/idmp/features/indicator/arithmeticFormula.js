@@ -40,6 +40,13 @@ export function createArithmeticNode(type, previous = {}) {
   return { ...base, nodeType: 'BINARY', operator: 'ADD', left: factor(), right: factor() }
 }
 
+export function wrapArithmeticNode(node, operator) {
+  const operand = cloneFormula(node || createArithmeticNode('FACTOR_REF'))
+  if (operator === 'ROUND') return { nodeType: 'FUNCTION', functionCode: 'ROUND', scale: 2, roundingMode: 'HALF_UP', arguments: [operand] }
+  if (!arithmeticOperators.some(([code]) => code === operator)) throw new Error('不支持的运算符')
+  return { nodeType: 'BINARY', operator, left: operand, right: createArithmeticNode('FACTOR_REF'), ...(operator === 'DIV' ? { zeroDenominatorPolicy: 'RETURN_NULL' } : {}) }
+}
+
 export function buildArithmeticFormula(root, original = {}) {
   const error = arithmeticFormulaError(root) || arithmeticDisplayError(original.display)
   if (error) throw new Error(error)

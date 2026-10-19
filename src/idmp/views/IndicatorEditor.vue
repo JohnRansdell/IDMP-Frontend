@@ -163,13 +163,16 @@
           </div>
 
           <h2 class="formula-section-title">公式编辑器</h2>
-          <div v-if="activeMode.kind === 'advanced'" class="advanced-formula-builder">
-            <IndicatorFormulaNodeEditor v-model="advancedFormulaRoot" :factors="advancedFactorOptions" :disabled="indicatorWorkflow.published" />
-            <div class="formula-settings">
-              <label>展示格式</label><el-select :model-value="advancedFormulaPayload.display.format" :disabled="indicatorWorkflow.published" aria-label="嵌套公式展示格式" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, format: $event }"><el-option label="数值" value="NUMBER" /><el-option label="百分比" value="PERCENT" /><el-option v-if="savedFormulaDisplay?.format === 'DECIMAL'" label="数值" value="DECIMAL" /></el-select>
-              <label>展示乘数</label><el-input :model-value="String(advancedFormulaPayload.display.multiplier ?? '1')" :disabled="indicatorWorkflow.published" aria-label="展示乘数" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, multiplier: $event }" />
-              <label>小数位数</label><el-input-number :model-value="advancedFormulaPayload.display.scale ?? 2" :disabled="indicatorWorkflow.published" :min="0" :max="12" :precision="0" aria-label="展示小数位数" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, scale: $event }" />
-              <el-select :model-value="advancedFormulaPayload.display.roundingMode || 'HALF_UP'" :disabled="indicatorWorkflow.published" aria-label="展示舍入方式" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, roundingMode: $event }"><el-option v-for="[code, label] in roundingModes" :key="code" :value="code" :label="label" /></el-select>
+          <div v-if="activeMode.kind === 'advanced'" class="formula-builder advanced-formula-builder">
+            <div class="advanced-formula-preview" aria-label="实时公式预览">
+              <span>指标值</span><strong>{{ formulaPreview }}</strong>
+            </div>
+            <IndicatorFormulaComposer v-model="advancedFormulaRoot" :factors="advancedFactorOptions" :disabled="indicatorWorkflow.published" :loading="workflowLoading.factors" />
+            <div class="advanced-display-settings">
+              <label>展示格式<el-select :model-value="advancedFormulaPayload.display.format" :disabled="indicatorWorkflow.published" aria-label="嵌套公式展示格式" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, format: $event }"><el-option label="数值" value="NUMBER" /><el-option label="百分比" value="PERCENT" /><el-option v-if="savedFormulaDisplay?.format === 'DECIMAL'" label="数值" value="DECIMAL" /></el-select></label>
+              <label>展示乘数<el-input :model-value="String(advancedFormulaPayload.display.multiplier ?? '1')" :disabled="indicatorWorkflow.published" aria-label="展示乘数" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, multiplier: $event }" /></label>
+              <label>小数位数<el-input-number :model-value="advancedFormulaPayload.display.scale ?? 2" :disabled="indicatorWorkflow.published" :min="0" :max="12" :precision="0" aria-label="展示小数位数" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, scale: $event }" /></label>
+              <label>舍入方式<el-select :model-value="advancedFormulaPayload.display.roundingMode || 'HALF_UP'" :disabled="indicatorWorkflow.published" aria-label="展示舍入方式" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, roundingMode: $event }"><el-option v-for="[code, label] in roundingModes" :key="code" :value="code" :label="label" /></el-select></label>
             </div>
           </div>
           <div v-else class="formula-builder">
@@ -729,7 +732,7 @@ import { factorCalculationMode } from '@/idmp/utils/factorPeriod'
 import { newResourceCode } from '@/idmp/utils/resourceCode'
 import { parseEditorFormula, zeroPolicy, zeroPolicyLabel } from '@/idmp/features/indicator/formulaEditor'
 import { arithmeticFormulaError, arithmeticDisplayError, arithmeticFactorIds, arithmeticFormulaText, buildArithmeticFormula, cloneFormula, createArithmeticNode, roundingModes } from '@/idmp/features/indicator/arithmeticFormula'
-import IndicatorFormulaNodeEditor from '@/idmp/components/IndicatorFormulaNodeEditor.vue'
+import IndicatorFormulaComposer from '@/idmp/components/IndicatorFormulaComposer.vue'
 import IndicatorFormulaExpression from '@/idmp/components/IndicatorFormulaExpression.vue'
 import { configurableSourceFactors, activeSourceBindings } from '@/idmp/utils/derivedFactor'
 import { fetchPublishedFactorVersions } from '@/idmp/api/modules/factors'
@@ -1173,7 +1176,7 @@ function selectFormulaMode(name) {
   if (name === formulaMode.value) return
   if (name === '嵌套公式型') {
     const formula = formulaValid.value ? createIndicatorFormulaPayload(0).formula : null
-    advancedFormulaRoot.value = cloneFormula(formula?.root || createArithmeticNode('BINARY'))
+    advancedFormulaRoot.value = cloneFormula(formula?.root || createArithmeticNode('FACTOR_REF'))
     if (formula?.display) savedFormulaDisplay.value = cloneFormula(formula.display)
   }
   formulaMode.value = name
@@ -3594,8 +3597,28 @@ onMounted(async () => {
   }
 }
 
-.advanced-formula-builder .formula-settings {
-  .el-select, .el-input, .el-input-number { width: 180px; max-width: 100%; margin-right: 0; }
+.advanced-formula-preview {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--idmp-border-soft);
+  font-size: 13px;
+  span { color: var(--idmp-text-helper); }
+  strong { min-width: 0; font-weight: 500; overflow-wrap: anywhere; color: var(--idmp-text-primary); }
+}
+
+.advanced-display-settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+  gap: 14px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--idmp-border-soft);
+  label { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 12px; color: var(--idmp-text-helper); }
+  .el-select, .el-input, .el-input-number { width: 100%; min-width: 0; }
 }
 
 .validation-state {
