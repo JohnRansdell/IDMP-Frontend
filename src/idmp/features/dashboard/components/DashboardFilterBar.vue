@@ -3,7 +3,7 @@
     <div v-for="def in definitions.filter(item => item.enabled)" :key="def.id" class="filter-control" :data-filter-field="def.field">
       <label>{{ def.label }}</label>
       <span v-if="loadingById[def.id]" role="status">正在加载筛选选项</span>
-      <FilterValue v-else-if="field(def)" :type="def.type" :options="optionsById?.[def.id] || field(def).options" :model-value="values[def.id]" @update:model-value="emit('change', { ...values, [def.id]: $event })" />
+      <FilterValue v-else-if="field(def)" :type="def.type" confirm-selection :options="optionsById?.[def.id] || field(def).options" :model-value="values[def.id]" @update:model-value="emit('change', { ...values, [def.id]: $event })" />
       <span v-else role="status">字段不可用：{{ def.field }}</span>
       <small v-if="errorsById[def.id]" role="alert">{{ errorsById[def.id] }} <button type="button" @click="emit('retry')">重试</button></small>
     </div>
