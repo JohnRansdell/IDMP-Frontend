@@ -99,7 +99,7 @@ async function initialize() {
   history.value = []
   failedNavigation.value = null
   try {
-    const target = await resolveTarget(props.widget)
+    const target = await resolveTarget(props.widget, props.selectedParams)
     if (request.id !== requestId) return
     if (!target) throw new Error('当前指标没有可用的组织下钻结果')
     const nextRoot = await loadBackendChartRoot(searchResultDrill, target, { signal: request.signal })

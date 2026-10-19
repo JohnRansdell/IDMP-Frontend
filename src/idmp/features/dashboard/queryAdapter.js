@@ -5,6 +5,12 @@ import { resolveGlobalFilterField } from './departmentFilters.js'
 // joins datasets, or re-filters an aggregate/preset option.
 export function queryWidgetDataset(dataset, widget, definitions = [], runtimeValues = {}) {
   if (!dataset) return dataset
+  if (dataset.rowMode === 'PROJECTED') {
+    const conditions = dataset.componentMeasureFiltersPending
+      ? (widget.config?.dataBinding?.filters || []).filter(condition => dataset.fields.some(field => field.id === condition.field && field.semanticType === 'measure')) : []
+    const filtered = applyFilters(dataset.rows, conditions, dataset.fields)
+    return { ...dataset, rows: filtered.rows, filterDiagnostics: filtered.diagnostics }
+  }
   const conditions = [], diagnostics = []
   const query = widget.config?.query || {}
   const independentPeriod = widget.config?.backendQuery?.periodMode === 'INDEPENDENT'
@@ -27,6 +33,7 @@ export function queryWidgetDataset(dataset, widget, definitions = [], runtimeVal
 export function queryWidgetDatasetWithRuntime(dataset, widget, { definitions = [], values = {}, interactions = {} } = {}) {
   const filtered = queryWidgetDataset(dataset, widget, definitions, values)
   if (!filtered) return filtered
+  if (filtered.rowMode === 'PROJECTED') return filtered
   const query = widget.config?.query || {}
   if (query.respondToInteractionFilters === false) return filtered
   const conditions = [], diagnostics = [...(filtered.filterDiagnostics || [])]

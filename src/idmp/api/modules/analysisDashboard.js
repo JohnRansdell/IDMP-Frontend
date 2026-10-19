@@ -24,7 +24,7 @@ export function queryDashboard(code = DEFAULT_DASHBOARD_CODE, payload = {}, opti
     timeoutMs: 90000,
     ...options,
     method: 'POST',
-    body: JSON.stringify({ responseFormat: 'COMPACT', ...payload })
+    body: JSON.stringify({ responseFormat: 'COLUMNAR', ...payload })
   }).then(expandDashboardResponse)
 }
 
@@ -89,8 +89,8 @@ export function previewDashboardWidget(payload, options = {}) {
   return requestJson('/analysis/dashboard-query/preview', {
     ...options,
     method: 'POST',
-    body: JSON.stringify(previewPayload)
-  })
+    body: JSON.stringify({ responseFormat: 'COLUMNAR', ...previewPayload })
+  }).then(result => result?.responseFormat === 'COLUMNAR' ? expandDashboardResponse(result).widgets.preview : result)
 }
 
 export function fetchDashboardDataSourcePeriods(code, options = {}) {

@@ -124,6 +124,62 @@ export function formatDashboardKpiMetric(value, { unit = '', displayValue } = {}
   return { value: formatDashboardMetric(value), unit: visibleUnit }
 }
 const dimensionValue = value => ['string', 'boolean'].includes(typeof value) || (typeof value === 'number' && Number.isFinite(value)) ? value : null
+const groupedRows = new WeakMap()
+
+function groupWidgetRows(rows, binding, dataset) {
+  const cacheable = Object.isFrozen(rows)
+  const key = cacheable ? JSON.stringify([binding.dimensions, binding.series, dataset.dimensionDisplayFields, dataset.departmentFields]) : ''
+  const cached = cacheable && groupedRows.get(rows)?.get(key)
+  if (cached) return cached
+  const categories = new Map(), groups = new Map(), splits = new Map()
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) continue
+    const tuple = binding.dimensions.map(dimension => dimensionValue(row[dimension.field]))
+    const category = binding.dimensions.length ? tuple : ''
+    const split = binding.series.length ? dimensionValue(row[binding.series[0].field]) : ''
+    if (tuple.some(value => value === null || value === '') || split === null || split === '' && binding.series.length) continue
+    const categoryKey = JSON.stringify(category), splitKey = JSON.stringify(split)
+    categories.set(categoryKey, { raw: category, row })
+    splits.set(splitKey, split)
+    const groupKey = JSON.stringify([categoryKey, splitKey])
+    if (!groups.has(groupKey)) groups.set(groupKey, [])
+    groups.get(groupKey).push(row)
+  }
+  // 名称解析按分类执行一次，而不是对每条组合粒度明细重复构造映射。
+  for (const item of categories.values()) {
+    item.visible = binding.dimensions.map(dimension => visibleDimensionName(item.row, dimension, dataset))
+    delete item.row
+  }
+  const result = { categories, groups, splits }
+  if (cacheable) {
+    let cache = groupedRows.get(rows)
+    if (!cache) { cache = new Map(); groupedRows.set(rows, cache) }
+    cache.set(key, result)
+    if (cache.size > 16) cache.delete(cache.keys().next().value)
+  }
+  return result
+}
+
+// Server-calculated indicators are already projected to the widget grain.
+// Pivot categories/series for rendering, but never merge calculated values.
+function projectedWidgetRows(rows, binding, dataset) {
+  const categories = new Map(), groups = new Map(), splits = new Map()
+  for (const row of rows) {
+    for (const item of [...binding.dimensions, ...binding.series]) if (!Object.hasOwn(row, item.field)) {
+      throw new Error(`后端结果缺少组件维度字段：${item.field}`)
+    }
+    const tuple = binding.dimensions.map(item => dimensionValue(row[item.field]))
+    const split = binding.series.length ? dimensionValue(row[binding.series[0].field]) : ''
+    const categoryKey = JSON.stringify(tuple), splitKey = JSON.stringify(split)
+    const key = JSON.stringify([categoryKey, splitKey])
+    if (groups.has(key)) throw new Error('后端未返回当前组件的唯一粒度结果，请计算对应粒度或检查组件维度配置')
+    categories.set(categoryKey, { raw: tuple, visible: binding.dimensions.map(item =>
+      row[item.field] === null || row[item.field] === undefined || row[item.field] === '' ? '未分配' : visibleDimensionName(row, item, dataset)) })
+    splits.set(splitKey, split ?? '未分配')
+    groups.set(key, row)
+  }
+  return { categories, groups, splits }
+}
 
 export function compileWidgetData(kind, binding, dataset) {
   const validation = validateWidgetBinding(kind, binding, dataset?.fields)
@@ -134,27 +190,21 @@ export function compileWidgetData(kind, binding, dataset) {
     const points = rows.map(row => [numericValue(row?.[x.field]), numericValue(row?.[y.field])]).filter(point => point[0] !== null && point[1] !== null)
     return points.length ? { status: 'ready', categories: [], series: [{ name: `${x.label || x.field} / ${y.label || y.field}`, values: points }], items: [] } : { status: 'empty', message: '暂无可用数值点' }
   }
-  const categories = new Map(), groups = new Map(), splits = new Map()
-  for (const row of rows) {
-    if (!row || typeof row !== 'object' || Array.isArray(row)) continue
-    const tuple = binding.dimensions.map(dimension => dimensionValue(row?.[dimension.field]))
-    const visibleTuple = binding.dimensions.map(dimension => visibleDimensionName(row, dimension, dataset))
-    const category = binding.dimensions.length ? tuple : ''
-    const split = binding.series.length ? dimensionValue(row?.[binding.series[0].field]) : ''
-    if (tuple.some(value => value === null || value === '') || split === null || split === '' && binding.series.length) continue
-    const categoryKey = JSON.stringify(category), splitKey = JSON.stringify(split)
-    categories.set(categoryKey, { raw: category, visible: visibleTuple })
-    splits.set(splitKey, split)
-    const key = JSON.stringify([categoryKey, splitKey])
-    if (!groups.has(key)) groups.set(key, [])
-    groups.get(key).push(row)
-  }
   try {
+    const serverCalculated = dataset.serverCalculated === true || dataset.rowMode === 'PROJECTED'
+    if (serverCalculated && binding.measures.some(measure => measure.aggregation !== 'direct')) {
+      throw new Error('正式指标结果由后端计算，组件度量请选择指标结果值，不支持前端二次聚合')
+    }
+    const { categories, groups, splits } = serverCalculated
+      ? projectedWidgetRows(rows, binding, dataset) : groupWidgetRows(rows, binding, dataset)
     const categoryKeys = [...categories.keys()]
     const series = [...splits].flatMap(([splitKey, split]) => binding.measures.map(measure => ({
       field: measure.field,
       name: [split, measure.label || dataset.fields.find(field => field.id === measure.field)?.label].filter(value => value !== '').join(' · '),
-      values: categoryKeys.map(key => aggregateMeasureRows(groups.get(JSON.stringify([key, splitKey])) || [], measure, dataset.fields))
+      values: categoryKeys.map(key => {
+        const group = groups.get(JSON.stringify([key, splitKey]))
+        return serverCalculated ? numericValue(group?.[measure.field]) : aggregateMeasureRows(group || [], measure, dataset.fields)
+      })
     })))
     if (!series.some(item => item.values.some(value => value !== null))) return { status: 'empty', message: '暂无数据' }
     let order = categoryKeys.map((_, index) => index)

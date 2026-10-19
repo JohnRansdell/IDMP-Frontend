@@ -453,7 +453,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, shallowRef, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
@@ -500,7 +500,7 @@ import { resolveDrillHierarchy } from '@/idmp/features/dashboard/drillDown.js'
 import { annotateDepartmentFilterFields, departmentSelectionCodes, isDepartmentFilterField, loadDepartmentCodeOptions, resolveGlobalFilterField } from '@/idmp/features/dashboard/departmentFilters.js'
 import { singleIndicatorTemplatePlan } from '@/idmp/features/dashboard/templateBinding.js'
 import { createDefaultBinding } from '@/idmp/features/dashboard/smartDefaultBinding.js'
-import { createMultiIndicatorDataset, multiIndicatorMeasureField, normalizeIndicatorBindings } from '@/idmp/features/dashboard/multiIndicator.js'
+import { createMultiIndicatorDataset, multiIndicatorMeasureField, normalizeIndicatorBindings, singleIndicatorProjectionBinding } from '@/idmp/features/dashboard/multiIndicator.js'
 import { buildRemoteFilterOptionQuery, buildRemoteWidgetQuery, resolveDashboardQueryState } from '@/idmp/features/dashboard/remoteQuery.js'
 import { buildIndicatorAnalysisPeriodContext, buildIndicatorAnalysisRouteQuery } from '@/idmp/features/dashboard/analysisNavigation.js'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
@@ -743,8 +743,8 @@ let selectedDataSourceManuallySelected = false
 const addWidgetType = ref('kpi')
 const indicatorDataSources = ref([])
 const catalogIndicatorSources = ref([])
-const remoteWidgetDatasets = ref({})
-const remoteMultiIndicatorDatasets = ref({})
+const remoteWidgetDatasets = shallowRef({})
+const remoteMultiIndicatorDatasets = shallowRef({})
 const remoteWidgetPreviewGenerations = new Map()
 const designerSourceLoadingId = ref('')
 const designerSourceSelectionGenerations = new Map()
@@ -897,9 +897,21 @@ provide('dashboardSupportsBackendDrill', (widget) => {
   const source = getWidgetSource(widget)
   return Boolean(source?.analysisIndicatorId && ['indicator-catalog', 'dashboard-data-source'].includes(source.origin))
 })
-provide('dashboardResolveWidgetDrill', async (widget) => {
+provide('dashboardResolveWidgetDrill', async (widget, params) => {
   const source = getWidgetSource(widget)
   if (!source?.analysisIndicatorId || !['indicator-catalog', 'dashboard-data-source'].includes(source.origin)) return null
+  const projected = getBindingDatasets(widget).find(dataset => dataset.rowMode === 'PROJECTED')
+  if (projected) {
+    const tuple = params?.data?.dimensionValues
+    const row = projected.rows.find(row => tuple && Object.entries(tuple).every(([field, value]) => row[field] === value))
+    if (!row?.drillContext) throw new Error('当前组件结果没有可用的精确下钻上下文')
+    const version = await dashboardIndicatorVersion(source, widget)
+    const configuredPaths = version?.drillConfig?.drillPaths || version?.drillPaths || []
+    const path = resolveChartDrillPath(configuredPaths, widget.config?.dataBinding?.dimensions?.[0]?.field)
+    return { resultId: row.drillContext.resultId, drillContext: row.drillContext, selectedRow: row, path, configuredPaths,
+      indicatorVersionId: String(widget.config?.analysisIndicatorVersionId || source.analysisIndicatorVersionId || source.indicatorVersionId || ''),
+      departmentNames: Object.fromEntries(collectDepartmentNames(projected.rows, configuredPaths)) }
+  }
   const scope = widget?.config?.backendQuery || {}
   const selectedMonth = remotePeriodRange.value.at(-1)
   const query = buildPublishedIndicatorAnalysisQuery(source, selectedMonth ? [selectedMonth, selectedMonth] : remotePeriodRange.value)
@@ -2950,7 +2962,18 @@ async function normalizeDashboardWidgetDataset(widget, dataset, query) {
     const normalized = normalizeDepartmentDataset(dataset, { paths })
     const names = collectDepartmentNames(normalized.rows, paths)
     const codes = normalized.rows.map(row => departmentIdentity(row, paths).code).filter(code => code && !names.has(code))
-    if (!codes.length) return explainDashboardComparison(widget, normalized, query)
+    if (!codes.length) return dataset.rowMode === 'PROJECTED' ? normalized : explainDashboardComparison(widget, normalized, query)
+    if (dataset.rowMode === 'PROJECTED') {
+      const context = dataset.rows.find(row => row.drillContext)?.drillContext
+      if (!context) return normalized
+      const path = resolveChartDrillPath(paths, widget.config?.dataBinding?.dimensions?.[0]?.field)
+      const root = await loadBackendChartRoot(searchResultDrill, { resultId: context.resultId,
+        drillContext: { ...context, filters: {} }, path, departmentNames: Object.fromEntries(names),
+        indicatorVersionId: String(widget.config?.analysisIndicatorVersionId || source.analysisIndicatorVersionId || source.indicatorVersionId || '') })
+      const members = await loadBackendChartLevel(searchResultDrill, root, initialBackendChartNavigation(root))
+      for (const row of members.records) if (row.dimensionLabel && !row.dimensionLabel.includes('编码：')) names.set(String(row.dimensionKey), row.dimensionLabel)
+      return normalizeDepartmentDataset(dataset, { paths, names })
+    }
     const analysis = await fetchIndicatorAnalysis(source.analysisIndicatorId, {
       periodStart: query?.periodStart, periodEnd: query?.periodEnd, granularity: query?.granularity || 'MONTHLY',
       indicatorVersionId: widget.config?.analysisIndicatorVersionId || source.analysisIndicatorVersionId || source.indicatorVersionId
@@ -3106,7 +3129,7 @@ function remoteWidgetQueryContext(range, sourceCode, schema = isEditing.value ? 
   const definitions = schema?.globalFilters || globalFilterDefinitions.value
   return {
     ...range, definitions, values: schema === dashboardSchema.value || schema === editingDashboardSchema.value ? filterRuntimeValues.value : initialFilterValues(definitions),
-    fields: remoteFieldCatalog.value[sourceCode] || [], department: department.value
+    fields: remoteFieldCatalog.value[sourceCode] || [], department: department.value, interactions: interactionFilterState.value
   }
 }
 
@@ -3121,7 +3144,7 @@ async function queryRemoteMultiIndicatorSources(widget, range, signal, schema = 
     }
     const fields = remoteFieldCatalog.value[binding.sourceCode] || await fetchDashboardDataSourceFields(binding.sourceCode, { signal })
     remoteFieldCatalog.value = { ...remoteFieldCatalog.value, [binding.sourceCode]: fields }
-    const sourceWidget = { ...widget, sourceCode: binding.sourceCode, config: { ...widget.config, indicatorBindings: [], analysisIndicatorVersionId: binding.indicatorVersionId || source.indicatorVersionId } }
+    const sourceWidget = { ...widget, sourceCode: binding.sourceCode, config: { ...widget.config, dataBinding: singleIndicatorProjectionBinding(widget.config?.dataBinding, fields), indicatorBindings: [], analysisIndicatorVersionId: binding.indicatorVersionId || source.indicatorVersionId } }
     const planned = buildRemoteWidgetQuery(sourceWidget, remoteWidgetQueryContext(range, binding.sourceCode, schema))
     if (planned.error || planned.empty) {
       datasets.set(binding.sourceCode, [{ id: 'backend', fields: [], rows: [], status: planned.error ? 'ERROR' : 'EMPTY', message: planned.error || '组件范围与看板周期没有交集' }])
@@ -3454,7 +3477,7 @@ watch(metricGroupPreviewKey, () => {
 watch(selectedDataCode, cancelDrawPlacement)
 watch(isEditing, value => { if (!value) cancelDrawPlacement() })
 let remoteFilterReloadTimer
-watch(filterRuntimeValues, () => {
+watch([filterRuntimeValues, interactionFilterState], () => {
   drillRuntimeState.value = {}
   if (isEditing.value && !remoteDashboardIsMock.value) {
     globalThis.clearTimeout(remoteFilterReloadTimer)

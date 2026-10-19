@@ -46,7 +46,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { GridStack } from 'gridstack'
 import 'gridstack/dist/gridstack.min.css'
 import DashboardWidget from './DashboardWidget.vue'
@@ -77,6 +77,7 @@ const grid = shallowRef(null)
 const registeredWidgetIds = new Set()
 const registrationJobs = new Map()
 let disposed = false
+let active = true
 let suppressCanvasClick = false
 let suppressCanvasClickTimer
 const interaction = reactive({ active: false, x: 0, y: 0, w: 0, h: 0 })
@@ -390,7 +391,7 @@ function synchronizeAllWidgetConstraints() {
   props.widgets.forEach((widget) => synchronizeWidgetConstraint(widget.id))
 }
 function refreshGridGeometry() {
-  if (!grid.value || !gridElement.value) return
+  if (!active || disposed || !grid.value || !gridElement.value?.isConnected || gridElement.value.clientWidth <= 0) return
   const columns = grid.value.getColumn()
   const cellWidth = grid.value.cellWidth()
   const cellHeight = grid.value.getCellHeight(true)
@@ -424,10 +425,21 @@ watch(() => props.editable, value => { if (!value) cancelCanvasGesture() })
 watch(() => props.placementMode, () => { cancelCanvasGesture(); synchronizeAllWidgetConstraints() })
 watch(() => placementWidget.value?.id, cancelCanvasGesture)
 
-onMounted(async () => {
+function observeCanvas() {
+  if (!active || disposed) return
   window.addEventListener('keydown', onCanvasKeydown, true)
   window.addEventListener('scroll', refreshCanvasGesture, true)
   window.addEventListener('blur', cancelCanvasGesture)
+  if (gridElement.value?.isConnected) geometryObserver?.observe(gridElement.value)
+}
+function pauseCanvas() {
+  cancelCanvasGesture()
+  window.removeEventListener('keydown', onCanvasKeydown, true)
+  window.removeEventListener('scroll', refreshCanvasGesture, true)
+  window.removeEventListener('blur', cancelCanvasGesture)
+  geometryObserver?.disconnect()
+}
+onMounted(async () => {
   await nextTick()
   if (disposed) return
   grid.value = GridStack.init({
@@ -440,7 +452,7 @@ onMounted(async () => {
   synchronizeAllWidgetConstraints()
   refreshGridGeometry()
   geometryObserver = new ResizeObserver(refreshGridGeometry)
-  geometryObserver.observe(gridElement.value)
+  observeCanvas()
   grid.value.on('change', () => {
     refreshGridGeometry()
     // Programmatic callers still synchronize. Pointer gestures synchronize on stop.
@@ -453,14 +465,23 @@ onMounted(async () => {
   grid.value.on('dragstop', stopGridInteraction)
   grid.value.on('resizestop', stopGridInteraction)
 })
+onDeactivated(() => {
+  active = false
+  pauseCanvas()
+})
+onActivated(async () => {
+  if (active) return
+  active = true
+  await nextTick()
+  if (!active || disposed) return
+  observeCanvas()
+  grid.value?.onResize()
+  refreshGridGeometry()
+})
 onBeforeUnmount(() => {
   disposed = true
-  cancelCanvasGesture()
-  window.removeEventListener('keydown', onCanvasKeydown, true)
-  window.removeEventListener('scroll', refreshCanvasGesture, true)
-  window.removeEventListener('blur', cancelCanvasGesture)
+  pauseCanvas()
   clearTimeout(suppressCanvasClickTimer)
-  geometryObserver?.disconnect()
   grid.value?.destroy(false)
 })
 </script>

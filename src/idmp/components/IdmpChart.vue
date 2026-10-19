@@ -90,7 +90,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, useId, watch } from 'vue'
 import * as echarts from 'echarts'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import { IDMP_CHART_THEME, normalizeChartOption } from '@/idmp/charts/theme'
@@ -132,42 +132,77 @@ const stateStyle = computed(() => (
 ))
 let chart
 let resizeObserver
+let active = true
+let disposed = false
+let renderPending = true
+let resizeFrame
+let chartWidth = 0
+let chartHeight = 0
 
 const observeChart = () => {
-  if (!chartEl.value || !('ResizeObserver' in window)) return
+  if (!active || disposed || !chartEl.value?.isConnected || !('ResizeObserver' in window)) return
   resizeObserver?.disconnect()
-  resizeObserver = new ResizeObserver(resizeChart)
+  resizeObserver ||= new ResizeObserver(resizeChart)
   resizeObserver.observe(chartEl.value)
 }
 
-const renderChart = async () => {
-  await nextTick()
-  if (!chartEl.value) return
+const updateChart = () => {
+  resizeFrame = undefined
+  const element = chartEl.value
+  if (!active || disposed || !element?.isConnected) return
+  const width = element.clientWidth
+  const height = element.clientHeight
+  if (width <= 0 || height <= 0) return
   if (!chart) {
-    chart = echarts.init(chartEl.value, THEME_NAME)
+    chart = echarts.init(element, THEME_NAME)
     chart.on('click', (params) => emit('chart-click', params))
+    chartWidth = width
+    chartHeight = height
   }
-  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-  const chartOption = normalizeChartOption({
-    animation: !reducedMotion,
-    ...props.option
-  })
-  const mapDefinition = chartOption.__mapDefinition
-  if (mapDefinition?.name && mapDefinition.geoJSON) echarts.registerMap(mapDefinition.name, mapDefinition.geoJSON)
-  delete chartOption.__mapDefinition
-  chartOption.aria = { ...chartOption.aria, enabled: false }
-  chart.setOption(chartOption, { notMerge: true })
-  chartEl.value.setAttribute('aria-label', props.ariaLabel)
-  observeChart()
+  if (renderPending) {
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    const chartOption = normalizeChartOption({
+      animation: !reducedMotion,
+      ...props.option
+    })
+    const mapDefinition = chartOption.__mapDefinition
+    if (mapDefinition?.name && mapDefinition.geoJSON) echarts.registerMap(mapDefinition.name, mapDefinition.geoJSON)
+    delete chartOption.__mapDefinition
+    chartOption.aria = { ...chartOption.aria, enabled: false }
+    chart.setOption(chartOption, { notMerge: true })
+    element.setAttribute('aria-label', props.ariaLabel)
+    renderPending = false
+  }
+  if (width !== chartWidth || height !== chartHeight) {
+    chart.resize({ width, height })
+    chartWidth = width
+    chartHeight = height
+  }
 }
 
-const resizeChart = () => chart?.resize()
+const resizeChart = () => {
+  if (!active || disposed || resizeFrame !== undefined) return
+  resizeFrame = window.requestAnimationFrame(updateChart)
+}
+
+const renderChart = async () => {
+  renderPending = true
+  await nextTick()
+  observeChart()
+  resizeChart()
+}
+
+const pauseChart = () => {
+  window.removeEventListener('resize', resizeChart)
+  resizeObserver?.disconnect()
+  if (resizeFrame !== undefined) window.cancelAnimationFrame(resizeFrame)
+  resizeFrame = undefined
+}
 
 const toggleTable = async () => {
   tableExpanded.value = !tableExpanded.value
   await nextTick()
   resizeChart()
-  window.requestAnimationFrame(resizeChart)
 }
 
 onMounted(() => {
@@ -175,22 +210,39 @@ onMounted(() => {
   window.addEventListener('resize', resizeChart)
 })
 
+onDeactivated(() => {
+  active = false
+  pauseChart()
+})
+
+onActivated(async () => {
+  if (active) return
+  active = true
+  window.addEventListener('resize', resizeChart)
+  await nextTick()
+  observeChart()
+  resizeChart()
+})
+
 watch(
   () => [props.option, props.loading, props.empty, props.permissionDenied, props.error, props.ariaLabel],
   () => {
     if (props.loading || props.empty || props.permissionDenied || props.error) {
+      pauseChart()
       chart?.dispose()
       chart = undefined
+      renderPending = true
       return
     }
+    if (active && !disposed) window.addEventListener('resize', resizeChart)
     renderChart()
   },
   { deep: true }
 )
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', resizeChart)
-  resizeObserver?.disconnect()
+  disposed = true
+  pauseChart()
   chart?.dispose()
   chart = undefined
 })
