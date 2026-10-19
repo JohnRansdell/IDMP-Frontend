@@ -1,6 +1,6 @@
 <script>
 import { defineComponent, h } from 'vue'
-import { arithmeticFormulaError, roundingModes } from '@/idmp/features/indicator/arithmeticFormula'
+import { arithmeticFormulaError, roundingModes, formulaFunctions } from '@/idmp/features/indicator/arithmeticFormula'
 
 export default defineComponent({
   props: { formula: Object, factors: { type: Array, default: () => [] } },
@@ -16,7 +16,15 @@ export default defineComponent({
         return h('span', { class: 'math-factor' }, slots.factor?.({ id, text }) || text)
       }
       if (node.nodeType === 'CONST') return h('span', String(node.value))
-      if (node.nodeType === 'FUNCTION') return h('span', { class: 'math-operation' }, ['ROUND(', render(node.arguments[0]), `；${rounding(node)})`])
+      if (node.nodeType === 'FUNCTION' && node.functionCode === 'ROUND') return h('span', { class: 'math-operation' }, ['ROUND(', render(node.arguments[0]), `；${rounding(node)})`])
+      if (['FUNCTION', 'COALESCE'].includes(node.nodeType)) {
+        const code = node.nodeType === 'COALESCE' ? 'COALESCE' : node.functionCode
+        const label = code === 'PERCENTILE' ? `P${Number(node.percentile) * 100}分位数` : formulaFunctions.find(([value]) => value === code)?.[1] || code
+        return h('span', { class: 'math-operation' }, [`${label}(`, ...node.arguments.flatMap((arg, index) => [index ? '，' : '', render(arg)]), ')'])
+      }
+      if (node.nodeType === 'UNARY') return h('span', { class: 'math-operation' }, [node.operator === 'NEGATE' ? '负值(' : '绝对值(', render(node.operand), ')'])
+      if (node.nodeType === 'CONDITION') return h('span', { class: 'math-operation' }, ['若 ', render(node.condition), '，则 ', render(node.whenTrue), '，否则 ', render(node.whenFalse)])
+      if (node.nodeType === 'COMPARE') return h('span', { class: 'math-operation' }, ['(', render(node.left), { EQ: '=', NE: '≠', GT: '>', GE: '≥', LT: '<', LE: '≤' }[node.comparator], render(node.right), ')'])
       if (node.operator === 'DIV') return h('span', { class: 'math-fraction', role: 'group', 'aria-label': '分式' }, [h('span', { class: 'math-numerator' }, render(node.left)), h('span', { class: 'math-denominator' }, render(node.right))])
       return h('span', { class: 'math-operation' }, [nested ? '(' : '', render(node.left, true), h('span', { class: 'math-operator' }, { ADD: '+', SUB: '−', MUL: '×' }[node.operator]), render(node.right, true), nested ? ')' : ''])
     }

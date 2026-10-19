@@ -19,6 +19,11 @@ export function parseEditorFormula(formula) {
     const left = (root.children || []).map(factorId)
     return left.length && left.every(Boolean) ? { mode: '统计量型', left, right: [], statistic: root.operator } : null
   }
+  if (root.nodeType === 'FUNCTION' && ['AVG', 'MEDIAN', 'MIN', 'MAX', 'PERCENTILE'].includes(root.functionCode)) {
+    const left = (root.arguments || []).map(factorId)
+    const statistic = root.functionCode === 'PERCENTILE' ? (Number(root.percentile) === 0.9 ? 'P90' : null) : root.functionCode
+    if (statistic && left.length && left.every(Boolean) && !arithmeticFormulaError(root)) return { mode: '统计量型', left, right: [], statistic }
+  }
   const additive = additiveFactors(root)
   if (additive) return { mode: '加法合成型', left: additive, right: [] }
   const advanced = () => arithmeticFormulaError(root) ? null : { mode: '嵌套公式型', left: arithmeticFactorIds(root), right: [] }

@@ -33,10 +33,15 @@
 
         <template v-else-if="descriptor.slots.length">
           <div v-if="descriptor.operation" class="block-settings"><label>运算符</label><el-select :model-value="current.operator" :disabled="disabled" aria-label="当前模式运算符" @update:model-value="changeOperator"><el-option v-for="[code, name] in arithmeticOperators" :key="code" :value="code" :label="`${name}（${symbols[code]}）`" /></el-select></div>
-          <div v-if="current.nodeType === 'FUNCTION'" class="block-settings">
-            <label>小数位数</label><el-input-number :model-value="current.scale" :disabled="disabled" :min="0" :max="12" :precision="0" aria-label="舍入小数位数" @update:model-value="patchCurrent({ scale: $event })" />
+          <div v-if="['FUNCTION', 'COALESCE'].includes(current.nodeType)" class="block-settings">
+            <label>函数</label><el-select :model-value="current.functionCode || 'COALESCE'" :disabled="disabled" aria-label="公式函数" @update:model-value="changeFunction"><el-option v-for="[code, name] in formulaFunctions" :key="code" :value="code" :label="name" /></el-select>
+          </div>
+          <div v-if="current.nodeType === 'FUNCTION' && current.functionCode === 'ROUND'" class="block-settings">
+            <label>小数位数</label><el-input-number :model-value="current.scale" :disabled="disabled" :min="0" :max="10" :precision="0" aria-label="舍入小数位数" @update:model-value="patchCurrent({ scale: $event })" />
             <label>舍入方式</label><el-select :model-value="current.roundingMode || 'HALF_UP'" :disabled="disabled" aria-label="舍入方式" @update:model-value="patchCurrent({ roundingMode: $event })"><el-option v-for="[code, name] in roundingModes" :key="code" :value="code" :label="name" /></el-select>
           </div>
+          <div v-if="current.functionCode === 'PERCENTILE'" class="block-settings"><label>分位点</label><el-input :model-value="current.percentile" :disabled="disabled" aria-label="分位点" @update:model-value="patchCurrent({ percentile: $event })" /></div>
+          <div v-if="descriptor.comparison" class="block-settings"><label>比较方式</label><el-select :model-value="current.comparator" :disabled="disabled" aria-label="比较方式" @update:model-value="patchCurrent({ comparator: $event })"><el-option v-for="[code, name] in comparisonOperators" :key="code" :value="code" :label="name" /></el-select></div>
           <div class="composer-slots">
             <div v-for="slot in descriptor.slots" :key="keyOf(slot.path)" class="composer-slot">
               <div class="slot-heading"><label>{{ slot.label }}</label><el-tooltip :content="canRemoveSumSlot ? '移除参与项' : '清空槽位'"><el-button text :icon="Close" :disabled="disabled || (!canRemoveSumSlot && isEmptyFormulaSlot(slot.node))" :aria-label="`${canRemoveSumSlot ? '移除' : '清空'}${slot.label}`" @click="clearSlot(slot)" /></el-tooltip></div>
@@ -46,18 +51,25 @@
                 <span v-else class="slot-piece"><strong>{{ pieceLabel(slot.node) }}</strong><small v-if="isBlock(slot.node)">{{ arithmeticFormulaText(slot.node, factors) }}</small></span>
                 <el-icon v-if="isBlock(slot.node)" class="open-block"><ArrowRight /></el-icon>
               </div>
-              <el-input v-if="slot.node?.nodeType === 'CONST'" :model-value="String(slot.node.value ?? '')" :disabled="disabled" class="slot-number" :aria-label="`${slot.label}数字常量`" @update:model-value="patchAt(absolute(slot.path), { value: $event })" />
+              <el-switch v-if="slot.node?.nodeType === 'CONST' && slot.node.typeDescriptor?.valueType === 'BOOLEAN'" :model-value="slot.node.value" :disabled="disabled" :aria-label="`${slot.label}布尔常量`" @update:model-value="patchAt(absolute(slot.path), { value: $event })" />
+              <el-input v-else-if="slot.node?.nodeType === 'CONST'" :model-value="String(slot.node.value ?? '')" :disabled="disabled" class="slot-number" :aria-label="`${slot.label}数字常量`" @update:model-value="patchAt(absolute(slot.path), { value: $event })" />
             </div>
           </div>
           <el-button v-if="descriptor.additive" text type="primary" :icon="Plus" :disabled="disabled" @click="appendSumSlot">添加参与项</el-button>
+          <el-button v-if="descriptor.variableArguments" text type="primary" :icon="Plus" :disabled="disabled" @click="appendArgument">添加参数</el-button>
           <div v-if="descriptor.divisionPath" class="block-settings division-settings"><label>分母为 0</label><el-select :model-value="formulaAt(current, descriptor.divisionPath).zeroDenominatorPolicy || 'RETURN_NULL'" :disabled="disabled" aria-label="该节点分母为零策略" @update:model-value="patchAt(absolute(descriptor.divisionPath), { zeroDenominatorPolicy: $event })"><el-option label="返回空值" value="RETURN_NULL" /><el-option label="返回 0" value="RETURN_ZERO" /><el-option label="报错" value="ERROR" /></el-select></div>
           <div v-if="descriptor.multiplierPath" class="block-settings"><label>百分比乘数</label><el-input :model-value="String(formulaAt(current, descriptor.multiplierPath).value)" :disabled="disabled" aria-label="百分比乘数" @change="patchAt(absolute(descriptor.multiplierPath), { value: $event })" /></div>
         </template>
         <template v-else>
           <div class="scalar-piece">{{ pieceLabel(current) }}</div>
-          <el-input v-if="current.nodeType === 'CONST'" :model-value="String(current.value ?? '')" :disabled="disabled" aria-label="数字常量" @update:model-value="patchCurrent({ value: $event })" />
+          <el-switch v-if="current.nodeType === 'CONST' && current.typeDescriptor?.valueType === 'BOOLEAN'" :model-value="current.value" :disabled="disabled" aria-label="布尔常量" @update:model-value="patchCurrent({ value: $event })" />
+          <el-input v-else-if="current.nodeType === 'CONST'" :model-value="String(current.value ?? '')" :disabled="disabled" aria-label="数字常量" @update:model-value="patchCurrent({ value: $event })" />
           <el-button v-else text type="primary" :disabled="disabled" @click="selectSlot(activePath)">更换因子</el-button>
         </template>
+        <div v-if="selectedConstant && selectedConstant.typeDescriptor?.valueType !== 'BOOLEAN'" class="block-settings constant-settings">
+          <label>常量量纲</label><el-input :model-value="selectedConstant.typeDescriptor?.dimension || 'ONE'" :disabled="disabled" aria-label="常量量纲" @update:model-value="patchConstantType('dimension', $event)" />
+          <label>常量单位</label><el-input :model-value="selectedConstant.typeDescriptor?.unit || 'ONE'" :disabled="disabled" aria-label="常量单位" @update:model-value="patchConstantType('unit', $event)" />
+        </div>
         <div v-if="selectedLabel" class="selection-status">当前选中：{{ selectedLabel }}</div>
         <el-alert v-if="localError" :title="localError" type="warning" :closable="false" />
       </div>
@@ -90,8 +102,8 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ArrowRight, Box, Close, Delete, Operation, Plus, Rank, RefreshLeft, RefreshRight, Search, Tickets } from '@element-plus/icons-vue'
 import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
-import { arithmeticOperators, arithmeticFormulaText, cloneFormula, createArithmeticNode, roundingModes } from '@/idmp/features/indicator/arithmeticFormula'
-import { formulaBlockModes, emptyFormulaSlot, isEmptyFormulaSlot, createFormulaBlock, formulaAt, replaceFormulaAt, describeFormulaBlock, insertFormulaBlock, removeSumSlot } from '@/idmp/features/indicator/formulaComposer'
+import { arithmeticOperators, arithmeticFormulaText, cloneFormula, createArithmeticNode, roundingModes, formulaFunctions, comparisonOperators } from '@/idmp/features/indicator/arithmeticFormula'
+import { formulaBlockModes, emptyFormulaSlot, isEmptyFormulaSlot, createFormulaBlock, createFunctionBlock, formulaAt, replaceFormulaAt, describeFormulaBlock, insertFormulaBlock, removeSumSlot } from '@/idmp/features/indicator/formulaComposer'
 
 const props = defineProps({ modelValue: Object, factors: { type: Array, default: () => [] }, disabled: Boolean, loading: Boolean })
 const emit = defineEmits(['update:modelValue'])
@@ -116,9 +128,14 @@ const keyOf = path => JSON.stringify(path)
 const samePath = (first, second) => first !== null && keyOf(first) === keyOf(second)
 const absolute = path => [...activePath.value, ...path]
 const current = computed(() => formulaAt(root.value, activePath.value))
+const constantPath = computed(() => current.value?.nodeType === 'CONST' ? activePath.value : selectedPath.value)
+const selectedConstant = computed(() => {
+  const node = constantPath.value && formulaAt(root.value, constantPath.value)
+  return node?.nodeType === 'CONST' ? node : null
+})
 const descriptor = computed(() => describeFormulaBlock(current.value))
-const canRemoveSumSlot = computed(() => descriptor.value.additive && descriptor.value.slots.length > 2)
-const isBlock = node => ['BINARY', 'FUNCTION'].includes(node?.nodeType)
+const canRemoveSumSlot = computed(() => descriptor.value.additive && descriptor.value.slots.length > 2 || descriptor.value.variableArguments && descriptor.value.slots.length > 1)
+const isBlock = node => ['BINARY', 'FUNCTION', 'COMPARE', 'CONDITION', 'COALESCE', 'UNARY'].includes(node?.nodeType)
 const dragLabel = computed(() => dragging.value?.kind === 'mode' ? formulaBlockModes.find(mode => mode.code === dragging.value.code)?.name : (dragging.value?.kind === 'constant' ? '数字常量' : props.factors.find(factor => String(factor.versionId) === dragging.value?.versionId)?.name))
 const filteredFactors = computed(() => props.factors.filter(factor => `${factor.name} ${factor.code || ''}`.toLocaleLowerCase().includes(search.value.trim().toLocaleLowerCase())))
 const selectedLabel = computed(() => selectedPath.value === null ? '' : (samePath(selectedPath.value, activePath.value) ? descriptor.value.name : descriptor.value.slots.find(slot => samePath(absolute(slot.path), selectedPath.value))?.label || ''))
@@ -184,12 +201,28 @@ function pieceLabel(node) {
 }
 function patchAt(path, changes) { if (!props.disabled) commit(replaceFormulaAt(root.value, path, { ...formulaAt(root.value, path), ...changes })) }
 function patchCurrent(changes) { patchAt(activePath.value, changes) }
+function patchConstantType(key, value) { patchAt(constantPath.value, { typeDescriptor: { ...selectedConstant.value.typeDescriptor, [key]: value } }) }
 function changeOperator(operator) {
   const next = { ...current.value, operator }
   if (operator === 'DIV') next.zeroDenominatorPolicy ||= 'RETURN_NULL'
   else delete next.zeroDenominatorPolicy
   if (!props.disabled) { commit(replaceFormulaAt(root.value, activePath.value, next)); openBlock(activePath.value) }
 }
+function changeFunction(code) {
+  if (props.disabled || code === (current.value.functionCode || 'COALESCE')) return
+  const next = createFunctionBlock(code)
+  const old = current.value.arguments || []
+  if (describeFormulaBlock(next).variableArguments && old.length > next.arguments.length) next.arguments = old.map(() => emptyFormulaSlot())
+  next.arguments = next.arguments.map((slot, index) => old[index] || slot)
+  if (old.slice(next.arguments.length).some(node => !isEmptyFormulaSlot(node))) {
+    pendingReplacement = { path: [...activePath.value], next }
+    replaceVisible.value = true
+    return
+  }
+  patchCurrent(next)
+  openBlock(activePath.value)
+}
+function appendArgument() { patchCurrent({ arguments: [...current.value.arguments, emptyFormulaSlot()] }); openBlock(activePath.value) }
 function resolveItem(item) {
   if (item?.kind === 'mode') return createFormulaBlock(item.code)
   if (item?.kind === 'constant') return createArithmeticNode('CONST')
@@ -227,7 +260,9 @@ function confirmReplacement() {
 function clearCurrent() { if (!props.disabled) { commit(replaceFormulaAt(root.value, activePath.value, emptyFormulaSlot())); openBlock(activePath.value) } }
 function clearSlot(slot) {
   if (props.disabled) return
-  commit(descriptor.value.additive ? removeSumSlot(root.value, activePath.value, slot.path) : replaceFormulaAt(root.value, absolute(slot.path), emptyFormulaSlot()))
+  if (descriptor.value.variableArguments && current.value.arguments.length > 1) {
+    patchCurrent({ arguments: current.value.arguments.filter((_, index) => index !== slot.path[1]) })
+  } else commit(descriptor.value.additive ? removeSumSlot(root.value, activePath.value, slot.path) : replaceFormulaAt(root.value, absolute(slot.path), emptyFormulaSlot()))
   openBlock(activePath.value)
 }
 function appendSumSlot() {

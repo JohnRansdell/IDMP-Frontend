@@ -73,6 +73,14 @@ test('unsupported nodes stay on the detail fallback instead of rendering an inco
   assert.equal(parseEditorFormula({ root: { nodeType: 'FUNCTION', functionCode: 'UNKNOWN' } }), null)
 })
 
+test('coalesce requires at least two arguments to match backend validation', () => {
+  for (const nodeType of ['FUNCTION', 'COALESCE']) {
+    const node = { nodeType, functionCode: 'COALESCE', arguments: [ref('11')] }
+    assert.equal(arithmetic.arithmeticFormulaError(node), '空值替代至少需要两个参数')
+    assert.equal(arithmetic.arithmeticFormulaError({ ...node, arguments: [ref('11'), constant('0')] }), '')
+  }
+})
+
 test('new nodes receive unique IDs without changing original IDs, metadata, or constants', () => {
   const original = { ...formula, calculationMode: 'TEMPORAL' }
   const snapshot = JSON.stringify(original)
@@ -206,7 +214,7 @@ test('mode hints are exclusive, close immediately, and support hover, focus and 
   await w.get('[data-mode="SUM"]').trigger('keydown', { key: 'Escape' })
   assert.deepEqual(visible(), [])
   await event('STATISTIC', 'mouseenter')
-  assert.deepEqual(visible(), ['后端暂不支持将统计量节点嵌入公式'])
+  assert.deepEqual(visible(), ['AVG / MEDIAN / P90'])
   await w.setProps({ disabled: true })
   await event('SUM', 'mouseenter')
   assert.deepEqual(visible(), [])
@@ -404,7 +412,7 @@ test('published formulas reject drag and field edits; foreign drops and unknown 
   await w.get('.root-dropzone').trigger('drop', { dataTransfer: { getData: () => '{bad data}' } })
   await w.get('.root-dropzone').trigger('drop', { dataTransfer: { getData: () => JSON.stringify({ kind: 'factor', versionId: 'unknown' }) } })
   assert.equal(w.emitted('update:modelValue'), undefined)
-  assert.equal(w.get('[data-mode="STATISTIC"]').attributes('disabled'), '')
+  assert.equal(w.get('[data-mode="STATISTIC"]').attributes('disabled'), undefined)
   w.unmount()
 })
 
@@ -419,5 +427,58 @@ test('ratio templates carry multiplication exactly once and composite slots navi
   assert.equal(composer.formulaAt(composite, slots[0].path).operator, 'ADD')
   assert.equal(composer.formulaAt(composite, slots[1].path).operator, 'ADD')
   for (const mode of composer.formulaBlockModes.filter(m => !m.disabled)) assert.ok(composer.describeFormulaBlock(composer.createFormulaBlock(mode.code)).slots.length)
-  assert.throws(() => composer.createFormulaBlock('STATISTIC'), /不支持/)
+  assert.equal(composer.createFormulaBlock('STATISTIC').functionCode, 'AVG')
+})
+
+test('all supported function templates validate and preserve arguments and nested factor references', () => {
+  for (const [code] of arithmetic.formulaFunctions) {
+    const node = composer.createFunctionBlock(code)
+    node.arguments = node.arguments.map((_, index) => ref(String(index + 11)))
+    assert.equal(arithmetic.arithmeticFormulaError(node), '')
+    const result = arithmetic.buildArithmeticFormula(node)
+    assert.equal(result.root.functionCode, code)
+    assert.deepEqual(arithmetic.arithmeticFactorIds(result.root), node.arguments.map(arg => arg.factorVersionId))
+    assert.ok(arithmetic.arithmeticFormulaText(node, factors).includes(code))
+    const w = mount(Expression, { props: { formula: result, factors } })
+    assert.ok(w.text().includes('总费用'))
+    if (code !== 'ROUND') assert.equal(w.text().includes('ROUND'), false)
+    w.unmount()
+  }
+})
+
+test('statistic formula roundtrips use FUNCTION and preserve non-P90 percentiles in advanced mode', () => {
+  assert.deepEqual(parseEditorFormula({ root: { nodeType: 'FUNCTION', functionCode: 'AVG', arguments: [ref('11'), ref('12')] } }), { mode: '统计量型', statistic: 'AVG', left: ['11', '12'], right: [] })
+  const percentile = { nodeType: 'FUNCTION', functionCode: 'PERCENTILE', percentile: '0.9', arguments: [ref('11'), ref('12')] }
+  assert.equal(parseEditorFormula({ root: percentile }).statistic, 'P90')
+  assert.equal(parseEditorFormula({ root: { ...percentile, percentile: '0.75' } }).mode, '嵌套公式型')
+  assert.ok(arithmetic.arithmeticFormulaError({ ...percentile, percentile: '' }))
+  assert.ok(arithmetic.arithmeticFormulaError({ ...percentile, percentile: '1.1' }))
+  assert.ok(arithmetic.arithmeticFormulaError({ ...percentile, arguments: [] }))
+})
+
+test('conditional formulas retain comparison operands, factor IDs and stable node IDs', () => {
+  const condition = { nodeType: 'COMPARE', comparator: 'GT', left: ref('11'), right: constant('0') }
+  const node = { nodeType: 'FUNCTION', functionCode: 'IF', arguments: [condition, ref('12'), constant('0')] }
+  const output = arithmetic.buildArithmeticFormula(node)
+  assert.equal(parseEditorFormula(output).mode, '嵌套公式型')
+  assert.deepEqual(arithmetic.arithmeticFactorIds(output.root), ['11', '12'])
+  assert.ok(output.root.arguments[0].right.nodeId)
+  const w = mount(Expression, { props: { formula: output, factors } })
+  assert.ok(w.text().includes('条件选择'))
+  assert.ok(w.text().includes('>'))
+  w.unmount()
+})
+
+test('function composer can add and remove arguments, configure IF conditions, and undo edits', async () => {
+  const w = mountEditor({ nodeType: 'FUNCTION', functionCode: 'AVG', arguments: [ref('11'), ref('12')] })
+  await w.get('button[aria-label="移除参数 2"]').trigger('click')
+  assert.equal(latest(w).arguments.length, 1)
+  await w.get('[aria-label="撤销公式修改"]').trigger('click')
+  assert.equal(latest(w).arguments.length, 2)
+  await w.findAll('button').find(button => button.text() === '添加参数').trigger('click')
+  assert.equal(latest(w).arguments.length, 3)
+  await w.setProps({ modelValue: composer.createFunctionBlock('IF') })
+  await drag(w, '[data-mode="COMPARE"]', '[data-slot-label="条件"]')
+  assert.equal(latest(w).arguments[0].nodeType, 'COMPARE')
+  w.unmount()
 })

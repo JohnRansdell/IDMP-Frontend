@@ -2481,7 +2481,7 @@ function createIndicatorFormulaPayload(resourceVersion) {
   if (unsupportedFormula.value) throw new Error('当前公式不支持在此编辑，请保留原定义或通过原创建方式修改')
   if (!formulaValid.value) throw new Error(`请按${activeMode.value.factorRequirement}选择已发布因子`)
   if (savedFormulaDefinition.value && savedEditorFormulaSignature.value === editorFormulaSignature()) {
-    return { resourceVersion, formula: JSON.parse(JSON.stringify(savedFormulaDefinition.value)) }
+    if (savedFormulaDefinition.value.root?.nodeType !== 'STATISTIC') return { resourceVersion, formula: JSON.parse(JSON.stringify(savedFormulaDefinition.value)) }
   }
   if (activeMode.value.kind === 'advanced') {
     return { resourceVersion, formula: buildArithmeticFormula(advancedFormulaRoot.value, advancedFormulaPayload.value) }
@@ -2495,7 +2495,7 @@ function createIndicatorFormulaPayload(resourceVersion) {
   const left = combine(numeratorFactors.value, 'ADD', 'left')
   let root
   if (activeMode.value.kind === 'add') root = left
-  else if (activeMode.value.kind === 'statistic') root = { nodeId: 'statistic_root', nodeType: 'STATISTIC', operator: statisticOperator.value, children: numeratorFactors.value.map((factor, index) => factorRef(factor, `stat_${index}`)) }
+  else if (activeMode.value.kind === 'statistic') root = { nodeId: 'statistic_root', nodeType: 'FUNCTION', functionCode: statisticOperator.value === 'P90' ? 'PERCENTILE' : statisticOperator.value, ...(statisticOperator.value === 'P90' ? { percentile: '0.9' } : {}), arguments: numeratorFactors.value.map((factor, index) => factorRef(factor, `stat_${index}`)) }
   else {
     const right = combine(denominatorFactors.value, 'ADD', 'right')
     const operator = activeMode.value.kind === 'custom' ? customOperator.value : 'DIV'
