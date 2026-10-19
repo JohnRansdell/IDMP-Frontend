@@ -1,6 +1,20 @@
 export const arithmeticOperators = [['ADD', '加'], ['SUB', '减'], ['MUL', '乘'], ['DIV', '除']]
 export const roundingModes = [['HALF_UP', '四舍五入'], ['HALF_DOWN', '半值向零舍入'], ['HALF_EVEN', '半值取偶数'], ['UP', '远离零舍入'], ['DOWN', '向零截断'], ['CEILING', '向上取整'], ['FLOOR', '向下取整'], ['UNNECESSARY', '不允许舍入']]
 export const cloneFormula = value => JSON.parse(JSON.stringify(value))
+export const statisticMethods = [['AVG', '平均数'], ['MEDIAN', '中位数'], ['MIN', '最小值'], ['MAX', '最大值'], ['P90', 'P90 分位数']]
+
+export function statisticMethodForNode(node) {
+  if (node?.nodeType !== 'FUNCTION') return null
+  if (node.functionCode === 'PERCENTILE') return Number(node.percentile) === 0.9 ? 'P90' : null
+  return statisticMethods.some(([code]) => code === node.functionCode) ? node.functionCode : null
+}
+
+export function createStatisticFunction(method, args) {
+  if (!statisticMethods.some(([code]) => code === method)) throw new Error('不支持的统计方法')
+  return { nodeType: 'FUNCTION', functionCode: method === 'P90' ? 'PERCENTILE' : method,
+    ...(method === 'P90' ? { percentile: '0.9' } : {}), arguments: args }
+}
+
 export const formulaFunctions = [
   ['ROUND', '舍入'], ['ABS', '绝对值'], ['MIN', '最小值'], ['MAX', '最大值'],
   ['CLAMP', '限定范围'], ['COALESCE', '空值替代'], ['IF', '条件选择'],

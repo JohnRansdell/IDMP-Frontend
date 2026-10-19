@@ -1,4 +1,4 @@
-import { arithmeticFormulaError, arithmeticFactorIds } from './arithmeticFormula.js'
+import { arithmeticFormulaError, arithmeticFactorIds, statisticMethodForNode } from './arithmeticFormula.js'
 
 const factorId = node => node?.nodeType === 'FACTOR_REF' ? String(node.factorVersionId ?? node.versionId ?? node.refVersionId ?? '') : ''
 
@@ -19,10 +19,10 @@ export function parseEditorFormula(formula) {
     const left = (root.children || []).map(factorId)
     return left.length && left.every(Boolean) ? { mode: '统计量型', left, right: [], statistic: root.operator } : null
   }
-  if (root.nodeType === 'FUNCTION' && ['AVG', 'MEDIAN', 'MIN', 'MAX', 'PERCENTILE'].includes(root.functionCode)) {
+  const statistic = statisticMethodForNode(root)
+  if (statistic) {
     const left = (root.arguments || []).map(factorId)
-    const statistic = root.functionCode === 'PERCENTILE' ? (Number(root.percentile) === 0.9 ? 'P90' : null) : root.functionCode
-    if (statistic && left.length && left.every(Boolean) && !arithmeticFormulaError(root)) return { mode: '统计量型', left, right: [], statistic }
+    if (left.length && left.every(Boolean) && !arithmeticFormulaError(root)) return { mode: '统计量型', left, right: [], statistic }
   }
   const additive = additiveFactors(root)
   if (additive) return { mode: '加法合成型', left: additive, right: [] }

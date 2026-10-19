@@ -196,11 +196,7 @@
             <div v-if="activeMode.kind === 'statistic'" class="formula-settings formula-settings--top">
               <label>统计方法</label>
               <el-select v-model="statisticOperator" aria-label="选择统计方法">
-                <el-option label="平均数" value="AVG" />
-                <el-option label="中位数" value="MEDIAN" />
-                <el-option label="最小值" value="MIN" />
-                <el-option label="最大值" value="MAX" />
-                <el-option label="P90 分位数" value="P90" />
+                <el-option v-for="[code, label] in statisticMethods" :key="code" :label="label" :value="code" />
               </el-select>
             </div>
             <div
@@ -677,7 +673,7 @@ import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
 import { factorCalculationMode } from '@/idmp/utils/factorPeriod'
 import { newResourceCode } from '@/idmp/utils/resourceCode'
 import { parseEditorFormula, zeroPolicy, zeroPolicyLabel } from '@/idmp/features/indicator/formulaEditor'
-import { arithmeticFormulaError, arithmeticDisplayError, arithmeticFactorIds, arithmeticFormulaText, buildArithmeticFormula, cloneFormula, createArithmeticNode, roundingModes } from '@/idmp/features/indicator/arithmeticFormula'
+import { arithmeticFormulaError, arithmeticDisplayError, arithmeticFactorIds, arithmeticFormulaText, buildArithmeticFormula, cloneFormula, createArithmeticNode, roundingModes, statisticMethods, createStatisticFunction } from '@/idmp/features/indicator/arithmeticFormula'
 import IndicatorFormulaComposer from '@/idmp/components/IndicatorFormulaComposer.vue'
 import IndicatorFormulaExpression from '@/idmp/components/IndicatorFormulaExpression.vue'
 import { configurableSourceFactors, activeSourceBindings } from '@/idmp/utils/derivedFactor'
@@ -2495,7 +2491,7 @@ function createIndicatorFormulaPayload(resourceVersion) {
   const left = combine(numeratorFactors.value, 'ADD', 'left')
   let root
   if (activeMode.value.kind === 'add') root = left
-  else if (activeMode.value.kind === 'statistic') root = { nodeId: 'statistic_root', nodeType: 'FUNCTION', functionCode: statisticOperator.value === 'P90' ? 'PERCENTILE' : statisticOperator.value, ...(statisticOperator.value === 'P90' ? { percentile: '0.9' } : {}), arguments: numeratorFactors.value.map((factor, index) => factorRef(factor, `stat_${index}`)) }
+  else if (activeMode.value.kind === 'statistic') root = { nodeId: 'statistic_root', ...createStatisticFunction(statisticOperator.value, numeratorFactors.value.map((factor, index) => factorRef(factor, `stat_${index}`))) }
   else {
     const right = combine(denominatorFactors.value, 'ADD', 'right')
     const operator = activeMode.value.kind === 'custom' ? customOperator.value : 'DIV'

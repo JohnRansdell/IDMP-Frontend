@@ -1,11 +1,11 @@
-import { cloneFormula, createArithmeticNode, formulaFunctions } from './arithmeticFormula.js'
+import { cloneFormula, createArithmeticNode, formulaFunctions, statisticMethods, statisticMethodForNode, createStatisticFunction } from './arithmeticFormula.js'
 
 export const formulaBlockModes = [
   { code: 'RATIO', name: '简单比率型', expression: '分子 ÷ 分母 × 100' },
   { code: 'SUM', name: '加法合成型', expression: 'A + B + …' },
   { code: 'COMPOSITE_RATIO', name: '复合比率型', expression: '(A + B) ÷ (C + D) × 100' },
   { code: 'ARITHMETIC', name: '多因子计算型', expression: 'A − B / A × B' },
-  { code: 'STATISTIC', name: '统计量型', expression: 'AVG / MEDIAN / P90' },
+  { code: 'STATISTIC', name: '统计量型', expression: statisticMethods.map(([, label]) => label).join(' / ') },
   { code: 'QUOTIENT', name: '比值型', expression: '分子 ÷ 分母' },
   { code: 'COMPOSITE_QUOTIENT', name: '复合比值型', expression: '(A + B) ÷ (C + D)' },
   { code: 'ROUND', name: '舍入', expression: 'ROUND(A)' },
@@ -22,7 +22,7 @@ export function createFormulaBlock(code) {
   if (code === 'SUM') return binary('ADD')
   if (code === 'ARITHMETIC') return binary('SUB')
   if (code === 'ROUND') return { nodeType: 'FUNCTION', functionCode: 'ROUND', scale: 2, roundingMode: 'HALF_UP', arguments: [emptyFormulaSlot()] }
-  if (code === 'STATISTIC') return createFunctionBlock('AVG')
+  if (code === 'STATISTIC') return createStatisticFunction('AVG', [emptyFormulaSlot()])
   if (code === 'FUNCTION') return createFunctionBlock('ABS')
   if (code === 'COMPARE') return { nodeType: 'COMPARE', comparator: 'GT', left: emptyFormulaSlot(), right: emptyFormulaSlot() }
   if (!['RATIO', 'COMPOSITE_RATIO', 'QUOTIENT', 'COMPOSITE_QUOTIENT'].includes(code)) throw new Error('该计算模式暂不支持嵌套')
@@ -61,6 +61,9 @@ export function describeFormulaBlock(node) {
   if (isEmptyFormulaSlot(node)) return { name: '公式', slots: [] }
   if (node.nodeType === 'FACTOR_REF') return { name: '因子', slots: [] }
   if (node.nodeType === 'CONST') return { name: '数字常量', slots: [] }
+  const statisticMethod = statisticMethodForNode(node)
+  if (statisticMethod) return { name: '统计量型', statisticMethod, variableArguments: true,
+    slots: (node.arguments || []).map((child, index) => ({ label: `统计对象 ${index + 1}`, path: ['arguments', index], node: child })) }
   if (node.nodeType === 'FUNCTION' && node.functionCode === 'ROUND') return { name: '舍入', slots: [{ label: '计算对象', path: ['arguments', 0], node: node.arguments[0] }] }
   if (['FUNCTION', 'COALESCE'].includes(node.nodeType)) {
     const code = node.nodeType === 'COALESCE' ? 'COALESCE' : node.functionCode

@@ -98,7 +98,7 @@ test('new nodes receive unique IDs without changing original IDs, metadata, or c
   assert.throws(() => arithmetic.buildArithmeticFormula(formula.root, { display: { multiplier: '' } }), /展示乘数/)
 })
 
-const Field = vue.defineComponent({ props: ['modelValue', 'disabled'], emits: ['update:modelValue', 'change'], setup: () => () => vue.h('div') })
+const Field = vue.defineComponent({ props: ['modelValue', 'disabled'], emits: ['update:modelValue', 'change'], setup: (_, { slots }) => () => vue.h('div', slots.default?.()) })
 const Button = vue.defineComponent({ props: ['disabled', 'icon'], setup: (props, { slots }) => () => vue.h('button', { disabled: props.disabled }, slots.default?.()) })
 const Dialog = vue.defineComponent({ props: ['modelValue'], setup: (props, { slots }) => () => props.modelValue ? vue.h('div', { class: 'dialog' }, [slots.default?.(), slots.footer?.()]) : null })
 const Tooltip = vue.defineComponent({ inheritAttrs: false, props: ['visible', 'content', 'enterable', 'showAfter', 'hideAfter', 'transition', 'popperClass'], setup: (_, { slots }) => () => slots.default?.() })
@@ -214,7 +214,7 @@ test('mode hints are exclusive, close immediately, and support hover, focus and 
   await w.get('[data-mode="SUM"]').trigger('keydown', { key: 'Escape' })
   assert.deepEqual(visible(), [])
   await event('STATISTIC', 'mouseenter')
-  assert.deepEqual(visible(), ['AVG / MEDIAN / P90'])
+  assert.deepEqual(visible(), ['平均数 / 中位数 / 最小值 / 最大值 / P90 分位数'])
   await w.setProps({ disabled: true })
   await event('SUM', 'mouseenter')
   assert.deepEqual(visible(), [])
@@ -469,16 +469,81 @@ test('conditional formulas retain comparison operands, factor IDs and stable nod
   w.unmount()
 })
 
-test('function composer can add and remove arguments, configure IF conditions, and undo edits', async () => {
+test('statistic composer can add and remove objects, configure IF conditions, and undo edits', async () => {
   const w = mountEditor({ nodeType: 'FUNCTION', functionCode: 'AVG', arguments: [ref('11'), ref('12')] })
-  await w.get('button[aria-label="移除参数 2"]').trigger('click')
+  await w.get('button[aria-label="移除统计对象 2"]').trigger('click')
   assert.equal(latest(w).arguments.length, 1)
   await w.get('[aria-label="撤销公式修改"]').trigger('click')
   assert.equal(latest(w).arguments.length, 2)
-  await w.findAll('button').find(button => button.text() === '添加参数').trigger('click')
+  await w.findAll('button').find(button => button.text() === '添加统计对象').trigger('click')
   assert.equal(latest(w).arguments.length, 3)
   await w.setProps({ modelValue: composer.createFunctionBlock('IF') })
   await drag(w, '[data-mode="COMPARE"]', '[data-slot-label="条件"]')
   assert.equal(latest(w).arguments[0].nodeType, 'COMPARE')
+  w.unmount()
+})
+
+test('statistic palette exposes the same five methods without generic functions or an editable P90 percentile', async () => {
+  const w = mountEditor()
+  await drag(w, '[data-mode="STATISTIC"]', '.root-dropzone')
+  assert.equal(w.get('.active-block-heading h3').text(), '统计量型')
+  assert.equal(w.findAll('[data-slot-label]').length, 1)
+  assert.equal(w.get('[data-slot-label]').attributes('data-slot-label'), '统计对象 1')
+  const select = w.findComponent('[aria-label="选择统计方法"]')
+  assert.deepEqual(select.findAll('el-option-stub').map(option => [option.attributes('value'), option.attributes('label')]), arithmetic.statisticMethods)
+  assert.equal(w.find('[aria-label="公式函数"]').exists(), false)
+  await drag(w, '[data-factor-version="11"]', '[data-slot-label="统计对象 1"]')
+  for (const [method] of arithmetic.statisticMethods) {
+    select.vm.$emit('update:modelValue', method)
+    await vue.nextTick()
+    const node = latest(w)
+    assert.equal(node.functionCode, method === 'P90' ? 'PERCENTILE' : method)
+    assert.deepEqual(node.arguments, [ref('11')])
+    assert.equal(arithmetic.arithmeticFormulaError(node), '')
+    assert.equal(parseEditorFormula({ root: node }).statistic, method)
+    assert.equal(w.get('.active-block-heading h3').text(), '统计量型')
+    assert.equal(w.find('[aria-label="分位点"]').exists(), false)
+    if (method === 'P90') assert.equal(node.percentile, '0.9')
+    else assert.equal(Object.hasOwn(node, 'percentile'), false)
+  }
+  select.vm.$emit('update:modelValue', 'AVG')
+  await vue.nextTick()
+  assert.equal(Object.hasOwn(latest(w), 'percentile'), false)
+  await w.setProps({ disabled: true })
+  const count = w.emitted('update:modelValue').length
+  select.vm.$emit('update:modelValue', 'P90')
+  await vue.nextTick()
+  assert.equal(w.emitted('update:modelValue').length, count)
+  w.unmount()
+})
+
+test('nested statistic objects preserve child formulas and node IDs when changing methods', async () => {
+  const child = binary('SUB', ref('11'), ref('12'))
+  const nested = { ...arithmetic.createStatisticFunction('P90', [child, ref('13')]), nodeId: 'statistic_child' }
+  const root = binary('DIV', nested, ref('14'))
+  const w = mountEditor(root)
+  await w.get('[data-slot-label="分子"]').trigger('click')
+  const select = w.findComponent('[aria-label="选择统计方法"]')
+  select.vm.$emit('update:modelValue', 'MAX')
+  await vue.nextTick()
+  const expected = { ...nested, functionCode: 'MAX' }
+  delete expected.percentile
+  assert.deepEqual(latest(w).left, expected)
+  assert.deepEqual(latest(w).right, ref('14'))
+  assert.equal(arithmetic.arithmeticFormulaError(latest(w)), '')
+  assert.equal(parseEditorFormula({ root: latest(w) }).mode, '嵌套公式型')
+  await w.get('[aria-label="撤销公式修改"]').trigger('click')
+  assert.deepEqual(latest(w), root)
+  w.unmount()
+})
+
+test('existing non-P90 percentiles remain editable as generic functions without changing their value', async () => {
+  const node = { nodeId: 'custom_percentile', nodeType: 'FUNCTION', functionCode: 'PERCENTILE', percentile: '0.75', arguments: [ref('11'), ref('12')] }
+  const w = mountEditor(node)
+  assert.equal(w.find('[aria-label="选择统计方法"]').exists(), false)
+  assert.equal(w.findComponent('[aria-label="分位点"]').props('modelValue'), '0.75')
+  assert.equal(w.find('[aria-label="公式函数"]').exists(), true)
+  assert.equal(w.emitted('update:modelValue'), undefined)
+  assert.equal(parseEditorFormula({ root: node }).mode, '嵌套公式型')
   w.unmount()
 })

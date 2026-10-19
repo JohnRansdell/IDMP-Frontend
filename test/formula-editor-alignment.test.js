@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { parseEditorFormula, zeroPolicy, zeroPolicyLabel } from '../src/idmp/features/indicator/formulaEditor.js'
-import { buildArithmeticFormula, cloneFormula } from '../src/idmp/features/indicator/arithmeticFormula.js'
+import { buildArithmeticFormula, cloneFormula, createStatisticFunction, statisticMethods } from '../src/idmp/features/indicator/arithmeticFormula.js'
 import { combineFormulaNodes } from '../src/idmp/api/adapters/indicator.js'
 import { departmentAchievement } from '../src/idmp/features/analysis/departmentRanking.js'
 import { computed, ref } from 'vue'
@@ -17,7 +17,7 @@ const factor = id => ({ versionId: id, code: id, name: id })
 const node = id => ({ nodeType: 'FACTOR_REF', factorVersionId: id })
 const add = (left, right) => ({ nodeType: 'BINARY', operator: 'ADD', left, right })
 function editor() {
-  const scope = { parseEditorFormula, zeroPolicy, zeroPolicyLabel, combineFormulaNodes, buildArithmeticFormula, cloneFormula,
+  const scope = { parseEditorFormula, zeroPolicy, zeroPolicyLabel, combineFormulaNodes, buildArithmeticFormula, cloneFormula, createStatisticFunction,
     advancedFormulaRoot: ref(null), advancedFormulaPayload: ref({}),
     formulaValid: ref(true), activeMode: ref({ kind: 'ratio', multiplier: '100%' }),
     numeratorFactors: ref([]), denominatorFactors: ref([]), zeroStrategy: ref('返回 NULL'),
@@ -28,6 +28,20 @@ function editor() {
     findFactorByVersionId: factor, createFormulaFactorPlaceholder: (_, id) => factor(id) }
   return { scope, ...Function(...Object.keys(scope), `${body('editorFormulaSignature')}\n${body('hydrateFormulaFactors')}\n${body('createIndicatorFormulaPayload')}\n${body('applySelectedFactorReferences')}\nreturn {hydrateFormulaFactors,createIndicatorFormulaPayload,applySelectedFactorReferences}`)(...Object.values(scope)) }
 }
+
+test('ordinary statistic mode shares the method catalog and FUNCTION payloads with nested formulas', () => {
+  assert.ok(source.includes('v-for="[code, label] in statisticMethods"'))
+  for (const [method] of statisticMethods) {
+    const e = editor()
+    e.scope.activeMode.value = { kind: 'statistic' }
+    e.scope.statisticOperator.value = method
+    e.scope.numeratorFactors.value = [factor('A'), factor('B')]
+    const formula = e.createIndicatorFormulaPayload(0).formula
+    const expected = createStatisticFunction(method, formula.root.arguments)
+    assert.deepEqual(formula.root, { nodeId: 'statistic_root', ...expected })
+    assert.deepEqual(parseEditorFormula(formula), { mode: '统计量型', left: ['A', 'B'], right: [], statistic: method })
+  }
+})
 
 test('nested arithmetic and ROUND hydrate factor references and save the exact original definition', () => {
   const e = editor()
