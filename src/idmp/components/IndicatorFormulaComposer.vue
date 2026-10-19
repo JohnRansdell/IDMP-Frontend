@@ -63,15 +63,22 @@
           <div v-if="descriptor.divisionPath" class="block-settings division-settings"><label>分母为 0</label><el-select :model-value="formulaAt(current, descriptor.divisionPath).zeroDenominatorPolicy || 'RETURN_NULL'" :disabled="disabled" aria-label="该节点分母为零策略" @update:model-value="patchAt(absolute(descriptor.divisionPath), { zeroDenominatorPolicy: $event })"><el-option label="返回空值" value="RETURN_NULL" /><el-option label="返回 0" value="RETURN_ZERO" /><el-option label="报错" value="ERROR" /></el-select></div>
           <div v-if="descriptor.multiplierPath" class="block-settings"><label>百分比乘数</label><el-input :model-value="String(formulaAt(current, descriptor.multiplierPath).value)" :disabled="disabled" aria-label="百分比乘数" @change="patchAt(absolute(descriptor.multiplierPath), { value: $event })" /></div>
         </template>
-        <template v-else>
-          <div class="scalar-piece">{{ pieceLabel(current) }}</div>
-          <el-switch v-if="current.nodeType === 'CONST' && current.typeDescriptor?.valueType === 'BOOLEAN'" :model-value="current.value" :disabled="disabled" aria-label="布尔常量" @update:model-value="patchCurrent({ value: $event })" />
-          <el-input v-else-if="current.nodeType === 'CONST'" :model-value="String(current.value ?? '')" :disabled="disabled" aria-label="数字常量" @update:model-value="patchCurrent({ value: $event })" />
-          <el-button v-else text type="primary" :disabled="disabled" @click="selectSlot(activePath)">更换因子</el-button>
-        </template>
+        <div v-else class="scalar-editor">
+          <div v-if="current.nodeType === 'FACTOR_REF'" class="scalar-factor-row">
+            <div class="formula-dropzone scalar-factor" :class="{ 'is-selected': samePath(selectedPath, activePath), 'is-drop-target': dropTarget === keyOf(activePath) }" :data-drop-path="keyOf(activePath)" role="button" tabindex="0" aria-label="当前因子槽位" :aria-pressed="samePath(selectedPath, activePath)" @click="selectSlot(activePath)" @keydown.enter.prevent="selectSlot(activePath)" @keydown.space.prevent="selectSlot(activePath)">
+              <el-icon><Tickets /></el-icon>
+              <span class="slot-piece"><strong>{{ pieceLabel(current) }}</strong><small>{{ currentFactor?.code || current.factorVersionId }} | {{ getAggregationLabel(currentFactor?.aggregation) }} | {{ currentFactor?.domain || '-' }}</small></span>
+            </div>
+            <el-tooltip content="更换因子"><el-button text :icon="RefreshRight" :disabled="disabled" aria-label="更换因子" @click="selectSlot(activePath)" /></el-tooltip>
+          </div>
+          <label v-else class="scalar-constant"><span>{{ current.typeDescriptor?.valueType === 'BOOLEAN' ? '布尔值' : '数值' }}</span>
+            <el-switch v-if="current.typeDescriptor?.valueType === 'BOOLEAN'" :model-value="current.value" :disabled="disabled" aria-label="布尔常量" @update:model-value="patchCurrent({ value: $event })" />
+            <el-input v-else :model-value="String(current.value ?? '')" :disabled="disabled" aria-label="数字常量" @update:model-value="patchCurrent({ value: $event })" />
+          </label>
+        </div>
         <div v-if="selectedConstant && selectedConstant.typeDescriptor?.valueType !== 'BOOLEAN'" class="block-settings constant-settings">
-          <label>常量量纲</label><el-input :model-value="selectedConstant.typeDescriptor?.dimension || 'ONE'" :disabled="disabled" aria-label="常量量纲" @update:model-value="patchConstantType('dimension', $event)" />
-          <label>常量单位</label><el-input :model-value="selectedConstant.typeDescriptor?.unit || 'ONE'" :disabled="disabled" aria-label="常量单位" @update:model-value="patchConstantType('unit', $event)" />
+          <label><span>常量量纲</span><el-input :model-value="selectedConstant.typeDescriptor?.dimension || 'ONE'" :disabled="disabled" aria-label="常量量纲" @update:model-value="patchConstantType('dimension', $event)" /></label>
+          <label><span>常量单位</span><el-input :model-value="selectedConstant.typeDescriptor?.unit || 'ONE'" :disabled="disabled" aria-label="常量单位" @update:model-value="patchConstantType('unit', $event)" /></label>
         </div>
         <div v-if="selectedLabel" class="selection-status">当前选中：{{ selectedLabel }}</div>
         <el-alert v-if="localError" :title="localError" type="warning" :closable="false" />
@@ -131,6 +138,7 @@ const keyOf = path => JSON.stringify(path)
 const samePath = (first, second) => first !== null && keyOf(first) === keyOf(second)
 const absolute = path => [...activePath.value, ...path]
 const current = computed(() => formulaAt(root.value, activePath.value))
+const currentFactor = computed(() => props.factors.find(factor => String(factor.versionId) === String(current.value?.factorVersionId)))
 const constantPath = computed(() => current.value?.nodeType === 'CONST' ? activePath.value : selectedPath.value)
 const selectedConstant = computed(() => {
   const node = constantPath.value && formulaAt(root.value, constantPath.value)
@@ -374,7 +382,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .factor-piece > .el-icon { color: var(--idmp-interactive); font-size: 17px; }
 .factor-add { color: var(--idmp-interactive); font-size: 12px; white-space: nowrap; }
 .constant-piece { justify-content: center; }
-.composer-workspace { min-width: 0; }
+.composer-workspace { display: flex; flex-direction: column; min-width: 0; }
 .composer-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 14px; }
 .composer-breadcrumb { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
 .composer-breadcrumb button { padding: 4px 0; border: 0; background: transparent; color: var(--idmp-interactive); font: inherit; font-size: 12px; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
@@ -382,7 +390,7 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .composer-breadcrumb button span { margin-left: 6px; color: var(--idmp-text-helper); }
 .history-actions { display: flex; flex: 0 0 auto; }
 .history-actions .el-button { width: 28px; height: 28px; padding: 4px; margin: 0; }
-.composer-canvas { min-height: 290px; }
+.composer-canvas { display: flex; flex-direction: column; flex: 1; min-height: 290px; min-width: 0; box-sizing: border-box; padding: 16px; border: 1px solid var(--idmp-border-soft); border-radius: 6px; background: var(--idmp-layer-01); }
 .active-block-heading { display: flex; justify-content: space-between; align-items: center; min-height: 32px; margin-bottom: 8px; gap: 8px; }
 .active-block-heading h3 { margin: 0; font-size: 14px; }
 .composer-slots { display: grid; gap: 14px; }
@@ -393,18 +401,25 @@ button:disabled { cursor: not-allowed; opacity: .5; }
 .formula-dropzone.is-empty, .root-dropzone { border: 1px dashed var(--idmp-interactive); background: var(--idmp-interactive-subtle); color: var(--idmp-text-helper); }
 .formula-dropzone.is-selected, .formula-dropzone.is-drop-target { outline: 2px solid var(--idmp-interactive); outline-offset: 2px; }
 .formula-dropzone.is-mode { background: var(--idmp-support-info-bg); border-color: var(--idmp-support-info); }
-.root-dropzone { justify-content: center; min-height: 200px; flex-wrap: wrap; }
+.root-dropzone { justify-content: center; flex: 1; min-height: 200px; flex-wrap: wrap; }
 .formula-dropzone > .el-icon { flex: 0 0 16px; color: var(--idmp-interactive); }
 .slot-piece { flex: 1; min-width: 0; }
 .slot-piece strong { display: block; font-size: 13px; font-weight: 500; color: var(--idmp-text-primary); overflow-wrap: anywhere; }
 .slot-piece small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: 6px; font-size: 11px; line-height: 1.6; color: var(--idmp-text-helper); overflow-wrap: anywhere; }
-.slot-empty-label, .scalar-piece { font-size: 12px; overflow-wrap: anywhere; }
+.slot-empty-label { font-size: 12px; overflow-wrap: anywhere; }
 .slot-number { width: 180px; max-width: 100%; margin-top: 8px; }
 .block-settings { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; font-size: 12px; color: var(--idmp-text-helper); }
 .block-settings .el-select, .block-settings .el-input-number, .block-settings .el-input { width: 140px; max-width: 100%; }
 .division-settings { margin-top: 18px; }
 .selection-status { padding: 12px 0; font-size: 12px; color: var(--idmp-interactive); }
-.scalar-piece { padding: 12px 0; }
+.scalar-editor { min-width: 0; }
+.scalar-factor-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.scalar-factor { flex: 1; }
+.scalar-factor-row > .el-button { flex: 0 0 28px; width: 28px; padding: 4px; margin: 0; }
+.scalar-constant, .constant-settings label { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 12px; color: var(--idmp-text-helper); }
+.scalar-constant { width: 220px; max-width: 100%; }
+.constant-settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0 0; padding-top: 16px; border-top: 1px solid var(--idmp-border-soft); }
+.constant-settings .el-input { width: 100%; }
 @media (max-width: 560px) {
   .formula-composer { grid-template-columns: minmax(0, 1fr); }
   .composer-palette { border-right: 0; border-bottom: 1px solid var(--idmp-border-soft); padding: 0 0 16px; }
@@ -412,5 +427,6 @@ button:disabled { cursor: not-allowed; opacity: .5; }
   .mode-trigger { flex: 0 0 132px; }
   .composer-factors { grid-template-columns: minmax(0, 1fr); max-height: 180px; }
   .composer-canvas { min-height: 240px; }
+  .constant-settings { grid-template-columns: minmax(0, 1fr); }
 }
 </style>
