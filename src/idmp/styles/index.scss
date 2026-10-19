@@ -894,3 +894,98 @@ a {
     animation-iteration-count: 1 !important;
   }
 }
+.idmp-nav__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.idmp-nav__row > .idmp-nav__item {
+  flex: 1;
+  min-width: 0;
+}
+
+.idmp-nav__row.has-children > .idmp-nav__item {
+  padding-right: 48px;
+}
+
+.idmp-nav__toggle {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  place-items: center;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--idmp-sidebar-text);
+  cursor: pointer;
+}
+
+.idmp-nav__toggle-icon {
+  font-size: 14px;
+  transition: transform 160ms ease;
+}
+
+.idmp-nav__toggle-icon.is-expanded {
+  transform: rotate(90deg);
+}
+
+.idmp-nav__toggle:hover,
+.idmp-nav__toggle:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.idmp-nav__row.is-active .idmp-nav__toggle {
+  color: var(--idmp-sidebar);
+}
+
+.idmp-nav__row.is-active > .idmp-nav__item:hover {
+  background: var(--idmp-sidebar-active);
+  color: var(--idmp-sidebar);
+}
+
+.idmp-nav__row.is-active .idmp-nav__toggle:hover,
+.idmp-nav__row.is-active .idmp-nav__toggle:focus-visible {
+  background: rgb(0 0 0 / 6%);
+  color: var(--idmp-interactive);
+}
+
+.idmp-nav__submenu {
+  display: grid;
+  gap: 2px;
+  margin: 2px 10px 6px 36px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.idmp-nav__subitem,
+.idmp-nav__submenu-empty {
+  overflow: hidden;
+  padding: 6px 8px;
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 12px;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.idmp-nav__subitem:hover,
+.idmp-nav__subitem.is-active {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+@media (max-width: 700px) {
+  .idmp-nav__row.has-children > .idmp-nav__item { padding-right: 0; }
+  .idmp-nav__toggle { top: 1px; right: 1px; width: 18px; height: 18px; transform: none; }
+  .idmp-nav__toggle-icon { font-size: 11px; }
+  .idmp-nav__submenu { margin: 2px 4px 6px; padding-left: 0; border-left: 0; }
+  .idmp-nav__subitem, .idmp-nav__submenu-empty { padding: 6px 2px; font-size: 10px; }
+}

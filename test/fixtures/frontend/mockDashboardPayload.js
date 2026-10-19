@@ -30,5 +30,3 @@ export function schemaToMockDashboardPayload(schema, { resourceVersion } = {}) {
     globalFilters: schema.globalFilters || [], interactions: {}, widgets: schema.widgets.map(toMockWidget)
   }
 }
-
-\n

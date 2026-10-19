@@ -3,8 +3,8 @@ import { spawn } from 'node:child_process'
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-const appPort = 41931, debugPort = 41932
-const evidence = '.tmp/factor-detail-browser'
+const appPort = 41941, debugPort = 41942
+const evidence = '.tmp/factor-simple-nav-arrow-browser'
 await mkdir(evidence, { recursive: true })
 const profile = await mkdtemp(join(tmpdir(), 'idmp-factor-detail-'))
 const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--port', String(appPort), '--strictPort'], { windowsHide: true, stdio: 'ignore' })
@@ -17,7 +17,16 @@ function send(method, params = {}) { return new Promise((resolve, reject) => { c
 async function evaluate(expression) { const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }); if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails)); return result.result.value }
 async function click(label, scope = 'document') { assert.equal(await evaluate(`(() => { const el=Array.from(${scope}.querySelectorAll('button')).find(el=>el.textContent.trim()===${JSON.stringify(label)});if(!el||el.disabled)return false;el.click();return true })()`), true, label) }
 async function navigate(path, selector) { await send('Page.navigate', { url: `http://127.0.0.1:${appPort}${path}` }); await until(() => evaluate(`!!document.querySelector('${selector}')`), path) }
-async function screenshot(name) { await writeFile(join(evidence, name), Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64')) }
+async function screenshot(name, fullPage = false) {
+  await pause(250)
+  const options = { format: 'png' }
+  if (fullPage) {
+    const { cssContentSize } = await send('Page.getLayoutMetrics')
+    options.captureBeyondViewport = true
+    options.clip = { x: 0, y: 0, width: cssContentSize.width, height: cssContentSize.height, scale: 1 }
+  }
+  await writeFile(join(evidence, name), Buffer.from((await send('Page.captureScreenshot', options)).data, 'base64'))
+}
 function fixture() {
   const original = fetch.bind(window)
   window.__factorCalls = []
@@ -29,6 +38,8 @@ function fixture() {
     window.__factorCalls.push({ path, method, body })
     let data = {}
     if (path.endsWith('/auth/me')) data = { user: { id: '1', username: 'tester' }, roles: ['SYSTEM_ADMIN'], permissions: [], menus: [] }
+    else if (path === '/api/v1/analysis/dashboards') data = [{ id: '600', code: 'REAL_BOARD', name: '接口看板验收', type: 'CUSTOM' }]
+    else if (path === '/api/v1/analysis/dashboards/600') data = { dashboard: { id: '600', name: '接口看板验收', workingVersionId: '601' }, version: { id: '601', layout: { columns: 24 }, widgets: [] } }
     else if (path === '/api/v1/factors') data = { records: [master('900'), master('910')], total: 2 }
     else if (/\/factors\/(900|910)$/.test(path)) data = master(path.split('/').at(-1))
     else if (path.endsWith('/factors/900/versions')) data = [{ id: '901', versionNo: 1, status: 'PUBLISHED' }, { id: '902', versionNo: 2, status: 'DRAFT' }, { id: '903', versionNo: 3, status: 'PUBLISHED' }]
@@ -37,6 +48,16 @@ function fixture() {
       const id = path.split('/').at(-1)
       data = { id, factorId: ['911', '999'].includes(id) ? '910' : '900', versionNo: id === '902' ? 2 : id === '903' ? 3 : 1, status: id === '902' ? 'DRAFT' : 'PUBLISHED', currentArtifactId: id === '902' ? null : `a${id}`, dsl: { definitionKind: id === '901' ? 'DERIVED' : 'SOURCE', definitionType: 'SQL', calculationMode: id === '903' ? 'TEMPORAL' : 'STATIC', output: { grain: ['dept'] }, primaryDomain: { domainCode: 'INPATIENT' } } }
     }
+    else if (path.endsWith('/indicators/800')) data = { id: '800', indicatorCode: 'CHECK_INDICATOR', indicatorName: '指标精简查看验收', status: 'PUBLISHED', description: '公式与关联场景优先展示。' }
+    else if (path.endsWith('/indicators/800/versions')) data = [{ id: '801', versionNo: 1, publicationStatus: 'PUBLISHED' }, { id: '802', versionNo: 2, publicationStatus: 'DRAFT' }]
+    else if (/\/indicator-versions\/(801|802)$/.test(path)) {
+      const id = path.split('/').at(-1), denominator = id === '801' ? '100' : '200'
+      data = { id, indicatorId: '800', publicationStatus: id === '801' ? 'PUBLISHED' : 'DRAFT',
+        formula: { root: { nodeType: 'BINARY', operator: 'DIV' } },
+        formulaDefinition: { expression: `(【上游原子因子】 ÷ ${denominator})`, factors: [{ factorName: '上游原子因子', factorVersionId: '911' }] } }
+    }
+    else if (path.endsWith('/indicators/800/scenarios')) data = { records: [{ scenarioId: '700', scenarioVersionId: '701', scenarioName: '业务监测场景', scenarioCode: 'CHECK_SCENE', configuredPeriodType: 'MONTHLY' }], total: 1 }
+    else if (path.startsWith('/api/v1/mappings/')) data = []
     else if (/\/compile-artifacts\/a(901|903|911)$/.test(path)) {
       const id = path.split('/').at(-1)
       data = id === 'a901' ? { id, logicalPlan: { factorDependencies: [{ factorVersionId: '911' }] } } : { id, parameterSchema: { parameters: id === 'a911' ? [{ code: 'deptCode', name: '科室编码', type: 'STRING', required: true }] : [] } }
@@ -64,9 +85,25 @@ try {
   await navigate('/factor', '.factor-management')
   await until(() => evaluate(`document.querySelector('.factor-table')?.textContent.includes('复合因子查看验收')`), 'factor catalog')
   await click('复合因子查看验收', `document.querySelector('.factor-table')`)
-  await until(() => evaluate(`document.querySelector('.factor-basic')?.textContent.includes('901') && !!document.querySelector('.runtime-parameter-fields input')`), 'independent detail and inherited parameter')
+  await until(() => evaluate(`!!document.querySelector('.factor-basic') && !!document.querySelector('.runtime-parameter-fields input')`), 'independent detail and inherited parameter')
   assert.equal(await evaluate(`location.pathname`), '/factor/view/900')
-  assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll('.factor-detail-page h2')).map(el=>el.textContent)`), ['基本信息', '运行参数与即时查询', '因子依赖关系'])
+  assert.equal(await evaluate(`document.querySelector('.identity-name').textContent`), '复合因子查看验收')
+  assert.equal(await evaluate(`document.querySelector('.identity-id').textContent`), '900')
+  assert.equal(await evaluate(`document.querySelector('.version-id-text').textContent.includes('901')`), true)
+  assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll('.factor-detail-page h2')).map(el=>el.textContent)`), ['运行参数与即时查询', '因子依赖关系'])
+  assert.equal(await evaluate(`document.querySelector('.factor-detail-page').textContent.includes('计算口径') || !!document.querySelector('.calculation-expression, .calculation-meta, .factor-description')`), false)
+  await until(() => evaluate(`document.querySelectorAll('.idmp-nav__subitem').length>0`), 'dashboard submenu loaded')
+  assert.equal(await evaluate(`!!document.querySelector('.idmp-nav__toggle svg')`), true)
+  assert.equal(await evaluate(`(() => {const button=document.querySelector('.idmp-nav__toggle').getBoundingClientRect(), row=document.querySelector('.idmp-nav__row.has-children').getBoundingClientRect();return Math.abs((button.top+button.height/2)-(row.top+row.height/2))<2})()`), true, 'disclosure icon is vertically centered')
+  await evaluate(`document.querySelector('.idmp-nav__toggle').click()`)
+  assert.equal(await evaluate(`document.querySelector('.idmp-nav__toggle').getAttribute('aria-expanded')`), 'false')
+  assert.equal(await evaluate(`!!document.querySelector('.idmp-nav__submenu')`), false)
+  assert.equal(await evaluate(`location.pathname`), '/factor/view/900', 'disclosure does not navigate')
+  await evaluate(`document.querySelector('.idmp-nav__toggle').focus()`)
+  assert.equal(await evaluate(`document.activeElement===document.querySelector('.idmp-nav__toggle')`), true)
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', text: '\r', unmodifiedText: '\r', windowsVirtualKeyCode: 13 })
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+  await until(() => evaluate(`document.querySelector('.idmp-nav__toggle').getAttribute('aria-expanded')==='true' && !!document.querySelector('.idmp-nav__submenu')`), 'keyboard expands dashboard submenu')
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('.factor-detail-page button')).some(el=>/保存草稿|编译并校验|发布因子版本/.test(el.textContent))`), false)
   await click('即时查询')
   assert.equal(await evaluate(`window.__factorCalls.filter(call=>call.path.endsWith('/query')).length`), 0)
@@ -84,10 +121,11 @@ try {
   await evaluate(`window.__holdFactorQuery=true`)
   await click('即时查询')
   await until(() => evaluate(`!!window.__releaseFactorQuery`), 'held query')
-  await evaluate(`document.querySelector('.factor-basic .el-select__wrapper').click()`)
+  await evaluate(`document.querySelector('.factor-detail-page .version-selector .el-select__wrapper').click()`)
   await until(() => evaluate(`Array.from(document.querySelectorAll('.el-select-dropdown__item')).some(el=>el.textContent.includes('版本 2'))`), 'version choices')
   await evaluate(`Array.from(document.querySelectorAll('.el-select-dropdown__item')).find(el=>el.textContent.includes('版本 2')).click()`)
   await until(() => evaluate(`document.querySelector('.runtime-query')?.textContent.includes('尚未取得编译产物')`), 'uncompiled draft')
+  assert.equal(await evaluate(`document.querySelector('.version-id-text').textContent.includes('902')`), true)
   await evaluate(`window.__releaseFactorQuery()`)
   await pause(200)
   assert.equal(await evaluate(`!!document.querySelector('.query-result')`), false)
@@ -102,7 +140,7 @@ try {
   await navigate('/factor/view/900', '.factor-detail-page')
   await until(() => evaluate(`document.querySelector('.dependency-panel')?.textContent.includes('上游原子因子')`), 'upstream dependency')
   await click('查看因子', `document.querySelector('.dependency-panel')`)
-  await until(() => evaluate(`location.pathname==='/factor/view/910' && document.querySelector('.factor-basic')?.textContent.includes('911')`), 'dependency detail navigation')
+  await until(() => evaluate(`location.pathname==='/factor/view/910' && new URLSearchParams(location.search).get('factorVersionId')==='911' && !!document.querySelector('.runtime-query')`), 'dependency detail navigation')
   await click('编辑因子')
   await until(() => evaluate(`location.pathname==='/factor/edit/910' && new URLSearchParams(location.search).get('factorVersionId')==='911'`), 'explicit editor navigation')
   await navigate('/factor', '.factor-management')
@@ -111,8 +149,57 @@ try {
   await until(() => evaluate(`location.pathname==='/factor/view/900' && !!document.querySelector('.factor-basic')`), 'catalog view action')
   const calls = await evaluate(`window.__factorCalls`)
   assert.equal(calls.filter(call => call.method !== 'GET' && !call.path.endsWith('/query')).length, 0)
+
+  await navigate('/dashboard/manage', '.dashboard-management')
+  await until(() => evaluate(`document.querySelector('.dashboard-card')?.textContent.includes('接口看板验收')`), 'management loads backend dashboard')
+  assert.equal(await evaluate(`document.body.innerText.includes('前端虚拟数据') || document.querySelectorAll('.dashboard-card').length!==1`), false)
+  await click('编辑', `document.querySelector('.dashboard-card')`)
+  await until(() => evaluate(`location.pathname==='/dashboard' && new URLSearchParams(location.search).get('id')==='600' && !!document.querySelector('.dashboard-studio')`), 'management opens remote dashboard editor')
+  await send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, mobile: false, deviceScaleFactor: 1 })
+  await navigate('/indicator/view/800?indicatorVersionId=801', '.indicator-detail-page')
+  await until(() => evaluate(`document.querySelector('.formula-denominator')?.textContent.includes('100') && document.querySelector('.related-scenarios')?.textContent.includes('业务监测场景')`), 'backend indicator formula and scenarios')
+  assert.equal(await evaluate(`document.querySelector('.identity-name').textContent`), '指标精简查看验收')
+  assert.equal(await evaluate(`document.querySelector('.identity-id').textContent`), '800')
+  assert.equal(await evaluate(`document.querySelector('.version-id-text').textContent.includes('801') && document.querySelector('.identity-grid').textContent.includes('V1')`), true)
+  await click('更多关联')
+  await until(() => evaluate(`!!document.querySelector('.el-drawer .policy-reference-form') && document.querySelector('.el-drawer')?.textContent.includes('有效指标映射')`), 'policy and mapping drawer retained')
+  await screenshot('indicator-more-relations.png')
+  await evaluate(`document.querySelector('.el-drawer__close-btn').click()`)
+  await until(() => evaluate(`!document.querySelector('.el-overlay') || getComputedStyle(document.querySelector('.el-overlay')).display==='none'`), 'drawer closed')
+  await evaluate(`document.querySelector('.indicator-detail-page .version-selector .el-select__wrapper').click()`)
+  await until(() => evaluate(`Array.from(document.querySelectorAll('.el-select-dropdown__item')).some(el=>el.textContent.includes('V2'))`), 'indicator version choices')
+  await evaluate(`Array.from(document.querySelectorAll('.el-select-dropdown__item')).find(el=>el.textContent.includes('V2')).click()`)
+  await until(() => evaluate(`document.querySelector('.formula-denominator')?.textContent.includes('200')`), 'indicator version changes formula')
+  assert.equal(await evaluate(`document.querySelector('.version-id-text').textContent.includes('802') && document.querySelector('.identity-grid').textContent.includes('V2')`), true)
+  await screenshot('indicator-backend-desktop.png')
+  await navigate('/factor/view/910?factorVersionId=911', '.factor-detail-page')
+  await until(() => evaluate(`!!document.querySelector('.runtime-query') && !!document.querySelector('.runtime-parameter-fields input')`), 'single-version backend factor')
+  assert.equal(await evaluate(`!!document.querySelector('.factor-detail-page .version-selector')`), false)
+  assert.equal(await evaluate(`document.querySelector('.identity-id').textContent==='910' && document.querySelector('.current-version').textContent==='V1' && document.querySelector('.version-id-text').textContent.includes('911')`), true)
+  assert.equal(await evaluate(`(() => { const run=document.querySelector('.runtime-query').getBoundingClientRect(), dependencies=document.querySelector('.dependency-panel').getBoundingClientRect(); return dependencies.top>=run.bottom && Math.abs(dependencies.left-run.left)<2 && Math.abs(dependencies.width-run.width)<2 })()`), true, 'factor panels remain vertically stacked')
+  await screenshot('factor-desktop.png', true)
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, mobile: true, deviceScaleFactor: 1 })
+  assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth+2`), true, 'factor mobile width')
+  await screenshot('factor-mobile.png')
+  await navigate('/indicator/view/800?indicatorVersionId=801', '.indicator-detail-page')
+  await until(() => evaluate(`!!document.querySelector('.formula-expression')`), 'mobile backend indicator')
+  assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth+2`), true, 'indicator mobile width')
+  await screenshot('indicator-mobile.png')
+  await send('Emulation.setDeviceMetricsOverride', { width: 1366, height: 768, mobile: false, deviceScaleFactor: 1 })
+  await evaluate(`document.querySelector('.idmp-nav__item[href="/dashboard"]').click()`)
+  await until(() => evaluate(`location.pathname==='/dashboard' && document.querySelector('.idmp-nav__row.has-children').classList.contains('is-active')`), 'overview menu active state')
+  await pause(250)
+  const menuPoint = await evaluate(`(() => { const rect=document.querySelector('.idmp-nav__row.has-children .idmp-nav__item').getBoundingClientRect(); return { x: rect.left+80, y: rect.top+20 } })()`)
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...menuPoint })
+  await pause(150)
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('.idmp-nav__toggle')).color===getComputedStyle(document.querySelector('.idmp-nav__row.has-children .idmp-nav__item')).color`), true, 'arrow matches active menu contrast')
+  await pause(250)
+  await writeFile(join(evidence, 'sidebar-expanded.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 56, width: 220, height: 250, scale: 2 } })).data, 'base64'))
+  await evaluate(`document.querySelector('.idmp-nav__toggle').click()`)
+  await pause(250)
+  await writeFile(join(evidence, 'sidebar-collapsed.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 56, width: 220, height: 180, scale: 2 } })).data, 'base64'))
   assert.deepEqual(errors, [])
   await writeFile(join(evidence, 'result.json'), JSON.stringify({ passed: true, errors, calls }, null, 2))
-  console.log('factor-detail: PASS catalog/detail/edit separation, static and temporal queries, inherited parameters, version isolation, dependency navigation and mobile layout')
+  console.log('backend-factor-simple-nav-arrow: PASS calculation section removed, identities retained, queries/dependencies, centered SVG disclosure, keyboard toggle, active-state contrast and mobile layout')
 } catch (e) { if (socket?.readyState === WebSocket.OPEN) { await screenshot('failure.png'); await writeFile(join(evidence, 'failure.json'), JSON.stringify(await evaluate(`({url:location.href,text:document.body.innerText,calls:window.__factorCalls})`), null, 2)) } throw e }
 finally { socket?.close(); chrome.kill(); server.kill() }

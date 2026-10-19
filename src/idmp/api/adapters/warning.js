@@ -1,8 +1,7 @@
 export const WARNING_TYPES = [
   { value: 'THRESHOLD', label: '阈值预警' },
   { value: 'TREND', label: '趋势预警' },
-  { value: 'VOLATILITY', label: '波动预警' },
-  { value: 'SCENARIO_DIFFERENCE', label: '场景差异预警' }
+  { value: 'VOLATILITY', label: '波动预警' }
 ]
 
 export const WARNING_SEVERITIES = ['INFO', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
@@ -64,7 +63,6 @@ export function warningRuleCapabilities(rule = {}) {
 }
 
 export function buildWarningRulePayload(form) {
-  const scenarioIds = uniquePositiveIds(form.scenarioVersionIds)
   const recipients = uniquePositiveIds(form.recipientUserIds)
   const condition = {
     operator: form.operator,
@@ -72,10 +70,6 @@ export function buildWarningRulePayload(form) {
   }
   if (form.warningType !== 'THRESHOLD') condition.measure = form.measure || 'DELTA'
   if (form.warningType === 'VOLATILITY' && form.windowSize !== '') condition.windowSize = Number(form.windowSize)
-  if (form.warningType === 'SCENARIO_DIFFERENCE') {
-    condition.baselineIndicatorVersionId = opaquePositiveId(form.baselineIndicatorVersionId)
-    condition.baselineScenarioVersionId = opaquePositiveId(form.baselineScenarioVersionId)
-  }
   return {
     code: String(form.code || '').trim(),
     name: String(form.name || '').trim(),
@@ -83,8 +77,9 @@ export function buildWarningRulePayload(form) {
     warningType: form.warningType,
     indicatorVersionId: opaquePositiveId(form.indicatorVersionId),
     periodType: form.periodType,
-    scenarioScope: scenarioIds.length ? { scenarioVersionIds: scenarioIds } : {},
-    scopePolicy: { includeNoScenario: Boolean(form.includeNoScenario) },
+    // Keep the backend DTO shape, but never bind a rule to a scenario.
+    scenarioScope: {},
+    scopePolicy: { includeNoScenario: true },
     condition,
     dedupPolicy: { scope: 'PERIOD' },
     notificationPolicy: { channels: ['IN_APP'], recipientUserIds: recipients },
@@ -136,10 +131,6 @@ export function validateWarningRuleForm(form) {
   if (!WARNING_OPERATORS.includes(form.operator) || !String(form.threshold || '').trim()) return '请填写合法的比较符和阈值'
   if (!uniquePositiveIds(form.recipientUserIds).length) return '请至少选择一位站内通知接收人'
   if (form.warningType === 'VOLATILITY' && (!Number.isInteger(Number(form.windowSize)) || Number(form.windowSize) < 2)) return '波动预警的窗口周期数至少为 2'
-  if (form.warningType === 'SCENARIO_DIFFERENCE') {
-    if (!opaquePositiveId(form.baselineIndicatorVersionId)) return '请选择基准指标版本'
-    if (!opaquePositiveId(form.baselineScenarioVersionId)) return '请选择已发布基准场景版本'
-  }
   if (form.effectiveStartDate && form.effectiveEndDate && form.effectiveStartDate > form.effectiveEndDate) return '生效开始日期不能晚于结束日期'
   return ''
 }

@@ -108,7 +108,7 @@
           <el-table-column type="selection" width="46" />
           <el-table-column prop="name" label="因子名称" min-width="280" show-overflow-tooltip>
             <template #default="{ row }">
-              <CodeTooltip :code="row.code" label="因子编码" :focusable="false"><button class="action-link factor-name-text" type="button" @click="openFactorDetail(row.id || row.code)">{{ row.name }}</button></CodeTooltip>
+              <CodeTooltip :code="row.code" label="因子编码" :focusable="false"><button class="action-link factor-name-text" type="button" @click="openFactorDetail(row)">{{ row.name }}</button></CodeTooltip>
             </template>
           </el-table-column>
           <el-table-column prop="category" label="分类" width="120" />
@@ -130,13 +130,13 @@
           </el-table-column>
            <el-table-column label="操作" width="230" fixed="right">
             <template #default="{ row }">
-              <button class="action-link" type="button" @click="openFactorDetail(row.id || row.code)">
+              <button class="action-link" type="button" @click="openFactorDetail(row)">
                 查看
               </button>
                <button class="action-link" type="button" @click="openFactorEditor(row.id || row.code)">
                  编辑
                </button>
-               <button v-if="sourceMode === 'live' && row.id" class="action-link danger-link" type="button" @click="openDelete(row)">删除</button>
+               <button v-if="row.id" class="action-link danger-link" type="button" @click="openDelete(row)">删除</button>
             </template>
           </el-table-column>
         </el-table>
@@ -245,7 +245,7 @@ watch(filteredRows, () => {
   }
 })
 
-const openFactorDetail = id => router.push({ name: 'FactorDetail', params: { id: String(id) } })
+const openFactorDetail = row => router.push({ name: 'FactorDetail', params: { id: String(row.id || row.code) } })
 
 const openFactorEditor = (id) => {
   router.push(`/factor/edit/${encodeURIComponent(id)}`)
@@ -268,7 +268,8 @@ async function loadBackendFactors() {
   loadError.value = ''
   selectedRows.value = []
   try {
-    const payload = await fetchFactors({ page: 1, size: 100 })
+    const request = fetchFactors({ page: 1, size: 100 })
+    const payload = await request
     const rows = normalizeList(payload).map(toFactorRow)
     backendFactorRows.value = rows
     sourceMode.value = 'live'

@@ -52,14 +52,6 @@ export function normalizePeriodType(value, fallback = '') {
   return PERIOD_TYPE_ALIASES[String(source).trim().toUpperCase()] || fallback
 }
 
-export const OVERRIDE_TYPES = [
-  { value: 'EXCLUSION', label: '排除条件' },
-  { value: 'PARAMETER', label: '参数' },
-  { value: 'DATA_SOURCE', label: '数据源' },
-  { value: 'DISPLAY', label: '展示' },
-  { value: 'THRESHOLD', label: '阈值' }
-]
-
 export function normalizePage(payload) {
   if (Array.isArray(payload)) return { items: payload, total: payload.length, page: 1, size: payload.length }
   return {
@@ -92,7 +84,6 @@ export function scenarioVersionCapabilities(value) {
     status,
     canView: true,
     canEdit: status === 'DRAFT',
-    canValidate: status === 'DRAFT',
     canPublish: status === 'DRAFT',
     canStartEdit: status === 'PUBLISHED'
   }
@@ -132,8 +123,6 @@ export function scenarioDetailToForm(detail) {
     governingOrgName: scenario.governingOrgName || '',
     defaultPeriodType: normalizePeriodType(version.defaultPeriodType, version.defaultPeriodType ? '' : 'MONTHLY'),
     defaultParameters: version.defaultParameters || {},
-    defaultExclusionDsl: version.defaultExclusionDsl || { nodeType: 'TRUE' },
-    defaultExclusionDisplayText: version.defaultExclusionDisplayText || '',
     defaultDataSourcePriority: normalizeMergeObject(version.defaultDataSourcePriority),
     displayText: version.displayText || '',
     effectiveStartDate: version.effectiveStartDate || '',
@@ -144,10 +133,6 @@ export function scenarioDetailToForm(detail) {
     indicators: (version.indicators || []).map((item) => ({
       ...item,
       indicatorVersionId: normalizeResourceId(item.indicatorVersionId)
-    })),
-    overrides: (version.overrides || []).map((item) => ({
-      ...item,
-      overrideValue: item.overrideValue ?? item.value
     }))
   }
 }
@@ -164,8 +149,6 @@ export function scenarioFormToPatch(form) {
     governingOrgName: form.governingOrgName,
     defaultPeriodType,
     defaultParameters: form.defaultParameters,
-    defaultExclusionDsl: form.defaultExclusionDsl,
-    defaultExclusionDisplayText: form.defaultExclusionDisplayText,
     defaultDataSourcePriority: normalizeMergeObject(form.defaultDataSourcePriority),
     displayText: form.displayText,
     effectiveStartDate: form.effectiveStartDate || null,
@@ -180,16 +163,5 @@ export function toIndicatorBinding(item, index) {
     required: item.required !== false,
     reportRequirementText: item.reportRequirementText || '',
     mappingOriginType: item.mappingOriginType || 'MANUAL'
-  }
-}
-
-export function toOverridePayload(item) {
-  return {
-    indicatorVersionId: item.indicatorVersionId ? normalizeResourceId(item.indicatorVersionId) : null,
-    overrideType: item.overrideType,
-    targetNodePath: item.targetNodePath,
-    overrideValue: item.overrideValue,
-    displayText: item.displayText || '',
-    priority: Number(item.priority || 0)
   }
 }

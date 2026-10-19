@@ -4,9 +4,8 @@ import { buildWarningRulePayload, normalizePage, normalizeWarningRule, serialize
 
 const validRule = () => ({
   code: 'MORTALITY_HIGH', name: '住院死亡率过高', description: '', warningType: 'THRESHOLD',
-  indicatorVersionId: '102027642460303757', periodType: 'MONTHLY', scenarioVersionIds: [],
-  includeNoScenario: true, operator: 'GT', threshold: '0.01', measure: 'DELTA', windowSize: 2,
-  baselineIndicatorVersionId: '', baselineScenarioVersionId: '', recipientUserIds: ['1'],
+  indicatorVersionId: '102027642460303757', periodType: 'MONTHLY',
+  operator: 'GT', threshold: '0.01', measure: 'DELTA', windowSize: 2, recipientUserIds: ['1'],
   severity: 'HIGH', effectiveStartDate: '', effectiveEndDate: ''
 })
 
@@ -24,27 +23,29 @@ test('warning adapter preserves opaque IDs and only sends the IN_APP policy', ()
   assert.equal(payload.indicatorVersionId, '102027642460303757')
   assert.deepEqual(payload.notificationPolicy, { channels: ['IN_APP'], recipientUserIds: ['1'] })
   assert.deepEqual(payload.scenarioScope, {})
+  assert.deepEqual(payload.scopePolicy, { includeNoScenario: true })
 })
 
 test('warning request serializes large IDs as exact JSON integers', () => {
   const rule = validRule()
-  rule.scenarioVersionIds = ['102027642460314531']
   rule.recipientUserIds = ['1', '9007199254740993']
   const json = serializeWarningRulePayload(buildWarningRulePayload(rule))
 
   assert.match(json, /"indicatorVersionId":102027642460303757/)
-  assert.match(json, /"scenarioVersionIds":\[102027642460314531\]/)
   assert.match(json, /"recipientUserIds":\[1,9007199254740993\]/)
-  assert.doesNotMatch(json, /"102027642460314531"/)
+  assert.doesNotMatch(json, /"9007199254740993"/)
 })
 
-test('scenario difference requires an explicit published baseline scenario', () => {
+test('scenario-based warning types and stale scenario form fields are ignored', () => {
   const rule = validRule()
   rule.warningType = 'SCENARIO_DIFFERENCE'
-  rule.baselineIndicatorVersionId = rule.indicatorVersionId
-  assert.match(validateWarningRuleForm(rule), /基准场景/)
-  rule.baselineScenarioVersionId = '102027642460308856'
+  assert.equal(validateWarningRuleForm(rule), '请选择预警类型')
+  rule.warningType = 'THRESHOLD'
+  rule.scenarioVersionIds = ['102027642460314531']
+  rule.includeNoScenario = false
   assert.equal(validateWarningRuleForm(rule), '')
+  assert.deepEqual(buildWarningRulePayload(rule).scenarioScope, {})
+  assert.deepEqual(buildWarningRulePayload(rule).scopePolicy, { includeNoScenario: true })
 })
 
 test('warning capabilities distinguish draft publishing and published enablement', () => {

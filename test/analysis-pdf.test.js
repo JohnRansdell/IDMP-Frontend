@@ -25,7 +25,7 @@ test('PDF splits wide drill tables without losing columns or row identity', () =
   const columns = Array.from({ length: 13 }, (_, i) => `字段${i}`)
   const row = columns.map((_, i) => `值${i}`)
   const report = buildAnalysisPdfReport({ versionId: '2', drillSection: { title: '当前下钻结果', columns, rows: [row] } })
-  const drill = report.sections.slice(5)
+  const drill = report.sections.slice(4)
   assert.equal(drill.length, 2)
   assert.ok(drill.every(section => section.columns.length <= 8 && section.rows[0][0] === '值0'))
   assert.deepEqual([...drill[0].rows[0], ...drill[1].rows[0].slice(1)], row)

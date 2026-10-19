@@ -169,7 +169,7 @@
             <template #default="{ row }">
               <button type="button" class="action-link" @click="openDetail(row)">查看</button>
                <button type="button" class="action-link" @click="openEditor(row.code)">编辑</button>
-              <button v-if="sourceMode === 'live' && row.indicatorId" type="button" class="action-link danger-link" @click="openDelete(row)">删除</button>
+              <button v-if="row.indicatorId" type="button" class="action-link danger-link" @click="openDelete(row)">删除</button>
             </template>
           </el-table-column>
         </el-table>

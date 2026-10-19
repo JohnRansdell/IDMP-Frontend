@@ -121,54 +121,6 @@
       </div>
     </section>
 
-    <section ref="sceneComparisonRef" class="surface-card scene-comparison" :class="{ 'is-unlinked': scenarioComparisonUnlinked }" aria-label="不同场景计算值对比">
-      <div class="scene-comparison__head">
-        <div class="scene-comparison__label"><span>不同场景对比</span><small v-if="!scenarioComparisonUnlinked">并列展示各场景的原始统计周期，不跨场景重算或强制聚合。</small></div>
-        <div v-if="scenarioComparisonScenarios.length || scenarioComparisonOptions.length" class="scene-comparison__controls">
-          <el-select v-model="scenarioComparisonSelectedIds" multiple collapse-tags collapse-tags-tooltip clearable filterable placeholder="全部关联场景" :disabled="!scenarioComparisonTarget || !scenarioComparisonOptions.length">
-            <el-option v-for="scene in scenarioComparisonOptions" :key="scene.value" :label="scene.label" :value="scene.value" />
-          </el-select>
-          <div class="date-range-fields" aria-label="场景对比时间范围"><el-date-picker v-model="scenarioComparisonPeriodRange" type="daterange" unlink-panels value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" /></div>
-          <el-button size="small" type="primary" :loading="scenarioComparisonLoading" :disabled="!scenarioComparisonTarget" @click="applyScenarioComparisonFilters">应用筛选</el-button>
-          <el-button size="small" :loading="scenarioComparisonLoading" :disabled="!scenarioComparisonTarget" @click="loadScenarioComparison">刷新对比</el-button>
-        </div>
-      </div>
-      <StatePanel v-if="!scenarioComparisonTarget" type="unavailable" title="请选择已发布指标版本后查看场景对比" description="场景对比仅适用于已发布指标版本关联的已发布场景。" />
-      <StatePanel v-else-if="scenarioComparisonLoading" type="loading" title="正在读取场景正式结果" />
-      <StatePanel v-else-if="scenarioComparisonError" type="error" title="场景对比加载失败" :description="scenarioComparisonError" />
-      <StatePanel v-else-if="scenarioComparisonLoaded && scenarioComparisonOptionsLoading" type="loading" title="正在确认关联场景" />
-      <StatePanel v-else-if="scenarioComparisonLoaded && scenarioComparisonOptionsError && !scenarioComparisonScenarios.length" type="error" title="关联场景读取失败" :description="scenarioComparisonOptionsError">
-        <template #actions><el-button type="primary" plain @click="loadScenarioComparisonOptions()">重试</el-button></template>
-      </StatePanel>
-      <StatePanel v-else-if="scenarioComparisonLoaded && !scenarioComparisonScenarios.length && hasScenarioComparisonFilters" type="empty" title="当前筛选下没有场景结果" description="可调整场景或时间范围，或清除筛选查看全部关联场景。">
-        <template #actions><el-button type="primary" plain @click="clearScenarioComparisonFilters">清除筛选</el-button></template>
-      </StatePanel>
-      <div v-else-if="scenarioComparisonUnlinked" class="scene-comparison__empty-inline" role="status">
-        <span>尚未关联场景，配置并发布后可查看对比结果。</span>
-        <el-button type="primary" link size="small" @click="router.push('/scenarios')">前往场景管理</el-button>
-      </div>
-      <div v-if="scenarioComparisonScenarios.length" class="scenario-result-grid">
-        <article v-for="scene in scenarioComparisonScenarios" :key="sceneKey(scene)" class="scenario-result-card" :class="{ 'is-clickable': canViewScenarioPeriods(scene), 'has-notice': scenePointNotice(latestScenePoint(scene)) }" :role="canViewScenarioPeriods(scene) ? 'button' : undefined" :tabindex="canViewScenarioPeriods(scene) ? 0 : undefined" @click="openScenarioPeriodsFromCard(scene)" @keydown.enter.prevent="openScenarioPeriodsFromCard(scene)">
-          <div class="scenario-result-card__head"><strong :title="sceneTitle(scene)">{{ scene.scenarioName || scene.name || scene.scenarioCode || '未命名场景' }}</strong><StatusBadge :status="scene.resultAvailability" /></div>
-          <div v-if="String(scene.resultAvailability).toUpperCase() === 'NO_ACTIVE_RESULT'" class="scenario-result-card__empty"><span>尚未生成已激活的正式结果。</span><el-button type="primary" plain @click.stop="openScenarioCalculation(scene)">创建场景计算</el-button></div>
-          <template v-else>
-            <div class="scenario-result-card__latest"><strong>{{ scenePointValue(latestScenePoint(scene)) }}</strong></div>
-            <p v-if="scenePointNotice(latestScenePoint(scene))" class="scenario-result-card__notice">{{ scenePointNotice(latestScenePoint(scene)) }}</p>
-            <div class="scenario-result-card__actions"><span>{{ scenarioPeriodTypeLabel(scene.configuredPeriodType) }} · {{ scenePointCount(scene) }} 个结果</span><span class="scenario-result-card__open">详情 ›</span></div>
-          </template>
-        </article>
-      </div>
-    </section>
-
-    <el-drawer v-model="scenarioPeriodDrawerOpen" :title="selectedScenarioName" size="560px" append-to-body destroy-on-close>
-      <template v-if="selectedScenarioForPeriods">
-        <div class="scenario-period-drawer__summary"><div><span>统计周期</span><strong>{{ scenarioPeriodTypeLabel(selectedScenarioForPeriods.configuredPeriodType) }}</strong></div><div><span>结果点</span><strong>{{ selectedScenarioPointTotal }}</strong></div><StatusBadge :status="selectedScenarioForPeriods.resultAvailability" /></div>
-        <p class="scenario-period-drawer__hint">周期明细仅用于查看该场景的原始正式结果，不与其他场景强制对齐。</p>
-        <el-table :data="selectedScenarioPointRows" size="small" max-height="calc(100vh - 300px)" empty-text="暂无正式结果点"><el-table-column label="周期" min-width="200"><template #default="{ row }">{{ formatPeriodLabel(row.periodStart, row.periodEnd) }}</template></el-table-column><el-table-column label="结果" width="104"><template #default="{ row }">{{ scenePointValue(row) }}</template></el-table-column><el-table-column label="状态" width="108"><template #default="{ row }"><StatusBadge :status="row.outcomeStatus || row.qualityStatus" /></template></el-table-column><el-table-column label="操作" width="70"><template #default="{ row }"><el-button v-if="row.resultId" link type="primary" @click="openScenarioPointDrill(row)">下钻</el-button></template></el-table-column></el-table>
-        <div v-if="selectedScenarioPointTotal > scenarioPeriodPageSize" class="scenario-period-drawer__pagination"><span>共 {{ selectedScenarioPointTotal }} 条</span><el-pagination v-model:current-page="scenarioPeriodPage" small background layout="prev, pager, next" :page-size="scenarioPeriodPageSize" :total="selectedScenarioPointTotal" /></div>
-      </template>
-    </el-drawer>
-
     <section class="surface-card analysis-panel">
       <el-tabs v-model="activeTab" class="analysis-tabs">
         <el-tab-pane label="趋势分析" name="trend">
@@ -273,7 +225,7 @@
             <div>
               <h2>科室指标排名</h2>
               <p v-if="hasBackendRankData">{{ rankPeriodDescription }}，按 {{ currentProfile.name }} 由高到低排列。</p>
-              <p v-else>当前指标暂无正式科室维度结果。</p>
+              <p v-else>{{ '当前指标暂无正式科室维度结果。' }}</p>
             </div>
             <StatusBadge :status="hasBackendRankData ? 'ACTIVE' : 'NO_DATA'" :label="hasBackendRankData ? '科室正式结果' : '暂无正式数据'" tone="neutral" />
           </div>
@@ -430,10 +382,10 @@ import RuntimeParameterFields from '@/idmp/components/RuntimeParameterFields.vue
 import DrillExplorer from '@/idmp/features/analysis/DrillExplorer.vue'
 import IndicatorDrillAnalysis from '@/idmp/features/analysis/IndicatorDrillAnalysis.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
-import { fetchIndicatorAnalysis, fetchIndicatorAvailablePeriod, fetchIndicatorFormula, fetchIndicatorGrainOptions, fetchIndicatorScenarioComparison, fetchIndicatorScenarios, fetchIndicators, fetchIndicatorVersion, fetchIndicatorVersionList, queryIndicatorVersion } from '@/idmp/api/modules/indicators'
+import { fetchIndicatorAnalysis, fetchIndicatorAvailablePeriod, fetchIndicatorFormula, fetchIndicatorGrainOptions, fetchIndicators, fetchIndicatorVersion, fetchIndicatorVersionList, queryIndicatorVersion } from '@/idmp/api/modules/indicators'
 import { fetchFactorVersion } from '@/idmp/api/modules/factors'
 import { collectFormulaFactorVersionIds, createIndicatorDataExplanation, extractIndicatorFormula, normalizeIndicatorInstantSummary } from '@/idmp/api/adapters/indicator'
-import { deriveDrillPathResultIds, reconcileScenarioPointWithRoot } from '@/idmp/api/adapters/drill'
+import { deriveDrillPathResultIds } from '@/idmp/api/adapters/drill'
 import { searchResultDrill } from '@/idmp/api/modules/drill'
 import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
 import { resolveIndicatorCalculationMode } from '@/idmp/features/analysis/calculationMode'
@@ -472,23 +424,6 @@ const analysisLoading = ref(false)
 const selectedIndicatorCode = ref(String(route.query.indicator || ''))
 const backendIndicators = ref([])
 const indicatorOptionsLoading = ref(false)
-const sceneComparisonRef = ref()
-const scenarioComparison = ref(null)
-const scenarioComparisonLoading = ref(false)
-const scenarioComparisonError = ref('')
-const scenarioComparisonLoaded = ref(false)
-let scenarioComparisonSequence = 0
-const scenarioComparisonSelectedIds = ref(initialScenarioVersionIds())
-const scenarioComparisonPeriodRange = ref([])
-const scenarioComparisonOptions = ref([])
-const scenarioComparisonOptionsLoading = ref(false)
-const scenarioComparisonOptionsError = ref('')
-let scenarioComparisonOptionsSequence = 0
-const scenarioComparisonIdByCode = ref(new Map())
-const scenarioPeriodDrawerOpen = ref(false)
-const selectedScenarioForPeriods = ref(null)
-const scenarioPeriodPage = ref(1)
-const scenarioPeriodPageSize = 10
 const drillStartLevel = ref(String(route.query.drillStartLevel || 'HOSPITAL').toUpperCase())
 const drillParentKeys = ref(parseDrillParentKeys(route.query.drillParentKeys))
 const analysisPeriodRange = ref(initialAnalysisPeriodRange())
@@ -508,12 +443,11 @@ const indicatorRuntimeParameterValues = ref({})
 const runtimeQueryResult = ref(null)
 const runtimeQueryExpanded = ref([])
 const reportParameterSnapshot = ref({})
-const scenarioComparisonAppliedRange = ref([])
 const drillExplorerRef = ref()
 const staticDrillExplorerRef = ref()
 const pdfExportLoading = ref(false)
 const canExportPdf = computed(() => Boolean(selectedBackendIndicator.value && currentIndicatorVersionId.value)
-  && !analysisLoading.value && !rangeSummaryLoading.value && !trendLoading.value && !scenarioComparisonLoading.value)
+  && !analysisLoading.value && !rangeSummaryLoading.value && !trendLoading.value)
 
 function parseDrillParentKeys(value) {
   const text = Array.isArray(value) ? value[0] : value
@@ -907,42 +841,6 @@ const { granularity: rankGranularity, selectedPeriod: rankSelectedPeriod, period
 const rankPeriodDescription = computed(() => rankInitialized.value
   ? `${rankGranularityLabel.value} · ${rankSelectedPeriodLabel.value || '暂无周期'} · 科室正式结果`
   : `科室正式结果 · ${formatAnalysisPeriod(backendAnalysis.value?.overview) || '静态结果'}`)
-const scenarioComparisonTarget = computed(() => {
-  const indicator = selectedBackendIndicator.value
-  const indicatorId = indicator?.id || indicator?.indicatorId
-  const indicatorVersionId = currentIndicatorVersionId.value
-  return indicatorId && indicatorVersionId
-    ? { indicatorId: String(indicatorId), indicatorVersionId: String(indicatorVersionId) }
-    : null
-})
-const hasScenarioComparisonFilters = computed(() => scenarioComparisonSelectedIds.value.length > 0 || isCompleteDateRange(scenarioComparisonPeriodRange.value))
-const scenarioComparisonScenarios = computed(() => {
-  const results = Array.isArray(scenarioComparison.value?.scenarios) ? scenarioComparison.value.scenarios : []
-  if (results.length || !scenarioComparisonLoaded.value || scenarioComparisonOptionsLoading.value || scenarioComparisonOptionsError.value || hasScenarioComparisonFilters.value) return results
-  return scenarioComparisonOptions.value.map(option => ({
-    scenarioVersionId: option.value,
-    scenarioCode: option.code || '',
-    scenarioName: option.label,
-    resultAvailability: 'NO_ACTIVE_RESULT',
-    points: []
-  }))
-})
-const scenarioComparisonUnlinked = computed(() => Boolean(scenarioComparisonTarget.value)
-  && scenarioComparisonLoaded.value
-  && !scenarioComparisonLoading.value
-  && !scenarioComparisonError.value
-  && !scenarioComparisonOptionsLoading.value
-  && !scenarioComparisonOptionsError.value
-  && !hasScenarioComparisonFilters.value
-  && !scenarioComparisonScenarios.value.length)
-const selectedScenarioName = computed(() => selectedScenarioForPeriods.value?.scenarioName || selectedScenarioForPeriods.value?.name || selectedScenarioForPeriods.value?.scenarioCode || '场景周期详情')
-const selectedScenarioPoints = computed(() => [...(selectedScenarioForPeriods.value?.points || [])]
-  .sort((left, right) => String(right?.periodEnd || right?.periodStart || '').localeCompare(String(left?.periodEnd || left?.periodStart || ''))))
-const selectedScenarioPointTotal = computed(() => selectedScenarioPoints.value.length)
-const selectedScenarioPointRows = computed(() => {
-  const start = (scenarioPeriodPage.value - 1) * scenarioPeriodPageSize
-  return selectedScenarioPoints.value.slice(start, start + scenarioPeriodPageSize)
-})
 
 const trendSeries = computed(() => {
   const actualValues = currentTrend.value.actual
@@ -1046,13 +944,6 @@ async function exportAnalysisPdf() {
     const indicatorId = String(selectedBackendIndicator.value.id || selectedBackendIndicator.value.indicatorId)
     const versionId = currentIndicatorVersionId.value
     const filename = analysisPdfFilename(currentProfile.value.name, versionId)
-    const scenarios = scenarioComparisonScenarios.value.flatMap(scene => {
-      const name = scene.scenarioName || scene.name || scene.scenarioCode || '-'
-      return scene.points?.length ? scene.points.map(point => [name,
-        formatPeriodLabel(point.periodStart, point.periodEnd), scenePointValue(point), point.numeratorValue,
-        point.denominatorValue, displayStatus(point.outcomeStatus || point.qualityStatus), point.resultId, point.snapshotId])
-        : [[name, '-', '-', '-', '-', displayStatus(scene.resultAvailability), '-', '-']]
-    })
     const overview = analysisOverview.value || {}
     const report = buildAnalysisPdfReport({
       versionId, primaryMetric: primaryMetric.value, summaryMetrics: summaryMetrics.value,
@@ -1061,14 +952,12 @@ async function exportAnalysisPdf() {
         ['运行参数', rangeSummary.value ? JSON.stringify(reportParameterSnapshot.value) : '未执行即时查询'],
         ['趋势时间', formatRange(analysisPeriodRange.value) || '全部已加载正式周期'],
         ['趋势统计粒度', backendAnalysisGranularity.value === 'STATIC' ? '静态' : period.value],
-        ['组合粒度筛选', Object.keys(trendGrainApplied.value).length ? JSON.stringify(trendGrainApplied.value) : '全部'],
-        ['场景对比时间', formatRange(scenarioComparisonAppliedRange.value) || '全部已加载正式周期']
+        ['组合粒度筛选', Object.keys(trendGrainApplied.value).length ? JSON.stringify(trendGrainApplied.value) : '全部']
       ],
       trendRows: trendTableRows.value, hasPeerTrend: hasPeerTrend.value, unit: currentProfile.value.unit,
       trendDescription: `统计粒度：${backendAnalysisGranularity.value === 'STATIC' ? '静态' : period.value}；时间范围：${formatRange(analysisPeriodRange.value) || '全部已加载正式周期'}`,
       chartPng: trendTableRows.value.length ? renderAnalysisChartPng(trendOption.value) : null,
-      rankRows: rankTableData.value, rankDescription: rankErrorMessage.value || rankPeriodDescription.value, scenarioRows: scenarios,
-      scenarioDescription: scenarioComparisonError.value || '各场景保留各自原始统计周期，不跨场景合并。',
+      rankRows: rankTableData.value, rankDescription: rankErrorMessage.value || rankPeriodDescription.value,
       provenance: [
         ['计算公式', indicatorDataExplanation.value.formulaText],
         ...indicatorDataExplanation.value.operands.map(item => [item.role === 'NUMERATOR' ? '分子因子版本' : item.role === 'DENOMINATOR' ? '分母因子版本' : '参与因子版本', item.factorVersionIds.join('、')]),
@@ -1082,224 +971,6 @@ async function exportAnalysisPdf() {
     ElMessage.success('PDF 已导出')
   } catch (error) { ElMessage.error(error?.message || 'PDF 导出失败，请稍后重试。') }
   finally { pdfExportLoading.value = false }
-}
-
-const scrollToSceneComparison = () => {
-  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-  sceneComparisonRef.value?.scrollIntoView({
-    behavior: reducedMotion ? 'auto' : 'smooth',
-    block: 'center'
-  })
-}
-
-function applyScenarioComparisonFilters() {
-  if (!validateOptionalDateRange(scenarioComparisonPeriodRange.value, '场景对比时间')) return
-  loadScenarioComparison()
-}
-
-function clearScenarioComparisonFilters() {
-  scenarioComparisonSelectedIds.value = []
-  scenarioComparisonPeriodRange.value = []
-  loadScenarioComparison()
-}
-
-async function loadScenarioComparison() {
-  if (!validateOptionalDateRange(scenarioComparisonPeriodRange.value, '场景对比时间')) return
-  const target = scenarioComparisonTarget.value
-  const sequence = ++scenarioComparisonSequence
-  scenarioComparison.value = null
-  scenarioComparisonError.value = ''
-  scenarioComparisonLoaded.value = false
-  if (!target) return
-  scenarioComparisonLoading.value = true
-  const appliedRange = [...scenarioComparisonPeriodRange.value]
-  try {
-    const response = await fetchIndicatorScenarioComparison(target.indicatorId, {
-      indicatorVersionId: target.indicatorVersionId,
-      ...(scenarioComparisonSelectedIds.value.length ? { scenarioVersionIds: scenarioComparisonSelectedIds.value } : {}),
-      ...(isCompleteDateRange(scenarioComparisonPeriodRange.value)
-        ? { periodStart: scenarioComparisonPeriodRange.value[0], periodEnd: scenarioComparisonPeriodRange.value[1] }
-        : {})
-    })
-    const result = await reconcileScenarioComparisonRoots(response)
-    if (sequence !== scenarioComparisonSequence) return
-    scenarioComparison.value = result
-    scenarioComparisonAppliedRange.value = appliedRange
-    mergeScenarioComparisonOptions(result?.scenarios)
-    void loadScenarioComparisonOptions(target)
-    scenarioComparisonLoaded.value = true
-  } catch (error) {
-    if (sequence !== scenarioComparisonSequence) return
-    scenarioComparisonError.value = error?.message || '无法读取场景正式结果'
-  } finally {
-    if (sequence === scenarioComparisonSequence) scenarioComparisonLoading.value = false
-  }
-}
-
-function sceneKey(scene) {
-  return String(scene?.scenarioVersionId || scene?.scenarioCode || scene?.scenarioName || scene?.name || '')
-}
-
-async function loadScenarioComparisonOptions(target = scenarioComparisonTarget.value) {
-  if (!target?.indicatorId) return
-  const sequence = ++scenarioComparisonOptionsSequence
-  scenarioComparisonOptionsLoading.value = true
-  scenarioComparisonOptionsError.value = ''
-  try {
-    const records = normalizeList(await fetchIndicatorScenarios(target.indicatorId, { page: 1, size: 200 }))
-    if (sequence !== scenarioComparisonOptionsSequence || target.indicatorVersionId !== scenarioComparisonTarget.value?.indicatorVersionId) return
-    const current = new Map(scenarioComparisonOptions.value.map((scene) => [String(scene.value), scene]))
-    const byCode = new Map(scenarioComparisonIdByCode.value)
-    records.forEach((scene) => {
-      if (Array.isArray(scene.references) && scene.references.length && !scene.references.some(reference => String(reference.indicatorVersionId || '') === target.indicatorVersionId)) return
-      const value = scene?.scenarioVersionId || scene?.versionId || scene?.id
-      if (!value) return
-      const name = scene.scenarioName || scene.name || scene.scenarioCode || String(value)
-      current.set(String(value), { value: String(value), label: name, code: scene.scenarioCode || '' })
-      if (scene.scenarioCode) byCode.set(String(scene.scenarioCode), String(value))
-    })
-    scenarioComparisonOptions.value = [...current.values()]
-    scenarioComparisonIdByCode.value = byCode
-  } catch (error) {
-    if (sequence === scenarioComparisonOptionsSequence) scenarioComparisonOptionsError.value = error?.message || '无法读取关联场景'
-  } finally {
-    if (sequence === scenarioComparisonOptionsSequence) scenarioComparisonOptionsLoading.value = false
-  }
-}
-
-async function reconcileScenarioComparisonRoots(comparison = {}) {
-  const scenarios = await Promise.all((Array.isArray(comparison.scenarios) ? comparison.scenarios : []).map(async (scenario) => ({
-    ...scenario,
-    points: await Promise.all((Array.isArray(scenario.points) ? scenario.points : []).map(resolveScenarioPointRoot))
-  })))
-  return { ...comparison, scenarios }
-}
-
-async function resolveScenarioPointRoot(point) {
-  if (!point?.resultId) return point
-  for (const rootLevel of ['HOSPITAL', 'ALL_SINGLE_DISEASE']) {
-    try {
-      const drillResult = await searchResultDrill(point.resultId, {
-        currentLevel: rootLevel,
-        parentKeys: {},
-        filters: {},
-        pageNum: 1,
-        pageSize: 20,
-        sort: [{ field: 'indicatorValue', direction: 'DESC' }]
-      })
-      const resolved = reconcileScenarioPointWithRoot(point, drillResult, rootLevel)
-      if (String(resolved.resultId) !== String(point.resultId) || resolved.displayValue !== point.displayValue) return resolved
-    } catch {
-      // 不同指标支持的路径不同；组织根不可用时继续尝试病种根。
-    }
-  }
-  return point
-}
-
-function mergeScenarioComparisonOptions(scenes) {
-  const current = new Map(scenarioComparisonOptions.value.map((scene) => [String(scene.value), scene]))
-  ;(Array.isArray(scenes) ? scenes : []).forEach((scene) => {
-    const value = resolveScenarioVersionId(scene)
-    if (!value) return
-    const name = scene.scenarioName || scene.name || scene.scenarioCode || String(value)
-    current.set(String(value), { value: String(value), label: name })
-  })
-  scenarioComparisonOptions.value = [...current.values()]
-}
-
-function resolveScenarioVersionId(scene) {
-  return scene?.scenarioVersionId || scene?.id || scenarioComparisonIdByCode.value.get(String(scene?.scenarioCode || '')) || ''
-}
-
-function latestScenePoint(scene) {
-  const points = Array.isArray(scene?.points) ? scene.points : []
-  return points.reduce((latest, point) => {
-    if (!latest) return point
-    return String(point?.periodEnd || point?.periodStart || '') > String(latest?.periodEnd || latest?.periodStart || '')
-      ? point
-      : latest
-  }, null)
-}
-
-function scenePointValue(point) {
-  if (isUsableDisplayValue(point?.displayValue)) return point.displayValue
-  if (isUsableRawValue(point?.value)) return formatMetricValue(point.value, currentProfile.value.unit)
-  return '—'
-}
-
-function scenePointNotice(point) {
-  if (!point) return ''
-  const outcome = String(point.outcomeStatus || '').toUpperCase()
-  const quality = String(point.qualityStatus || '').toUpperCase()
-  const flags = Array.isArray(point.qualityFlags) ? point.qualityFlags.filter(Boolean) : []
-  if (flags.length) return `质量提示：${flags.join('、')}`
-  if (outcome && outcome !== 'CALCULATED') return `结果状态：${displayStatus(outcome)}`
-  if (quality && quality !== 'PASSED') return `质量状态：${displayStatus(quality)}`
-  return ''
-}
-
-function scenePointCount(scene) {
-  return Array.isArray(scene?.points) ? scene.points.length : 0
-}
-
-function sceneTitle(scene) {
-  const name = scene?.scenarioName || scene?.name || scene?.scenarioCode || '未命名场景'
-  const code = scene?.scenarioCode || scene?.scenarioVersionId || ''
-  return code && code !== name ? `${name} · ${code}` : name
-}
-
-function canViewScenarioPeriods(scene) {
-  return String(scene?.resultAvailability || '').toUpperCase() !== 'NO_ACTIVE_RESULT' && scenePointCount(scene) > 0
-}
-
-function scenarioPeriodTypeLabel(value) {
-  return ({ DAILY: '日度', WEEKLY: '周度', MONTHLY: '月度', QUARTERLY: '季度', YEARLY: '年度', CUSTOM: '自定义' })[String(value || '').toUpperCase()] || '原始周期'
-}
-
-function openScenarioPeriods(scene) {
-  selectedScenarioForPeriods.value = scene
-  scenarioPeriodPage.value = 1
-  scenarioPeriodDrawerOpen.value = true
-}
-
-function openScenarioPeriodsFromCard(scene) {
-  if (canViewScenarioPeriods(scene)) openScenarioPeriods(scene)
-}
-
-function openScenarioPointDrill(point) {
-  router.push({ path: '/analysis/drill', query: { resultId: String(point.resultId), period: formatPeriodLabel(point.periodStart, point.periodEnd), source: 'live' } })
-}
-
-function openScenarioCalculation(scene) {
-  const scenarioVersionId = resolveScenarioVersionId(scene)
-  if (!scenarioVersionId) {
-    ElMessage.warning('场景对比响应未返回场景版本 ID，且无法从关联场景中匹配；为避免创建非场景计算，已阻止提交。')
-    return
-  }
-  const point = latestScenePoint(scene)
-  const selectedRange = isCompleteDateRange(scenarioComparisonPeriodRange.value) ? scenarioComparisonPeriodRange.value : reportPeriodRange.value
-  const periodStart = point?.periodStart || selectedRange?.[0]
-  const periodEnd = point?.periodEnd || selectedRange?.[1]
-  router.push({
-    path: '/calc',
-    query: {
-      ownerType: 'INDICATOR',
-      ownerVersionId: currentIndicatorVersionId.value,
-      batchType: 'FULL',
-      scenarioVersionId: String(scenarioVersionId),
-      returnTo: '/analysis',
-      returnIndicator: indicatorCode.value,
-      returnIndicatorVersionId: currentIndicatorVersionId.value,
-      ...(scenarioComparisonSelectedIds.value.length ? { returnScenarioVersionIds: scenarioComparisonSelectedIds.value.join(',') } : {}),
-      ...(periodStart ? { periodStart: toCalculationDateTime(periodStart) } : {}),
-      ...(periodEnd ? { periodEnd: toCalculationDateTime(periodEnd) } : {})
-    }
-  })
-}
-
-function toCalculationDateTime(value) {
-  const text = String(value || '')
-  return text.includes('T') ? text : `${text}T00:00:00`
 }
 
 const openDepartmentDrill = (row) => {
@@ -1454,7 +1125,7 @@ async function applyReportPeriod() {
 function reportQueryPayload() {
   const payload = { summaryOnly: true }
   if (backendAnalysisGranularity.value !== 'STATIC') {
-    payload.periodStart = `${reportPeriodRange.value[0]}T00:00:00`
+    payload.periodStart = `${normalizeDateValue(reportPeriodRange.value[0])}T00:00:00`
     payload.periodEnd = nextDayStart(reportPeriodRange.value[1])
   }
   if (indicatorRuntimeParameters.value.length) {
@@ -1505,7 +1176,7 @@ function clearInstantQueryResult() {
 }
 
 function nextDayStart(value) {
-  const parts = String(value || '').split('-').map(Number)
+  const parts = normalizeDateValue(value).split('-').map(Number)
   if (parts.length !== 3 || parts.some(part => !Number.isFinite(part))) return ''
   const date = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + 1))
   return `${date.toISOString().slice(0, 10)}T00:00:00`
@@ -1608,7 +1279,6 @@ async function loadBackendAnalysisIndicators() {
         await router.replace({ path: '/analysis', query: { ...route.query, indicatorName: backendName } })
       }
       await refreshIndicatorAnalysis()
-      void loadScenarioComparison()
     } else if (backendIndicators.value.length) {
       const firstOption = createBackendAnalysisOptions(backendIndicators.value)[0]
       if (firstOption?.code) {
@@ -1737,7 +1407,6 @@ function createGenericAnalysisProfile(indicator) {
     markLineValue: null,
     yAxisMax: null,
     summary: [{ label: '当前指标值', value: '-', tone: 'neutral' }],
-    sceneComparisons: [],
     trends: { 月度: emptyTrend(), 季度: emptyTrend(), 年度: emptyTrend() },
     rankRows: []
   }
@@ -1850,7 +1519,10 @@ async function refreshIndicatorAnalysis({ preserveRangeSummary = false } = {}) {
       if (!trendBackendAnalysis.value) trendBackendAnalysis.value = resolvedAnalysisData.value
       if (resolvedAnalysisData.value?.granularity) reportGranularity.value = String(resolvedAnalysisData.value.granularity)
       if (!reportPeriodRange.value.length && resolvedAnalysisData.value?.overview?.periodStart && resolvedAnalysisData.value?.overview?.periodEnd) {
-        reportPeriodRange.value = [resolvedAnalysisData.value.overview.periodStart, resolvedAnalysisData.value.overview.periodEnd]
+        reportPeriodRange.value = [
+          normalizeDateValue(resolvedAnalysisData.value.overview.periodStart),
+          normalizeDateValue(resolvedAnalysisData.value.overview.periodEnd)
+        ]
       }
       const versionId = String(
         resolvedAnalysisData.value.indicatorVersionId ||
@@ -1969,13 +1641,7 @@ async function loadAvailablePeriod(versionId, refreshSequence) {
   }
 }
 
-onMounted(async () => {
-  await loadBackendAnalysisIndicators()
-  if (route.query.focus === 'scenario-comparison') {
-    await nextTick()
-    scrollToSceneComparison()
-  }
-})
+onMounted(loadBackendAnalysisIndicators)
 
 watch(indicatorCode, () => {
   selectedIndicatorCode.value = indicatorCode.value
@@ -1991,21 +1657,11 @@ watch(indicatorCode, () => {
   trendGrainResolvedNames.value = {}
   trendGrainFields.value.forEach(code => trendGrainRequestGenerations.set(code, (trendGrainRequestGenerations.get(code) || 0) + 1))
   reportPeriodRange.value = initialReportPeriodRange()
-  scenarioComparisonSelectedIds.value = []
-  scenarioComparisonPeriodRange.value = []
-  scenarioComparisonOptions.value = []
-  scenarioComparisonOptionsLoading.value = false
-  scenarioComparisonOptionsError.value = ''
-  scenarioComparisonOptionsSequence += 1
-  scenarioComparisonIdByCode.value = new Map()
-  scenarioPeriodDrawerOpen.value = false
-  selectedScenarioForPeriods.value = null
   indicatorRuntimeParameterValues.value = {}
   runtimeQueryResult.value = null
   runtimeQueryExpanded.value = []
   period.value = '月度'
   refreshIndicatorAnalysis()
-  loadScenarioComparison()
 })
 
 function initialAnalysisPeriodRange() {
@@ -2028,12 +1684,6 @@ function sourceAvailableTrendRange(availability) {
   const start = normalizeDateValue(availability?.earliestDataDate)
   const end = normalizeDateValue(availability?.latestDataDate)
   return start && end && start <= end ? [start, end] : []
-}
-
-function initialScenarioVersionIds() {
-  const value = route.query.scenarioVersionIds
-  const values = Array.isArray(value) ? value : String(value || '').split(',')
-  return values.map((item) => String(item).trim()).filter(Boolean)
 }
 
 function isCompleteDateRange(range) {

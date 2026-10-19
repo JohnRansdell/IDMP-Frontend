@@ -12,9 +12,6 @@
         </el-tooltip>
       </template>
       <template #actions>
-        <template v-if="!isEditing">
-          <el-button @click="enterPresentation">大屏展示</el-button>
-        </template>
         <template v-if="isEditing">
           <el-button :icon="RefreshLeft" @click="resetDashboardLayout">恢复默认</el-button>
           <el-button data-testid="dashboard-undo" title="撤销上一步编辑" :disabled="!canUndo" @click="undoDashboardEdit">撤销</el-button>
@@ -26,8 +23,6 @@
           <el-button :icon="Close" @click="exitDashboardEdit">退出编辑</el-button>
           <el-button data-testid="dashboard-save" type="primary" :icon="Check" @click="saveDashboardLayout">保存布局</el-button>
         </template>
-        <el-button v-if="isRemoteDashboard()" data-testid="dashboard-edit" type="primary" :icon="Edit" :loading="dashboardEditLoading" :disabled="dashboardDeleting || dashboardLoading" @click="startDashboardEdit">{{ hasUnpublishedDashboardDraft ? '编辑草稿' : '编辑看板' }}</el-button>
-        <el-button v-if="isRemoteDashboard()" data-testid="dashboard-delete" type="danger" plain :icon="Delete" :loading="dashboardDeleting" :disabled="dashboardEditLoading || dashboardLoading" @click="deleteCurrentDashboard">删除看板</el-button>
         <el-button v-if="dashboardStatus === 'unpublished'" @click="loadDashboard()">重新加载</el-button>
       </template>
     </PageHeader>
@@ -52,14 +47,14 @@
     >
       <template #actions>
         <el-button type="primary" @click="retryRemoteDashboardCatalog">重新加载</el-button>
-        <el-button v-if="remoteCatalogIsEmpty || dashboardStatus === 'legacy-mock'" @click="newDashboardForm('blank')">创建服务端看板</el-button>
+        <el-button @click="router.push('/dashboard/manage')">前往看板管理</el-button>
       </template>
     </StatePanel>
     <StatePanel
       v-else-if="!isEditing && dashboardStatus === 'empty'"
       type="empty"
       title="当前条件暂无正式结果"
-      description="已读取看板配置，当前统计周期和范围暂无正式结果。仍可编辑配置或删除看板。"
+      description="已读取看板配置，当前统计周期和范围暂无正式结果。"
     >
       <template #actions><el-button @click="loadDashboard()">重新加载</el-button></template>
     </StatePanel>
@@ -72,10 +67,13 @@
 
     <template v-else-if="isEditing || dashboardStatus === 'ready'">
     <section v-if="!isEditing && useSchemaViewer" class="dashboard-schema-viewer">
+      <button v-if="presentationMode === 'presentation'" type="button" class="dashboard-presentation-exit" title="退出大屏（Esc）" aria-label="退出大屏" @click="exitPresentation">
+        <el-icon :size="18"><Close /></el-icon>
+      </button>
       <section class="dashboard-canvas-frame">
         <div class="dashboard-toolbar" aria-label="看板查询条件">
           <div class="dashboard-query-controls">
-            <label class="dashboard-query-control"><span>期间</span>
+            <label v-if="viewerPeriodOptions.length" class="dashboard-query-control"><span>期间</span>
               <span class="dashboard-period-selects" aria-label="统计期间">
                 <el-select v-model="remotePeriodStart" class="dashboard-filter dashboard-filter--period" size="small" aria-label="开始月份" data-testid="dashboard-period-start">
                   <el-option v-for="option in viewerPeriodOptions" :key="`start-${option.value}`" :label="option.label" :value="option.value" />
@@ -106,6 +104,11 @@
             </el-popover>
           </div>
           <DashboardFilterBar class="dashboard-toolbar__filters" compact :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" :errors-by-id="remoteFilterOptionErrors" :loading-by-id="remoteFilterOptionsLoading" @retry="loadRemoteFilterOptions" @change="filterRuntimeValues = $event" />
+          <el-tooltip v-if="presentationMode !== 'presentation'" content="大屏展示" placement="bottom">
+            <button type="button" class="dashboard-presentation-trigger" aria-label="大屏展示" @click="enterPresentation">
+              <el-icon :size="17"><FullScreen /></el-icon>
+            </button>
+          </el-tooltip>
         </div>
         <DashboardContextBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :interactions="[]" :drill-states="drillRuntimeState" :widgets="viewerWidgets" @clear-filters="filterRuntimeValues = initialFilterValues(globalFilterDefinitions)" @clear-drills="clearAllWidgetDrills" />
         <DashboardCanvas
@@ -162,13 +165,7 @@
         </el-select>
         <span class="dashboard-save-state" :class="`is-${saveState}`" role="status">{{ saveStateLabel }}</span>
         <div class="studio-command-actions">
-          <el-dropdown @command="handleDashboardMenuCommand">
-            <el-button data-testid="dashboard-board-menu" aria-label="看板菜单">看板 ▾</el-button>
-            <template #dropdown><el-dropdown-menu>
-              <el-dropdown-item disabled>当前：{{ currentDashboardName }}</el-dropdown-item>
-              <el-dropdown-item v-for="item in dashboardMenuCommands" :key="item.id" :command="item.id" :divided="item.divided" :disabled="dashboardDeleting || (item.id === 'delete' && currentDashboardProtected)">{{ item.label }}</el-dropdown-item>
-            </el-dropdown-menu></template>
-          </el-dropdown>
+          <el-button @click="router.push('/dashboard/manage')">返回看板管理</el-button>
           <el-button v-if="isRemoteDashboard()" @click="openDashboardHistory">版本历史</el-button>
           <el-button data-testid="dashboard-preview" @click="studioPreview = true">预览</el-button>
           <el-button data-testid="dashboard-undo" title="撤销上一步编辑" :disabled="!canUndo" @click="undoDashboardEdit">撤销</el-button>
@@ -207,7 +204,7 @@
         <el-button data-testid="dashboard-add-widget" type="primary" plain :disabled="!selectedDataSource && !['text', 'metric-group', 'warnings', 'ranking'].includes(addWidgetType)" :icon="Plus" @click="addDashboardWidget">添加组件</el-button>
         <p v-if="drawPlacementMode && pendingLibraryWidget" class="studio-placement-hint" role="status">正在放置 {{ pendingLibraryWidget.title || libraryItems.find(item => item.type === addWidgetType)?.name }}：点击画布空白处放置，拖拽可指定大小；按 Esc 取消。</p>
         <section class="studio-template-library" aria-label="布局模板">
-          <div class="studio-template-library__heading"><h3>设计模板</h3><span><button type="button" @click="newDashboardForm('blank')">空白看板</button><button type="button" @click="saveCurrentLayoutAsTemplate">保存当前布局</button></span></div>
+          <div class="studio-template-library__heading"><h3>设计模板</h3><span><button type="button" @click="saveCurrentLayoutAsTemplate">保存当前布局</button></span></div>
           <p>选择后查看用途与构图；系统模板与本地模板相互独立。</p>
           <StudioHoverPreview v-for="template in layoutTemplates" :key="template.id" :template="template">
             <article :data-template-id="template.id" class="studio-template-item" :class="{ 'is-selected': selectedTemplateId === template.id }" tabindex="0" @click="selectedTemplateId = template.id">
@@ -467,6 +464,7 @@ import {
   Connection,
   Delete,
   Edit,
+  FullScreen,
   Histogram,
   InfoFilled,
   PieChart,
@@ -534,7 +532,7 @@ import { canApplyDashboardLoad, canRefreshRemoteDashboard } from '@/idmp/feature
 import { createDashboardEditingSnapshot } from '@/idmp/features/dashboard/editSession.js'
 import { buildPublishedIndicatorAnalysisQuery, buildPublishedIndicatorTrendPreviewQuery, createPublishedDashboardPeriodOptions, dateRangeForMonths, defaultPublishedDashboardPeriodRange, resolvePublishedDashboardPeriod, resolvePublishedDashboardPeriodRange, schemaPublishedIndicatorSourceCodes, suggestIndependentWidgetPeriod } from '@/idmp/features/dashboard/publishedIndicatorRuntime.js'
 import { dashboardWidgetResultShape, isPeriodField } from '@/idmp/features/dashboard/periodFields.js'
-import { dashboardActiveId, dashboardRequestedId, dashboardSceneCode, designerImmersive, notifyDashboardCatalogChanged } from '@/idmp/layout/shellState.js'
+ import { dashboardActiveId, dashboardRequestedId, dashboardSceneCode, designerImmersive, notifyDashboardCatalogChanged } from '@/idmp/layout/shellState.js'
 import { createMetricGroupConfig, duplicateMetricGroupItem, METRIC_GROUP_ADD_SELECTION, metricGroupItemWidget, metricGroupSourceCodes, removeMetricGroupItem, reorderMetricGroupItem } from '@/idmp/features/dashboard/metricGroup.js'
 import { createWarningWidgetConfig, normalizeWarningWidgetConfig, warningEventToDashboardItem, warningWidgetQuery } from '@/idmp/features/dashboard/warningWidget.js'
 import { widgetLibraryReadiness } from '@/idmp/features/dashboard/widgetGuidance.js'
@@ -551,7 +549,8 @@ import {
   updateDashboardWidget,
   clonePersistableValue
 } from '@/idmp/features/dashboard/schema'
-import { DASHBOARD_STUDIO_MENU_COMMANDS } from '@/idmp/features/dashboard/catalog.js'
+ import { readDashboardCatalog, saveDashboardToCatalog } from '@/idmp/features/dashboard/catalog.js'
+ import { persistDashboardSchema, recoverDashboardSchema, DASHBOARD_RECOVERY_STATUS } from '@/idmp/features/dashboard/persistence.js'
 import { DASHBOARD_UNSAVED_MESSAGE, handleDashboardBeforeUnload, shouldProtectDashboardNavigation } from '@/idmp/features/dashboard/navigationProtection'
 import { getWidgetGridConstraints } from '@/idmp/features/dashboard/gridLayout'
 import { clearWidgetSelection, nextWidgetSelection, nextMarqueeSelection, alignSelectedLayout, distributeSelectedLayout } from '@/idmp/features/dashboard/layoutOperations.js'
@@ -646,7 +645,6 @@ const localLayoutTemplates = ref([])
 const layoutTemplates = computed(() => [...BUILT_IN_LAYOUT_TEMPLATES, ...localLayoutTemplates.value])
 const selectedTemplateId = ref(BUILT_IN_LAYOUT_TEMPLATES[0].id)
 const selectedTemplateDetail = computed(() => layoutTemplates.value.find(template => template.id === selectedTemplateId.value) || layoutTemplates.value[0] || null)
-const dashboardMenuCommands = DASHBOARD_STUDIO_MENU_COMMANDS
 const libraryItems = [
   { group: '指标', type: 'metric-group', name: '指标组', hint: '集中展示多个关键指标', icon: '▦' },
   { group: '指标', type: 'kpi', name: 'KPI 指标卡', hint: '指标 · 单值与目标', icon: '◫' },
@@ -685,7 +683,7 @@ const activeDashboardStorageKey = computed(() => getDashboardSchemaStorageKey(ac
 const currentDashboardId = computed(() => activeDashboardId.value)
 const currentDashboardName = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.name || '未命名看板')
 const currentDashboardProtected = computed(() => false)
-const dashboardSelectorOptions = computed(() => localDashboardCatalog.value.map(item => ({ ...item, origin: 'remote' })))
+ const dashboardSelectorOptions = computed(() => localDashboardCatalog.value)
 const periodOptions = ref([])
 const departmentOptions = [{ label: '全院', value: '' }]
 const period = ref('')
@@ -772,7 +770,7 @@ const availableIndicatorSources = computed(() => {
   const sources = [...visibleDashboardIndicatorSources.value, ...catalogIndicatorSources.value]
   return [...new Map(sources.map(source => [source.code, source])).values()]
 })
-const selectableIndicatorSources = computed(() => catalogIndicatorSources.value)
+ const selectableIndicatorSources = computed(() => catalogIndicatorSources.value)
 const indicatorCatalogLoading = ref(false)
 const indicatorCatalogError = ref('')
 let indicatorCatalogRequest = null
@@ -990,6 +988,15 @@ watch([globalFilterDefinitions, filterRuntimeValues, currentDependentFilterOptio
 }, { deep: true })
 watch([globalFilterDefinitions, period, remotePeriodRange, filterRuntimeValues, () => JSON.stringify(remoteFieldCatalog.value), () => JSON.stringify(availableIndicatorSources.value)], () => { void loadRemoteFilterOptions() }, { deep: true })
 watch(requestedDashboardId, nextDashboardId => { if (nextDashboardId !== activeDashboardId.value) void requestDashboardSwitch(nextDashboardId) })
+watch(() => route.query.id, async nextDashboardId => {
+  const id = typeof nextDashboardId === 'string' ? nextDashboardId.trim() : ''
+  if (!id || id === activeDashboardId.value) return
+  if (!localDashboardCatalog.value.some(item => String(item.id) === id)) await refreshDashboardCatalog()
+  await requestDashboardSwitch(id)
+})
+watch(() => route.query.edit, value => {
+  if (value === '1' && route.name === 'Dashboard' && !isEditing.value) void startDashboardEdit()
+})
 watch(selectedDataCode, code => { if (code) void ensureRemoteDataSourceFields(code) })
 const currentDashboardWidgets = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.widgets || [])
 provide('dashboardFilterContext', { definitions: globalFilterDefinitions, values: filterRuntimeValues, interactions: interactionFilterState })
@@ -1031,20 +1038,25 @@ function updateDashboardMetadata(field, value) {
   markDashboardDirty()
 }
   async function refreshDashboardCatalog() {
+    const local = readDashboardCatalog(localStorage).map(item => ({ ...item, origin: 'local' }))
     try {
       const remote = await fetchDashboardCatalog()
-      localDashboardCatalog.value = (Array.isArray(remote) ? remote : []).map(dashboardSummaryToCatalogEntry)
+      const remoteEntries = (Array.isArray(remote) ? remote : []).map(dashboardSummaryToCatalogEntry)
+      localDashboardCatalog.value = [...local, ...remoteEntries.filter(item => !local.some(localItem => String(localItem.id) === String(item.id)))]
       notifyDashboardCatalogChanged()
       return localDashboardCatalog.value
     } catch (error) {
-      // Never turn a backend failure into a browser-local "saved" dashboard.
-      localDashboardCatalog.value = []
+      localDashboardCatalog.value = local
       notifyDashboardCatalogChanged()
-      throw error
+      if (!local.length) throw error
+      return local
     }
   }
   function isRemoteDashboard(id = activeDashboardId.value) {
-    return localDashboardCatalog.value.some(item => item.origin === 'remote' && String(item.id) === String(id)) || (Boolean(id) && String(id) === managedDashboardId.value)
+    return localDashboardCatalog.value.some(item => item.origin === 'remote' && String(item.id) === String(id))
+  }
+  function isLocalDashboard(id = activeDashboardId.value) {
+    return localDashboardCatalog.value.some(item => item.origin === 'local' && String(item.id) === String(id))
   }
 function dashboardTypeLabel(type) { return ({ 'hospital-overview': '全院概览', topic: '专题', scene: '场景', department: '科室', custom: '自定义' })[type] || '自定义' }
 function scopeLabel(scope) { return ({ hospital: '全院', department: '科室', personal: '个人' })[scope] || '全院' }
@@ -2174,8 +2186,12 @@ function beginDashboardEdit(schema = dashboardSchema.value) {
 }
 
 async function startDashboardEdit() {
-  if (dashboardEditLoading.value || dashboardDeleting.value || isEditing.value || !isRemoteDashboard()) return
+  if (dashboardEditLoading.value || dashboardDeleting.value || isEditing.value || (!isRemoteDashboard() && !isLocalDashboard())) return
   const targetDashboardId = activeDashboardId.value
+  if (isLocalDashboard(targetDashboardId)) {
+    beginDashboardEdit(dashboardSchema.value)
+    return
+  }
   dashboardEditLoading.value = true
   try {
     const detail = await fetchDashboardDefinition(targetDashboardId)
@@ -2242,14 +2258,14 @@ function finishDashboardEdit() {
 }
 async function exitDashboardEdit() {
   if (!isEditing.value) return
-  if (!dashboardDirty.value) return finishDashboardEdit()
+  if (!dashboardDirty.value) { finishDashboardEdit(); await router.push('/dashboard/manage'); return }
   try {
     await ElMessageBox.confirm('退出前可保存当前修改；选择“不保存并退出”将丢弃本次未保存内容。关闭弹窗则继续编辑。', '有未保存的看板修改', {
       confirmButtonText: '保存并退出', cancelButtonText: '不保存并退出', distinguishCancelAndClose: true, closeOnClickModal: false
     })
-    if (await saveDashboardSchema()) finishDashboardEdit()
+    if (await saveDashboardSchema()) { finishDashboardEdit(); await router.push('/dashboard/manage') }
   } catch (action) {
-    if (action === 'cancel') finishDashboardEdit()
+    if (action === 'cancel') { finishDashboardEdit(); await router.push('/dashboard/manage') }
   }
 }
 
@@ -2459,6 +2475,20 @@ async function saveDashboardSchema() {
         : '看板配置已保存')
       return true
     }
+    if (isLocalDashboard()) {
+      const persisted = persistDashboardSchema(localStorage, activeDashboardStorageKey.value, schema)
+      saveDashboardToCatalog(persisted, localStorage)
+      dashboardSchema.value = clonePersistableValue(persisted)
+      editingDashboardSchema.value = clonePersistableValue(persisted)
+      dashboardHistory.value = [clonePersistableValue(persisted)]
+      dashboardHistoryIndex.value = 0
+      dashboardDirty.value = false
+      saveState.value = 'saved'
+      lastSavedAt.value = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date())
+      await refreshDashboardCatalog()
+      ElMessage.success('看板布局已保存到浏览器')
+      return true
+    }
     throw new Error('当前看板无法保存到服务端。')
   } catch (error) {
     if (Number(error?.status) === 409 && isRemoteDashboard()) {
@@ -2544,7 +2574,48 @@ async function loadDashboard(targetDashboardId = activeDashboardId.value) {
   dashboardQueryResult.value = null
   remoteWidgetDatasets.value = {}
   remoteMultiIndicatorDatasets.value = {}
-  return loadRemoteDashboard(targetDashboardId, isCurrentLoad, controller.signal)
+  return isLocalDashboard(targetDashboardId)
+    ? loadLocalDashboard(targetDashboardId, isCurrentLoad)
+    : loadRemoteDashboard(targetDashboardId, isCurrentLoad, controller.signal)
+}
+
+async function loadLocalDashboard(targetDashboardId, isCurrentLoad = () => true) {
+  dashboardStatus.value = 'loading'
+  dashboardLoadMessage.value = ''
+  const recovered = recoverDashboardSchema(localStorage, getDashboardSchemaStorageKey(targetDashboardId))
+  if (!isCurrentLoad()) return
+  if (recovered.status !== DASHBOARD_RECOVERY_STATUS.VALID_CURRENT_SCHEMA) {
+    dashboardStatus.value = 'error'
+    dashboardLoadMessage.value = '本地看板配置无法读取，请在看板管理中删除后重新创建。'
+    return
+  }
+  remoteDashboardMeta.value = null
+  remoteDashboardIsMock.value = false
+  dashboardDefinition.value = null
+  dashboardSchema.value = recovered.schema
+  loadedDashboardId.value = targetDashboardId
+  dashboardQueryResult.value = null
+  remoteWidgetDatasets.value = {}
+  remoteMultiIndicatorDatasets.value = {}
+  periodOptions.value = []
+  try {
+    const loaded = await loadPublishedIndicatorCatalog()
+    if (!isCurrentLoad()) return
+    if (!loaded) throw new Error(indicatorCatalogError.value || '指标目录加载失败')
+    const sourceCodes = [...new Set(recovered.schema.widgets.flatMap(widget => [widget.sourceCode, ...metricGroupSourceCodes(widget)]).filter(Boolean))]
+    await Promise.all(sourceCodes.map(code => ensureRemoteDataSourceFields(code, { required: true })))
+    if (!isCurrentLoad()) return
+    periodOptions.value = [...new Map(sourceCodes.flatMap(code => remoteSourcePeriodOptions.value[code] || []).map(option => [option.value, option])).values()].sort((a, b) => b.value.localeCompare(a.value))
+    remotePeriodRange.value = defaultPublishedDashboardPeriodRange(periodOptions.value)
+    remotePeriodDraft.value = [...remotePeriodRange.value]
+    dashboardSchema.value = applyDefaultDashboardBindings(recovered.schema, remoteFieldCatalog.value)
+    await Promise.all(dashboardSchema.value.widgets.filter(widget => widget.sourceCode).map(widget => previewRemoteWidget(widget)))
+    if (isCurrentLoad()) dashboardStatus.value = 'ready'
+  } catch (error) {
+    if (!isCurrentLoad()) return
+    dashboardStatus.value = 'error'
+    dashboardLoadMessage.value = error?.message || '看板指标数据加载失败'
+  }
 }
 
 function formatDashboardLoadError(error) {
@@ -3401,6 +3472,10 @@ watch(filterRuntimeValues, () => {
 }, { deep: true })
 
 function onDesignerGlobalKeydown(event) {
+  if (presentationMode.value === 'presentation' && event.key === 'Escape') {
+    void exitPresentation()
+    return
+  }
   if (!isEditing.value || !selectedWidgetIds.value.length || event.defaultPrevented) return
   const target = event.target
   if (target instanceof Element && (target.matches('input, textarea, select') || target.isContentEditable || target.closest('[contenteditable="true"]'))) return
@@ -3428,6 +3503,7 @@ let dashboardDeactivatedAt = 0
 onDeactivated(() => {
   dashboardDeactivatedAt = Date.now()
   designerImmersive.value = false
+  if (presentationMode.value === 'presentation') void exitPresentation()
   globalThis.clearTimeout(remoteFilterReloadTimer)
   removeDashboardListeners()
 })
@@ -3441,6 +3517,12 @@ onActivated(() => {
     globalThis.setTimeout(() => { void refreshRemoteDashboardData() }, 0)
   }
   dashboardDeactivatedAt = 0
+  if (route.query.edit === '1' && !isEditing.value) globalThis.setTimeout(async () => {
+    await refreshDashboardCatalog()
+    const id = typeof route.query.id === 'string' ? route.query.id.trim() : ''
+    if (id && id !== activeDashboardId.value) await requestDashboardSwitch(id)
+    await startDashboardEdit()
+  }, 0)
 })
 
 onMounted(async () => {
@@ -3448,8 +3530,7 @@ onMounted(async () => {
   if (!isEditing.value) designerImmersive.value = false
   try {
     refreshLocalLayoutTemplates()
-    if (!managedDashboardId.value) await refreshDashboardCatalog()
-    else void refreshDashboardCatalog().catch(() => {})
+    await refreshDashboardCatalog()
     if (!managedDashboardId.value && !dashboardSelectorOptions.value.some(item => String(item.id) === String(activeDashboardId.value))) {
       const nextId = localDashboardCatalog.value[0]?.id || ''
       activeDashboardId.value = nextId
@@ -3459,10 +3540,11 @@ onMounted(async () => {
     if (managedDashboardId.value || activeDashboardId.value) {
       loadDashboardSchema()
       await loadDashboard()
-      void loadPublishedIndicatorCatalog()
+      if (isRemoteDashboard()) void loadPublishedIndicatorCatalog()
+      if (route.query.edit === '1') await startDashboardEdit()
     } else {
       dashboardStatus.value = 'no-dashboards'
-      dashboardLoadMessage.value = '暂无可用的服务端看板，请创建看板后继续。'
+      dashboardLoadMessage.value = '暂无可用看板，请前往看板管理创建。'
     }
   } catch (error) {
     // Initialization includes synchronous schema recovery as well as requests.
@@ -3510,6 +3592,11 @@ onBeforeUnmount(() => {
 .dashboard-schema-viewer { width:100%; margin-top:16px; overflow-x:auto; overflow-y:hidden; }
 .dashboard-canvas-frame { overflow:hidden; padding:6px 10px 10px; border:1px solid var(--idmp-border-subtle,#d9e0e6); border-radius:var(--idmp-radius-lg,4px); background:var(--idmp-layer-01,#fff); }
 .dashboard-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 16px; min-height:38px; padding:0 2px 8px; margin-bottom:7px; border-bottom:1px solid var(--idmp-border-subtle,#e7ecef); }
+.dashboard-presentation-trigger { display:inline-grid; flex:none; place-items:center; width:30px; height:30px; margin-left:auto; border:1px solid transparent; border-radius:6px; background:transparent; color:var(--db-secondary,#52636c); cursor:pointer; }
+.dashboard-presentation-trigger:hover { border-color:var(--db-border,#d9e0e6); background:var(--db-accent-soft,#edf6ff); color:var(--db-accent,#1261a6); }
+.dashboard-presentation-trigger:focus-visible,.dashboard-presentation-exit:focus-visible { outline:2px solid var(--db-accent,#1261a6); outline-offset:2px; }
+.dashboard-presentation-exit { position:fixed; top:16px; right:16px; z-index:10; display:grid; place-items:center; width:36px; height:36px; border:1px solid var(--db-border,#d9e0e6); border-radius:8px; background:var(--db-elevated,#fff); color:var(--db-text,#25343b); box-shadow:0 3px 12px rgba(16,24,40,.14); cursor:pointer; }
+.dashboard-presentation-exit:hover { background:var(--db-accent-soft,#edf6ff); color:var(--db-accent,#1261a6); }
 .dashboard-query-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; }
 .dashboard-query-control { display:flex; align-items:center; gap:6px; color:var(--idmp-text-secondary,#667085); font-size:12px; }
 .dashboard-query-control > span { color:var(--idmp-text-helper,#858f99); }

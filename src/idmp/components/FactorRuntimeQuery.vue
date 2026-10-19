@@ -1,17 +1,16 @@
 <template>
   <section class="surface-card runtime-query" aria-label="运行参数与即时查询">
-    <div class="runtime-heading"><div><h2>运行参数与即时查询</h2><p>参数仅用于本次查询，不修改因子定义，也不提交编译、试算或发布任务。</p></div><el-button :disabled="schemaLoading" @click="load">刷新运行配置</el-button></div>
+    <div class="runtime-heading"><h2>运行参数与即时查询</h2><el-button size="small" :disabled="schemaLoading" @click="load">刷新</el-button></div>
     <el-alert v-if="!artifactId" title="当前版本尚未取得编译产物，暂不能即时查询。可进入编辑页完成编译。" type="info" :closable="false" />
     <template v-else>
       <StatePanel v-if="schemaLoading" type="loading" title="正在读取运行参数" />
       <el-alert v-if="schemaError" :title="schemaError" type="error" :closable="false"><el-button @click="load">重试</el-button></el-alert>
       <template v-if="!schemaLoading && !schemaError">
         <RuntimeParameterFields v-if="declarations.length" v-model="values" :declarations="declarations" :show-metadata="false" />
-        <p v-else>当前版本没有额外业务运行参数。</p>
         <div v-if="calculationMode === 'TEMPORAL'" class="query-period">
           <label>查询周期 <span class="required">*</span></label>
           <el-date-picker v-model="period" type="datetimerange" value-format="YYYY-MM-DDTHH:mm:ss" start-placeholder="开始时间" end-placeholder="结束时间（不含）" :disabled="recommendationLoading" />
-          <small>按 [开始时间，结束时间) 查询。</small>
+          <small>结束时间不包含在查询范围内。</small>
           <span v-if="recommendationLoading">正在读取推荐周期</span>
           <el-alert v-if="recommendationError" :title="recommendationError" type="info" :closable="false" />
         </div>
@@ -20,11 +19,11 @@
       </template>
       <el-alert v-if="queryError" :title="queryError" type="error" :closable="false" />
       <div v-if="result" class="query-result">
-        <div class="runtime-heading"><h3>查询结果</h3><el-tag>{{ result.executionMode === 'PERSISTED' ? '复用已保存结果' : result.executionMode === 'AD_HOC_SOURCE' ? '源数据即时计算' : '即时结果' }}</el-tag></div>
-        <el-table :data="rows" max-height="420" empty-text="当前周期或参数下没有匹配结果">
-          <el-table-column label="维度" min-width="220"><template #default="{ row }">{{ dimensions(row.dimensions) }}</template></el-table-column>
-          <el-table-column label="结果值" min-width="150"><template #default="{ row }">{{ row.displayValue ?? row.value ?? row.resultValue ?? '-' }}</template></el-table-column>
-          <el-table-column label="质量状态" width="140"><template #default="{ row }">{{ getStatusLabel(row.qualityStatus || row.qualityFlag) || '-' }}</template></el-table-column>
+        <div class="runtime-heading"><h3>查询结果</h3><el-tag size="small">{{ result.executionMode === 'PERSISTED' ? '复用已保存结果' : result.executionMode === 'AD_HOC_SOURCE' ? '源数据即时计算' : '即时结果' }}</el-tag></div>
+        <el-table :data="rows" max-height="220" empty-text="当前周期或参数下没有匹配结果">
+          <el-table-column label="维度" min-width="140" show-overflow-tooltip><template #default="{ row }">{{ dimensions(row.dimensions) }}</template></el-table-column>
+          <el-table-column label="结果值" min-width="100"><template #default="{ row }">{{ row.displayValue ?? row.value ?? row.resultValue ?? '-' }}</template></el-table-column>
+          <el-table-column label="质量状态" width="90"><template #default="{ row }">{{ getStatusLabel(row.qualityStatus || row.qualityFlag) || '-' }}</template></el-table-column>
         </el-table>
       </div>
     </template>
@@ -100,13 +99,19 @@ watch(() => [props.versionId, props.artifactId, props.calculationMode], load, { 
 onBeforeUnmount(() => { generation++; queryRevision++ })
 </script>
 <style scoped>
-.runtime-query { padding: 20px; margin-bottom: 16px; }
-.runtime-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
-h2 { margin: 0; font-size: 18px; }
+.runtime-query { min-width: 0; padding: 18px; margin-bottom: 16px; }
+.runtime-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+h2 { margin: 0; font-size: 16px; }
+h3 { margin: 0; font-size: 14px; }
 p, small { color: var(--idmp-text-helper); }
-.query-period { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 16px 0; }
-.query-period :deep(.el-date-editor) { max-width: 100%; }
-.query-result { margin-top: 20px; }
+.query-period { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 12px 0; font-size: 13px; }
+.query-period label { white-space: nowrap; }
+.query-period :deep(.el-date-editor) { width: 480px; min-width: 0; max-width: 100%; }
+.query-period > .el-alert { flex-basis: 100%; }
+.query-period small { font-size: 12px; }
+.query-result { margin-top: 16px; }
+.runtime-parameter-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); max-height: 180px; overflow: auto; }
 .required { color: var(--el-color-danger); }
-@media (max-width: 640px) { .runtime-query { padding: 14px; } .query-period { display: grid; } .query-period :deep(.el-date-editor) { width: 100%; min-width: 0; } }
+@media (max-width: 900px) { .runtime-parameter-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .runtime-query { padding: 14px; } .query-period { display: grid; } .query-period :deep(.el-date-editor) { width: 100%; } .runtime-parameter-fields { grid-template-columns: minmax(0, 1fr); } }
 </style>

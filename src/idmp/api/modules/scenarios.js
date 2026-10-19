@@ -42,17 +42,6 @@ export function replaceScenarioIndicators(versionId, payload) {
   })
 }
 
-export function replaceScenarioOverrides(versionId, payload) {
-  return requestJson(`/scenario-versions/${versionId}/overrides`, {
-    method: 'PUT',
-    body: JSON.stringify(payload)
-  })
-}
-
-export function fetchScenarioMergedPreview(versionId) {
-  return requestJson(`/scenario-versions/${versionId}/merged-preview`)
-}
-
 export function validateScenarioVersion(versionId) {
   return requestJson(`/scenario-versions/${versionId}/validate`, {
     method: 'POST',

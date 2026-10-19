@@ -20,7 +20,12 @@ const routes = [
         component: () => import('@/idmp/views/Dashboard.vue'),
         meta: { title: '指标看板', breadcrumb: [B.home, '指标看板'] }
       },
-      { path: 'dashboard/manage', redirect: '/dashboard' },
+      {
+        path: 'dashboard/manage',
+        name: 'DashboardManagement',
+        component: () => import('@/idmp/views/DashboardManagement.vue'),
+        meta: { title: '看板管理', activeMenu: '/dashboard/manage', breadcrumb: [B.home, '看板管理'] }
+      },
       {
         path: 'indicator',
         name: 'IndicatorManagement',

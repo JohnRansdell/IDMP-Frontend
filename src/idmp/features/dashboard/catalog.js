@@ -12,7 +12,22 @@ const TYPES = new Set(['hospital-overview', 'topic', 'scene', 'department', 'cus
 const SCOPES = new Set(['hospital', 'department', 'personal'])
 
 export function readDashboardCatalog(storage = globalThis.localStorage) {
-  try { const value = JSON.parse(storage.getItem(DASHBOARD_CATALOG_STORAGE_KEY) || '[]'); return Array.isArray(value) ? value.map(normalizeCatalogEntry).filter(Boolean) : [] } catch { return [] }
+  // Remove only the two dashboards seeded by the retired frontend demo.
+  // Never clear user-created layouts or other application storage.
+  const retiredIds = new Set(['demo-quality-overview', 'demo-operation-overview'])
+  for (const id of retiredIds) {
+    try { storage.removeItem(getDashboardSchemaStorageKey(id)) } catch { /* Storage may be read-only. */ }
+  }
+  try { storage.removeItem('idmp:dashboard-demo-data-version') } catch { /* Best-effort migration. */ }
+  try {
+    const value = JSON.parse(storage.getItem(DASHBOARD_CATALOG_STORAGE_KEY) || '[]')
+    if (!Array.isArray(value)) return []
+    const retained = value.filter(item => !retiredIds.has(item?.id))
+    if (retained.length !== value.length) {
+      try { storage.setItem(DASHBOARD_CATALOG_STORAGE_KEY, JSON.stringify(retained)) } catch { /* Still hide retired entries. */ }
+    }
+    return retained.map(normalizeCatalogEntry).filter(Boolean)
+  } catch { return [] }
 }
 export function writeDashboardCatalog(entries, storage = globalThis.localStorage) {
   const normalized = (Array.isArray(entries) ? entries : []).map(normalizeCatalogEntry).filter(Boolean)
