@@ -1,12 +1,21 @@
 import { normalizeSemanticField } from '../../utils/semanticField.js'
 
 export function physicalFieldDataType(columnType, fallback = 'STRING') {
+  if (/^(boolean|tinyint\(1\)|bit\(1\))/i.test(String(columnType || '').trim())) return 'BOOLEAN'
   const type = String(columnType || '').trim().toUpperCase().split(/[ (]/)[0]
   if (!type) return fallback
-  if (['DATE', 'DATETIME', 'TIMESTAMP'].includes(type)) return 'DATETIME'
+  if (type === 'DATE') return 'DATE'
+  if (['DATETIME', 'TIMESTAMP'].includes(type)) return 'DATETIME'
   if (['TINYINT', 'SMALLINT', 'MEDIUMINT', 'INT', 'INTEGER', 'BIGINT', 'BIT'].includes(type)) return 'INTEGER'
   if (['DECIMAL', 'NUMERIC', 'FLOAT', 'DOUBLE', 'REAL'].includes(type)) return 'DECIMAL'
   return 'STRING'
+}
+
+export function adaptFactorSourceFields(sourceFields, options = {}) {
+  return adaptFactorPhysicalFields(sourceFields.map(field => ({ code: field.columnName,
+    sourceFieldName: field.columnName, name: field.comment || field.columnName,
+    dataType: physicalFieldDataType(field.columnType), filterable: true, groupable: true, aggregatable: true
+  })), sourceFields, options)
 }
 
 export function isFactorPeriodField(field) {

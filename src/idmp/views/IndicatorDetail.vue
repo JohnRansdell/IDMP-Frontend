@@ -39,7 +39,10 @@
         <StatePanel v-else-if="versionError" type="error" title="公式读取失败" :description="versionError"><template #actions><el-button @click="selectVersion(selectedVersion)">重试</el-button></template></StatePanel>
         <div v-else-if="!selectedVersion" class="content-empty">暂无可查看的指标公式。</div>
         <template v-else>
-            <div v-if="readableFormula?.expression" class="formula-expression" :aria-label="readableFormula.displayExpression || readableFormula.expression">
+            <IndicatorFormulaExpression v-if="mathFormulaSupported" :formula="selectedVersion.formula" :factors="readableFormula?.factors || []">
+              <template #factor="{ id, text }"><el-tooltip :content="factorVersionTooltip(id)" placement="top" effect="light" :trigger="['hover', 'focus']" :show-after="180" popper-class="formula-factor-version-tooltip"><button type="button" class="formula-factor-link" :disabled="!!factorNavigationPending" @mouseenter="loadFormulaFactorVersion(id)" @focus="loadFormulaFactorVersion(id)" @click="openFactorEditor(id)">{{ text }}</button></el-tooltip></template>
+            </IndicatorFormulaExpression>
+            <div v-else-if="readableFormula?.expression" class="formula-expression" :aria-label="readableFormula.displayExpression || readableFormula.expression">
               <template v-if="formulaRatio">
                 <div class="formula-fraction">
                   <span class="formula-numerator"><template v-for="(segment, index) in formulaRatio.numerator" :key="index"><el-tooltip v-if="segment.factorVersionId" :content="factorVersionTooltip(segment.factorVersionId)" placement="top" effect="light" :trigger="['hover', 'focus']" :show-after="180" popper-class="formula-factor-version-tooltip"><button type="button" class="formula-factor-link" :disabled="!!factorNavigationPending" @mouseenter="loadFormulaFactorVersion(segment.factorVersionId)" @focus="loadFormulaFactorVersion(segment.factorVersionId)" @click="openFactorEditor(segment.factorVersionId)">{{ segment.text }}</button></el-tooltip><span v-else>{{ segment.text }}</span></template></span>
@@ -109,6 +112,8 @@ import { getStatusLabel } from '@/idmp/design/status'
 import { createPolicyReference, fetchMappingsByIndicatorVersion, fetchPolicyReferences, invalidatePolicyReference } from '@/idmp/api/modules/mappings'
 import { POLICY_REFERENCE_ROLES } from '@/idmp/api/adapters/mapping'
 import { splitFormulaFraction, splitFormulaLinks } from '@/idmp/utils/formulaLinks'
+import { arithmeticFormulaError } from '@/idmp/features/indicator/arithmeticFormula'
+import IndicatorFormulaExpression from '@/idmp/components/IndicatorFormulaExpression.vue'
 import { fetchFactorVersion } from '@/idmp/api/modules/factors'
 
 const route = useRoute()
@@ -154,6 +159,7 @@ const selectedVersionLabel = computed(() => {
 })
 const isPublishedVersion = computed(() => String(selectedVersion.value?.publicationStatus || selectedVersion.value?.status || '').toUpperCase() === 'PUBLISHED')
 const readableFormula = computed(() => selectedVersion.value?.formulaDefinition || null)
+const mathFormulaSupported = computed(() => !arithmeticFormulaError(selectedVersion.value?.formula?.root))
 const formulaWarnings = computed(() => readableFormula.value?.warnings?.length ? readableFormula.value.warnings
   : readableFormula.value?.expression ? [] : ['该版本暂无可读公式定义'])
 const formulaRatio = computed(() => splitFormulaFraction(selectedVersion.value?.formula, readableFormula.value))
@@ -207,6 +213,10 @@ async function openFactorEditor(versionId) {
 }
 const formulaNotes = computed(() => {
   const rules = readableFormula.value?.rules || []
+  if (mathFormulaSupported.value) {
+    const divisions = rules.filter(rule => rule.startsWith('除法 '))
+    return divisions.length === 1 ? divisions.map(rule => rule.slice(rule.lastIndexOf('：') + 1)) : divisions
+  }
   if (!formulaRatio.value) return rules.filter(rule => rule.startsWith('展示值保留 '))
   return rules.filter(rule => rule.startsWith('展示值保留 ') || rule.startsWith('除法 '))
     .map(rule => rule.startsWith('除法 ') ? rule.slice(rule.lastIndexOf('：') + 1) : rule.replace(/^展示值/, ''))
