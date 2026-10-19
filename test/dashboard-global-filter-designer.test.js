@@ -9,7 +9,7 @@ import { deriveDependentFilterOptions, queryWidgetDataset, queryWidgetDatasetWit
 import { compileWidgetData } from '../src/idmp/features/dashboard/bindingEngine.js'
 import { normalizeDashboardSchema } from '../src/idmp/features/dashboard/schema.js'
 import { persistDashboardSchema, recoverDashboardSchema } from '../src/idmp/features/dashboard/persistence.js'
-import { createQualitySafetyDemoSchema } from '../src/idmp/features/dashboard/acceptanceExample.js'
+import { createQualitySafetyDemoSchema } from './fixtures/frontend/acceptanceExample.js'
 
 const rows = [
   { department: '呼吸内科', disease: '肺炎', indicatorValue: 4 },

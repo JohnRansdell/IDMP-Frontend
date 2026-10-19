@@ -1,5 +1,5 @@
-import { normalizeDashboardSchema } from './schema.js'
-import { createGlobalFilterDefinition } from './globalFilterDesignerModel.js'
+import { normalizeDashboardSchema } from '../../../src/idmp/features/dashboard/schema.js'
+import { createGlobalFilterDefinition } from '../../../src/idmp/features/dashboard/globalFilterDesignerModel.js'
 
 const binding = (dimensions, measures, series = [], filters = []) => ({ dataset: 'acceptance', dimensions: dimensions.map(field => ({ field })), measures: measures.map(field => typeof field === 'string' ? ({ field, aggregation: 'avg' }) : field), series: series.map(field => ({ field })), filters, sort: [] })
 const selectField = (id, label) => ({ id, label, filterDataType: 'string', preferredFilterType: 'multi-select', filterTypes: ['select', 'multi-select'] })

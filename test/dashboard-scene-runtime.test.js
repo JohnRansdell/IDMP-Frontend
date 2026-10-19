@@ -1,8 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { findLocalScene, shouldConfirmDashboardSceneSwitch } from '../src/idmp/features/dashboard/sceneRegistry.js'
-import { dashboardDemoPolicy, shouldUseDashboardDemoFallback } from '../src/idmp/features/dashboard/demoPolicy.js'
+import { findLocalScene } from './fixtures/frontend/sceneRegistry.js'
+import { shouldConfirmDashboardSceneSwitch } from '../src/idmp/features/dashboard/sceneSwitch.js'
+import { dashboardDemoPolicy, shouldUseDashboardDemoFallback } from './fixtures/frontend/demoPolicy.js'
 
 test('viewer scene changes never receive a dirty-dialog guard', () => {
   assert.equal(shouldConfirmDashboardSceneSwitch({ isEditing: false, dirty: false }), false)

@@ -7,7 +7,6 @@
         <span class="data-source-badge" :class="{ 'is-live': dashboardStatus === 'ready' }">
           {{ dashboardSourceLabel }}
         </span>
-        <span v-if="dashboardStatus === 'demo'" class="data-source-badge" role="status">演示数据</span>
         <el-tooltip v-if="hasUnpublishedDashboardDraft" content="当前展示已发布版本。此前保存的草稿仍在，进入编辑看板可继续修改或发布。" placement="bottom">
           <span class="dashboard-draft-badge" role="status" tabindex="0">有未发布草稿</span>
         </el-tooltip>
@@ -27,50 +26,42 @@
           <el-button :icon="Close" @click="exitDashboardEdit">退出编辑</el-button>
           <el-button data-testid="dashboard-save" type="primary" :icon="Check" @click="saveDashboardLayout">保存布局</el-button>
         </template>
-        <el-button v-if="!isEditing" data-testid="dashboard-edit" type="primary" :icon="Edit" :loading="dashboardEditLoading" @click="startDashboardEdit">{{ hasUnpublishedDashboardDraft ? '编辑草稿' : '编辑看板' }}</el-button>
-        <el-button v-if="dashboardStatus === 'unpublished'" @click="loadDashboard">重新加载</el-button>
+        <el-button v-if="isRemoteDashboard()" data-testid="dashboard-edit" type="primary" :icon="Edit" :loading="dashboardEditLoading" :disabled="dashboardDeleting || dashboardLoading" @click="startDashboardEdit">{{ hasUnpublishedDashboardDraft ? '编辑草稿' : '编辑看板' }}</el-button>
+        <el-button v-if="isRemoteDashboard()" data-testid="dashboard-delete" type="danger" plain :icon="Delete" :loading="dashboardDeleting" :disabled="dashboardEditLoading || dashboardLoading" @click="deleteCurrentDashboard">删除看板</el-button>
+        <el-button v-if="dashboardStatus === 'unpublished'" @click="loadDashboard()">重新加载</el-button>
       </template>
     </PageHeader>
 
-    <el-alert
-      v-if="dashboardRecovery.status === DASHBOARD_RECOVERY_STATUS.INVALID_SCHEMA"
-      type="error"
-      :closable="false"
-      show-icon
-      title="已保存的看板配置无法恢复"
-      description="原始本地数据仍被保留，当前仅展示安全回退内容；保存前请确认是否要覆盖该数据。"
-    />
-
     <StatePanel
-      v-if="dashboardStatus === 'loading'"
+      v-if="!isEditing && dashboardStatus === 'loading'"
       type="loading"
       title="正在加载质量看板"
       description="正在读取已发布看板定义和当前筛选条件下的正式结果。"
     />
     <StatePanel
-      v-else-if="dashboardStatus === 'select'"
+      v-else-if="!isEditing && dashboardStatus === 'select'"
       type="empty"
       title="请选择场景看板"
       description="请先从页面顶部的场景选择器中选择一个看板，选中后会自动加载对应内容。"
     />
     <StatePanel
-      v-else-if="dashboardStatus === 'error'"
-      type="error"
-      title="质量看板加载失败"
-      :description="dashboardLoadMessage || '未展示演示数据，请检查后端看板是否已发布后重试。'"
+      v-else-if="!isEditing && ['error', 'legacy-mock', 'no-dashboards'].includes(dashboardStatus)"
+      :type="dashboardStatus === 'error' ? 'error' : 'empty'"
+      :title="dashboardStatus === 'legacy-mock' ? '旧演示看板需要重新配置' : dashboardStatus === 'no-dashboards' ? '暂无服务端看板' : '质量看板加载失败'"
+      :description="dashboardLoadMessage || '请检查看板配置和接口状态后重试。'"
     >
       <template #actions>
         <el-button type="primary" @click="retryRemoteDashboardCatalog">重新加载</el-button>
-        <el-button v-if="remoteCatalogIsEmpty" @click="newDashboardForm('blank')">创建服务端看板</el-button>
+        <el-button v-if="remoteCatalogIsEmpty || dashboardStatus === 'legacy-mock'" @click="newDashboardForm('blank')">创建服务端看板</el-button>
       </template>
     </StatePanel>
     <StatePanel
-      v-else-if="dashboardStatus === 'empty'"
+      v-else-if="!isEditing && dashboardStatus === 'empty'"
       type="empty"
       title="当前条件暂无正式结果"
-      description="后端已返回看板，但当前统计周期和范围没有可展示的正式数据。"
+      description="已读取看板配置，当前统计周期和范围暂无正式结果。仍可编辑配置或删除看板。"
     >
-      <template #actions><el-button @click="loadDashboard">重新加载</el-button></template>
+      <template #actions><el-button @click="loadDashboard()">重新加载</el-button></template>
     </StatePanel>
     <StatePanel
       v-else-if="dashboardStatus === 'unpublished' && !isEditing"
@@ -79,7 +70,7 @@
       description="当前仅存在草稿配置，请进入编辑模式保存并发布后查看正式数据。"
     />
 
-    <template v-else-if="dashboardStatus === 'ready' || dashboardStatus === 'demo' || (dashboardStatus === 'unpublished' && isEditing)">
+    <template v-else-if="isEditing || dashboardStatus === 'ready'">
     <section v-if="!isEditing && useSchemaViewer" class="dashboard-schema-viewer">
       <section class="dashboard-canvas-frame">
         <div class="dashboard-toolbar" aria-label="看板查询条件">
@@ -114,7 +105,7 @@
               </div>
             </el-popover>
           </div>
-          <DashboardFilterBar class="dashboard-toolbar__filters" compact :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" @change="filterRuntimeValues = $event" />
+          <DashboardFilterBar class="dashboard-toolbar__filters" compact :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" :errors-by-id="remoteFilterOptionErrors" :loading-by-id="remoteFilterOptionsLoading" @retry="loadRemoteFilterOptions" @change="filterRuntimeValues = $event" />
         </div>
         <DashboardContextBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :interactions="[]" :drill-states="drillRuntimeState" :widgets="viewerWidgets" @clear-filters="filterRuntimeValues = initialFilterValues(globalFilterDefinitions)" @clear-drills="clearAllWidgetDrills" />
         <DashboardCanvas
@@ -175,10 +166,9 @@
             <el-button data-testid="dashboard-board-menu" aria-label="看板菜单">看板 ▾</el-button>
             <template #dropdown><el-dropdown-menu>
               <el-dropdown-item disabled>当前：{{ currentDashboardName }}</el-dropdown-item>
-              <el-dropdown-item v-for="item in dashboardMenuCommands" :key="item.id" :command="item.id" :divided="item.divided" :disabled="item.id === 'delete' && currentDashboardProtected">{{ item.label }}</el-dropdown-item>
+              <el-dropdown-item v-for="item in dashboardMenuCommands" :key="item.id" :command="item.id" :divided="item.divided" :disabled="dashboardDeleting || (item.id === 'delete' && currentDashboardProtected)">{{ item.label }}</el-dropdown-item>
             </el-dropdown-menu></template>
           </el-dropdown>
-          <el-button v-if="canRestoreQualitySafetyDemo" data-testid="dashboard-restore-quality-safety-demo" @click="restoreQualitySafetyDemoLayout">恢复演示布局</el-button>
           <el-button v-if="isRemoteDashboard()" @click="openDashboardHistory">版本历史</el-button>
           <el-button data-testid="dashboard-preview" @click="studioPreview = true">预览</el-button>
           <el-button data-testid="dashboard-undo" title="撤销上一步编辑" :disabled="!canUndo" @click="undoDashboardEdit">撤销</el-button>
@@ -200,19 +190,11 @@
           <el-option-group v-if="catalogIndicatorSources.length" label="已发布指标">
             <el-option v-for="source in catalogIndicatorSources" :key="source.code" :label="source.name" :value="source.code" />
           </el-option-group>
-          <el-option-group v-if="dashboardStatus === 'demo'" label="验收数据 / 演示数据">
-            <el-option v-for="source in acceptanceIndicatorSources" :key="source.code" :label="source.name" :value="source.code" />
-          </el-option-group>
-          <el-option-group v-if="dashboardStatus === 'demo' && visibleDashboardIndicatorSources.length" :label="dashboardStatus === 'demo' ? '当前看板演示指标' : '正式看板汇总指标'">
+          <el-option-group v-if="visibleDashboardIndicatorSources.length" label="正式看板汇总指标">
             <el-option v-for="source in visibleDashboardIndicatorSources" :key="source.code" :label="source.name" :value="source.code" />
           </el-option-group>
         </el-select>
         <p v-if="suggestDesignerWidgetPeriod(selectedDataCode)" class="dashboard-source-period-note" role="status">该指标在当前看板周期无数据。添加后仅新组件使用 {{ suggestDesignerWidgetPeriod(selectedDataCode).periodStart.slice(0, 7) }} 的独立周期。</p>
-        <section v-if="selectedDataSource?.code === UAT_COMPOSITE_SOURCE_CODE" class="dashboard-acceptance-source" data-testid="dashboard-acceptance-source">
-          <strong>固定验收数据</strong><span>2026 Q3 · 18 条记录</span><el-button text type="primary" @click="acceptanceDataDialog = true">查看数据</el-button>
-        </section>
-        <p v-else-if="selectedDataSource?.origin === 'acceptance'" class="dashboard-acceptance-source">验收数据 / 演示数据，不代表医院真实业务数据。</p>
-        <p v-if="dashboardStatus === 'demo'" class="dashboard-demo-source" role="status">演示数据：用于功能预览，不是医院真实业务数据。</p>
         <section v-for="group in groupedWidgetLibrary" :key="group.name" class="studio-library-group" :aria-label="group.name">
           <h3>{{ group.name }}</h3>
           <StudioHoverPreview v-for="item in group.items" :key="item.type" :widget-item="item" :disabled="drawPlacementMode || Boolean(pendingLibraryWidget)">
@@ -257,7 +239,7 @@
           </label>
           <span class="dashboard-designer-period__hint">组件默认继承此周期；独立周期可在组件“数据”中调整。</span>
         </div>
-        <DashboardFilterBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" @change="filterRuntimeValues = $event" />
+        <DashboardFilterBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" :errors-by-id="remoteFilterOptionErrors" :loading-by-id="remoteFilterOptionsLoading" @retry="loadRemoteFilterOptions" @change="filterRuntimeValues = $event" />
         <DashboardContextBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :interactions="activeInteractionFilters" :drill-states="drillRuntimeState" :widgets="designerWidgets" @clear-filters="filterRuntimeValues = initialFilterValues(globalFilterDefinitions)" @clear-interactions="clearAllInteractionFilters" @clear-drills="clearAllWidgetDrills" />
         <div v-if="!designerWidgets.length && !pendingLibraryWidget" class="studio-empty">
           <span aria-hidden="true">▦</span><h2>创建你的第一个看板组件</h2><p>从左侧选择指标与组件，开始构建分析看板。</p>
@@ -427,7 +409,7 @@
       </div>
       <footer class="studio-status"><span>{{ designerWidgets.length }} 个组件 · {{ activeDesignerWidget ? '已选中 ' + getWidgetTitle(activeDesignerWidget) : '未选中组件' }}</span><span>拖动调整位置 · 右下角调整大小</span></footer>
       <el-dialog v-model="studioPreview" title="看板预览" width="88%" destroy-on-close>
-        <DashboardFilterBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" @change="filterRuntimeValues = $event" />
+        <DashboardFilterBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" :errors-by-id="remoteFilterOptionErrors" :loading-by-id="remoteFilterOptionsLoading" @retry="loadRemoteFilterOptions" @change="filterRuntimeValues = $event" />
         <DashboardContextBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :interactions="activeInteractionFilters" :drill-states="drillRuntimeState" :widgets="designerWidgets" @clear-filters="filterRuntimeValues = initialFilterValues(globalFilterDefinitions)" @clear-interactions="clearAllInteractionFilters" @clear-drills="clearAllWidgetDrills" />
         <div class="dashboard-preview-frame">
         <DashboardCanvas v-if="studioPreview" :style="dashboardCanvasStyle" :widgets="previewWidgets" :columns="24" :float="editingDashboardSchema?.layout?.float === true" :editable="false">
@@ -446,14 +428,9 @@
         </div>
         <template #footer><el-button @click="dashboardMenuDialog = false">取消</el-button><el-button type="primary" @click="createDashboardFromMenu">创建并编辑</el-button></template>
       </el-dialog>
-      <el-dialog v-model="acceptanceDataDialog" title="固定验收数据 · 2026 Q3" width="960px" destroy-on-close>
-        <p class="dashboard-acceptance-note">本数据仅用于 Dashboard 前端验收，不代表医院真实业务数据。</p>
-        <section class="dashboard-acceptance-summary"><strong>月度全院平均：</strong><span>2026-07 = 47.33</span><span>2026-08 = 48.83</span><span>2026-09 = 50.33</span><strong>2026-09 科室平均：</strong><span>呼吸内科 = 56</span><span>心内科 = 49</span><span>普外科 = 46</span></section>
-        <el-table :data="dashboardAcceptanceRows" size="small" max-height="440"><el-table-column prop="month" label="month" width="100" /><el-table-column prop="department" label="department" width="100" /><el-table-column prop="disease" label="disease" width="100" /><el-table-column prop="scene" label="scene" width="125" /><el-table-column prop="indicatorCategory" label="indicatorCategory" width="120" /><el-table-column prop="numerator" label="numerator" /><el-table-column prop="denominator" label="denominator" /><el-table-column prop="indicatorValue" label="indicatorValue" /></el-table>
-      </el-dialog>
     </div>
     </template>
-    <el-dialog v-if="dashboardStatus === 'error'" v-model="dashboardMenuDialog" title="新建服务端看板" width="520px" destroy-on-close>
+    <el-dialog v-if="['error', 'legacy-mock', 'no-dashboards'].includes(dashboardStatus) && !isEditing" v-model="dashboardMenuDialog" title="新建服务端看板" width="520px" destroy-on-close>
       <div class="dashboard-create-form">
         <label>名称<input v-model="dashboardCreateForm.name" maxlength="80" /></label>
         <label>描述<textarea v-model="dashboardCreateForm.description" maxlength="300" /></label>
@@ -522,7 +499,7 @@ import { compareDashboardGridMembership } from '@/idmp/features/dashboard/gridMe
 import { createWidgetBindingDatasets, numericValue } from '@/idmp/features/dashboard/fieldCatalog.js'
 import { bindingKind, emptyBinding } from '@/idmp/features/dashboard/bindingEngine.js'
 import { resolveDrillHierarchy } from '@/idmp/features/dashboard/drillDown.js'
-import { departmentFilterOptions, MORTALITY_SOURCE } from '@/idmp/features/dashboard/formalGlobalFilters.js'
+import { annotateDepartmentFilterFields, departmentSelectionCodes, isDepartmentFilterField, loadDepartmentCodeOptions, resolveGlobalFilterField } from '@/idmp/features/dashboard/departmentFilters.js'
 import { singleIndicatorTemplatePlan } from '@/idmp/features/dashboard/templateBinding.js'
 import { createDefaultBinding } from '@/idmp/features/dashboard/smartDefaultBinding.js'
 import { createMultiIndicatorDataset, multiIndicatorMeasureField, normalizeIndicatorBindings } from '@/idmp/features/dashboard/multiIndicator.js'
@@ -536,11 +513,10 @@ import {
 } from '@/idmp/api/modules/analysisDashboard'
 import {
   applyDefaultDashboardBindings, dashboardDataSourceToFrontend, dashboardDetailMeta,
-  dashboardDetailToSchema, dashboardFieldsToFrontend, dashboardSummaryToCatalogEntry,
-  isMockDashboardDetail, schemaToDashboardPayload, schemaToMockDashboardPayload,
+  dashboardDetailToSchema, dashboardDetailToEditableSchema, dashboardFieldsToFrontend, dashboardSummaryToCatalogEntry,
+  isMockDashboardDetail, schemaToDashboardPayload,
   currentPublishedDashboardDataSources, selectDashboardVersion, sortDashboardDataSourcesByIndicatorCreatedAt, widgetResultToDataset
 } from '@/idmp/api/adapters/dashboard'
-import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
 import { fetchWarnings } from '@/idmp/api/modules/warnings'
 import { fetchIndicatorAnalysis, fetchIndicatorVersion, fetchIndicators } from '@/idmp/api/modules/indicators'
 import { deriveDrillPathResultIds } from '@/idmp/api/adapters/drill'
@@ -549,53 +525,40 @@ import { initialBackendChartNavigation, loadBackendChartLevel, loadBackendChartR
 import { collectDepartmentNames, departmentIdentity, normalizeDepartmentDataset } from '@/idmp/features/dashboard/dimensionNames.js'
 import { explainComparisonAvailability } from '@/idmp/features/dashboard/comparisonAvailability.js'
 import { normalizePage } from '@/idmp/api/adapters/warning'
-import { dashboardTrend, dashboardWarnings as mockDashboardWarnings } from '@/idmp/data/demo'
-import { mockDashboardDepartmentRanking, mockIndicatorDataSources } from '@/idmp/features/dashboard/mockData'
-import { dashboardAcceptanceRows, dashboardAcceptanceSources } from '@/idmp/features/dashboard/acceptanceData.js'
-import { applyMortalityReadonlyChain } from '@/idmp/features/dashboard/mortalityAdapter'
 import {
-  DASHBOARD_CODE,
   DASHBOARD_DESIGN_WIDTH,
-  DASHBOARD_LAYOUT_STORAGE_KEY,
   widgetTypeOptions
 } from '@/idmp/features/dashboard/constants'
-import { findLocalSceneByDashboardId, shouldConfirmDashboardSceneSwitch, visibleDemoSceneDashboards } from '@/idmp/features/dashboard/sceneRegistry.js'
-import { canApplyDashboardLoad, canRefreshRemoteDashboard, createDashboardSelectorOptions, shouldSkipRemoteDashboardBootstrap } from '@/idmp/features/dashboard/dashboardIdentity.js'
-import { dashboardDemoPolicy, shouldUseDashboardDemoFallback } from '@/idmp/features/dashboard/demoPolicy.js'
+import { shouldConfirmDashboardSceneSwitch } from '@/idmp/features/dashboard/sceneSwitch.js'
+import { canApplyDashboardLoad, canRefreshRemoteDashboard } from '@/idmp/features/dashboard/dashboardIdentity.js'
 import { createDashboardEditingSnapshot } from '@/idmp/features/dashboard/editSession.js'
 import { buildPublishedIndicatorAnalysisQuery, buildPublishedIndicatorTrendPreviewQuery, createPublishedDashboardPeriodOptions, dateRangeForMonths, defaultPublishedDashboardPeriodRange, resolvePublishedDashboardPeriod, resolvePublishedDashboardPeriodRange, schemaPublishedIndicatorSourceCodes, suggestIndependentWidgetPeriod } from '@/idmp/features/dashboard/publishedIndicatorRuntime.js'
 import { dashboardWidgetResultShape, isPeriodField } from '@/idmp/features/dashboard/periodFields.js'
 import { dashboardActiveId, dashboardRequestedId, dashboardSceneCode, designerImmersive, notifyDashboardCatalogChanged } from '@/idmp/layout/shellState.js'
-import { createQualitySafetyDemoSchema } from '@/idmp/features/dashboard/acceptanceExample.js'
 import { createMetricGroupConfig, duplicateMetricGroupItem, METRIC_GROUP_ADD_SELECTION, metricGroupItemWidget, metricGroupSourceCodes, removeMetricGroupItem, reorderMetricGroupItem } from '@/idmp/features/dashboard/metricGroup.js'
 import { createWarningWidgetConfig, normalizeWarningWidgetConfig, warningEventToDashboardItem, warningWidgetQuery } from '@/idmp/features/dashboard/warningWidget.js'
 import { widgetLibraryReadiness } from '@/idmp/features/dashboard/widgetGuidance.js'
-import { canRestoreQualitySafetyDemo as canRestoreQualitySafetyDemoEntry, createQualitySafetyDemoRestoreResult } from '@/idmp/features/dashboard/qualitySafetyDemoRestore.js'
 import { applyGlobalFilterScope, removeGlobalFilter } from '@/idmp/features/dashboard/globalFilterDesignerModel.js'
 import { resolveCompatibleGlobalFilterWidgetIds } from '@/idmp/features/dashboard/globalFilterCompatibility.js'
 import {
   getDashboardSchemaStorageKey,
-  migrateDashboardSchema,
   normalizeDashboardSchema,
   validateDashboardSchema,
   getDefaultGridLayout,
-  mergeWidgetMetadataAndLayout,
   normalizeWidgetMetadata,
   synchronizeDashboardGridLayout,
   changeDashboardGridColumns,
   updateDashboardWidget,
   clonePersistableValue
 } from '@/idmp/features/dashboard/schema'
-import { DASHBOARD_RECOVERY_STATUS, persistDashboardSchema, recoverDashboardSchema } from '@/idmp/features/dashboard/persistence'
-import { BUILT_IN_DASHBOARD_IDS, DASHBOARD_STUDIO_MENU_COMMANDS, duplicateLocalDashboard, removeLocalDashboard, renameLocalDashboard } from '@/idmp/features/dashboard/catalog.js'
+import { DASHBOARD_STUDIO_MENU_COMMANDS } from '@/idmp/features/dashboard/catalog.js'
 import { DASHBOARD_UNSAVED_MESSAGE, handleDashboardBeforeUnload, shouldProtectDashboardNavigation } from '@/idmp/features/dashboard/navigationProtection'
-import { getWidgetGridConstraints, legacyPixelLayoutToGrid } from '@/idmp/features/dashboard/gridLayout'
+import { getWidgetGridConstraints } from '@/idmp/features/dashboard/gridLayout'
 import { clearWidgetSelection, nextWidgetSelection, nextMarqueeSelection, alignSelectedLayout, distributeSelectedLayout } from '@/idmp/features/dashboard/layoutOperations.js'
 import { dashboardBreakpointForWidth, deriveResponsiveLayout, responsiveColumns } from '@/idmp/features/dashboard/responsiveLayout.js'
 import { applyWidgetLayoutToCanvas, gridWidthToPercentage, percentageToGridWidth, validatePreciseLayout } from '@/idmp/features/dashboard/preciseLayout.js'
 import { BUILT_IN_LAYOUT_TEMPLATES, applyLayoutTemplateToDashboard, createLayoutTemplateFromDashboard, deleteLocalLayoutTemplate, readLocalLayoutTemplates, saveLocalLayoutTemplate, validateLayoutTemplate } from '@/idmp/features/dashboard/layoutTemplates.js'
 import {
-  createDefaultLayout,
   getWidgetVisualizationType,
   getWidgetVisualizationTypes,
   normalizeLayout
@@ -670,8 +633,6 @@ function onStudioPaneResizeKeydown(event, side) {
   const direction = side === 'library' ? 1 : -1
   setStudioPaneWidth(side, studioPaneWidth(side) + direction * (event.key === 'ArrowRight' ? 16 : -16))
 }
-const acceptanceDataDialog = ref(false)
-const UAT_COMPOSITE_SOURCE_CODE = 'UAT_QUALITY_SAFETY_Q3'
 const dashboardMenuDialog = ref(false)
 const dashboardHistoryVisible = ref(false)
 const dashboardHistoryLoading = ref(false)
@@ -685,7 +646,6 @@ const localLayoutTemplates = ref([])
 const layoutTemplates = computed(() => [...BUILT_IN_LAYOUT_TEMPLATES, ...localLayoutTemplates.value])
 const selectedTemplateId = ref(BUILT_IN_LAYOUT_TEMPLATES[0].id)
 const selectedTemplateDetail = computed(() => layoutTemplates.value.find(template => template.id === selectedTemplateId.value) || layoutTemplates.value[0] || null)
-const acceptanceIndicatorSources = dashboardAcceptanceSources
 const dashboardMenuCommands = DASHBOARD_STUDIO_MENU_COMMANDS
 const libraryItems = [
   { group: '指标', type: 'metric-group', name: '指标组', hint: '集中展示多个关键指标', icon: '▦' },
@@ -721,27 +681,14 @@ const activeDashboardId = dashboardActiveId
 const requestedDashboardId = dashboardRequestedId
 if (managedDashboardId.value) { activeDashboardId.value = managedDashboardId.value; requestedDashboardId.value = managedDashboardId.value }
 const loadedDashboardId = ref('')
-const activeScene = computed(() => findLocalSceneByDashboardId(activeDashboardId.value))
 const activeDashboardStorageKey = computed(() => getDashboardSchemaStorageKey(activeDashboardId.value))
 const currentDashboardId = computed(() => activeDashboardId.value)
-const currentDashboardName = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.name || activeScene.value?.name || '本地看板')
-const currentDashboardProtected = computed(() => !activeScene.value && !BUILT_IN_DASHBOARD_IDS.has(currentDashboardId.value) ? false : true)
-const dashboardDemoScenes = computed(() => visibleDemoSceneDashboards({
-  previewMode: import.meta.env.VITE_DASHBOARD_PREVIEW_MODE,
-  explicit: route.query.dashboardDemo === '1',
-  dashboardId: managedDashboardId.value
-}))
-const dashboardSelectorOptions = computed(() => [
-  ...localDashboardCatalog.value.map(item => ({ ...item, origin: 'remote' })),
-  ...dashboardDemoScenes.value.map(item => ({ id: item.dashboardId, name: `演示 · ${item.name}`, origin: 'system-scene' }))
-])
-const canRestoreQualitySafetyDemo = computed(() => canRestoreQualitySafetyDemoEntry({ isEditing: isEditing.value, dashboardId: activeDashboardId.value }))
-const periodOptions = ref([
-  { label: '全部期间', value: '' },
-  { label: '2025 年 12 月', value: '2025-12' }
-])
+const currentDashboardName = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.name || '未命名看板')
+const currentDashboardProtected = computed(() => false)
+const dashboardSelectorOptions = computed(() => localDashboardCatalog.value.map(item => ({ ...item, origin: 'remote' })))
+const periodOptions = ref([])
 const departmentOptions = [{ label: '全院', value: '' }]
-const period = ref('2025-12')
+const period = ref('')
 const remotePeriodRange = ref([])
 const remotePeriodDraft = ref([])
 const remoteQueryLoading = ref(false)
@@ -775,6 +722,7 @@ const designerCanvasRef = ref()
 const viewerCanvasRef = ref()
 const isEditing = ref(false)
 const dashboardEditLoading = ref(false)
+const dashboardDeleting = ref(false)
 const selectedWidgetIds = ref([])
 const primarySelectedWidgetId = ref('')
 const drawPlacementMode = ref(false)
@@ -795,7 +743,7 @@ const selectionHasLockedWidget = computed(() => designerWidgets.value.some(widge
 const selectedDataCode = ref('')
 let selectedDataSourceManuallySelected = false
 const addWidgetType = ref('kpi')
-const indicatorDataSources = ref(cloneDashboardSources(mockIndicatorDataSources))
+const indicatorDataSources = ref([])
 const catalogIndicatorSources = ref([])
 const remoteWidgetDatasets = ref({})
 const remoteMultiIndicatorDatasets = ref({})
@@ -810,6 +758,8 @@ const designerPeriodOptions = computed(() => {
 })
 const viewerPeriodOptions = computed(() => isFormalRemoteDashboard.value ? periodOptions.value : designerPeriodOptions.value)
 const remoteFilterOptions = ref({})
+const remoteFilterOptionErrors = ref({})
+const remoteFilterOptionsLoading = ref({})
 const remoteDashboardMeta = ref(null)
 const remoteDashboardIsMock = ref(false)
 const isFormalRemoteDashboard = computed(() => Boolean(remoteDashboardMeta.value?.dashboardId)
@@ -817,14 +767,12 @@ const isFormalRemoteDashboard = computed(() => Boolean(remoteDashboardMeta.value
   && !remoteDashboardIsMock.value)
 const remoteCatalogIsEmpty = computed(() => localDashboardCatalog.value.length === 0)
 // The eager filter watcher evaluates bindingDatasets during setup, so this source catalog must exist first.
-const visibleDashboardIndicatorSources = computed(() => dashboardStatus.value === 'demo'
-  ? indicatorDataSources.value
-  : indicatorDataSources.value.filter(source => source.origin === 'backend'))
+const visibleDashboardIndicatorSources = computed(() => indicatorDataSources.value.filter(source => source.origin === 'backend'))
 const availableIndicatorSources = computed(() => {
-  const sources = [...(dashboardStatus.value === 'demo' ? acceptanceIndicatorSources : []), ...visibleDashboardIndicatorSources.value, ...catalogIndicatorSources.value]
+  const sources = [...visibleDashboardIndicatorSources.value, ...catalogIndicatorSources.value]
   return [...new Map(sources.map(source => [source.code, source])).values()]
 })
-const selectableIndicatorSources = computed(() => dashboardStatus.value === 'demo' ? availableIndicatorSources.value : catalogIndicatorSources.value)
+const selectableIndicatorSources = computed(() => catalogIndicatorSources.value)
 const indicatorCatalogLoading = ref(false)
 const indicatorCatalogError = ref('')
 let indicatorCatalogRequest = null
@@ -907,12 +855,11 @@ const viewerWidgets = computed(() => deriveResponsiveLayout((dashboardSchema.val
 // Responsive derivation remains a Viewer concern and no longer creates a second
 // preview layout that can diverge from the active Designer schema.
 const previewWidgets = computed(() => designerWidgets.value)
-const dashboardRecovery = ref({ status: DASHBOARD_RECOVERY_STATUS.NO_SCHEMA, schema: null, raw: null, error: null })
 const useSchemaViewer = computed(() => Boolean(dashboardSchema.value))
 const dashboardDefinition = ref(null)
 const dashboardQueryResult = ref(null)
 // Only data dependencies invalidate this catalog; selection/hover does not aggregate rows.
-const bindingDatasets = computed(() => new Map(availableIndicatorSources.value.map(source => [source.code, createWidgetBindingDatasets(source, { result: dashboardQueryResult.value, demo: dashboardStatus.value === 'demo', months: dashboardTrend.months })])))
+const bindingDatasets = computed(() => new Map(availableIndicatorSources.value.map(source => [source.code, createWidgetBindingDatasets(source, { result: dashboardQueryResult.value })])))
 function getBindingDatasets(widget) {
   const remote = remoteWidgetDatasets.value[String(widget?.id)]
   const indicatorBindings = normalizeIndicatorBindings(widget?.config?.indicatorBindings, widget)
@@ -1019,7 +966,14 @@ const globalFilterOptionSources = computed(() => availableIndicatorSources.value
   .filter(source => filterDatasets.value.some(dataset => dataset.sourceCode === source.code && dataset.fields.some(field => field.filterable)))
   .map(source => ({ code: source.code, name: source.name })))
 const dependentFilterOptions = computed(() => deriveDependentFilterOptions(filterDatasets.value, globalFilterDefinitions.value, filterRuntimeValues.value))
-const filterOptionsById = computed(() => ({ ...Object.fromEntries(dependentFilterOptions.value), ...remoteFilterOptions.value }))
+const filterOptionsById = computed(() => {
+  const options = { ...Object.fromEntries(dependentFilterOptions.value), ...remoteFilterOptions.value }
+  for (const definition of globalFilterDefinitions.value) {
+    // Raw row-derived codes are not display labels; wait for the paired name/code candidates.
+    if (isDepartmentFilterField(definition.field, filterCatalog.value) && !Object.hasOwn(remoteFilterOptions.value, definition.id)) options[definition.id] = []
+  }
+  return options
+})
 const currentDependentFilterOptions = computed(() => new Map([
   ...dependentFilterOptions.value,
   ...Object.entries(remoteFilterOptions.value).map(([id, options]) => [id, options.map(option => option && typeof option === 'object' ? option.value : option)])
@@ -1090,15 +1044,17 @@ function updateDashboardMetadata(field, value) {
     }
   }
   function isRemoteDashboard(id = activeDashboardId.value) {
-    return localDashboardCatalog.value.some(item => item.origin === 'remote' && String(item.id) === String(id)) || (String(id) === managedDashboardId.value && !findLocalSceneByDashboardId(id))
+    return localDashboardCatalog.value.some(item => item.origin === 'remote' && String(item.id) === String(id)) || (Boolean(id) && String(id) === managedDashboardId.value)
   }
 function dashboardTypeLabel(type) { return ({ 'hospital-overview': '全院概览', topic: '专题', scene: '场景', department: '科室', custom: '自定义' })[type] || '自定义' }
 function scopeLabel(scope) { return ({ hospital: '全院', department: '科室', personal: '个人' })[scope] || '全院' }
 async function retryRemoteDashboardCatalog() {
+  dashboardStatus.value = 'loading'
   try {
+    if (isRemoteDashboard()) { await loadDashboard(activeDashboardId.value); return }
     const remoteCatalog = await refreshDashboardCatalog()
     const dashboardId = remoteCatalog.find(item => String(item.id) === String(activeDashboardId.value))?.id || remoteCatalog[0]?.id
-    if (!dashboardId) throw new Error('服务端看板目录为空，请创建看板或联系管理员授权。')
+    if (!dashboardId) { dashboardLoadMessage.value = '暂无可用的服务端看板，请创建看板后继续。'; dashboardStatus.value = 'no-dashboards'; return }
     activeDashboardId.value = dashboardId
     requestedDashboardId.value = dashboardId
     loadDashboardSchema(dashboardId)
@@ -1141,21 +1097,15 @@ async function createDashboardFromMenu() {
     const { value } = await ElMessageBox.prompt('请输入新的看板名称', '重命名当前看板', { inputValue: currentDashboardName.value, inputPattern: /\S+/, inputErrorMessage: '名称不能为空', confirmButtonText: '保存', cancelButtonText: '取消' })
       if (isRemoteDashboard()) {
         const schema = normalizeDashboardSchema({ ...(editingDashboardSchema.value || dashboardSchema.value), name: value })
-        const payload = remoteDashboardIsMock.value
-          ? schemaToMockDashboardPayload(schema, { resourceVersion: remoteDashboardMeta.value?.resourceVersion })
-          : schemaToDashboardPayload(schema, { resourceVersion: remoteDashboardMeta.value?.resourceVersion, dataSources: availableIndicatorSources.value })
+        const payload = schemaToDashboardPayload(schema, { resourceVersion: remoteDashboardMeta.value?.resourceVersion, dataSources: availableIndicatorSources.value })
         const saved = await saveDashboard(currentDashboardId.value, payload)
         remoteDashboardMeta.value = dashboardDetailMeta(saved)
         dashboardSchema.value = saved?.version?.layout ? dashboardDetailToSchema(saved) : schema
         if (editingDashboardSchema.value) editingDashboardSchema.value = clonePersistableValue(dashboardSchema.value)
-      } else {
-        const renamed = renameLocalDashboard(currentDashboardId.value, value, localStorage)
-        dashboardSchema.value = renamed
-        if (editingDashboardSchema.value) editingDashboardSchema.value = clonePersistableValue(renamed)
-      }
+      } else throw new Error('请先选择服务端看板')
       await refreshDashboardCatalog()
     ElMessage.success('看板已重命名')
-  } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(`重命名失败：${error.message || '当前系统演示看板尚未保存为本地看板'}`) }
+  } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(`重命名失败：${error.message || '请先选择服务端看板'}`) }
 }
   async function copyCurrentDashboard() {
     try {
@@ -1163,29 +1113,47 @@ async function createDashboardFromMenu() {
         const copied = await copyDashboard(currentDashboardId.value, {})
         await refreshDashboardCatalog()
         await selectDashboard(dashboardDetailMeta(copied).dashboardId)
-      } else {
-        const copied = duplicateLocalDashboard(currentDashboardId.value, localStorage)
-        await refreshDashboardCatalog()
-        await openLocalDashboard(copied.id, { startEditing: true })
-      }
+      } else throw new Error('请先选择服务端看板')
     ElMessage.success('已创建看板副本')
   } catch (error) { ElMessage.error(`复制失败：${error.message || '请先保存当前看板'}`) }
 }
 async function deleteCurrentDashboard() {
-  if (currentDashboardProtected.value) return
+  if (currentDashboardProtected.value || dashboardDeleting.value || !isRemoteDashboard()) return
+  const targetDashboardId = currentDashboardId.value
+  const targetDashboardName = currentDashboardName.value
+  dashboardDeleting.value = true
   try {
-    await ElMessageBox.confirm(`删除后，“${currentDashboardName.value}”将不再出现在看板列表中，相关版本和组件会一并归档。`, '删除看板', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
-    if (isRemoteDashboard()) await deleteDashboard(currentDashboardId.value)
-    else removeLocalDashboard(currentDashboardId.value, localStorage)
-    await refreshDashboardCatalog()
-    finishDashboardEdit()
-    const nextDashboardId = localDashboardCatalog.value[0]?.id
-    if (nextDashboardId) await selectDashboard(nextDashboardId)
+    await ElMessageBox.confirm(`删除后，“${targetDashboardName}”将不再出现在看板列表中，相关版本和组件会一并归档。`, '删除看板', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
+    await deleteDashboard(targetDashboardId)
+    localDashboardCatalog.value = localDashboardCatalog.value.filter(item => String(item.id) !== String(targetDashboardId))
+    notifyDashboardCatalogChanged()
+    if (activeDashboardId.value === targetDashboardId) {
+      // Invalidate in-flight queries before exiting the editor; never refresh a deleted board.
+      dashboardAbortController?.abort()
+      dashboardLoadGeneration += 1
+      globalThis.clearTimeout(remoteFilterReloadTimer)
+      remoteDashboardMeta.value = null
+      dashboardDefinition.value = null
+      dashboardQueryResult.value = null
+      remoteWidgetDatasets.value = {}
+      remoteMultiIndicatorDatasets.value = {}
+      finishDashboardEdit()
+      activeDashboardId.value = ''
+      requestedDashboardId.value = ''
+      dashboardSchema.value = null
+      dashboardStatus.value = 'no-dashboards'
+      dashboardLoadMessage.value = ''
+    }
+    ElMessage.success('看板已删除')
+    try { await refreshDashboardCatalog() }
+    catch { ElMessage.warning('看板已删除，目录刷新失败，可重新加载目录。') }
+    if (!activeDashboardId.value) {
+      const nextDashboardId = localDashboardCatalog.value[0]?.id || ''
+      await router.replace({ query: { ...route.query, id: nextDashboardId || undefined } })
+      if (nextDashboardId) await selectDashboard(nextDashboardId)
+    }
   } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(`删除失败：${error.message || '未知错误'}`) }
-}
-async function openLocalDashboard(id, { startEditing = false } = {}) {
-  await selectDashboard(id)
-  if (startEditing && !isEditing.value) startDashboardEdit()
+  finally { dashboardDeleting.value = false }
 }
 async function selectDashboard(id) {
   if (!id || id === activeDashboardId.value) return
@@ -1229,7 +1197,7 @@ async function changeDesignerWidgetSource(code) {
     if (!current) return
     const datasets = !resolvedSource ? [] : resolvedSource.origin === 'dashboard-data-source'
       ? [{ id: 'backend', label: `${resolvedSource.name} · 正式结果`, fields: dashboardFieldsToFrontend(remoteFieldCatalog.value[resolvedSource.code] || []), rows: [] }]
-      : createWidgetBindingDatasets(resolvedSource, { result: dashboardQueryResult.value, demo: dashboardStatus.value === 'demo', months: dashboardTrend.months })
+      : createWidgetBindingDatasets(resolvedSource, { result: dashboardQueryResult.value })
     const templatePlan = resolvedSource ? singleIndicatorTemplatePlan(current, datasets) : null
     if (templatePlan && !templatePlan.binding) throw new Error('该指标没有可用的数值字段，请先生成正式计算结果。')
     const dataBinding = resolvedSource
@@ -1382,22 +1350,14 @@ const warningWidgetRuntime = ref({})
 let warningWidgetLoadGeneration = 0
 let warningWidgetAbortController = null
 const warningQueryWidgets = computed(() => (isEditing.value ? designerWidgets.value : viewerWidgets.value).filter(widget => widget.type === 'warnings'))
-const dashboardWarnings = computed(() => dashboardStatus.value === 'ready' ? [] : mockDashboardWarnings)
+const dashboardWarnings = computed(() => [])
 function getWidgetWarnings(widget) {
   if (widget?.type !== 'warnings') return dashboardWarnings.value
   const config = normalizeWarningWidgetConfig(widget.config?.warning)
-  if (dashboardStatus.value === 'demo') {
-    const severityToLevel = { CRITICAL: 'danger', HIGH: 'danger', MEDIUM: 'warning', LOW: 'info', INFO: 'info' }
-    return mockDashboardWarnings
-      .map(item => ({ ...item, status: 'OPEN', severity: item.level === 'danger' ? 'HIGH' : item.level === 'warning' ? 'MEDIUM' : 'INFO' }))
-      .filter(item => (!config.status || item.status === config.status) && (!config.severity || severityToLevel[config.severity] === item.level))
-      .slice(0, config.pageSize)
-  }
   return warningWidgetRuntime.value[String(widget.id)]?.records || []
 }
 function getWarningWidgetState(widget) {
   if (widget?.type !== 'warnings') return { status: 'ready', total: 0, error: '' }
-  if (dashboardStatus.value === 'demo') return { status: 'ready', total: getWidgetWarnings(widget).length, error: '' }
   if (dashboardStatus.value !== 'ready') return { status: 'idle', total: 0, error: '' }
   return warningWidgetRuntime.value[String(widget.id)] || { status: 'idle', total: 0, error: '' }
 }
@@ -1429,9 +1389,7 @@ watch(() => JSON.stringify([dashboardStatus.value, isEditing.value, warningQuery
 const departmentRanking = computed(() => {
   const rows = normalizeRanking(dashboardQueryResult.value?.departmentRanking, 'live')
   if (rows.length) return rows
-  return dashboardStatus.value === 'demo'
-    ? normalizeRanking(mockDashboardDepartmentRanking, 'mock')
-    : []
+  return []
 })
 
 const selectedDataSource = computed(() =>
@@ -1448,7 +1406,8 @@ const dashboardSourceLabel = computed(() => ({
   loading: '正在加载正式数据',
   ready: '正式接口数据',
   empty: '正式接口数据（暂无结果）',
-  demo: '演示数据',
+  'legacy-mock': '需要重新配置',
+  'no-dashboards': '暂无看板',
   error: '正式接口数据加载失败'
 }[dashboardStatus.value] || '正在加载正式数据'))
 
@@ -1516,7 +1475,7 @@ const visibleKpis = computed(() => visibleDashboardIndicatorSources.value.map(cr
 
 const trendTableRows = computed(() => {
   const rows = normalizeMonthlyTrend(dashboardQueryResult.value?.monthlyTrend)
-  return rows.length ? rows : dashboardTrend.months.map((period, index) => ({ period, value: dashboardTrend.mortality[index] }))
+  return rows
 })
 
 const trendOption = computed(() => ({
@@ -1763,7 +1722,7 @@ function widgetHasDrillTargets(widget) {
 }
 
 function dashboardDrillSource() {
-  return dashboardStatus.value === 'demo' ? 'mock' : 'live'
+  return 'live'
 }
 
 function getWidgetPieDrillSource(widget) {
@@ -2201,7 +2160,7 @@ function beginDashboardEdit(schema = dashboardSchema.value) {
   try {
     editingDashboardSchema.value = createDashboardEditingSnapshot(schema, loadDesignerSchema)
   } catch {
-    editingDashboardSchema.value = createEditingDashboardSchema(createDesignerWidgets(createDefaultLayout()))
+    editingDashboardSchema.value = createEditingDashboardSchema()
   }
   activeWidgetId.value = ''
   designerDrawerOpen.value = false
@@ -2215,8 +2174,7 @@ function beginDashboardEdit(schema = dashboardSchema.value) {
 }
 
 async function startDashboardEdit() {
-  if (dashboardEditLoading.value || isEditing.value) return
-  if (!isRemoteDashboard()) return beginDashboardEdit()
+  if (dashboardEditLoading.value || dashboardDeleting.value || isEditing.value || !isRemoteDashboard()) return
   const targetDashboardId = activeDashboardId.value
   dashboardEditLoading.value = true
   try {
@@ -2232,7 +2190,12 @@ async function startDashboardEdit() {
     remoteDashboardMeta.value = dashboardDetailMeta(workingDetail)
     remoteDashboardIsMock.value = isMockDashboardDetail(workingDetail)
     dashboardDefinition.value = workingDetail
-    beginDashboardEdit(applyDefaultDashboardBindings(dashboardDetailToSchema(workingDetail), remoteFieldCatalog.value))
+    const schema = dashboardDetailToSchema(workingDetail)
+    if (remoteDashboardIsMock.value) {
+      // Keep server identity and appearance; never carry fixture bindings into real queries.
+      beginDashboardEdit(dashboardDetailToEditableSchema(workingDetail))
+      ElMessage.info('旧演示组件已从本次编辑中清空，请添加真实指标组件，保存并发布后生效。')
+    } else beginDashboardEdit(applyDefaultDashboardBindings(schema, remoteFieldCatalog.value))
   } catch (error) {
     ElMessage.error(`读取看板草稿失败：${error.message || '未知错误'}`)
   } finally {
@@ -2344,7 +2307,7 @@ async function applyDashboardCardSurface({ surface, scope }) {
 
 async function publishCurrentDashboard() {
   if (!isRemoteDashboard()) return
-  if (dashboardDirty.value && !(await saveDashboardSchema())) return
+  if ((dashboardDirty.value || remoteDashboardIsMock.value) && !(await saveDashboardSchema())) return
   try {
     const published = await publishDashboard(activeDashboardId.value, remoteDashboardMeta.value?.resourceVersion)
     remoteDashboardMeta.value = dashboardDetailMeta(published)
@@ -2408,7 +2371,8 @@ function formatDashboardVersionTime(value) {
 
 function applyRemoteDashboardDetail(detail, fallbackSchema = null) {
   remoteDashboardMeta.value = dashboardDetailMeta(detail)
-  const schema = detail?.version?.layout ? dashboardDetailToSchema(detail) : fallbackSchema
+  remoteDashboardIsMock.value = isMockDashboardDetail(detail)
+  const schema = detail?.version?.layout ? dashboardDetailToEditableSchema(detail) : fallbackSchema
   if (!schema) return
   editingDashboardSchema.value = schema
   if (!remoteDashboardMeta.value.currentPublishedVersionId) dashboardSchema.value = schema
@@ -2450,9 +2414,7 @@ async function resolveDashboardSaveConflict(localSchema) {
   if (action !== 'cancel') return false
   const copied = await copyDashboard(activeDashboardId.value, {})
   const copiedMeta = dashboardDetailMeta(copied)
-  const payload = remoteDashboardIsMock.value
-    ? schemaToMockDashboardPayload(localSchema, { resourceVersion: copiedMeta.resourceVersion })
-    : schemaToDashboardPayload(localSchema, { resourceVersion: copiedMeta.resourceVersion, dataSources: availableIndicatorSources.value })
+  const payload = schemaToDashboardPayload(localSchema, { resourceVersion: copiedMeta.resourceVersion, dataSources: availableIndicatorSources.value })
   const saved = await saveDashboard(copiedMeta.dashboardId, payload)
   activeDashboardId.value = copiedMeta.dashboardId
   requestedDashboardId.value = copiedMeta.dashboardId
@@ -2478,11 +2440,11 @@ async function saveDashboardSchema() {
     const validation = validateDashboardSchema(schema)
     if (!validation.valid) throw new Error(validation.errors.join('；'))
     if (isRemoteDashboard()) {
-      const payload = remoteDashboardIsMock.value
-        ? schemaToMockDashboardPayload(schema, { resourceVersion: remoteDashboardMeta.value?.resourceVersion })
-        : schemaToDashboardPayload(schema, { resourceVersion: remoteDashboardMeta.value?.resourceVersion, dataSources: availableIndicatorSources.value })
+      const payload = schemaToDashboardPayload(schema, { resourceVersion: remoteDashboardMeta.value?.resourceVersion, dataSources: availableIndicatorSources.value })
       const saved = await saveDashboard(activeDashboardId.value, payload)
       remoteDashboardMeta.value = dashboardDetailMeta(saved)
+      remoteDashboardIsMock.value = false
+      dashboardStatus.value = remoteDashboardMeta.value.currentPublishedVersionId ? 'ready' : 'unpublished'
       const normalizedRemote = saved?.version?.layout ? dashboardDetailToSchema(saved) : schema
       editingDashboardSchema.value = normalizedRemote
       if (!remoteDashboardMeta.value.currentPublishedVersionId) dashboardSchema.value = normalizedRemote
@@ -2495,26 +2457,6 @@ async function saveDashboardSchema() {
       ElMessage.success(remoteDashboardMeta.value.currentPublishedVersionId
         ? '看板草稿已保存，发布后对查看者生效'
         : '看板配置已保存')
-      return true
-    }
-    if (activeScene.value) {
-      const saved = await createDashboard(schemaToMockDashboardPayload(schema))
-      const meta = dashboardDetailMeta(saved)
-      remoteDashboardMeta.value = meta
-      remoteDashboardIsMock.value = true
-      const normalizedRemote = dashboardDetailToSchema(saved)
-      activeDashboardId.value = meta.dashboardId
-      requestedDashboardId.value = meta.dashboardId
-      editingDashboardSchema.value = normalizedRemote
-      dashboardSchema.value = normalizedRemote
-      dashboardHistory.value = [clonePersistableValue(normalizedRemote)]
-      dashboardHistoryIndex.value = 0
-      dashboardDirty.value = false
-      saveState.value = 'saved'
-      lastSavedAt.value = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date())
-      await refreshDashboardCatalog()
-      dashboardStatus.value = 'unpublished'
-      ElMessage.success('演示看板已保存到服务端草稿，可继续发布')
       return true
     }
     throw new Error('当前看板无法保存到服务端。')
@@ -2547,115 +2489,27 @@ function showDashboardSchemaDiagnostic() {
 
 async function resetDashboardLayout() {
   if (!isEditing.value) return
-  editingDashboardSchema.value = createEditingDashboardSchema(createDesignerWidgets(createDefaultLayout()))
+  editingDashboardSchema.value = createEditingDashboardSchema()
   await reconcileDesignerCanvasLayout()
   activeWidgetId.value = ''
   markDashboardDirty()
 }
 
 function createBlankLocalSchema(dashboardId = activeDashboardId.value) {
-  const metadata = localDashboardCatalog.value.find(item => item.id === dashboardId)
-  return normalizeDashboardSchema({ version: 1, id: dashboardId, name: metadata?.name || findLocalSceneByDashboardId(dashboardId)?.name || '本地看板', dashboardType: metadata?.dashboardType || 'custom', category: metadata?.category || '', scope: metadata?.scope || 'personal', layout: { engine: 'gridstack', columns: 24, float: false }, widgets: [], globalFilters: [] })
+  const metadata = localDashboardCatalog.value.find(item => String(item.id) === String(dashboardId))
+  return normalizeDashboardSchema({ version: 1, id: dashboardId, name: metadata?.name || '未命名看板', dashboardType: metadata?.dashboardType || 'custom', layout: { engine: 'gridstack', columns: 24, float: false }, widgets: [], globalFilters: [] })
 }
-
-// The dedicated acceptance scene is a source-controlled fixture and does not
-// depend on a browser's saved layout.
-function createDemoSceneSchema(dashboardId = activeDashboardId.value) {
-  const scene = findLocalSceneByDashboardId(dashboardId)
-  return createQualitySafetyDemoSchema({ id: dashboardId, sceneCode: scene?.sceneCode || 'quality-safety' })
-}
-
 function resetDesignerVisualStyle() {
-  if (!activeWidgetId.value) return
-  updateDesignerWidget((widget) => ({ ...widget, config: { ...widget.config, style: resetWidgetVisualStyle(widget.config?.style) } }))
+  if (activeWidgetId.value) updateDesignerWidget(widget => ({ ...widget, config: { ...widget.config, style: resetWidgetVisualStyle(widget.config?.style) } }))
 }
 function loadDesignerSchema(dashboardId = activeDashboardId.value) {
-  const recovery = recoverDashboardSchema(localStorage, getDashboardSchemaStorageKey(dashboardId))
-  dashboardRecovery.value = recovery
-  if (recovery.status === DASHBOARD_RECOVERY_STATUS.VALID_CURRENT_SCHEMA) {
-    presentationMode.value = recovery.schema.presentation.defaultMode === 'presentation' ? 'presentation' : 'standard'
-    return recovery.schema
-  }
-  if (recovery.status === DASHBOARD_RECOVERY_STATUS.INVALID_SCHEMA) {
-    return createEditingDashboardSchema(createDesignerWidgets(createDefaultLayout()))
-  }
-  if (shouldSkipRemoteDashboardBootstrap(dashboardId)) return createBlankLocalSchema(dashboardId)
-
-  const legacy = readLegacyDashboardLayout()
-  const sourceLayout = legacy.length ? legacy : createDefaultLayout()
-  const gridLayout = legacyPixelLayoutToGrid(sourceLayout, { designWidth: DASHBOARD_DESIGN_WIDTH, columns: 24, cellHeight: 60 })
-  const migrated = migrateDashboardSchema({
-    id: dashboardId,
-    name: `${findLocalSceneByDashboardId(dashboardId)?.name || '医疗质量'}看板`,
-    layout: { engine: 'gridstack', columns: 24, float: false },
-    appearance: dashboardSchema.value?.appearance,
-    presentation: dashboardSchema.value?.presentation,
-    widgets: mergeWidgetMetadataAndLayout(sourceLayout, gridLayout)
-  }, { fromVersion: 'legacy-pixel-layout', toVersion: 1 })
-  if (legacy.length) dashboardRecovery.value = { status: DASHBOARD_RECOVERY_STATUS.MIGRATED_LEGACY_SCHEMA, schema: migrated, raw: null, error: null }
-  return migrated
+  return createBlankLocalSchema(dashboardId)
 }
-
-function createEditingDashboardSchema(widgets, dashboardId = activeDashboardId.value) {
-  if (shouldSkipRemoteDashboardBootstrap(dashboardId)) return createBlankLocalSchema(dashboardId)
-  const scene = findLocalSceneByDashboardId(dashboardId)
-  return normalizeDashboardSchema({
-    version: 1,
-    id: dashboardId,
-    name: `${scene?.name || '医疗质量'}看板`,
-    dashboardType: scene?.dashboardType || 'scene',
-    category: '本地场景看板',
-    sceneCode: scene?.sceneCode || '',
-    layout: { engine: 'gridstack', columns: 24, float: false },
-    appearance: dashboardSchema.value?.appearance,
-    presentation: dashboardSchema.value?.presentation,
-    widgets
-  })
+function createEditingDashboardSchema(widgets = [], dashboardId = activeDashboardId.value) {
+  return normalizeDashboardSchema({ ...createBlankLocalSchema(dashboardId), widgets })
 }
-
-function createDesignerWidgets(layout) {
-  const gridLayout = legacyPixelLayoutToGrid(layout, { designWidth: DASHBOARD_DESIGN_WIDTH, columns: 24, cellHeight: 60 })
-  return mergeWidgetMetadataAndLayout(layout, gridLayout)
-}
-
-function readLegacyDashboardLayout() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(DASHBOARD_LAYOUT_STORAGE_KEY) || 'null')
-    return Array.isArray(saved) ? normalizeLayout(saved, getDashboardIndicatorSource) : []
-  } catch {
-    return []
-  }
-}
-
 function loadDashboardSchema(dashboardId = activeDashboardId.value) {
-  if (findLocalSceneByDashboardId(dashboardId)) {
-    dashboardSchema.value = createDemoSceneSchema(dashboardId)
-    dashboardRecovery.value = { status: DASHBOARD_RECOVERY_STATUS.VALID_CURRENT_SCHEMA, schema: dashboardSchema.value, raw: null, error: null }
-    loadedDashboardId.value = dashboardId
-    return
-  }
-  const recovery = recoverDashboardSchema(localStorage, getDashboardSchemaStorageKey(dashboardId))
-  dashboardRecovery.value = recovery
-  if (recovery.status === DASHBOARD_RECOVERY_STATUS.VALID_CURRENT_SCHEMA) {
-    dashboardSchema.value = recovery.schema
-    presentationMode.value = recovery.schema.presentation.defaultMode === 'presentation' ? 'presentation' : 'standard'
-  } else if (shouldSkipRemoteDashboardBootstrap(dashboardId)) {
-    // A cataloged local dashboard is local-only. An empty widgets array is valid
-    // and is never treated as a missing dashboard or replaced with a demo seed.
-    dashboardSchema.value = createBlankLocalSchema(dashboardId)
-  } else {
-    // Preview seeds are session-only; disabling preview never leaves a persisted demo schema behind.
-    if (isDemoRuntime()) {
-      const scene = findLocalSceneByDashboardId(dashboardId)
-      const seed = scene?.sceneCode === 'quality-safety'
-        ? createQualitySafetyDemoSchema({ id: dashboardId, sceneCode: scene.sceneCode })
-        : createEditingDashboardSchema(createDesignerWidgets(createDefaultLayout()), dashboardId)
-      dashboardSchema.value = getDashboardDemoPolicy().persistDefaultSchema
-        ? persistDashboardSchema(localStorage, activeDashboardStorageKey.value, seed)
-        : seed
-      dashboardRecovery.value = { status: DASHBOARD_RECOVERY_STATUS.VALID_CURRENT_SCHEMA, schema: dashboardSchema.value, raw: null, error: null }
-    } else dashboardSchema.value = loadDesignerSchema(dashboardId)
-  }
+  dashboardSchema.value = createBlankLocalSchema(dashboardId)
   loadedDashboardId.value = dashboardId
 }
 
@@ -2684,74 +2538,13 @@ async function loadDashboard(targetDashboardId = activeDashboardId.value) {
   for (const [widgetId, generation] of remoteWidgetPreviewGenerations) remoteWidgetPreviewGenerations.set(widgetId, generation + 1)
   const generation = ++dashboardLoadGeneration
   const isCurrentLoad = () => canApplyDashboardLoad({ generation, latestGeneration: dashboardLoadGeneration, targetDashboardId, activeDashboardId: activeDashboardId.value })
-  if (!isRemoteDashboard(targetDashboardId) && !remotePeriodRange.value.length) {
-    remotePeriodRange.value = [period.value, period.value]
-    remotePeriodDraft.value = [period.value, period.value]
-  }
-  if (findLocalSceneByDashboardId(targetDashboardId)) {
-    if (!isCurrentLoad()) return
-    dashboardDefinition.value = null
-    dashboardQueryResult.value = null
-    remoteWidgetDatasets.value = {}
-    remoteMultiIndicatorDatasets.value = {}
-    indicatorDataSources.value = cloneDashboardSources(mockIndicatorDataSources)
-    selectedDataCode.value = selectedDataCode.value || indicatorDataSources.value[0]?.code || ''
-    dashboardStatus.value = 'demo'
-    dashboardLoadMessage.value = ''
-    return
-  }
-  if (isRemoteDashboard(targetDashboardId)) {
-    const controller = new AbortController()
-    dashboardAbortController = controller
-    return loadRemoteDashboard(targetDashboardId, isCurrentLoad, controller.signal)
-  }
-  if (shouldSkipRemoteDashboardBootstrap(targetDashboardId)) {
-    // Local dashboards only recover their Schema and use frontend sources. They
-    // must never request the quality-overview definition/query endpoints.
-    if (!isCurrentLoad()) return
-    dashboardDefinition.value = null
-    dashboardQueryResult.value = null
-    indicatorDataSources.value = cloneDashboardSources(mockIndicatorDataSources)
-    selectedDataCode.value = selectedDataCode.value || indicatorDataSources.value[0]?.code || ''
-    dashboardStatus.value = 'demo'
-    dashboardLoadMessage.value = ''
-    return
-  }
-  if (getDashboardDemoPolicy().skipDashboardBootstrap) {
-    if (!isCurrentLoad()) return
-    dashboardDefinition.value = null
-    dashboardQueryResult.value = null
-    applyDemoDashboard()
-    return
-  }
   const controller = new AbortController()
   dashboardAbortController = controller
-  dashboardStatus.value = 'loading'
-  dashboardLoadMessage.value = ''
-
-  try {
-    const [definition, queryResult] = await Promise.all([
-      fetchDashboardDefinition(DASHBOARD_CODE, { signal: controller.signal }),
-      queryDashboard(DASHBOARD_CODE, buildDashboardQuery(), { signal: controller.signal })
-    ])
-    if (controller.signal.aborted || !isCurrentLoad()) return
-
-    dashboardDefinition.value = definition
-    dashboardQueryResult.value = queryResult
-    indicatorDataSources.value = createDashboardSources(queryResult)
-    selectedDataCode.value = selectedDataCode.value || indicatorDataSources.value[0]?.code || ''
-    dashboardStatus.value = indicatorDataSources.value.length ? 'ready' : 'empty'
-  } catch (error) {
-    if (controller.signal.aborted || !isCurrentLoad()) return
-    dashboardDefinition.value = null
-    dashboardQueryResult.value = null
-    if (shouldUseDashboardDemoFallback(error, getDashboardDemoPolicy())) applyDemoDashboard()
-    else {
-      indicatorDataSources.value = []
-      dashboardStatus.value = 'error'
-      dashboardLoadMessage.value = formatDashboardLoadError(error)
-    }
-  }
+  indicatorDataSources.value = []
+  dashboardQueryResult.value = null
+  remoteWidgetDatasets.value = {}
+  remoteMultiIndicatorDatasets.value = {}
+  return loadRemoteDashboard(targetDashboardId, isCurrentLoad, controller.signal)
 }
 
 function formatDashboardLoadError(error) {
@@ -2761,64 +2554,6 @@ function formatDashboardLoadError(error) {
   const message = String(error?.message || '').trim()
   if (!path) return message || '服务端看板目录为空，请创建看板或联系管理员授权。'
   return `正式看板请求失败：${path}${statusLabel}${message ? `。${message}` : '。生产环境不会自动使用演示数据。'}`
-}
-
-function buildDashboardQuery() {
-  const [year, month] = String(period.value || '').split('-')
-  return {
-    year: year ? Number(year) : null,
-    month: month ? Number(month) : null,
-    deptCode: department.value || null
-  }
-}
-
-function createDashboardSources(result = {}) {
-  const summary = result?.summaryCards || {}
-  const trendData = trendTableRows.value.map((item) => item.value)
-  const departmentData = departmentRanking.value.map((item) => ({ name: item.department, value: item.rawValue }))
-  const labels = {
-    deathNum: '死亡人数',
-    dischargeNum: '出院人次',
-    outpatientNum: '门诊人次'
-  }
-  return Object.entries(labels)
-    .filter(([key]) => Number.isFinite(Number(summary[key]?.value ?? summary[key])))
-    .map(([key, fallbackName]) => {
-      const card = summary[key]
-      const rawValue = card?.value ?? card
-      const indicatorId = String(card?.indicatorId || '')
-      const indicatorCode = String(card?.indicatorCode || '')
-      const indicatorVersionId = String(card?.indicatorVersionId || '')
-      return {
-      // `code` identifies the real indicator; the backend card location is independent.
-      code: indicatorCode || indicatorId || `dashboard-summary-${key}`,
-      dashboardSummaryKey: key,
-      indicatorId,
-      indicatorCode,
-      indicatorName: String(card?.indicatorName || card?.name || fallbackName),
-      indicatorVersionId,
-      analysisIndicatorId: indicatorId,
-      analysisIndicatorVersionId: indicatorVersionId,
-      analysisEnabled: Boolean(indicatorId || indicatorCode),
-      name: card?.indicatorName || card?.name || fallbackName,
-      category: '质量看板汇总',
-      unit: '',
-      currentValue: formatNumber(rawValue),
-      yoy: card?.yoy ?? card?.yearOnYear ?? null,
-      mom: card?.mom ?? card?.monthOnMonth ?? null,
-      comparisonUnit: card?.comparisonUnit || card?.changeUnit || '',
-      trendDirection: card?.trendDirection || null,
-      change: '当前查询结果',
-      target: '来源：已发布看板',
-      status: 'success',
-      origin: 'backend',
-      originLabel: '正式结果',
-      trendData,
-      trendLabels: trendTableRows.value.map((item) => item.period),
-      departmentData,
-      pieData: departmentData
-      }
-    })
 }
 
 function normalizeList(payload) {
@@ -2862,7 +2597,7 @@ async function loadPublishedIndicatorCatalog() {
         delete remoteSourcePeriodOptions.value[source.code]
       }
       catalogIndicatorSources.value = nextSources
-      if (dashboardStatus.value !== 'demo' && !nextSources.some(source => source.code === selectedDataCode.value)) selectedDataCode.value = nextSources[0]?.code || ''
+      if (!nextSources.some(source => source.code === selectedDataCode.value)) selectedDataCode.value = nextSources[0]?.code || ''
       await refreshSchemaPublishedIndicatorSources()
       return true
     } catch (error) {
@@ -2884,14 +2619,16 @@ async function ensureRemoteDataSourceFields(code, { required = false } = {}) {
     const [fields, periods] = await Promise.all([
       fetchDashboardDataSourceFields(code), fetchDashboardDataSourcePeriods(code).catch(() => [])
     ])
-    remoteFieldCatalog.value = { ...remoteFieldCatalog.value, [code]: fields }
+    const version = await dashboardIndicatorVersion(source).catch(() => null)
+    const annotated = annotateDepartmentFilterFields(fields, version?.drillConfig?.drillPaths || version?.drillPaths || [])
+    remoteFieldCatalog.value = { ...remoteFieldCatalog.value, [code]: annotated }
     const options = (Array.isArray(periods) ? periods : []).map(item => {
       const date = String(item.periodStart || '').slice(0, 7)
       return date ? { value: date, label: `${date.slice(0, 4)} 年 ${Number(date.slice(5, 7))} 月` } : null
     }).filter(Boolean)
     remoteSourcePeriodOptions.value = { ...remoteSourcePeriodOptions.value, [code]: [...new Map(options.map(item => [item.value, item])).values()].sort((a, b) => b.value.localeCompare(a.value)) }
     if (required && !fields.length) throw new Error('该指标未提供可用于图表的数据字段')
-    return fields
+    return annotated
   } catch (error) {
     if (required) throw error
     // The inspector will show an empty binding state and the user can retry by reselecting the source.
@@ -2909,43 +2646,67 @@ async function handleSelectedDataSourceChange(code) {
 }
 
 let remoteFilterOptionGeneration = 0
-const departmentNameRequests = new Map()
+const departmentOptionRequests = new Map()
 async function loadRemoteFilterOptions() {
   const generation = ++remoteFilterOptionGeneration
   const definitions = globalFilterDefinitions.value || []
+  remoteFilterOptionsLoading.value = Object.fromEntries(definitions.map(definition => [definition.id, true]))
   const widgets = (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.widgets || []
   const next = {}
+  const errors = {}
   await Promise.all(definitions.map(async definition => {
-    const sourceCode = definition.optionSourceCode || widgets.find(widget => widget.sourceCode && remoteFieldCatalog.value[widget.sourceCode]?.some(field => field.code === definition.field))?.sourceCode
+    const sourceCode = definition.optionSourceCode || widgets.find(widget => widget.sourceCode && resolveGlobalFilterField(definition, remoteFieldCatalog.value[widget.sourceCode] || [])?.filterable)?.sourceCode
     if (!sourceCode || !availableIndicatorSources.value.some(source => source.code === sourceCode && source.origin === 'dashboard-data-source')) return
     try {
       const fields = await ensureRemoteDataSourceFields(sourceCode)
-      if (!fields.some(field => field.filterable && field.code?.toLowerCase() === definition.field?.toLowerCase())) return
+      if (!resolveGlobalFilterField(definition, fields)?.filterable) return
       const range = dateRangeForMonths(resolvePublishedDashboardPeriodRange(remotePeriodRange.value, isEditing.value ? designerPeriodOptions.value : viewerPeriodOptions.value))
       const query = buildRemoteFilterOptionQuery(definition, definitions, filterRuntimeValues.value, fields, {
         periodStart: range.periodStart || null,
         periodEnd: range.periodEnd ? new Date(new Date(`${range.periodEnd}T00:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10) : null
       })
-      const rows = await fetchDashboardFilterOptions(sourceCode, query)
-      const options = Array.isArray(rows) ? rows : []
-      if (sourceCode === MORTALITY_SOURCE && definition.field === 'OUT_DEPT_CODE') {
-        const key = JSON.stringify({ sourceCode, range })
-        if (!departmentNameRequests.has(key)) {
-          const sample = widgets.find(widget => widget.sourceCode === sourceCode)
-          if (sample) {
-            const widget = schemaToDashboardPayload({ ...(editingDashboardSchema.value || dashboardSchema.value), widgets: [sample] }, { dataSources: availableIndicatorSources.value }).widgets[0]
-            departmentNameRequests.set(key, previewDashboardWidget({
-              widget: { ...widget, type: 'BAR_CHART', query: { ...widget.query, resultShape: 'COMPARISON' }, fieldBindings: { dataset: 'backend', dimensions: [{ field: 'OUT_DEPT_CODE' }], measures: [{ field: 'value', aggregation: 'direct' }], series: [], sort: [] } },
-              ...range, granularity: 'MONTHLY', filters: {}
-            }).then(result => result.rows || []).catch(error => { departmentNameRequests.delete(key); throw error }))
-            if (departmentNameRequests.size > 12) departmentNameRequests.delete(departmentNameRequests.keys().next().value)
-          }
+      if (isDepartmentFilterField(definition.field, fields)) {
+        const sample = widgets.find(widget => widget.sourceCode === sourceCode)
+        const key = JSON.stringify({ sourceCode, versionId: sample?.config?.analysisIndicatorVersionId, query })
+        if (!departmentOptionRequests.has(key)) {
+          const request = loadDepartmentCodeOptions({
+            fields, query,
+            fetchOptions: payload => fetchDashboardFilterOptions(sourceCode, payload),
+            fetchNameRows: async binding => {
+              if (!sample) return []
+              const widget = schemaToDashboardPayload({ ...(editingDashboardSchema.value || dashboardSchema.value), widgets: [sample] }, { dataSources: availableIndicatorSources.value }).widgets[0]
+              const result = await previewDashboardWidget({
+                widget: { ...widget, type: 'BAR_CHART', query: { ...widget.query, resultShape: 'COMPARISON' }, fieldBindings: { dataset: 'backend', dimensions: [{ field: binding.codeField }], measures: [{ field: 'value', aggregation: 'direct' }], series: [], sort: [] } },
+                ...range, granularity: 'MONTHLY', filters: query.filters
+              })
+              return result.rows || []
+            }
+          }).catch(error => { departmentOptionRequests.delete(key); throw error })
+          departmentOptionRequests.set(key, request)
+          if (departmentOptionRequests.size > 24) departmentOptionRequests.delete(departmentOptionRequests.keys().next().value)
         }
-        next[definition.id] = departmentFilterOptions(options, departmentNameRequests.has(key) ? await departmentNameRequests.get(key) : [])
-      } else next[definition.id] = options.map(item => ({ value: item.value, label: item.label || String(item.value) }))
-    } catch { /* Invalid/unsupported fields retain locally derived options. */ }
+        next[definition.id] = await departmentOptionRequests.get(key)
+      } else {
+        const rows = await fetchDashboardFilterOptions(sourceCode, query)
+        next[definition.id] = (Array.isArray(rows) ? rows : []).map(item => ({ value: item.value, label: item.label || String(item.value) }))
+      }
+    } catch (error) {
+      next[definition.id] = []
+      errors[definition.id] = error?.message || '筛选候选值加载失败，请重试'
+    }
   }))
-  if (generation === remoteFilterOptionGeneration) remoteFilterOptions.value = next
+  if (generation === remoteFilterOptionGeneration) {
+    remoteFilterOptionsLoading.value = {}
+    remoteFilterOptions.value = next
+    remoteFilterOptionErrors.value = errors
+    const normalized = { ...filterRuntimeValues.value }
+    for (const definition of definitions) {
+      if (isDepartmentFilterField(definition.field, filterCatalog.value) && next[definition.id]) {
+        normalized[definition.id] = departmentSelectionCodes(normalized[definition.id], next[definition.id])
+      }
+    }
+    if (JSON.stringify(normalized) !== JSON.stringify(filterRuntimeValues.value)) filterRuntimeValues.value = normalized
+  }
 }
 
 async function previewRemoteWidget(widget, { templateAutoConfigure = false } = {}) {
@@ -3155,13 +2916,6 @@ async function refreshSchemaPublishedIndicatorSources() {
   await Promise.allSettled(sources.map(source => hydrateIndicatorSource(source)))
 }
 
-function applyDemoDashboard() {
-  indicatorDataSources.value = cloneDashboardSources(mockIndicatorDataSources)
-  selectedDataCode.value = selectedDataCode.value || indicatorDataSources.value[0]?.code || ''
-  dashboardStatus.value = 'demo'
-  dashboardLoadMessage.value = ''
-  if (!getDashboardDemoPolicy().skipDashboardBootstrap) void loadMortalityReadonlyChain()
-}
 let dashboardSwitchPromise = null
 let dashboardSwitchTargetId = ''
 async function requestDashboardSwitch(nextDashboardId) {
@@ -3193,20 +2947,14 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
     remoteDashboardIsMock.value = isMockDashboardDetail({ dashboard: detail.dashboard, version })
     if (!remoteDashboardIsMock.value) indicatorDataSources.value = []
     const rawSchema = dashboardDetailToSchema({ dashboard: detail.dashboard, version })
+    // Definition availability is independent of whether its result query succeeds.
+    dashboardSchema.value = rawSchema
     if (remoteDashboardIsMock.value) {
-      indicatorDataSources.value = cloneDashboardSources(mockIndicatorDataSources)
-      selectedDataCode.value = selectedDataCode.value || indicatorDataSources.value[0]?.code || ''
+      indicatorDataSources.value = []
       dashboardSchema.value = rawSchema
-      if (isEditing.value) {
-        editingDashboardSchema.value = clonePersistableValue(rawSchema)
-        dashboardHistory.value = [clonePersistableValue(rawSchema)]
-        dashboardHistoryIndex.value = 0
-      }
       dashboardDefinition.value = detail
-      dashboardQueryResult.value = null
-      remoteWidgetDatasets.value = {}
-      remoteMultiIndicatorDatasets.value = {}
-      dashboardStatus.value = remoteDashboardMeta.value.currentPublishedVersionId ? 'demo' : 'unpublished'
+      dashboardStatus.value = 'legacy-mock'
+      dashboardLoadMessage.value = '该看板使用旧演示配置，已停止展示固定数据。请进入编辑，重新绑定真实指标后保存并发布，或新建正式看板。'
       return
     }
     const requiresSourceCatalog = rawSchema.widgets.some(widget => normalizeIndicatorBindings(widget.config?.indicatorBindings, widget).length > 1)
@@ -3218,23 +2966,19 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
     const sourceCodes = [...new Set(rawSchema.widgets.flatMap(widget => [widget.sourceCode, ...normalizeIndicatorBindings(widget.config?.indicatorBindings, widget).map(binding => binding.sourceCode), ...metricGroupSourceCodes(widget)]).filter(Boolean))]
     const metadataEntries = await Promise.all(sourceCodes.map(async code => {
       const [fields, periods] = await Promise.all([
-        fetchDashboardDataSourceFields(code, { signal }).catch(error => {
-          if (signal?.aborted) throw error
-          return []
-        }),
-        fetchDashboardDataSourcePeriods(code, { signal }).catch(error => {
-          if (signal?.aborted) throw error
-          return []
-        })
+        fetchDashboardDataSourceFields(code, { signal }),
+        fetchDashboardDataSourcePeriods(code, { signal })
       ])
-      return { code, fields, periods }
+      const sample = rawSchema.widgets.find(widget => widget.sourceCode === code)
+      const version = await dashboardIndicatorVersion(null, sample).catch(() => null)
+      return { code, fields: annotateDepartmentFilterFields(fields, version?.drillConfig?.drillPaths || version?.drillPaths || []), periods }
     }))
     if (!isCurrentLoad()) return
     remoteFieldCatalog.value = Object.fromEntries(metadataEntries.map(item => [item.code, item.fields]))
     remoteSourcePeriodOptions.value = Object.fromEntries(metadataEntries.map(item => [item.code, createPublishedDashboardPeriodOptions([item.periods])]))
     const availablePeriods = createPublishedDashboardPeriodOptions(metadataEntries.map(item => item.periods))
+    periodOptions.value = availablePeriods
     if (availablePeriods.length) {
-      periodOptions.value = availablePeriods
       const initialRange = remotePeriodRange.value.length ? remotePeriodRange.value : defaultPublishedDashboardPeriodRange(availablePeriods)
       const nextPeriodRange = resolvePublishedDashboardPeriodRange(initialRange, availablePeriods)
       if (JSON.stringify(remotePeriodRange.value) !== JSON.stringify(nextPeriodRange)) {
@@ -3289,12 +3033,8 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
 
 function remoteWidgetQueryContext(range, sourceCode, schema = isEditing.value ? editingDashboardSchema.value : dashboardSchema.value) {
   const definitions = schema?.globalFilters || globalFilterDefinitions.value
-  const scopedDefinitions = definitions.filter(definition =>
-    definition.optionSourceCode !== MORTALITY_SOURCE ||
-    !['OUT_DEPT_CODE', 'OUT_DEPT_NAME'].includes(definition.field) ||
-    sourceCode === MORTALITY_SOURCE)
   return {
-    ...range, definitions: scopedDefinitions, values: schema === dashboardSchema.value || schema === editingDashboardSchema.value ? filterRuntimeValues.value : initialFilterValues(definitions),
+    ...range, definitions, values: schema === dashboardSchema.value || schema === editingDashboardSchema.value ? filterRuntimeValues.value : initialFilterValues(definitions),
     fields: remoteFieldCatalog.value[sourceCode] || [], department: department.value
   }
 }
@@ -3540,8 +3280,7 @@ async function performDashboardSwitch(nextDashboardId, previousDashboardId) {
   loadDashboardSchema(nextDashboardId)
   activeDashboardId.value = nextDashboardId
   requestedDashboardId.value = nextDashboardId
-  const scene = findLocalSceneByDashboardId(nextDashboardId)
-  if (scene) activeSceneCode.value = scene.sceneCode
+  activeSceneCode.value = ''
   if (isEditing.value && dashboardSchema.value) {
     editingDashboardSchema.value = clonePersistableValue(dashboardSchema.value)
     dashboardHistory.value = [clonePersistableValue(editingDashboardSchema.value)]
@@ -3550,70 +3289,21 @@ async function performDashboardSwitch(nextDashboardId, previousDashboardId) {
   }
   await loadDashboard(nextDashboardId)
 }
-function isDemoRuntime() {
-  return getDashboardDemoPolicy().useDemoOnFailure
-}
-function getDashboardDemoPolicy() {
-  return dashboardDemoPolicy({
-    previewMode: import.meta.env.VITE_DASHBOARD_PREVIEW_MODE,
-    explicit: typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('dashboardDemo') === '1'
-  })
-}
-async function restoreQualitySafetyDemoLayout() {
-  if (!canRestoreQualitySafetyDemo.value || !editingDashboardSchema.value) return
-  try {
-    await ElMessageBox.confirm('恢复演示布局将替换当前质量安全看板的组件、布局和筛选配置。是否继续？', '恢复演示布局', {
-      confirmButtonText: '恢复演示布局', cancelButtonText: '取消', type: 'warning', closeOnClickModal: false
-    })
-  } catch { return }
-  await runDashboardHistoryTransaction(async () => {
-    const restored = createQualitySafetyDemoRestoreResult(createQualitySafetyDemoSchema({ id: activeDashboardId.value, sceneCode: activeScene.value?.sceneCode || '' }))
-    editingDashboardSchema.value = restored.schema
-    const cleared = clearWidgetSelection()
-    selectedWidgetIds.value = cleared.ids
-    primarySelectedWidgetId.value = cleared.primaryId
-    activeWidgetId.value = ''
-    interactionFilterState.value = {}
-    drillRuntimeState.value = {}
-    await reconcileDesignerCanvasLayout()
-    if (restored.dirty) markDashboardDirty()
-  })
-  ElMessage.success('已恢复质量安全演示布局，请保存后生效')
-}
-
-async function loadMortalityReadonlyChain() {
-  const chain = await fetchMortalityReadonlyChain().catch(() => null)
-  const source = applyMortalityReadonlyChain(indicatorDataSources.value, chain)
-  if (source) indicatorDataSources.value = indicatorDataSources.value.map((item) => item.code === source.code ? { ...source, origin: 'backend', originLabel: '后端试算结果' } : item)
-}
-
-function cloneDashboardSources(sources) {
-  return sources.map((source) => ({
-    ...source,
-    origin: source.origin || 'demo',
-    originLabel: source.originLabel || '演示',
-    trendData: [...(source.trendData || [])],
-    trendLabels: [...(source.trendLabels || dashboardTrend.months)],
-    departmentData: (source.departmentData || []).map((item) => ({ ...item })),
-    pieData: (source.pieData || []).map((item) => ({ ...item }))
-  }))
-}
-
 function normalizeMonthlyTrend(rows) {
   if (!Array.isArray(rows)) return []
   return rows
     .map((item) => ({
       period: item?.period || item?.month || '',
-      value: Number(item?.value)
+      value: numericValue(item?.value)
     }))
-    .filter((item) => item.period !== '' && Number.isFinite(item.value))
+    .filter((item) => item.period !== '' && item.value !== null)
 }
 
 function normalizeRanking(rows, source = 'live') {
   if (!Array.isArray(rows)) return []
   return rows
     .map((item, index) => {
-      const rawValue = Number(item?.value)
+      const rawValue = numericValue(item?.value)
       return {
         rank: index + 1,
         departmentCode: String(item?.deptCode || item?.departmentCode || ''),
@@ -3623,7 +3313,7 @@ function normalizeRanking(rows, source = 'live') {
         drillTarget: normalizeDashboardDrillTarget(item?.drillTarget, source)
       }
     })
-    .filter((item) => Number.isFinite(item.rawValue))
+    .filter((item) => item.rawValue !== null)
 }
 
 function formatNumber(value) {
@@ -3658,14 +3348,14 @@ const goIndicatorAnalysis = (indicator, backendQuery = {}, drillContext = null) 
 
 function refreshDesignerPeriodData() {
   for (const widget of designerWidgets.value.filter(widget => getWidgetSource(widget)?.origin === 'dashboard-data-source')) void previewRemoteWidget(widget)
-  if (getDashboardDemoPolicy().loadPublishedIndicators) void refreshSchemaPublishedIndicatorSources()
+  void refreshSchemaPublishedIndicatorSources()
 }
 
 watch(period, () => {
   if (reconcilingRemotePeriod) return
   if (isEditing.value) return
   loadDashboard()
-  if (getDashboardDemoPolicy().loadPublishedIndicators) void refreshSchemaPublishedIndicatorSources()
+  void refreshSchemaPublishedIndicatorSources()
 })
 watch([remotePeriodRange, department], () => {
   if (reconcilingRemotePeriod) return
@@ -3758,28 +3448,20 @@ onMounted(async () => {
   if (!isEditing.value) designerImmersive.value = false
   try {
     refreshLocalLayoutTemplates()
-    if (!managedDashboardId.value) {
-      try {
-        await refreshDashboardCatalog()
-      } catch (error) {
-        if (!dashboardDemoScenes.value.length) throw error
-      }
-    } else if (!findLocalSceneByDashboardId(managedDashboardId.value)) {
-      // A deep-linked dashboard can load by its id directly; refresh the selector list in parallel.
-      void refreshDashboardCatalog().catch(() => {})
-    }
+    if (!managedDashboardId.value) await refreshDashboardCatalog()
+    else void refreshDashboardCatalog().catch(() => {})
     if (!managedDashboardId.value && !dashboardSelectorOptions.value.some(item => String(item.id) === String(activeDashboardId.value))) {
-      const nextId = localDashboardCatalog.value[0]?.id || dashboardDemoScenes.value[0]?.dashboardId || ''
+      const nextId = localDashboardCatalog.value[0]?.id || ''
       activeDashboardId.value = nextId
       requestedDashboardId.value = nextId
-      activeSceneCode.value = findLocalSceneByDashboardId(nextId)?.sceneCode || ''
+      activeSceneCode.value = ''
     }
     if (managedDashboardId.value || activeDashboardId.value) {
       loadDashboardSchema()
       await loadDashboard()
       void loadPublishedIndicatorCatalog()
     } else {
-      dashboardStatus.value = 'error'
+      dashboardStatus.value = 'no-dashboards'
       dashboardLoadMessage.value = '暂无可用的服务端看板，请创建看板后继续。'
     }
   } catch (error) {
@@ -3871,9 +3553,7 @@ onBeforeUnmount(() => {
 .dashboard-page.is-presentation-mode :deep(.page-heading) { display: none; }
 .dashboard-page.is-presentation-mode .dashboard-schema-viewer { margin: 0; }
 .dashboard-page.is-presentation-mode .dashboard-schema-canvas { min-height: calc(100vh - 48px); }
-.dashboard-demo-source { padding:8px; border:1px solid #b8d7f0; border-radius:6px; background:#eef6ff; color:#175ea8 !important; font-size:11px !important; line-height:1.5; }
 .dashboard-source-period-note { margin:8px 0; padding:8px; border:1px solid #f4d69c; border-radius:6px; background:#fff8e9; color:#875a13; font-size:11px; line-height:1.5; }
-.dashboard-acceptance-source { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin:8px 0; padding:8px; border:1px solid #9dcbef; border-radius:6px; background:#eef8ff; color:#175ea8; font-size:12px; line-height:1.5; }.dashboard-acceptance-source strong { color:#0b5f9e; }.dashboard-acceptance-source .el-button { margin-left:auto; }.dashboard-acceptance-note { margin:0 0 10px; padding:8px 10px; border-radius:6px; background:#fff7e8; color:#8a5a00; font-size:13px; }.dashboard-acceptance-summary { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; margin:0 0 14px; font-size:12px; color:#475467; }.dashboard-acceptance-summary strong { color:#1d2939; }
 .dashboard-create-form { display:grid; gap:12px; }.dashboard-create-form label { display:grid; gap:5px; color:#475467; font-size:13px; }.dashboard-create-form input,.dashboard-create-form textarea,.dashboard-create-form select { width:100%; box-sizing:border-box; border:1px solid #d0d5dd; border-radius:5px; padding:7px; background:#fff; }.dashboard-create-form textarea { min-height:72px; resize:vertical; }.dashboard-open-list { display:grid; gap:7px; margin-top:14px; }.dashboard-open-list h3 { margin:10px 0 2px; font-size:13px; color:#667085; }.dashboard-open-list button { display:flex; justify-content:space-between; gap:12px; width:100%; padding:9px 10px; border:1px solid #e4e7ec; border-radius:6px; background:#fff; text-align:left; cursor:pointer; }.dashboard-open-list button:hover { border-color:#409eff; background:#f5faff; }.dashboard-open-list small { color:#667085; white-space:nowrap; }
 .dashboard-version-list { display:grid; gap:10px; }.dashboard-version-item { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:7px 12px; padding:13px; border:1px solid #e4e7ec; border-radius:7px; background:#fff; }.dashboard-version-item header { display:flex; align-items:center; gap:8px; }.dashboard-version-item p,.dashboard-version-item span { margin:0; color:#667085; font-size:12px; }.dashboard-version-item .el-button { grid-column:2; grid-row:2 / span 2; align-self:center; }
 .dashboard-interaction-summary { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:8px 0; padding:7px 10px; border:1px solid var(--idmp-interactive-subtle,#e7f1f8); border-radius:6px; background:var(--idmp-interactive-subtle,#e7f1f8); color:var(--idmp-interactive,#1261a6); font-size:12px; }

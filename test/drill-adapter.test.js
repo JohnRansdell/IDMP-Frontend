@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { adaptDrillResult, deriveDrillPathResultIds, limitDrillNextLevels, normalizeOrganizationDrillLevel, reconcileScenarioPointWithRoot } from '../src/idmp/api/adapters/drill.js'
-import { createMockDrillResult, MOCK_SURGERY_DRILL_CONTEXT } from '../src/idmp/features/analysis/drillData.js'
-import { mockDashboardDepartmentRanking, mockIndicatorDataSources } from '../src/idmp/features/dashboard/mockData.js'
+import { createMockDrillResult, MOCK_SURGERY_DRILL_CONTEXT } from './fixtures/frontend/drillData.js'
+import { mockDashboardDepartmentRanking, mockIndicatorDataSources } from './fixtures/frontend/mockData.js'
 
 const dashboardResultId = MOCK_SURGERY_DRILL_CONTEXT.resultId
 

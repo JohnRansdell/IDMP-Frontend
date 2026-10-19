@@ -1,5 +1,5 @@
-import { dashboardTrend } from '../../data/demo.js'
-import { createMockDrillResult, MOCK_SURGERY_DRILL_CONTEXT } from '../analysis/drillData.js'
+import { dashboardTrend } from './demo.js'
+import { createMockDrillResult, MOCK_SURGERY_DRILL_CONTEXT } from './drillData.js'
 
 const departmentResult = createMockDrillResult(MOCK_SURGERY_DRILL_CONTEXT.resultId, {
   currentLevel: 'OUT_DEPT',

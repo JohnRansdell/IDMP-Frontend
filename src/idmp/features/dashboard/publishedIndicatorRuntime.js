@@ -82,13 +82,13 @@ export function createPublishedDashboardPeriodOptions(periodLists = []) {
   }))
 }
 
-export function resolvePublishedDashboardPeriod(currentPeriod, options = [], fallback = '2025-12') {
+export function resolvePublishedDashboardPeriod(currentPeriod, options = [], fallback = '') {
   const values = (Array.isArray(options) ? options : []).map(option => option?.value).filter(Boolean)
   if (values.includes(currentPeriod)) return currentPeriod
   return values[0] || currentPeriod || fallback
 }
 
-export function resolvePublishedDashboardPeriodRange(currentRange, options = [], fallback = '2025-12') {
+export function resolvePublishedDashboardPeriodRange(currentRange, options = [], fallback = '') {
   const values = (Array.isArray(options) ? options : []).map(option => option?.value).filter(Boolean)
   if (!values.length) {
     const fallbackPeriod = Array.isArray(currentRange) ? currentRange.find(Boolean) : ''

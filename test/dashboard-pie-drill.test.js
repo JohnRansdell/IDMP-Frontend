@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { adaptDrillResult } from '../src/idmp/api/adapters/drill.js'
-import { createMockDrillResult, MOCK_SURGERY_DRILL_CONTEXT } from '../src/idmp/features/analysis/drillData.js'
+import { createMockDrillResult, MOCK_SURGERY_DRILL_CONTEXT } from './fixtures/frontend/drillData.js'
 import { createPieDrillRequestGate, getPieNextNavigation, loadPieDrillLevel, numericPieValue, resolvePieDrillRoot } from '../src/idmp/features/dashboard/pieDrill.js'
 
 const target = {

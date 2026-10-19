@@ -44,7 +44,7 @@
       </nav>
 
       <div class="idmp-topbar__right">
-        <div class="idmp-context">
+        <div v-if="isDashboardRoute" class="idmp-context">
           <span class="scene-label">{{ isDashboardRoute ? '场景看板' : '全局场景' }}</span>
           <el-select v-model="currentScene" class="scene-select" :aria-label="isDashboardRoute ? '场景看板' : '全局场景'">
             <el-option v-for="scene in currentSceneOptions" :key="scene.value" :label="scene.label" :value="scene.value" />
@@ -58,10 +58,10 @@
           </el-badge>
         </el-tooltip>
         <div class="idmp-user">
-          <el-avatar :size="30">管</el-avatar>
+          <el-avatar :size="30">{{ currentUserName.slice(0, 1) }}</el-avatar>
           <span class="idmp-user__copy">
-            <span class="idmp-user__name">指标管理员</span>
-            <span class="idmp-user__role">质量管理中心</span>
+            <span class="idmp-user__name">{{ currentUserName }}</span>
+            <span v-if="currentUserDepartment" class="idmp-user__role">{{ currentUserDepartment }}</span>
           </span>
         </div>
       </div>
@@ -96,33 +96,22 @@ import {
   Setting,
   TrendCharts
 } from '@element-plus/icons-vue'
-import { sceneOptions } from '@/idmp/data/demo'
+import { sessionState } from '@/idmp/auth/session'
 import { fetchUnreadNotificationCount } from '@/idmp/api/modules/warnings'
 import { fetchDashboardCatalog } from '@/idmp/api/modules/analysisDashboard'
 import { dashboardSummaryToCatalogEntry } from '@/idmp/api/adapters/dashboard'
-import { visibleDemoSceneDashboards } from '@/idmp/features/dashboard/sceneRegistry.js'
 import { buildPageBreadcrumbs } from '@/router/breadcrumbs.js'
 
 const route = useRoute()
 const router = useRouter()
-const globalScene = ref(sceneOptions[0])
+const currentUserName = computed(() => sessionState.user?.displayName || sessionState.user?.nickname || sessionState.user?.username || '当前用户')
+const currentUserDepartment = computed(() => sessionState.user?.departmentName || sessionState.user?.deptName || '')
 const isDashboardRoute = computed(() => route.name === 'Dashboard')
 const remoteDashboardOptions = ref([])
-const dashboardDemoScenes = computed(() => visibleDemoSceneDashboards({
-  previewMode: import.meta.env.VITE_DASHBOARD_PREVIEW_MODE,
-  explicit: route.query.dashboardDemo === '1',
-  dashboardId: typeof route.query.id === 'string' ? route.query.id : ''
-}))
-const currentSceneOptions = computed(() => {
-  if (!isDashboardRoute.value) return sceneOptions.map(scene => ({ label: scene, value: scene }))
-  return [
-    ...remoteDashboardOptions.value.map(item => ({ label: item.name, value: item.id })),
-    ...dashboardDemoScenes.value.map(item => ({ label: `演示 · ${item.name}`, value: item.dashboardId }))
-  ]
-})
+const currentSceneOptions = computed(() => remoteDashboardOptions.value.map(item => ({ label: item.name, value: item.id })))
 const currentScene = computed({
-  get: () => isDashboardRoute.value ? dashboardRequestedId.value : globalScene.value,
-  set: (value) => { if (isDashboardRoute.value) dashboardRequestedId.value = value; else globalScene.value = value }
+  get: () => dashboardRequestedId.value,
+  set: value => { dashboardRequestedId.value = value }
 })
 const unreadCount = ref(0)
 async function refreshRemoteDashboardOptions() {

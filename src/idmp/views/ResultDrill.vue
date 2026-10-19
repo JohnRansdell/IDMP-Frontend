@@ -30,7 +30,7 @@
         @level-change="handleLevelChange"
       />
       <StatePanel v-else-if="configurationLoading" type="loading" title="正在读取下钻配置" />
-      <StatePanel v-else type="error" title="下钻配置读取失败" :description="configurationError" />
+      <StatePanel v-else type="error" title="无法加载下钻" :description="configurationError"><template #actions><el-button @click="loadConfiguration">重试</el-button></template></StatePanel>
     </section>
   </div>
 </template>
@@ -71,30 +71,39 @@ function readParentKeys() {
 
 const resultId = computed(() => String(route.query.resultId || ''))
 const snapshotId = computed(() => String(route.query.snapshotId || ''))
-const indicatorName = computed(() => String(route.query.indicatorName || '手术患者并发症发生率'))
-const period = computed(() => String(route.query.period || '2026-06'))
-const source = computed(() => route.query.source === 'mock' ? 'mock' : 'live')
+const indicatorName = computed(() => String(route.query.indicatorName || '指标'))
+const period = computed(() => String(route.query.period || ''))
+const source = 'live'
 const fromDashboard = computed(() => route.query.from === 'dashboard')
-const dataSourceLabel = computed(() => source.value === 'mock' ? '演示数据' : '真实接口')
+const dataSourceLabel = '真实接口'
 const configuredPaths = ref([])
 const configurationLoading = ref(false)
 const configurationError = ref('')
 let configurationRequestId = 0
-watch(() => [route.query.indicatorVersionId, source.value], async ([versionId, mode]) => {
+async function loadConfiguration() {
   const requestId = ++configurationRequestId
   configuredPaths.value = []
   configurationError.value = ''
-  configurationLoading.value = Boolean(versionId && mode !== 'mock')
-  if (!configurationLoading.value) return
+  configurationLoading.value = false
+  if (route.query.source === 'mock') {
+    configurationError.value = '演示下钻入口已停用，请从真实计算结果重新进入。'
+    return
+  }
+  if (!resultId.value || !snapshotId.value || !route.query.indicatorVersionId) {
+    configurationError.value = '缺少结果、快照或指标版本，请从指标分析或看板的真实结果重新进入。'
+    return
+  }
+  configurationLoading.value = true
   try {
-    const version = await fetchIndicatorVersion(String(versionId))
+    const version = await fetchIndicatorVersion(String(route.query.indicatorVersionId))
     if (requestId === configurationRequestId) configuredPaths.value = version.drillConfig?.drillPaths || []
   } catch (error) {
     if (requestId === configurationRequestId) configurationError.value = error?.message || '请稍后重试'
   } finally {
     if (requestId === configurationRequestId) configurationLoading.value = false
   }
-}, { immediate: true })
+}
+watch(() => [route.query.indicatorVersionId, route.query.source, resultId.value, snapshotId.value], loadConfiguration, { immediate: true })
 
 function handleLevelChange(context) {
   currentLevel.value = context.currentLevel

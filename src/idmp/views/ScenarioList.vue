@@ -21,6 +21,9 @@
     </section>
 
     <section class="surface-card table-card">
+      <StatePanel v-if="loading" type="loading" title="正在加载场景目录" />
+      <StatePanel v-else-if="loadError" type="error" title="场景目录加载失败" :description="loadError"><template #actions><el-button type="primary" @click="load">重试</el-button></template></StatePanel>
+      <template v-else>
       <el-table v-loading="loading" :data="rows" empty-text="暂无场景">
         <el-table-column prop="name" label="场景名称" min-width="280"><template #default="{ row }"><CodeTooltip :code="row.code" label="场景编码"><span>{{ row.name }}</span></CodeTooltip></template></el-table-column>
         <el-table-column label="类型" width="130"><template #default="{ row }">{{ scenarioTypeLabel(row.type) }}</template></el-table-column>
@@ -31,6 +34,7 @@
         <el-table-column label="操作" width="110" fixed="right"><template #default="{ row }"><button class="action-link" type="button" @click="open(row)">查看/编辑</button></template></el-table-column>
       </el-table>
       <div class="table-footer"><span>共 {{ total }} 条</span><el-pagination v-model:current-page="page" v-model:page-size="size" layout="prev, pager, next, sizes" :page-sizes="[10, 20, 50]" :total="total" @current-change="load" @size-change="load" /></div>
+      </template>
     </section>
 
     <el-dialog v-model="createOpen" title="新建场景" width="560px" destroy-on-close>
@@ -53,6 +57,7 @@ import { ElMessage } from '@/idmp/utils/message'
 import { useRouter } from 'vue-router'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
+import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
 import { createScenario, fetchScenarios, fetchScenarioVersions } from '@/idmp/api/modules/scenarios'
@@ -64,6 +69,7 @@ const total = ref(0)
 const page = ref(1)
 const size = ref(20)
 const loading = ref(false)
+const loadError = ref('')
 const saving = ref(false)
 const createOpen = ref(false)
 const formRef = ref()
@@ -73,12 +79,15 @@ const rules = { code: [{ required: true, message: '请输入场景编码' }], na
 
 async function load() {
   loading.value = true
+  loadError.value = ''
   try {
     const result = normalizePage(await fetchScenarios({ ...filters, page: page.value, size: size.value }))
     rows.value = result.items
     total.value = result.total
   } catch (error) {
-    ElMessage.error(error?.message || '场景列表加载失败')
+    rows.value = []
+    total.value = 0
+    loadError.value = error?.message || '场景列表加载失败'
   } finally { loading.value = false }
 }
 

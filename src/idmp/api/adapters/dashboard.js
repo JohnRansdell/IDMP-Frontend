@@ -55,6 +55,14 @@ export function dashboardDetailToSchema(detail = {}) {
   })
 }
 
+// Opening a historical demo draft preserves metadata but requires explicit real component bindings.
+export function dashboardDetailToEditableSchema(detail = {}) {
+  const schema = dashboardDetailToSchema(detail)
+  return isMockDashboardDetail(detail)
+    ? normalizeDashboardSchema({ ...schema, widgets: [], globalFilters: [] })
+    : schema
+}
+
 export function dashboardDetailMeta(detail = {}) {
   const dashboard = object(detail.dashboard), version = object(detail.version)
   return {
@@ -74,43 +82,11 @@ export function selectDashboardVersion(detail = {}, versions = [], { editing = f
   return (Array.isArray(versions) ? versions : []).find(version => stringId(version?.id) === targetId) || fallback
 }
 
-// The current backend stores widget style as an opaque JSON object, but does
-// not yet expose a first-class Mock data source.  A MOCK board therefore uses
-// legal TEXT widgets as storage carriers and keeps its original frontend
-// widget contract in style.__idmpMockWidget.  This is deliberately isolated so
-// it can be removed once the backend adds native MOCK/LIVE data modes.
+// Detect historical demo boards so the UI can request real bindings instead of rendering fixtures.
 export function isMockDashboardDetail(detail = {}) {
-  return String(object(object(detail).version).style?.dataMode || '').toUpperCase() === MOCK_MODE
-}
-
-export function schemaToMockDashboardPayload(schema, { resourceVersion } = {}) {
-  const toMockWidget = widget => {
-    const config = object(widget.config)
-    return {
-      code: String(widget.id),
-      title: String(widget.title || '演示组件'),
-      type: 'TEXT',
-      position: { ...widget.layout },
-      fieldBindings: {},
-      query: { resultShape: 'OVERVIEW' },
-      filterBindings: object(config.interaction).clickFilter || {},
-      drill: object(config.interaction).drill || {},
-      chart: { text: object(config.text), chartKind: 'mock' },
-      style: { ...object(config.style), [MOCK_WIDGET_KEY]: {
-        type: widget.type, sourceCode: widget.sourceCode || '', sourceName: widget.sourceName || '',
-        kpiIndex: widget.kpiIndex, chartKind: widget.chartKind, visualType: widget.visualType,
-        preset: widget.preset, config
-      } }
-    }
-  }
-  return {
-    ...(resourceVersion === undefined ? {} : { resourceVersion }),
-    name: schema.name, description: schema.description || null, type: String(schema.dashboardType || 'CUSTOM').toUpperCase(),
-    category: schema.category || null, applicableScope: { scope: schema.scope, sceneCode: schema.sceneCode || undefined },
-    layout: { columns: schema.layout.columns, float: schema.layout.float }, theme: { name: schema.appearance?.theme || 'default' },
-    style: { appearance: schema.appearance || {}, presentation: schema.presentation || {}, dataMode: MOCK_MODE, mockDatasetVersion: 'frontend-fixture-v1' },
-    globalFilters: schema.globalFilters || [], interactions: {}, widgets: schema.widgets.map(toMockWidget)
-  }
+  const version = object(object(detail).version)
+  return String(version.style?.dataMode || '').toUpperCase() === MOCK_MODE
+    || (Array.isArray(version.widgets) && version.widgets.some(widget => Boolean(widget?.style?.[MOCK_WIDGET_KEY])))
 }
 
 export function schemaToDashboardPayload(schema, { resourceVersion, dataSources = [] } = {}) {
@@ -237,6 +213,7 @@ export function dashboardFieldsToFrontend(fields = []) {
       filterTypes: filterTypes.length ? filterTypes : dataType === 'date' ? ['date-range'] : ['select', 'multi-select'],
       preferredFilterType: filterTypes[0] || (dataType === 'date' ? 'date-range' : 'multi-select'),
       dictionaryCode: field.dictionaryCode || null,
+      ...(field.departmentCodeField ? { departmentCodeField: field.departmentCodeField, departmentNameField: field.departmentNameField || '' } : {}),
       drillable: field.drillable === true, drillLevel: field.drillLevel || null
     }
   }).filter(field => field.id)

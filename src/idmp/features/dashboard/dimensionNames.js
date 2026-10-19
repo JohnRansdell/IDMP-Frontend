@@ -1,10 +1,11 @@
 // Member codes remain query keys. Display fields and labels never replace them.
-const departmentPairs = [
+export const DEPARTMENT_FIELD_PAIRS = [
   ['科室', '科室名称'], ['科室编码', '科室名称'], ['出院科室编码', '出院科室名称'],
   ['OUT_DEPT_CODE', 'OUT_DEPT_NAME'], ['OUT_DEPT_ID', 'OUT_DEPT_NAME'],
   ['DEPARTMENT_CODE', 'DEPARTMENT_NAME'], ['departmentCode', 'departmentName'],
   ['deptCode', 'deptName'], ['outDeptCode', 'outDeptName'], ['department', 'departmentName']
 ]
+const departmentPairs = DEPARTMENT_FIELD_PAIRS
 const text = value => value == null ? '' : String(value).trim()
 export const isMemberName = (value, code) => Boolean(text(value) && text(value) !== text(code) && !/^\d+$/.test(text(value)) && text(value) !== '-')
 

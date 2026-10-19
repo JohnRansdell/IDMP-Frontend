@@ -11,23 +11,22 @@
       </template>
       <template #actions>
         <el-button @click="router.push('/indicator')">返回指标目录</el-button>
-        <el-button type="primary" plain @click="openIndicatorEditor">
+        <el-button type="primary" plain :disabled="detailLoading || !!loadError || !detail.id" @click="openIndicatorEditor">
           编辑指标
         </el-button>
       </template>
     </PageHeader>
 
-    <div v-if="loadError" class="notice-strip is-warning detail-notice">
-      <el-icon><InfoFilled /></el-icon>
-      <span>{{ loadError }}</span>
-    </div>
-
-    <section class="detail-layout">
+    <StatePanel v-if="detailLoading" type="loading" title="正在加载指标详情" />
+    <StatePanel v-else-if="loadError" :type="detailNotFound ? 'empty' : 'error'" :title="detailNotFound ? '未找到该指标' : '指标详情加载失败'" :description="loadError">
+      <template #actions><el-button type="primary" @click="loadIndicatorDetail">重试</el-button></template>
+    </StatePanel>
+    <section v-else-if="detail.id" class="detail-layout">
       <article class="surface-card detail-main">
         <div class="section-title">
           <div>
             <h2>基础信息</h2>
-            <p class="section-title__description">当前只读页面优先使用后端指标详情、版本列表与版本定义接口。</p>
+            <p class="section-title__description">展示后端指标详情、版本列表与版本定义。</p>
           </div>
           <StatusBadge :status="indicatorStatus" :label="indicatorStatus" :tone="statusTone(indicatorStatus)" />
         </div>
@@ -75,7 +74,7 @@
         <section v-if="selectedVersion" class="formula-definition" aria-label="指标公式定义">
           <h2>指标公式</h2>
           <StatePanel v-if="versionLoading" type="loading" title="正在读取公式定义" />
-          <el-alert v-else-if="versionError" :title="versionError" type="error" :closable="false" show-icon />
+          <StatePanel v-else-if="versionError" type="error" title="公式读取失败" :description="versionError"><template #actions><el-button @click="selectVersion(selectedVersion)">重试</el-button></template></StatePanel>
           <template v-else>
             <div v-if="readableFormula?.expression" class="formula-expression" :aria-label="readableFormula.displayExpression || readableFormula.expression">
               <template v-if="formulaRatio">
@@ -99,7 +98,7 @@
         <div class="related-scenarios">
           <div class="section-title compact"><div><h2>关联场景</h2><p class="section-title__description">按指标主 ID 反查当前有效场景，并展示实际引用的指标版本。</p></div></div>
           <StatePanel v-if="scenarioLoading" type="loading" title="正在加载关联场景" />
-          <StatePanel v-else-if="scenarioError" type="error" title="关联场景加载失败" :description="scenarioError" />
+          <StatePanel v-else-if="scenarioError" type="error" title="关联场景加载失败" :description="scenarioError"><template #actions><el-button @click="loadRelatedScenarios">重试</el-button></template></StatePanel>
           <div v-else-if="!scenarioRows.length" class="related-scenarios__empty" role="status">
             <span>暂无关联场景，配置并发布场景后可在此查看。</span>
             <el-button type="primary" link size="small" @click="router.push({ name: 'ScenarioList' })">前往场景管理</el-button>
@@ -122,8 +121,10 @@
               <h2>版本信息</h2>
             </div>
           </div>
+          <StatePanel v-if="versionsLoading" type="loading" title="正在加载指标版本" />
+          <StatePanel v-else-if="versionsError" type="error" title="指标版本加载失败" :description="versionsError"><template #actions><el-button @click="loadVersions(detail.id)">重试</el-button></template></StatePanel>
           <StatePanel
-            v-if="!versionRows.length"
+            v-else-if="!versionRows.length"
             type="empty"
             title="暂无版本"
             description="当前指标尚未返回可查看的版本定义。"
@@ -164,6 +165,7 @@
         <article v-if="selectedVersion" class="surface-card policy-card">
           <div class="section-title compact"><div><h2>政策依据</h2><p class="section-title__description">仅能绑定已发布的指标版本和政策文件版本。</p></div></div>
           <StatePanel v-if="policyReferenceLoading" type="loading" title="正在读取政策引用" />
+          <StatePanel v-else-if="policyReferenceError" type="error" title="政策引用读取失败" :description="policyReferenceError"><template #actions><el-button @click="loadPolicyReferences(selectedVersionId)">重试</el-button></template></StatePanel>
           <el-table v-else :data="policyReferences" size="small" table-layout="fixed" empty-text="暂无有效政策引用">
             <el-table-column label="政策文件" min-width="170"><template #default="{ row }">{{ row.policyFileName || row.policyFileCode || row.policyFileVersionId }}</template></el-table-column>
             <el-table-column prop="relationRole" label="角色" width="100" />
@@ -172,7 +174,7 @@
           <div v-if="isPublishedVersion" class="policy-reference-form"><PolicyVersionPicker v-model="policyReferenceForm.policyFileVersionId" /><el-select v-model="policyReferenceForm.relationRole"><el-option v-for="item in POLICY_REFERENCE_ROLES" :key="item.value" :label="item.label" :value="item.value" /></el-select><el-button type="primary" :loading="policyReferenceSaving" @click="addPolicyReference">添加</el-button></div>
           <el-input v-if="isPublishedVersion" v-model="policyReferenceForm.citationLocation" class="policy-reference-input" placeholder="政策出处（可选）" />
           <el-input v-if="isPublishedVersion" v-model="policyReferenceForm.citationText" class="policy-reference-input" type="textarea" :rows="2" placeholder="政策原文（可选）" />
-          <div class="version-mapping-links"><div class="section-title compact"><div><h3>有效指标映射</h3><p class="section-title__description">反查当前指标版本作为源侧或目标侧的已发布有效映射。</p></div></div><StatePanel v-if="mappingReferenceLoading" type="loading" title="正在读取有效映射" /><StatePanel v-else-if="mappingReferenceError" type="error" title="有效映射读取失败" :description="mappingReferenceError" /><el-table v-else :data="mappingReferences" size="small" empty-text="暂无有效映射"><el-table-column prop="code" label="映射编码" min-width="150" /><el-table-column prop="mappingType" label="关系" width="110" /><el-table-column prop="comparability" label="可比性" width="120" /><el-table-column label="操作" width="68"><template #default="{ row }"><el-button link type="primary" @click="openMapping(row)">查看</el-button></template></el-table-column></el-table></div>
+          <div class="version-mapping-links"><div class="section-title compact"><div><h3>有效指标映射</h3><p class="section-title__description">反查当前指标版本作为源侧或目标侧的已发布有效映射。</p></div></div><StatePanel v-if="mappingReferenceLoading" type="loading" title="正在读取有效映射" /><StatePanel v-else-if="mappingReferenceError" type="error" title="有效映射读取失败" :description="mappingReferenceError"><template #actions><el-button @click="loadMappingReferences(selectedVersionId)">重试</el-button></template></StatePanel><el-table v-else :data="mappingReferences" size="small" empty-text="暂无有效映射"><el-table-column prop="code" label="映射编码" min-width="150" /><el-table-column prop="mappingType" label="关系" width="110" /><el-table-column prop="comparability" label="可比性" width="120" /><el-table-column label="操作" width="68"><template #default="{ row }"><el-button link type="primary" @click="openMapping(row)">查看</el-button></template></el-table-column></el-table></div>
         </article>
       </aside>
     </section>
@@ -185,7 +187,6 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
-import { InfoFilled } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import JsonCodePreview from '@/idmp/components/JsonCodePreview.vue'
 import PolicyVersionPicker from '@/idmp/components/PolicyVersionPicker.vue'
@@ -200,7 +201,6 @@ import {
   fetchIndicatorVersion,
   fetchIndicatorVersions
 } from '@/idmp/api/modules/indicators'
-import { indicatorRows } from '@/idmp/data/demo'
 import { getStatusLabel } from '@/idmp/design/status'
 import { createPolicyReference, fetchMappingsByIndicatorVersion, fetchPolicyReferences, invalidatePolicyReference } from '@/idmp/api/modules/mappings'
 import { POLICY_REFERENCE_ROLES } from '@/idmp/api/adapters/mapping'
@@ -211,7 +211,11 @@ const route = useRoute()
 const router = useRouter()
 const routeIndicatorKey = computed(() => String(route.params.id || ''))
 const loadError = ref('')
+const detailLoading = ref(true)
+const detailNotFound = ref(false)
 const versionRows = ref([])
+const versionsError = ref('')
+const versionsLoading = ref(false)
 const selectedVersion = ref(null)
 const versionLoading = ref(false)
 const versionError = ref('')
@@ -221,6 +225,7 @@ const scenarioLoading = ref(false)
 const scenarioError = ref('')
 const policyReferences = ref([])
 const policyReferenceLoading = ref(false)
+const policyReferenceError = ref('')
 const policyReferenceSaving = ref(false)
 const policyViewerId = ref('')
 const mappingReferences = ref([])
@@ -320,11 +325,11 @@ function hydrateDetail(item) {
     id: toOpaqueId(item.id ?? item.indicatorId ?? ''),
     code: item.code || routeIndicatorKey.value,
     name: item.name || '',
-    category: item.category || '后端指标',
-    attribute: item.attribute || '定量',
-    version: item.versionNo ? `V${item.versionNo}` : item.version || 'V1',
-    direction: item.direction || '监测比较',
-    source: item.source || '后端接口',
+    category: item.category || '',
+    attribute: item.attribute || '',
+    version: item.versionNo ? `V${item.versionNo}` : item.version || '',
+    direction: item.direction || '',
+    source: item.source || '',
     status: item.status || 'UNKNOWN',
     scenes: item.scenarioCount ?? null,
     description: item.description || ''
@@ -332,21 +337,21 @@ function hydrateDetail(item) {
 }
 
 async function loadIndicatorDetail() {
+  detailLoading.value = true
+  detailNotFound.value = false
   loadError.value = ''
+  versionRows.value = []
+  selectedVersion.value = null
   try {
-    const target = await loadBackendDetail()
-    if (target) return
-    loadError.value = `未在指标接口中找到 ${routeIndicatorKey.value}，已显示本地兜底摘要。`
+    if (!(await loadBackendDetail())) {
+      detailNotFound.value = true
+      loadError.value = `未找到指标 ${routeIndicatorKey.value}，请返回目录确认记录是否存在。`
+    }
   } catch (error) {
-    loadError.value = error?.message || '指标详情接口暂不可用，已显示本地兜底摘要。'
-  }
-
-  const demoTarget = findIndicator(indicatorRows)
-  if (demoTarget) {
-    hydrateDetail(demoTarget)
-  } else {
-    detail.code = routeIndicatorKey.value
-    detail.name = routeIndicatorKey.value
+    detailNotFound.value = Number(error?.status) === 404
+    loadError.value = error?.message || '指标详情加载失败，请重试。'
+  } finally {
+    detailLoading.value = false
   }
 }
 
@@ -401,13 +406,18 @@ function openScenario(row) {
 
 async function loadVersions(indicatorId) {
   if (!indicatorId) return
-  const versions = normalizeList(await fetchIndicatorVersions(indicatorId))
-  versionRows.value = versions
-  const requested = toOpaqueId(route.query.versionId || route.query.indicatorVersionId)
-  const latest = versions.find(version => resolveIndicatorVersionId(version) === requested) || pickLatestVersion(versions)
-  if (resolveIndicatorVersionId(latest) || latest?.id) {
-    await selectVersion(latest)
-  }
+  versionsLoading.value = true
+  versionsError.value = ''
+  try {
+    const versions = normalizeList(await fetchIndicatorVersions(indicatorId))
+    versionRows.value = versions
+    const requested = toOpaqueId(route.query.versionId || route.query.indicatorVersionId)
+    const latest = versions.find(version => resolveIndicatorVersionId(version) === requested) || pickLatestVersion(versions)
+    if (resolveIndicatorVersionId(latest) || latest?.id) await selectVersion(latest)
+  } catch (error) {
+    versionRows.value = []
+    versionsError.value = error?.message || '指标版本读取失败'
+  } finally { versionsLoading.value = false }
 }
 
 async function selectVersion(version) {
@@ -449,13 +459,14 @@ async function selectVersion(version) {
 async function loadPolicyReferences(versionId) {
   if (!versionId) return
   policyReferenceLoading.value = true
+  policyReferenceError.value = ''
   try {
     const references = await fetchPolicyReferences(versionId)
     if (versionId === selectedVersionId.value) policyReferences.value = references
   } catch (error) {
     if (versionId !== selectedVersionId.value) return
     policyReferences.value = []
-    ElMessage.warning(error?.message || '政策引用读取失败')
+    policyReferenceError.value = error?.message || '政策引用读取失败'
   } finally { if (versionId === selectedVersionId.value) policyReferenceLoading.value = false }
 }
 

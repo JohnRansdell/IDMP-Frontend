@@ -8,7 +8,7 @@
           <el-option v-for="path in customPaths" :key="path.pathCode" :label="path.pathName || '自定义路径'" :value="path.pathCode" />
         </el-select>
         <span class="drill-context-bar__period">统计周期：{{ resolvedPeriod }}</span>
-        <span class="drill-context-bar__source">{{ source === 'mock' ? '演示数据' : '真实接口' }}</span>
+        <span class="drill-context-bar__source">真实接口</span>
         <el-button v-if="source !== 'mock' && !isFactorTraceMode" size="small" @click="showFactorTrace">
           {{ factorTrace ? '刷新因子追溯' : '查看因子追溯' }}
         </el-button>
@@ -120,11 +120,11 @@ import { isStatusRecord } from '@/idmp/features/analysis/resultAvailability'
 import { getStatusLabel } from '@/idmp/design/status'
 
 const props = defineProps({
-  resultId: { type: [String, Number], default: 'MOCK-RESULT-001' },
+  resultId: { type: [String, Number], default: '' },
   snapshotId: { type: [String, Number], default: '' },
   pathResultIds: { type: Object, default: () => ({}) },
-  indicatorName: { type: String, default: '手术患者并发症发生率' },
-  period: { type: String, default: '2026-06' },
+  indicatorName: { type: String, default: '指标' },
+  period: { type: String, default: '' },
   startLevel: { type: String, default: 'HOSPITAL' },
   startParentKeys: { type: Object, default: () => ({}) },
   startFilters: { type: Object, default: () => ({}) },

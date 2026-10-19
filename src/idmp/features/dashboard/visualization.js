@@ -257,7 +257,7 @@ export function getVisualizationTitle(sourceName, visualType) {
   if (visualType === 'funnel') return `${sourceName}漏斗分析`
   if (visualType === 'scatter') return `${sourceName}散点分析`
   if (visualType === 'heatmap') return `${sourceName}热力分析`
-  if (visualType === 'map') return `${sourceName}演示区域分布`
+  if (visualType === 'map') return `${sourceName}区域分布`
   return sourceName
 }
 
@@ -316,7 +316,7 @@ function createVirtualScatterOption(widget, options) { const source = getWidgetS
 function createVirtualHeatmapOption(widget, options) { const source = getWidgetSource(widget, options), rows = source.departmentData || []; return { grid: { top: 18, bottom: 54, left: 12, right: 16, containLabel: true }, xAxis: { type: 'category', data: rows.map(row => row.name) }, yAxis: { type: 'category', data: ['指标值'] }, visualMap: { min: 0, max: Math.max(...rows.map(row => Number(row.value) || 0), 1), calculable: true, orient: 'horizontal', left: 'center', bottom: 0 }, series: [{ type: 'heatmap', data: rows.map((row, index) => [index, 0, Number(row.value) || 0]) }] } }
 // Geo adapter boundary: this intentionally uses named demo regions until a
 // sanctioned GeoJSON source is supplied. It is not presented as hospital GIS.
-function createVirtualMapOption(widget, options) { const source = getWidgetSource(widget, options), rows = source.departmentData || []; return { tooltip: { trigger: 'axis' }, grid: { top: 22, left: 62, right: 22, bottom: 30 }, xAxis: { type: 'value' }, yAxis: { type: 'category', inverse: true, data: rows.map(row => row.name) }, series: [{ name: '演示区域分布', type: 'bar', data: rows.map(row => Number(row.value) || 0), itemStyle: { color: '#4f8583', borderRadius: [0, 4, 4, 0] } }] } }
+function createVirtualMapOption(widget, options) { const source = getWidgetSource(widget, options), rows = source.departmentData || []; return { tooltip: { trigger: 'axis' }, grid: { top: 22, left: 62, right: 22, bottom: 30 }, xAxis: { type: 'value' }, yAxis: { type: 'category', inverse: true, data: rows.map(row => row.name) }, series: [{ name: '区域分布', type: 'bar', data: rows.map(row => Number(row.value) || 0), itemStyle: { color: '#4f8583', borderRadius: [0, 4, 4, 0] } }] } }
 
 function createVirtualBarOption(widget, presetOptions) {
   const source = getWidgetSource(widget, presetOptions)

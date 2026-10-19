@@ -2,18 +2,20 @@
   <section v-if="definitions.some(def => def.enabled)" class="dashboard-filter-bar" :class="{ 'is-compact': compact }" data-testid="dashboard-filter-bar" aria-label="看板筛选">
     <div v-for="def in definitions.filter(item => item.enabled)" :key="def.id" class="filter-control" :data-filter-field="def.field">
       <label>{{ def.label }}</label>
-      <FilterValue v-if="field(def)" :type="def.type" :options="optionsById?.[def.id] || field(def).options" :model-value="values[def.id]" @update:model-value="emit('change', { ...values, [def.id]: $event })" />
+      <span v-if="loadingById[def.id]" role="status">正在加载筛选选项</span>
+      <FilterValue v-else-if="field(def)" :type="def.type" :options="optionsById?.[def.id] || field(def).options" :model-value="values[def.id]" @update:model-value="emit('change', { ...values, [def.id]: $event })" />
       <span v-else role="status">字段不可用：{{ def.field }}</span>
+      <small v-if="errorsById[def.id]" role="alert">{{ errorsById[def.id] }} <button type="button" @click="emit('retry')">重试</button></small>
     </div>
     <button type="button" data-testid="dashboard-filter-reset" @click="emit('change', initialFilterValues(definitions))">重置</button>
-    <small>筛选当前查询结果中的兼容字段；预设组件不参与字段筛选。</small>
+    <small>筛选作用于兼容组件；科室显示名称，查询使用各指标对应的科室编码。</small>
   </section>
 </template>
 <script setup>
 import FilterValue from './FilterValue.vue'
 import { initialFilterValues, filterValueType } from '../filterEngine.js'
-const props = defineProps({ definitions: { type: Array, default: () => [] }, values: { type: Object, default: () => ({}) }, catalog: { type: Array, default: () => [] }, optionsById: { type: Object, default: () => ({}) }, compact: { type: Boolean, default: false } })
-const emit = defineEmits(['change'])
+const props = defineProps({ definitions: { type: Array, default: () => [] }, values: { type: Object, default: () => ({}) }, catalog: { type: Array, default: () => [] }, optionsById: { type: Object, default: () => ({}) }, errorsById: { type: Object, default: () => ({}) }, loadingById: { type: Object, default: () => ({}) }, compact: { type: Boolean, default: false } })
+const emit = defineEmits(['change', 'retry'])
 const field = def => props.catalog.find(item => item.id === def.field && filterValueType(item) === def.dataType)
 </script>
 <style scoped>

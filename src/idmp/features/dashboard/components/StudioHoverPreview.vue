@@ -18,12 +18,12 @@
         <template v-else-if="widgetItem">
           <header><span>组件示例</span><strong>{{ widgetItem.name }}</strong></header>
           <div class="studio-hover-preview__widget-demo" :class="`is-${widgetItem.type}`" aria-hidden="true">
-            <template v-if="widgetItem.type === 'kpi'"><small>本期指标</small><b>52.63%</b><em>同比 +1.24%</em></template>
-            <template v-else-if="widgetItem.type === 'metric-group'"><i v-for="index in 4" :key="index"><small>核心指标</small><b>{{ 20 + index * 7 }}</b></i></template>
-            <template v-else-if="widgetItem.type === 'warnings'"><i class="is-danger" /><span>高危指标已超过阈值</span><small>刚刚</small></template>
+            <template v-if="widgetItem.type === 'kpi'"><small>本期指标</small><b>—</b><em>同比 —</em></template>
+            <template v-else-if="widgetItem.type === 'metric-group'"><i v-for="index in 4" :key="index"><small>核心指标</small><b>—</b></i></template>
+            <template v-else-if="widgetItem.type === 'warnings'"><i class="is-danger" /><span>预警事件</span><small>事件时间</small></template>
             <template v-else-if="widgetItem.type === 'text'"><b>业务说明</b><span>展示指标口径、结论与使用提示。</span></template>
-            <template v-else-if="widgetItem.type === 'table'"><i v-for="index in 3" :key="index"><span>科室 {{ index }}</span><b>{{ 86 - index * 8 }}</b></i></template>
-            <template v-else-if="widgetItem.type === 'gauge'"><div class="studio-hover-preview__gauge">72<span>%</span></div><small>目标达成率</small></template>
+            <template v-else-if="widgetItem.type === 'table'"><i v-for="index in 3" :key="index"><span>科室 {{ index }}</span><b>—</b></i></template>
+            <template v-else-if="widgetItem.type === 'gauge'"><div class="studio-hover-preview__gauge">—<span></span></div><small>目标达成率</small></template>
             <template v-else-if="widgetItem.type === 'bar'"><div class="studio-hover-preview__bar"><i v-for="(height, index) in [42, 76, 55, 88, 64, 48]" :key="index" :style="{ height: `${height}%` }" /></div><span>分类数值比较</span></template>
             <template v-else-if="widgetItem.type === 'line'"><svg class="studio-hover-preview__line" viewBox="0 0 240 76"><path d="M4 66H236M4 38H236M4 10H236" class="grid" /><polyline points="5,58 42,46 78,52 116,22 154,34 195,13 235,27" /><circle v-for="point in linePoints" :key="point.x" :cx="point.x" :cy="point.y" r="3" /></svg><span>时间序列趋势</span></template>
             <template v-else-if="widgetItem.type === 'scatter'"><svg class="studio-hover-preview__scatter" viewBox="0 0 240 76"><path d="M8 4V69H236" class="axis" /><circle v-for="point in scatterPoints" :key="`${point.x}-${point.y}`" :cx="point.x" :cy="point.y" :r="point.r" /></svg><span>双度量相关分布</span></template>
@@ -44,9 +44,9 @@
                 <div class="studio-hover-preview__map-scale"><span>低</span><i /><span>高</span></div>
               </div>
               <div class="studio-hover-preview__map-ranking">
-                <i><span>华东</span><b>86</b></i>
-                <i><span>华北</span><b>72</b></i>
-                <i><span>西南</span><b>54</b></i>
+                <i><span>华东</span><b>—</b></i>
+                <i><span>华北</span><b>—</b></i>
+                <i><span>西南</span><b>—</b></i>
               </div>
             </template>
             <template v-else><div class="studio-hover-preview__chart"><i v-for="index in 7" :key="index" :style="{ height: `${25 + (index * 13) % 55}%` }" /></div><span>{{ widgetItem.hint }}</span></template>

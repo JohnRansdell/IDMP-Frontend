@@ -1,0 +1,78 @@
+import { createWidgetBindingDatasets as createRealWidgetBindingDatasets } from '../../../src/idmp/features/dashboard/fieldCatalog.js'
+// Catalogs describe available scalar columns, never a Cartesian join of snapshots.
+import { dashboardAcceptanceDrillRows, dashboardAcceptanceDualAxisRows, dashboardAcceptanceMapRows, dashboardAcceptanceRows } from './acceptanceData.js'
+import { normalizeDepartmentDataset } from '../../../src/idmp/features/dashboard/dimensionNames.js'
+const labels = { year: '年度', quarter: '季度', month: '统计月份', date: '统计日期', department: '科室', medicalGroup: '医疗组', doctor: '医师', disease: '病种', scene: '应用场景', indicatorCategory: '指标分类', indicatorValue: '指标值', actualValue: '实际值', targetValue: '目标值', period: '统计月份', departmentName: '科室', deptName: '科室', deptCode: '科室编码', category: '分类', value: '指标值', numerator: '分子值', denominator: '分母值', yoy: '同比', mom: '环比' }
+export function numericValue(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value !== 'string' || !/^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(value.trim())) return null
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+export function createFieldCatalog(rows = [], hints = {}) {
+  const keys = new Set([...Object.keys(hints), ...rows.flatMap(row => row && typeof row === 'object' ? Object.keys(row) : [])])
+  return [...keys].flatMap(id => {
+    const values = rows.map(row => row?.[id]).filter(value => value !== null && value !== undefined && value !== '')
+    const hint = hints[id] || {}
+    if (!hint.dataType && (!values.length || values.some(value => typeof value === 'object' || typeof value === 'function'))) return []
+    const dataType = hint.dataType || (values.every(value => typeof value === 'boolean') ? 'boolean' : values.every(value => typeof value === 'number') ? 'number' : values.every(value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value))) ? 'date' : 'string')
+    const realDates = dataType === 'date' && values.length > 0 && values.every(value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value)))
+    return [{ id, label: labels[id] || id, dataType, semanticType: dataType === 'number' ? 'measure' : dataType === 'date' ? 'time' : 'dimension', filterable: true, filterDataType: dataType === 'date' && !realDates ? 'string' : dataType, preferredFilterType: realDates ? 'date-range' : 'multi-select', filterTypes: realDates ? ['select', 'multi-select', 'date-range'] : ['select', 'multi-select'], ...hint }]
+  })
+}
+function dataset(id, label, rows, hints) { return { id, label, rows, fields: createFieldCatalog(rows, hints) } }
+const numberHint = { dataType: 'number', semanticType: 'measure' }
+const monthHint = { dataType: 'date', semanticType: 'time', granularities: ['raw'], label: '统计月份（原始粒度）' }
+const dimensionHint = { dataType: 'string', semanticType: 'dimension' }
+const acceptanceHints = {
+  year: dimensionHint, quarter: dimensionHint, month: dimensionHint, date: { dataType: 'date', semanticType: 'time' },
+  department: dimensionHint, medicalGroup: dimensionHint, doctor: dimensionHint, disease: dimensionHint, scene: dimensionHint, indicatorCategory: dimensionHint,
+  indicatorValue: numberHint, numerator: numberHint, denominator: numberHint, targetValue: numberHint, yoy: numberHint, mom: numberHint
+}
+const drillHints = { department: dimensionHint, medicalGroup: dimensionHint, doctor: dimensionHint, value: numberHint }
+const mapHints = { region: dimensionHint, value: numberHint }
+const dualAxisHints = { month: { ...dimensionHint, label: '月份' }, actualValue: numberHint, targetValue: numberHint }
+const records = value => Array.isArray(value) ? value.filter(row => row && typeof row === 'object' && !Array.isArray(row)) : []
+
+export function createWidgetBindingDatasets(source, { result, demo = false, months = [] } = {}) {
+  if (source?.origin !== 'acceptance' && !demo) return createRealWidgetBindingDatasets(source, { result })
+  if (source?.origin === 'acceptance') {
+    if (source.acceptanceDataset === 'acceptance') return [dataset('acceptance', '固定验收数据 · 2026 Q3 · 18 条记录', dashboardAcceptanceRows, acceptanceHints)]
+    if (source.acceptanceDataset === 'drill') return [dataset('acceptance-drill', '固定验收数据 · 组织层级下钻', dashboardAcceptanceDrillRows, drillHints)]
+    if (source.acceptanceDataset === 'map') return [dataset('acceptance-map', '固定验收数据 · 区域分布', dashboardAcceptanceMapRows, mapHints)]
+    if (source.acceptanceDataset === 'dual-axis') return [dataset('acceptance-dual-axis', '固定验收数据 · 双 Y 轴月度数据', dashboardAcceptanceDualAxisRows, dualAxisHints)]
+    return [dataset('current', `${source.name} · 固定验收值`, [{ value: source.currentValue, mom: source.mom, yoy: source.yoy }], { value: { ...numberHint, unit: source.unit || '' }, mom: numberHint, yoy: numberHint })]
+  }
+  if (['indicator-catalog', 'dashboard-data-source'].includes(source?.origin)) {
+    const currentRows = records(source.analysisCurrentRows)
+    const trendRows = records(source.analysisTrendRows)
+    const comparisonRows = records(source.analysisComparisonRows || source.bindingRows)
+    const valueHint = { ...numberHint, unit: source.unit || '' }
+    return [
+      currentRows.length ? dataset('current', `${source.name || 'Published indicator'} · 当前值`, currentRows, { value: valueHint }) : null,
+      trendRows.length ? dataset('trend', `${source.name || 'Published indicator'} · 趋势`, trendRows, { periodStart: monthHint, value: valueHint, numeratorValue: numberHint, denominatorValue: numberHint }) : null,
+      comparisonRows.length ? dataset('departments', `${source.name || 'Published indicator'} · 维度对比`, comparisonRows, { value: valueHint, numeratorValue: numberHint, denominatorValue: numberHint }) : null,
+      records(source.bindingRows).length ? dataset('analysis', `${source.name || 'Published indicator'} analysis dimensions`, records(source.bindingRows), { value: valueHint }) : null
+    ].filter(Boolean).map(item => normalizeDepartmentDataset({ ...item, dimensionDisplayFields: source.analysisDimensionDisplayFields, departmentFields: source.analysisDepartmentFields }, { diagnostics: source.analysisNameDiagnostics || [] }))
+  }
+  if (!demo && result) {
+    // Do not reuse createDashboardSources' common trend for each summary metric.
+    const summaryKey = source?.dashboardSummaryKey || source?.code?.replace(/^dashboard-summary-/, '')
+    const card = result.summaryCards?.[summaryKey]
+    const rawValue = card?.value ?? card
+    const current = summaryKey && Object.hasOwn(result.summaryCards || {}, summaryKey) ? [{ value: rawValue }] : []
+    return [
+      dataset('current', `${source?.name || '指标'} · 当前汇总`, current, { value: { ...numberHint, label: source?.name || '指标值' } }),
+      dataset('trend', '看板月度结果 · 不等同于选中汇总指标', records(result.monthlyTrend), { [records(result.monthlyTrend).some(row => Object.hasOwn(row, 'month')) ? 'month' : 'period']: monthHint, value: numberHint }),
+      dataset('departments', '看板科室结果 · 独立快照', records(result.departmentRanking), { value: numberHint })
+    ]
+  }
+  if (!demo || !source) return []
+  return [
+    dataset('acceptance', '质量安全演示数据 · 组织、时间、病种、场景', dashboardAcceptanceRows, acceptanceHints),
+    dataset('current', `${source.name} · 演示当前值`, [{ value: source.currentValue }], { value: { ...numberHint, unit: source.unit || '' } }),
+    dataset('trend', `${source.name} · 演示月度序列`, (source.trendData || []).map((value, index) => ({ month: source.trendLabels?.[index] ?? months[index], value })), { month: monthHint, value: { ...numberHint, unit: source.unit || '' } }),
+    dataset('departments', `${source.name} · 演示科室快照`, (source.departmentData || []).map(row => ({ departmentName: row.name, value: row.value })), { departmentName: dimensionHint, value: { ...numberHint, unit: source.unit || '' } }),
+    dataset('distribution', `${source.name} · 演示构成`, (source.pieData || []).map(row => ({ category: row.name, value: row.value })), { category: dimensionHint, value: numberHint })
+  ]
+}

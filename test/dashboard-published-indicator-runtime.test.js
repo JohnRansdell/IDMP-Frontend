@@ -59,7 +59,7 @@ test('formal dashboard periods expose bounded common months and never resolve to
   assert.deepEqual(options.map(option => option.value), ['2026-04', '2025-12'])
   assert.equal(resolvePublishedDashboardPeriod('', options), '2026-04')
   assert.equal(resolvePublishedDashboardPeriod('2025-12', options), '2025-12')
-  assert.equal(resolvePublishedDashboardPeriod('', []), '2025-12')
+  assert.equal(resolvePublishedDashboardPeriod('', []), '')
   assert.deepEqual(resolvePublishedDashboardPeriodRange([], options), ['2026-04', '2026-04'])
   assert.deepEqual(resolvePublishedDashboardPeriodRange(['2025-12', '2026-04'], options), ['2025-12', '2026-04'])
   assert.deepEqual(resolvePublishedDashboardPeriodRange(['2026-03', '2026-04'], options), ['2026-04', '2026-04'])
