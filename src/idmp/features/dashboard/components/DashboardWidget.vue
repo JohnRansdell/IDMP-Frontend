@@ -27,7 +27,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
 import { getWidgetGridConstraints } from '../gridLayout.js'
 import { normalizeWidgetSelectionId } from '../widgetCapabilities.js'
 import { getDashboardWidgetSizeTier } from '../widgetSizing.js'
@@ -43,6 +43,8 @@ const emit = defineEmits(['select', 'remove', 'configure'])
 const root = ref(null)
 const sizeTier = ref('standard')
 let resizeObserver
+let active = true
+let disposed = false
 const constraints = computed(() => getWidgetGridConstraints(props.widget))
 // GridStack keeps the outer item DOM node stable. Key only the inner visual
 // subtree so style/theme changes remount their renderer without disturbing
@@ -87,17 +89,34 @@ function resolveShadow(value) {
   return shadows[value] || value || 'none'
 }
 function updateSizeTier(width, height) {
+  if (!active || disposed || !root.value?.isConnected || width <= 0 || height <= 0) return
   sizeTier.value = getDashboardWidgetSizeTier(width, height)
 }
-onMounted(() => {
+function observeSize() {
   const element = root.value
-  if (!element) return
+  if (!active || disposed || !element?.isConnected) return
   updateSizeTier(element.clientWidth, element.clientHeight)
   if (typeof ResizeObserver === 'undefined') return
-  resizeObserver = new ResizeObserver(([entry]) => updateSizeTier(entry.contentRect.width, entry.contentRect.height))
+  resizeObserver ||= new ResizeObserver(([entry]) => {
+    if (entry) updateSizeTier(entry.contentRect.width, entry.contentRect.height)
+  })
   resizeObserver.observe(element)
+}
+onMounted(observeSize)
+onDeactivated(() => {
+  active = false
+  resizeObserver?.disconnect()
 })
-onBeforeUnmount(() => resizeObserver?.disconnect())
+onActivated(async () => {
+  if (active) return
+  active = true
+  await nextTick()
+  observeSize()
+})
+onBeforeUnmount(() => {
+  disposed = true
+  resizeObserver?.disconnect()
+})
 </script>
 
 <style scoped>
