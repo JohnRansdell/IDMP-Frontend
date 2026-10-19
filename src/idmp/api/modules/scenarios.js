@@ -16,7 +16,7 @@ export function createScenario(payload, idempotencyKey) {
 }
 
 export function fetchScenarioVersions(scenarioId) {
-  return requestJson(`/scenarios/${scenarioId}/versions`)
+  return requestJson(`/scenarios/${scenarioId}/versions`, { cache: 'no-store' })
 }
 
 export function createScenarioVersion(scenarioId, payload = {}, idempotencyKey) {
@@ -28,7 +28,7 @@ export function createScenarioVersion(scenarioId, payload = {}, idempotencyKey) 
 }
 
 export function fetchScenarioVersion(versionId) {
-  return requestJson(`/scenario-versions/${versionId}`)
+  return requestJson(`/scenario-versions/${versionId}`, { cache: 'no-store' })
 }
 
 export function updateScenarioVersion(versionId, payload) {
@@ -43,17 +43,6 @@ export function replaceScenarioIndicators(versionId, payload) {
     method: 'PUT',
     body: JSON.stringify(payload)
   })
-}
-
-export function replaceScenarioOverrides(versionId, payload) {
-  return requestJson(`/scenario-versions/${versionId}/overrides`, {
-    method: 'PUT',
-    body: JSON.stringify(payload)
-  })
-}
-
-export function fetchScenarioMergedPreview(versionId) {
-  return requestJson(`/scenario-versions/${versionId}/merged-preview`)
 }
 
 export function validateScenarioVersion(versionId) {

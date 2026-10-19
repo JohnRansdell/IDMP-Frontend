@@ -1,8 +1,6 @@
 <template>
-  <section class="dashboard-context-bar" :class="{ 'is-expanded': expanded }" data-testid="dashboard-context-bar" aria-label="看板筛选与交互上下文">
-    <span class="dashboard-context-bar__label">上下文</span>
+  <section v-if="context.items.length" class="dashboard-context-bar" :class="{ 'is-expanded': expanded }" data-testid="dashboard-context-bar" aria-label="看板筛选与交互上下文">
     <div class="dashboard-context-bar__items">
-      <span v-if="!context.items.length" class="dashboard-context-bar__empty">无临时筛选或联动</span>
       <span v-for="item in visibleItems" :key="item.id" class="dashboard-context-bar__chip" :class="`is-${item.kind}`"><b>{{ item.kind === 'drill' ? '下钻' : item.kind === 'interaction' ? '联动' : '筛选' }}</b><span>{{ item.label }} · {{ item.value }}</span></span>
       <button v-if="hiddenCount" type="button" data-testid="dashboard-context-more" @click="expanded = !expanded">{{ expanded ? '收起' : `+${hiddenCount} 项` }}</button>
     </div>

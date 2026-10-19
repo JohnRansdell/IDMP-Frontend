@@ -2,12 +2,12 @@
   <div class="idmp-page factor-management">
     <PageHeader
       title="因子管理"
-      status-label="演示目录 + 后端新增流程"
+      status-label="后端联调"
       status-tone="info"
     >
       <template #meta>
         <span class="data-source-badge" :class="{ 'is-live': sourceMode === 'live' }">
-          {{ sourceMode === 'live' ? '接口数据' : '演示数据' }}
+          {{ tableLoading ? '正在加载' : loadError ? '加载失败' : '接口数据' }}
         </span>
         <span>共 {{ filteredRows.length }} 条</span>
       </template>
@@ -81,8 +81,12 @@
     </section>
 
     <section class="surface-card table-card factor-table-card" aria-label="因子目录">
+      <StatePanel v-if="tableLoading" type="loading" title="正在加载因子目录" />
+      <StatePanel v-else-if="loadError" type="error" title="因子目录加载失败" :description="loadError">
+        <template #actions><el-button type="primary" @click="loadBackendFactors">重试</el-button></template>
+      </StatePanel>
       <StatePanel
-        v-if="!tableLoading && !filteredRows.length"
+        v-else-if="!filteredRows.length"
         type="empty"
         title="没有符合条件的因子"
         description="调整筛选条件或新建因子后再查看。"
@@ -104,7 +108,7 @@
           <el-table-column type="selection" width="46" />
           <el-table-column prop="name" label="因子名称" min-width="280" show-overflow-tooltip>
             <template #default="{ row }">
-              <CodeTooltip :code="row.code" label="因子编码" :focusable="false"><button class="action-link factor-name-text" type="button" @click="openFactorEditor(row.id || row.code)">{{ row.name }}</button></CodeTooltip>
+              <CodeTooltip :code="row.code" label="因子编码" :focusable="false"><button class="action-link factor-name-text" type="button" @click="openFactorDetail(row)">{{ row.name }}</button></CodeTooltip>
             </template>
           </el-table-column>
           <el-table-column prop="category" label="分类" width="120" />
@@ -122,23 +126,23 @@
             </template>
           </el-table-column>
           <el-table-column label="引用数" width="78" align="center">
-            <template #default="{ row }">{{ row.references ?? 0 }}</template>
+            <template #default="{ row }">{{ row.references ?? '—' }}</template>
           </el-table-column>
            <el-table-column label="操作" width="230" fixed="right">
             <template #default="{ row }">
-              <button class="action-link" type="button" @click="openFactorEditor(row.id || row.code)">
+              <button class="action-link" type="button" @click="openFactorDetail(row)">
                 查看
               </button>
                <button class="action-link" type="button" @click="openFactorEditor(row.id || row.code)">
                  编辑
                </button>
-               <button v-if="sourceMode === 'live' && row.id" class="action-link danger-link" type="button" @click="openDelete(row)">删除</button>
+               <button v-if="row.id" class="action-link danger-link" type="button" @click="openDelete(row)">删除</button>
             </template>
           </el-table-column>
         </el-table>
       </div>
 
-      <div class="pagination-row">
+      <div v-if="!tableLoading && !loadError" class="pagination-row">
         <span>共 {{ filteredRows.length }} 条<span v-if="selectedRows.length">，已选 {{ selectedRows.length }} 条</span></span>
         <el-pagination
           v-model:current-page="currentPage"
@@ -171,7 +175,6 @@ import StatePanel from '@/idmp/components/StatePanel.vue'
 import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
  import ResourceDeleteDialog from '@/idmp/components/ResourceDeleteDialog.vue'
  import { deleteFactor, fetchFactorDeletionImpact, fetchAllFactors } from '@/idmp/api/modules/factors'
-import { factorRows } from '@/idmp/data/demo'
 import { getStatusLabel } from '@/idmp/design/status'
 import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
 import { getFactorTypeLabel } from '@/idmp/utils/factorType'
@@ -190,7 +193,8 @@ const emptyFilters = () => ({
 const form = reactive(emptyFilters())
 const filters = reactive(emptyFilters())
 const backendFactorRows = ref([])
-const sourceMode = ref('demo')
+const sourceMode = ref('loading')
+const loadError = ref('')
 const tableLoading = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(9)
@@ -201,7 +205,7 @@ const canUseAdvancedCreation = computed(() => {
   return designerRoles.some(role => sessionState.roles.includes(role)) || hasPermission('factor:advanced:create') || hasPermission('factor:template:manage')
 })
 
-const sourceRows = computed(() => sourceMode.value === 'live' ? backendFactorRows.value : factorRows)
+const sourceRows = computed(() => backendFactorRows.value)
 const categoryOptions = computed(() => [...new Set(sourceRows.value.map((item) => item.category).filter(Boolean))])
 
 const filteredRows = computed(() => {
@@ -241,6 +245,8 @@ watch(filteredRows, () => {
   }
 })
 
+const openFactorDetail = row => router.push({ name: 'FactorDetail', params: { id: String(row.id || row.code) } })
+
 const openFactorEditor = (id) => {
   router.push(`/factor/edit/${encodeURIComponent(id)}`)
 }
@@ -250,7 +256,7 @@ const openAdvancedFactorEditor = () => {
 }
 
 const showUnavailable = (capability) => {
-  ElMessage.info(`${capability}尚未接入真实接口，当前演示列表不会伪造操作结果。`)
+  ElMessage.info(`${capability}尚未接入接口，暂不可使用。`)
 }
 
 const openDelete = row => { deleteTarget.value = row }
@@ -259,6 +265,8 @@ const reloadAfterDelete = async () => { closeDelete(); await loadBackendFactors(
 
 async function loadBackendFactors() {
   tableLoading.value = true
+  loadError.value = ''
+  selectedRows.value = []
   try {
     const payload = await fetchAllFactors()
     const rows = normalizeList(payload).map(toFactorRow)
@@ -266,8 +274,8 @@ async function loadBackendFactors() {
     sourceMode.value = 'live'
   } catch (error) {
     backendFactorRows.value = []
-    sourceMode.value = 'demo'
-    ElMessage.warning(error?.message || '因子列表接口暂不可用，已显示演示目录')
+    sourceMode.value = 'error'
+    loadError.value = error?.message || '因子列表加载失败，请重试'
   } finally {
     tableLoading.value = false
   }
@@ -279,10 +287,10 @@ function toFactorRow(item) {
     code: item.code || item.factorCode || '',
     name: item.name || item.factorName || '',
     type: getFactorTypeLabel(item.definitionKind || item.factorKind || item.type),
-    category: item.category || '后端因子',
+    category: item.category || '—',
     aggregation: item.aggregation || item.output?.dimension || '-',
     domain: item.domain || item.domainCode || '-',
-    references: item.references ?? item.referenceCount ?? 0,
+    references: item.references ?? item.referenceCount ?? null,
     status: item.status || 'UNKNOWN',
     publishedVersionId: item.publishedVersionId
   }

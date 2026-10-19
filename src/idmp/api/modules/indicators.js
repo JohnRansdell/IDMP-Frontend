@@ -6,8 +6,8 @@ export const fetchAllIndicators = (params = {}) => fetchAllPages(fetchIndicators
 export const fetchAllIndicatorVersions = (params = {}) => fetchAllPages(fetchIndicatorVersionList, params)
 export const fetchAllIndicatorScenarios = (id, params = {}) => fetchAllPages(page => fetchIndicatorScenarios(id, page), params)
 
-export function fetchIndicators(params = {}) {
-  return requestJson(withQuery('/indicators', params))
+export function fetchIndicators(params = {}, options = {}) {
+  return requestJson(withQuery('/indicators', params), options)
 }
 
 export function fetchIndicator(indicatorId) {
@@ -103,10 +103,11 @@ export function trialIndicatorVersion(versionId, payload, idempotencyKey) {
   })
 }
 
-export function queryIndicatorVersion(versionId, payload) {
+export function queryIndicatorVersion(versionId, payload, options = {}) {
   return requestJson(`/indicator-versions/${encodeURIComponent(versionId)}/query`, {
     method: 'POST',
     timeoutMs: 120000,
+    cache: options.cache,
     body: JSON.stringify(payload)
   })
 }
@@ -125,18 +126,18 @@ export function fetchIndicatorTrialResults(versionId, batchId, page = 1, size = 
 }
 
 export function fetchIndicatorScenarios(indicatorId, params = {}) {
-  return requestJson(withQuery(`/indicators/${encodeURIComponent(indicatorId)}/scenarios`, params))
+  return requestJson(withQuery(`/indicators/${encodeURIComponent(indicatorId)}/scenarios`, params), { cache: 'no-store' })
 }
 
 export function fetchIndicatorAvailablePeriod(versionId) {
   return requestJson(`/indicator-versions/${encodeURIComponent(versionId)}/available-period`)
 }
 
-export function fetchIndicatorAnalysis(indicatorId, params = {}) {
+export function fetchIndicatorAnalysis(indicatorId, params = {}, options = {}) {
   return requestJson(withQuery(
     `/analysis/indicators/${indicatorId}/analysis`,
     normalizeIndicatorAnalysisParams(params)
-  ))
+  ), options)
 }
 
 export function exportIndicatorAnalysisPdf(indicatorId, report) {

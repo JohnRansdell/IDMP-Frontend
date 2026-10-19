@@ -77,10 +77,19 @@ export function fetchDashboardDataSourceFields(code, options = {}) {
 }
 
 export function previewDashboardWidget(payload, options = {}) {
+  // Virtual children use "group::item" internally. The preview API accepts
+  // business codes only; keep the local identity and normalize only the wire code.
+  const code = String(payload?.widget?.code || '')
+  let previewPayload = payload
+  if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(code)) {
+    let hash = 2166136261
+    for (const character of code) hash = Math.imul(hash ^ character.codePointAt(0), 16777619)
+    previewPayload = { ...payload, widget: { ...payload.widget, code: `PREVIEW_${(hash >>> 0).toString(16)}` } }
+  }
   return requestJson('/analysis/dashboard-query/preview', {
     ...options,
     method: 'POST',
-    body: JSON.stringify(payload)
+    body: JSON.stringify(previewPayload)
   })
 }
 

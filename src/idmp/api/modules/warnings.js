@@ -33,8 +33,8 @@ export function disableWarningRule(ruleId, resourceVersion) {
   return warningRuleAction(ruleId, 'disable', { resourceVersion })
 }
 
-export function fetchWarnings(params = {}) {
-  return requestJson(withQuery('/analysis/warnings', params))
+export function fetchWarnings(params = {}, options = {}) {
+  return requestJson(withQuery('/analysis/warnings', params), options)
 }
 
 export function fetchWarningEvent(eventId) {

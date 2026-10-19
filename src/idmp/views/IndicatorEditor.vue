@@ -30,6 +30,14 @@
       </div>
     </section>
 
+    <div class="notice-strip is-warning editor-contract-note">
+      <el-icon><InfoFilled /></el-icon>
+      <span>
+        公式、试算、独立正式计算和场景配置均使用真实接口。统一在第 6 页发布；政策来源必选，依据说明选填，场景关联可选。
+        草稿政策选择仅在当前浏览器暂存，发布后自动绑定；指标级排除规则尚无对应保存接口。
+      </span>
+    </div>
+
     <div v-if="!isNew && (editLoadState.loading || editLoadState.message)" class="notice-strip editor-contract-note" :class="editLoadState.detailReady ? 'is-success' : 'is-warning'">
       <el-icon><InfoFilled /></el-icon>
       <span>{{ editLoadState.loading ? '正在读取指标详情、版本与公式定义...' : editLoadState.message }}</span>
@@ -115,6 +123,9 @@
                   <el-checkbox v-for="item in sourceOptions" :key="item.value" :value="item.value">{{ item.label }}</el-checkbox>
                 </el-checkbox-group>
               </el-form-item>
+              <el-form-item label="政策文件来源" prop="policyDrafts" required class="form-span-2">
+                <IndicatorPolicySources :controller="policyPanel" :model-value="form.policyDrafts" :published="indicatorWorkflow.published" />
+              </el-form-item>
             </div>
           </el-form>
           <el-alert v-if="!indicatorWorkflow.versionId || indicatorWorkflow.published" type="info" :closable="false" show-icon :title="indicatorWorkflow.published ? '当前是已发布版本；定义、统计周期和数据来源需创建新草稿版本后才能修改。' : '定义、统计周期和数据来源会在首次保存公式、创建草稿版本后写入。当前保存先创建或更新指标基本资料。'" />
@@ -144,6 +155,12 @@
       <el-tab-pane label="2 公式与试算" name="formula">
         <section class="surface-card formula-card">
           <el-alert v-if="unsupportedFormula" title="当前公式包含嵌套运算或常量，暂不支持在此编辑；原公式不会被修改。" type="warning" :closable="false" />
+          <div class="notice-strip is-warning formula-contract-note">
+            <el-icon><InfoFilled /></el-icon>
+            <span>
+              配置公式后保存、校验并试算，查看试算结果。场景在第 4 页单独配置；发布统一在第 6 页完成。
+            </span>
+          </div>
           <h2>计算模式</h2>
           <div class="formula-modes">
             <el-button
@@ -187,7 +204,7 @@
                 <div v-for="factor in numeratorFactors" :key="factor.code" class="selected-factor">
                   <span>{{ factor.name }}</span>
                   <small>{{ factor.code }}</small>
-                  <button type="button" @click="editFactor(factor)">编辑条件</button>
+                  <button type="button" @click="editFactor(factor)">查看因子条件</button>
                   <el-button
                     text
                     circle
@@ -216,7 +233,7 @@
                 <div v-for="factor in denominatorFactors" :key="factor.code" class="selected-factor">
                   <span>{{ factor.name }}</span>
                   <small>{{ factor.code }}</small>
-                  <button type="button" @click="editFactor(factor)">编辑条件</button>
+                  <button type="button" @click="editFactor(factor)">查看因子条件</button>
                   <el-button
                     text
                     circle
@@ -390,14 +407,7 @@
               <el-button type="primary" :disabled="!indicatorWorkflow.compiled || (!isStaticIndicator && !hasIndicatorTrialPeriod)" :loading="workflowLoading.trial || workflowLoading.result" @click="trialIndicatorAndLoadResult">
                 {{ indicatorTrialButtonLabel }}
               </el-button>
-              <el-button
-                type="success"
-                :disabled="!indicatorWorkflow.versionId || indicatorWorkflow.published"
-                :loading="workflowLoading.publish"
-                @click="publishIndicatorVersionOnly"
-              >
-                发布指标版本
-              </el-button>
+              <el-button type="success" plain @click="activeTab = 'publish'">前往第 6 页发布检查</el-button>
               <el-button v-if="indicatorWorkflow.published && !isStaticIndicator && !hasTemporaryIndicatorRuntimeParameters" type="primary" plain :loading="workflowLoading.formal" @click="generateFormalResultAndOpenAnalysis">
                 生成正式结果并去指标分析
               </el-button>
@@ -513,92 +523,22 @@
 
       <el-tab-pane label="3 规则与排除" name="exclusion">
         <section class="surface-card exclusion-card">
-          <div class="section-title">
-            <h2>默认排除条件（全局生效，可被场景级配置覆盖）</h2>
-          </div>
-          <div class="logic-row">
-            <span>排除满足以下</span>
-            <el-select v-model="exclusionLogic" aria-label="默认排除条件逻辑">
-              <el-option label="任意" value="任意" />
-              <el-option label="全部" value="全部" />
-            </el-select>
-            <span>条件的记录：</span>
-          </div>
-          <div class="condition-list">
-            <div v-for="(condition, index) in conditions" :key="condition.id" class="condition-row">
-              <span class="condition-index">条件{{ index + 1 }}</span>
-              <el-select
-                v-model="condition.field"
-                :aria-label="`条件 ${index + 1} 字段`"
-                @change="resetCondition(condition)"
-              >
-                <el-option label="出院方式" value="出院方式" />
-                <el-option label="住院天数" value="住院天数" />
-                <el-option label="手术级别" value="手术级别" />
-                <el-option label="年龄" value="年龄" />
-              </el-select>
-              <el-select v-model="condition.operator" :aria-label="`条件 ${index + 1} 运算符`">
-                <el-option v-for="item in operatorOptions(condition.field)" :key="item" :label="item" :value="item" />
-              </el-select>
-              <el-select
-                v-if="condition.field === '出院方式'"
-                v-model="condition.value"
-                class="condition-value"
-                :aria-label="`条件 ${index + 1} 值`"
-              >
-                <el-option label="放弃治疗自动出院" value="放弃治疗自动出院" />
-                <el-option label="死亡" value="死亡" />
-                <el-option label="转院" value="转院" />
-              </el-select>
-              <el-select
-                v-else-if="condition.field === '手术级别'"
-                v-model="condition.value"
-                class="condition-value"
-                :aria-label="`条件 ${index + 1} 值`"
-              >
-                <el-option label="一级" value="一级" />
-                <el-option label="二级" value="二级" />
-                <el-option label="三级" value="三级" />
-                <el-option label="四级" value="四级" />
-              </el-select>
-              <el-input-number
-                v-else
-                v-model="condition.value"
-                :min="0"
-                :controls="false"
-                class="condition-value"
-                :aria-label="`条件 ${index + 1} 数值`"
-              />
-              <span class="condition-unit">{{ conditionUnit(condition.field) }}</span>
-              <el-button
-                type="danger"
-                plain
-                :icon="Delete"
-                :disabled="conditions.length === 1"
-                @click="removeCondition(condition.id)"
-              >
-                删除
-              </el-button>
-            </div>
-          </div>
-          <el-button type="primary" plain :icon="Plus" @click="addCondition">添加条件</el-button>
-          <div class="readable-rule">
-            <span>排除条件说明（业务可读文本）：</span>
-            <strong>“{{ readableExclusion }}”</strong>
-          </div>
-          <div class="exclusion-tip">
-            <el-icon><InfoFilled /></el-icon>
-            各应用场景可在此基础上追加额外的排除条件，前往「场景关联」页签配置。
-          </div>
+          <h2>规则与排除</h2>
+          <el-alert title="指标版本级默认排除条件暂不支持在此保存。因子过滤条件请到因子编辑页配置；仅特定场景适用的排除条件请到场景编辑页配置。" type="info" :closable="false" show-icon />
+          <p>因子过滤、指标默认排除、场景覆盖的作用范围不同。此处不再展示不会保存或执行的模拟条件。</p>
+          <el-button @click="activeTab = 'formula'">查看公式及引用因子</el-button><el-button @click="activeTab = 'scene'">查看可选场景配置</el-button>
         </section>
       </el-tab-pane>
 
-      <el-tab-pane label="4 场景关联" name="scene">
-        <IndicatorScenarioLinks v-if="activeTab === 'scene'" :indicator-id="indicatorWorkflow.indicatorId" :version-id="indicatorWorkflow.publishedVersionId || indicatorWorkflow.versionId" />
+      <el-tab-pane label="4 场景关联（可选）" name="scene">
+        <IndicatorScenarioLinks :indicator-id="String(indicatorWorkflow.indicatorId || '')" :version-id="String(indicatorWorkflow.versionId || '')" :published="indicatorWorkflow.published" />
       </el-tab-pane>
 
-      <el-tab-pane label="5 政策依据" name="policy">
-        <IndicatorPolicyReferences :version-id="indicatorWorkflow.versionId" :published="indicatorWorkflow.published" />
+      <el-tab-pane label="5 政策依据（选填）" name="policy">
+        <section class="surface-card table-card">
+          <div class="section-title"><div><h2>政策依据（选填）</h2><p>自动同步第 1 页选择的政策来源，可补充章节、条款和依据说明；本页可以跳过。</p></div></div>
+          <IndicatorPolicyBasis :controller="policyPanel" :model-value="form.policyDrafts" :published="indicatorWorkflow.published" />
+        </section>
       </el-tab-pane>
 
       <el-tab-pane label="6 发布检查" name="publish">
@@ -642,12 +582,15 @@
               </div>
               <el-button
                 type="primary"
-                :disabled="!indicatorWorkflow.versionId || indicatorWorkflow.published"
+                :disabled="!indicatorWorkflow.versionId || indicatorWorkflow.published || policySourceState.loading || policySourceState.saving"
                 :loading="workflowLoading.publish"
                 @click="publishIndicatorVersionOnly"
               >
                 发布指标版本
               </el-button>
+              <el-button v-if="indicatorWorkflow.published && (form.policyDrafts.length || policySourceState.error)" type="warning" :loading="policySourceState.saving" @click="retryPolicySources">重试保存政策来源</el-button>
+              <el-button v-if="indicatorWorkflow.published && !isStaticIndicator && !hasTemporaryIndicatorRuntimeParameters" plain :loading="workflowLoading.formal" @click="generateFormalResultAndOpenAnalysis">独立正式计算并查看结果</el-button>
+
             </div>
           </article>
         </section>
@@ -657,7 +600,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
@@ -676,7 +619,6 @@ import {
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import IndicatorScenarioLinks from '@/idmp/components/IndicatorScenarioLinks.vue'
-import IndicatorPolicyReferences from '@/idmp/components/IndicatorPolicyReferences.vue'
 import ResultAvailabilityPanel from '@/idmp/components/ResultAvailabilityPanel.vue'
 import { API_BASE_URL } from '@/idmp/api/request'
 import { resourceConflictEditorPath, resolveResourceConflict } from '@/idmp/api/adapters/resourceConflict'
@@ -712,6 +654,10 @@ import {
   validateDrillSelection
 } from '@/idmp/api/adapters/indicator'
 import { createCalcBatch, fetchAsyncTask, fetchCalcBatch } from '@/idmp/api/modules/calculation'
+import IndicatorPolicySources from '@/idmp/components/IndicatorPolicySources.vue'
+import IndicatorPolicyBasis from '@/idmp/components/IndicatorPolicyBasis.vue'
+import { useIndicatorPolicySources } from '@/idmp/features/indicator/useIndicatorPolicySources'
+import { restorePolicyDrafts } from '@/idmp/features/indicator/editorWorkflow'
 import { getStatusLabel } from '@/idmp/design/status'
 import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
 import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
@@ -719,7 +665,7 @@ import { factorCalculationMode } from '@/idmp/utils/factorPeriod'
 import { newResourceCode } from '@/idmp/utils/resourceCode'
 import { parseEditorFormula, zeroPolicy, zeroPolicyLabel } from '@/idmp/features/indicator/formulaEditor'
 import { configurableSourceFactors, activeSourceBindings } from '@/idmp/utils/derivedFactor'
-import { fetchPublishedFactorVersions } from '@/idmp/api/modules/factors'
+import { fetchFactorVersion, fetchPublishedFactorVersions } from '@/idmp/api/modules/factors'
 import RuntimeParameterFields from '@/idmp/components/RuntimeParameterFields.vue'
 import DimensionGrainEditor from '@/idmp/components/DimensionGrainEditor.vue'
 import CustomDrillPathEditor from '@/idmp/components/CustomDrillPathEditor.vue'
@@ -733,6 +679,11 @@ const router = useRouter()
 const isNew = computed(() => !route.params.id || route.params.id === 'new')
 const routeIndicatorKey = computed(() => String(route.params.id || ''))
 const activeTab = ref('basic')
+const policyPanel = ref()
+const policySourceState = reactive({ count: 0, pending: 0, loading: false, saving: false, error: '' })
+let policyCacheReady = false
+let policyCacheWarningShown = false
+let savedBasicSignature = ''
 const formRef = ref()
 const backendEditorFactors = ref([])
 const deathFactorVersionId = ref('')
@@ -859,49 +810,24 @@ const publishPanelDescription = computed(() => {
     return `后端已返回发布结果，版本 ${indicatorWorkflow.publishedVersionId || indicatorWorkflow.versionId} 可用于分析查询。`
   }
   if (!indicatorWorkflow.versionId) return '请先创建指标版本。'
-  if (!indicatorWorkflow.compiled) return '发布按钮已开放；若公式尚未编译通过，后端发布接口会返回具体原因。'
-  if (!hasIndicatorTrialResults.value) return '发布按钮已开放；建议先试算并查看结果，最终是否允许发布以后端校验为准。'
+  if (!policySourceState.count) return '请先在第 1 页选择政策文件来源；依据说明选填，场景关联可跳过。'
+  if (!indicatorWorkflow.compiled) return '发布时会对当前公式执行编译校验，失败时保留草稿。'
+  if (!hasIndicatorTrialResults.value) return '发布前需要成功试算；提交发布时会补齐校验，并以后端最终校验为准。'
   return '发布接口已就绪，点击按钮会写入后端发布状态。'
 })
 
 const workflowSteps = computed(() => [
-  {
-    key: 'identity',
-    label: '基础与版本',
-    description: indicatorWorkflow.versionId ? '稳定指标与草稿版本已创建' : '先创建稳定指标与首个草稿版本',
-    state: indicatorWorkflow.versionId ? 'complete' : indicatorWorkflow.indicatorId ? 'current' : 'pending'
-  },
-  {
-    key: 'formula',
-    label: '公式编译',
-    description: indicatorWorkflow.compiled ? '服务端编译已通过' : '保存 Formula AST 后执行服务端编译',
-    state: indicatorWorkflow.compiled ? 'complete' : indicatorWorkflow.versionId ? 'current' : 'pending'
-  },
-  {
-    key: 'rules',
-    label: '规则与场景',
-    description: '当前仅提供界面演示，不影响公式试算和版本发布',
-    state: 'blocked'
-  },
-  {
-    key: 'trial',
-    label: '试算与质量',
-    description: hasIndicatorTrialResults.value
-      ? `已读取批次 ${indicatorWorkflow.batchId} 的结果`
-      : indicatorWorkflow.batchId
-        ? `试算批次 ${indicatorWorkflow.batchId} 已提交`
-        : '编译通过后发起异步试算',
-    state: hasIndicatorTrialResults.value ? 'complete' : indicatorWorkflow.batchId ? 'current' : 'pending'
-  },
-  {
-    key: 'publish',
-    label: '发布门禁',
-    description: indicatorWorkflow.published ? '指标版本已发布' : '调用服务端发布接口',
-    state: indicatorWorkflow.published ? 'complete' : canPublishIndicatorVersion.value ? 'current' : 'pending'
-  }
+  { key: 'basic', label: '基础与版本', description: indicatorWorkflow.versionId ? '指标与版本已创建' : '填写基本信息并选择政策来源', state: indicatorWorkflow.versionId ? 'complete' : 'current' },
+  { key: 'formula', label: '公式与试算', description: hasIndicatorTrialResults.value ? '试算结果已读取，可前往发布检查' : indicatorWorkflow.compiled ? '校验通过，可执行试算' : '保存公式后编译、试算', state: hasIndicatorTrialResults.value ? 'complete' : 'pending' },
+  { key: 'exclusion', label: '规则与排除', description: '指标级默认排除暂不支持此处保存', state: 'blocked' },
+  { key: 'scene', label: '场景关联', description: '可选，不影响独立指标计算', state: 'optional' },
+  { key: 'policy', label: '政策依据', description: '选填，自动同步第 1 页政策来源，可跳过', state: 'optional' },
+  { key: 'publish', label: '发布检查', description: indicatorWorkflow.published ? '指标已发布，可独立正式计算' : '统一在第 6 页确认发布', state: indicatorWorkflow.published ? 'complete' : 'pending' }
 ])
 
 const publishGates = computed(() => [
+  { label: '政策文件来源（必填）', description: policySourceState.error || `已选择 ${policySourceState.count} 份，待绑定 ${policySourceState.pending} 份；依据说明选填。草稿来源发布后绑定。`, state: policySourceState.error || !policySourceState.count ? 'pending' : policySourceState.pending ? 'warning' : 'pass', stateLabel: policySourceState.error ? '需重试' : !policySourceState.count ? '待选择' : policySourceState.pending ? '待绑定' : '已保存' },
+  { label: '场景关联（可选）', description: '无需关联场景即可发布并生成独立正式结果', state: 'pass', stateLabel: '可跳过' },
   {
     label: '稳定指标与草稿版本',
     description: indicatorWorkflow.versionId ? `版本 ${indicatorWorkflow.versionId}` : '尚未创建可发布的草稿版本',
@@ -923,7 +849,7 @@ const publishGates = computed(() => [
     stateLabel: hasIndicatorTrialResults.value ? '需核验 Hash' : '待完成'
   },
   {
-    label: '质量、政策、下钻与隐私',
+    label: '质量、下钻与隐私',
     description: indicatorWorkflow.published ? '发布接口已由后端完成最终校验' : '发布时由后端执行最终门禁校验',
     state: indicatorWorkflow.published ? 'pass' : canPublishIndicatorVersion.value ? 'warning' : 'pending',
     stateLabel: indicatorWorkflow.published ? '已发布' : canPublishIndicatorVersion.value ? '后端校验' : '待发布'
@@ -1008,8 +934,26 @@ const form = reactive({
   definition: '',
   significance: '',
   sources: [],
-  period: '年度'
+  period: '年度',
+  policyDrafts: []
 })
+
+// One owner for both tabs: saved references, pending sources, optional citations and retries.
+policyPanel.value = useIndicatorPolicySources({
+  get modelValue() { return form.policyDrafts },
+  get versionId() { return String(indicatorWorkflow.versionId || '') },
+  get published() { return indicatorWorkflow.published }
+}, (event, value) => {
+  if (event === 'update:modelValue') form.policyDrafts = value
+  else if (event === 'state') Object.assign(policySourceState, value)
+})
+
+async function focusPolicySource() {
+  activeTab.value = 'basic'
+  await nextTick()
+  formRef.value?.scrollToField('policyDrafts')
+  policyPanel.value.sourceSelect?.focus?.()
+}
 
 const editorTitle = computed(() => {
   if (isNew.value) return `新建指标：${form.name || '未命名指标'}`
@@ -1017,6 +961,7 @@ const editorTitle = computed(() => {
 })
 
 const editorStatus = computed(() => {
+  if (indicatorWorkflow.published) return 'PUBLISHED'
   if (hasIndicatorTrialResults.value) return 'TRIAL_READY'
   if (indicatorWorkflow.batchId) return 'TRIAL_SUBMITTED'
   if (indicatorWorkflow.compiled) return 'COMPILED'
@@ -1026,6 +971,7 @@ const editorStatus = computed(() => {
   return isNew.value ? 'NEW' : 'DETAIL_PENDING'
 })
 const editorStatusLabel = computed(() => ({
+  PUBLISHED: '已发布',
   NEW: '新建',
   DETAIL_PENDING: '等待加载详情',
   INDICATOR_READY: '指标已就绪',
@@ -1046,7 +992,8 @@ const rules = computed(() => ({
   direction: isNew.value ? [required('请选择指标导向')] : [],
   definition: [required('请输入指标定义')],
   sources: [required('请选择至少一个数据来源')],
-  period: [required('请选择统计周期')]
+  period: [required('请选择统计周期')],
+  policyDrafts: [{ validator: (_rule, _value, done) => policySourceState.loading || policySourceState.saving ? done(new Error('请等待政策来源读取或保存完成')) : policySourceState.error ? done(new Error(policySourceState.error)) : policySourceState.count > 0 ? done() : done(new Error('请选择至少一份政策文件来源；依据说明选填')), trigger: 'change' }]
 }))
 
 function findCategoryPath(target, options, trail = []) {
@@ -1472,7 +1419,17 @@ const removeFactor = (target, code) => {
   }
 }
 
-const editFactor = factor => ElMessage.info(`“${factor.name}”条件编辑为演示操作`)
+async function editFactor(factor) {
+  const target = window.open('about:blank', '_blank')
+  if (target) target.opener = null
+  try {
+    const version = factor.factorId ? factor : await fetchFactorVersion(factor.versionId)
+    if (!version.factorId) throw new Error('未找到对应因子')
+    const href = router.resolve({ name: 'FactorDetail', params: { id: String(version.factorId) }, query: { factorVersionId: String(factor.versionId) } }).href
+    if (target) target.location.href = href
+    else ElMessage.warning('浏览器阻止了新窗口，请从因子管理打开该因子')
+  } catch (error) { target?.close(); ElMessage.error(error.message || '因子读取失败') }
+}
 
 async function loadPublishedFactorVersions() {
   workflowLoading.factors = true
@@ -1530,36 +1487,6 @@ function createFormulaFactorPlaceholder(label, versionId) {
     versionId: toOpaqueId(versionId),
     dsl: null
   }
-}
-
-let nextConditionId = 3
-const exclusionLogic = ref('任意')
-const conditions = reactive([
-  { id: 1, field: '出院方式', operator: '等于', value: '放弃治疗自动出院' },
-  { id: 2, field: '住院天数', operator: '小于等于', value: 1 }
-])
-
-const operatorOptions = field => (
-  ['住院天数', '年龄'].includes(field)
-    ? ['小于', '小于等于', '等于', '大于等于', '大于']
-    : ['等于', '不等于', '属于', '不属于']
-)
-
-const conditionUnit = field => ({ 住院天数: '天', 年龄: '岁' }[field] || '')
-const conditionText = condition => `${condition.field}${condition.operator}${condition.value}${conditionUnit(condition.field)}`
-const readableExclusion = computed(() => conditions.map(conditionText).join(exclusionLogic.value === '任意' ? '，或' : '，且'))
-
-const resetCondition = condition => {
-  condition.operator = ['住院天数', '年龄'].includes(condition.field) ? '小于等于' : '等于'
-  condition.value = condition.field === '出院方式' ? '放弃治疗自动出院' : condition.field === '手术级别' ? '一级' : 1
-}
-
-const addCondition = () => {
-  conditions.push({ id: nextConditionId++, field: '年龄', operator: '大于等于', value: 65 })
-}
-
-const removeCondition = id => {
-  if (conditions.length > 1) conditions.splice(conditions.findIndex(item => item.id === id), 1)
 }
 
 function hydrateIndicatorSummary(item) {
@@ -1778,7 +1705,8 @@ async function saveIndicatorBasicInfo() {
   try {
     await formRef.value?.validate()
   } catch {
-    activeTab.value = 'basic'
+    if (!policySourceState.count || policySourceState.error) await focusPolicySource()
+    else activeTab.value = 'basic'
     ElMessage.warning('请先完善指标基本信息')
     return false
   }
@@ -1838,6 +1766,7 @@ function applySavedIndicatorMetadata(updated, hasDraftVersion) {
   }
   syncCategorySelection(resolveCategoryPath(updated, form.categoryPath))
   indicatorWorkflow.masterResourceVersion = resolveResourceVersion(updated, indicatorWorkflow.masterResourceVersion)
+  savedBasicSignature = basicMetadataSignature()
   if (!hasDraftVersion) return
   form.definition = updated?.definition ?? updated?.description ?? form.definition
   form.significance = updated?.meaning ?? form.significance
@@ -1846,6 +1775,7 @@ function applySavedIndicatorMetadata(updated, hasDraftVersion) {
     form.sources = savedDataSources.value.map(indicatorDataSourceKey)
   }
   form.period = fromApiStatisticalPeriod(updated?.statisticalPeriod) || form.period
+  savedBasicSignature = basicMetadataSignature()
   indicatorWorkflow.metadataVersionId = toOpaqueId(updated?.metadataVersionId ?? indicatorWorkflow.metadataVersionId)
   indicatorWorkflow.metadataResourceVersion = resolveMetadataResourceVersion(updated, indicatorWorkflow.metadataResourceVersion)
   if (indicatorWorkflow.metadataVersionId === indicatorWorkflow.versionId) {
@@ -1894,6 +1824,7 @@ async function createIndicatorDraftVersion() {
     }
 
     workflowLoading.version = true
+    const copiedPolicySources = policyPanel.value?.copySourcesToDraft() || []
     const copyFromVersionId = indicatorWorkflow.versionId
     const versionPayload = buildIndicatorVersionPayload({ copyFromVersionId, drillPaths: selectedDrillPaths.value, calculationMode: indicatorCalculationMode.value, dimensionGrain: indicatorDimensionGrain.value, factorDimensionBindings: activeFactorDimensionBindings() })
     recordWorkflowRequest({
@@ -1929,6 +1860,8 @@ async function createIndicatorDraftVersion() {
       initializationBatchId: '',
       initializationStatus: ''
     })
+    form.policyDrafts = copiedPolicySources
+    rememberIndicatorEditorForm(indicatorWorkflow.indicatorId)
     resetIndicatorTrialResultCollection()
     hydrateFormulaFactors(extractFormula(version))
     activeTab.value = 'formula'
@@ -2046,6 +1979,7 @@ async function createFirstIndicatorVersionWithFormula(formula) {
   resetIndicatorTrialResultCollection()
   selectedDrillPaths.value = normalizeDrillPaths(version)
   factorDimensionBindings.value = version.factorDimensionBindings || version.drillConfig?.factorDimensionBindings || {}
+  rememberIndicatorEditorForm(indicatorWorkflow.indicatorId)
   recordWorkflowSuccess(`首个指标版本及公式已保存：${versionId}`)
   try {
     const updated = await updateIndicator(indicatorWorkflow.indicatorId, createIndicatorMetadataPayload())
@@ -2345,16 +2279,23 @@ async function publishIndicatorVersionOnly() {
     return
   }
   if (indicatorWorkflow.published) {
+    if (form.policyDrafts.length) await retryPolicySources()
     ElMessage.success('指标版本已发布')
     return
   }
 
   workflowLoading.publish = true
   try {
+    try { await policyPanel.value?.validateSources() } catch (error) { await focusPolicySource(); throw error }
+    if (!policySourceState.count) { await focusPolicySource(); throw new Error('请选择至少一份政策文件来源') }
+    try { await formRef.value?.validate() } catch { activeTab.value = 'basic'; throw new Error('请先完善指标基本信息') }
+    if (basicMetadataSignature() !== savedBasicSignature && !await saveIndicatorBasicInfo()) return
     const ready = await ensureIndicatorPublishPrerequisites()
     if (!ready) return
     await refreshIndicatorVersionState()
     if (indicatorWorkflow.published) {
+      await nextTick()
+      await retryPolicySources()
       recordWorkflowSuccess(`指标版本已发布：${indicatorWorkflow.publishedVersionId || indicatorWorkflow.versionId}`)
       ElMessage.success('指标版本已发布')
       return
@@ -2383,6 +2324,8 @@ async function publishIndicatorVersionOnly() {
     indicatorWorkflow.initializationStatus = indicatorWorkflow.initializationBatchId ? 'RUNNING' : ''
     indicatorWorkflow.published = true
     indicatorWorkflow.publishedVersionId = resolveIndicatorVersionId(result) || indicatorWorkflow.versionId
+    await nextTick()
+    await retryPolicySources()
     recordWorkflowSuccess(isStaticIndicator.value && indicatorWorkflow.initializationBatchId ? `静态指标版本已发布，正在初始化批次 ${indicatorWorkflow.initializationBatchId}` : `指标版本已发布：${indicatorWorkflow.publishedVersionId}`)
     ElMessage.success(isStaticIndicator.value ? '静态指标已发布，正在执行一次全量初始化' : '指标版本已发布')
     if (isStaticIndicator.value && indicatorWorkflow.initializationBatchId) {
@@ -2468,6 +2411,10 @@ async function ensureIndicatorPublishPrerequisites() {
     await loadIndicatorTrialResultOnly()
     if (!hasIndicatorTrialResults.value) return false
   }
+  if (['FAILED', 'CANCELLED', 'CANCELED'].includes(indicatorWorkflow.trialAvailability?.executionStatus) || indicatorWorkflow.trialAvailability?.status === 'CALCULATION_ERROR') {
+    ElMessage.warning('本次试算未成功，请返回第 2 页处理后重新试算')
+    return false
+  }
   return true
 }
 
@@ -2551,14 +2498,25 @@ function indicatorEditorStorageKey(indicatorId) {
   return `idmp:indicator-editor-form:${indicatorId}`
 }
 
+function basicMetadataSignature() {
+  return JSON.stringify([form.name, form.categoryPath, form.definition, form.significance, form.period, form.sources])
+}
+
 function rememberIndicatorEditorForm(indicatorId, openFormula = false) {
   if (!indicatorId) return
   try {
     sessionStorage.setItem(indicatorEditorStorageKey(indicatorId), JSON.stringify({
       form: { ...form, categoryPath: [...form.categoryPath], sources: [...form.sources] },
+      policyDraftVersionId: String(indicatorWorkflow.versionId || ''),
       openFormula
     }))
-  } catch { /* Storage may be unavailable; the current editor still keeps its in-memory values. */ }
+    policyCacheWarningShown = false
+  } catch {
+    if (form.policyDrafts.length && !policyCacheWarningShown) {
+      policyCacheWarningShown = true
+      ElMessage.warning('浏览器无法暂存政策来源，当前选择仅保留在页面内，请勿刷新或关闭页面')
+    }
+  }
 }
 
 function restoreIndicatorEditorForm() {
@@ -2567,12 +2525,14 @@ function restoreIndicatorEditorForm() {
   try {
     const saved = JSON.parse(sessionStorage.getItem(indicatorEditorStorageKey(indicatorId)) || 'null')
     if (!saved?.form) return
+    form.policyDrafts = restorePolicyDrafts(saved, indicatorWorkflow.versionId)
     if (!indicatorWorkflow.versionId) {
       const persistedCode = indicatorWorkflow.indicatorId ? form.code : ''
       const persistedPresentation = indicatorWorkflow.indicatorId
         ? Object.fromEntries(['shortName', 'attribute', 'unit', 'direction'].map(key => [key, form[key]])) : null
       const savedForm = { ...saved.form }
       delete savedForm.policies
+      delete savedForm.policyDrafts
       Object.assign(form, savedForm)
       if (persistedCode) form.code = persistedCode
       if (persistedPresentation) Object.assign(form, persistedPresentation)
@@ -2580,6 +2540,21 @@ function restoreIndicatorEditorForm() {
     }
     if (saved.openFormula) activeTab.value = 'formula'
   } catch { /* Ignore invalid or unavailable session data and use the backend response. */ }
+}
+
+watch(() => form.policyDrafts, () => { if (policyCacheReady && indicatorWorkflow.indicatorId) rememberIndicatorEditorForm(indicatorWorkflow.indicatorId) }, { deep: true })
+
+async function retryPolicySources() {
+  try {
+    const saved = await policyPanel.value?.syncPendingSources()
+    if (saved === false) throw new Error('指标版本已切换')
+    rememberIndicatorEditorForm(indicatorWorkflow.indicatorId)
+    return true
+  } catch (error) {
+    rememberIndicatorEditorForm(indicatorWorkflow.indicatorId)
+    ElMessage.error(`指标已发布，但政策来源未全部保存：${error.message}。请在第 6 页重试。`)
+    return false
+  }
 }
 
 function initialIndicatorTrialPeriod() {
@@ -2780,10 +2755,12 @@ async function refreshTrialTaskStatus() {
 }
 
 onMounted(async () => {
-  restoreIndicatorEditorForm()
   await loadPublishedFactorVersions()
   await loadIndicatorForEdit()
   restoreIndicatorEditorForm()
+  await nextTick()
+  policyCacheReady = true
+  savedBasicSignature = basicMetadataSignature()
 })
 
 </script>
@@ -2801,7 +2778,7 @@ onMounted(async () => {
 
 .workflow-overview {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   margin-bottom: 12px;
   padding: 14px 16px;
   gap: 0;

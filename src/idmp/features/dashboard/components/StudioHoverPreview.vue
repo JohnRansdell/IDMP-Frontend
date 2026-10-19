@@ -5,8 +5,8 @@
       <aside v-if="visible" class="studio-hover-preview__panel" :class="{ 'is-template': template }" :style="panelStyle" role="tooltip" @mouseenter="clearTimer" @mouseleave="scheduleClose">
         <template v-if="template">
           <header><span>模板预览</span><strong>{{ template.name }}</strong></header>
-          <div class="studio-hover-preview__board" :class="{ 'is-dark': templateIsDark }" :style="{ ...templateSurfaceStyle, gridTemplateRows: 'repeat(30,minmax(0,1fr))' }" aria-hidden="true">
-            <div v-for="(item, index) in template.widgets" :key="index" class="studio-hover-preview__mini-card" :class="`is-${templateWidgetKind(item)}`" :style="templateGridStyle(item)">
+          <div class="studio-hover-preview__board" :class="{ 'is-dark': templateIsDark }" :style="{ ...templateSurfaceStyle, gridTemplateRows: `repeat(${templateRowCount},minmax(0,1fr))` }" aria-hidden="true">
+            <div v-for="(item, index) in template.widgets" :key="index" class="studio-hover-preview__mini-card" :class="[`is-${templateWidgetKind(item)}`, `is-variant-${item.config?.style?.kpiVariant || 'standard'}`]" :style="templateGridStyle(item)">
               <strong>{{ templateWidgetLabel(item) }}</strong>
               <span class="studio-hover-preview__mini-viz"><i v-for="part in 5" :key="part" /></span>
             </div>
@@ -18,12 +18,12 @@
         <template v-else-if="widgetItem">
           <header><span>组件示例</span><strong>{{ widgetItem.name }}</strong></header>
           <div class="studio-hover-preview__widget-demo" :class="`is-${widgetItem.type}`" aria-hidden="true">
-            <template v-if="widgetItem.type === 'kpi'"><small>本期指标</small><b>52.63%</b><em>同比 +1.24%</em></template>
-            <template v-else-if="widgetItem.type === 'metric-group'"><i v-for="index in 4" :key="index"><small>核心指标</small><b>{{ 20 + index * 7 }}</b></i></template>
-            <template v-else-if="widgetItem.type === 'warnings'"><i class="is-danger" /><span>高危指标已超过阈值</span><small>刚刚</small></template>
+            <template v-if="widgetItem.type === 'kpi'"><small>本期指标</small><b>—</b><em>同比 —</em></template>
+            <template v-else-if="widgetItem.type === 'metric-group'"><i v-for="index in 4" :key="index"><small>核心指标</small><b>—</b></i></template>
+            <template v-else-if="widgetItem.type === 'warnings'"><i class="is-danger" /><span>预警事件</span><small>事件时间</small></template>
             <template v-else-if="widgetItem.type === 'text'"><b>业务说明</b><span>展示指标口径、结论与使用提示。</span></template>
-            <template v-else-if="widgetItem.type === 'table'"><i v-for="index in 3" :key="index"><span>科室 {{ index }}</span><b>{{ 86 - index * 8 }}</b></i></template>
-            <template v-else-if="widgetItem.type === 'gauge'"><div class="studio-hover-preview__gauge">72<span>%</span></div><small>目标达成率</small></template>
+            <template v-else-if="widgetItem.type === 'table'"><i v-for="index in 3" :key="index"><span>科室 {{ index }}</span><b>—</b></i></template>
+            <template v-else-if="widgetItem.type === 'gauge'"><div class="studio-hover-preview__gauge">—<span></span></div><small>目标达成率</small></template>
             <template v-else-if="widgetItem.type === 'bar'"><div class="studio-hover-preview__bar"><i v-for="(height, index) in [42, 76, 55, 88, 64, 48]" :key="index" :style="{ height: `${height}%` }" /></div><span>分类数值比较</span></template>
             <template v-else-if="widgetItem.type === 'line'"><svg class="studio-hover-preview__line" viewBox="0 0 240 76"><path d="M4 66H236M4 38H236M4 10H236" class="grid" /><polyline points="5,58 42,46 78,52 116,22 154,34 195,13 235,27" /><circle v-for="point in linePoints" :key="point.x" :cx="point.x" :cy="point.y" r="3" /></svg><span>时间序列趋势</span></template>
             <template v-else-if="widgetItem.type === 'scatter'"><svg class="studio-hover-preview__scatter" viewBox="0 0 240 76"><path d="M8 4V69H236" class="axis" /><circle v-for="point in scatterPoints" :key="`${point.x}-${point.y}`" :cx="point.x" :cy="point.y" :r="point.r" /></svg><span>双度量相关分布</span></template>
@@ -44,9 +44,9 @@
                 <div class="studio-hover-preview__map-scale"><span>低</span><i /><span>高</span></div>
               </div>
               <div class="studio-hover-preview__map-ranking">
-                <i><span>华东</span><b>86</b></i>
-                <i><span>华北</span><b>72</b></i>
-                <i><span>西南</span><b>54</b></i>
+                <i><span>华东</span><b>—</b></i>
+                <i><span>华北</span><b>—</b></i>
+                <i><span>西南</span><b>—</b></i>
               </div>
             </template>
             <template v-else><div class="studio-hover-preview__chart"><i v-for="index in 7" :key="index" :style="{ height: `${25 + (index * 13) % 55}%` }" /></div><span>{{ widgetItem.hint }}</span></template>
@@ -71,6 +71,7 @@ let timer
 const panelStyle = computed(() => ({ left: `${position.left}px`, top: `${position.top}px` }))
 const linePoints = Object.freeze([{ x: 5, y: 58 }, { x: 42, y: 46 }, { x: 78, y: 52 }, { x: 116, y: 22 }, { x: 154, y: 34 }, { x: 195, y: 13 }, { x: 235, y: 27 }])
 const scatterPoints = Object.freeze([{ x: 25, y: 57, r: 4 }, { x: 48, y: 45, r: 5 }, { x: 72, y: 61, r: 3 }, { x: 94, y: 37, r: 4 }, { x: 121, y: 48, r: 6 }, { x: 148, y: 25, r: 4 }, { x: 178, y: 34, r: 5 }, { x: 207, y: 16, r: 4 }, { x: 222, y: 43, r: 3 }])
+const templateRowCount = computed(() => Math.max(1, ...(props.template?.widgets || []).map(widget => Number(widget.layout?.y || 0) + Number(widget.layout?.h || 1))))
 const templateSurfaceStyle = computed(() => {
   const background = props.template?.appearance?.background?.value
   return { background: typeof background === 'string' && background ? background : '#ffffff' }
@@ -83,6 +84,8 @@ function templateGridStyle(widget = {}) {
     gridColumn: `${Number(layout.x) + 1} / span ${Number(layout.w) || 1}`,
     gridRow: `${Number(layout.y) + 1} / span ${Number(layout.h) || 1}`,
     background: style.background || undefined,
+    color: style.kpi?.titleColor || style.text?.titleColor || undefined,
+    '--mini-accent': style.kpi?.valueColor || ({ medicalBlue: '#1261a6', blueTeal: '#187f91', green: '#357b62', warm: '#c56b3f', colorful: '#65548c' }[style.palettePreset]) || '#4f8196',
     borderColor: style.borderColor || undefined,
     borderRadius: `${Math.min(6, Math.max(1, Number(style.borderRadius) / 3 || 3))}px`
   }
@@ -127,4 +130,5 @@ onBeforeUnmount(clearTimer)
 .studio-hover-preview__widget-demo.is-bar,.studio-hover-preview__widget-demo.is-line,.studio-hover-preview__widget-demo.is-scatter,.studio-hover-preview__widget-demo.is-heatmap { display:grid; grid-template-columns:1fr; grid-template-rows:1fr auto; justify-items:center; gap:5px; padding:8px 14px; }.studio-hover-preview__bar { display:flex; align-items:end; justify-content:center; gap:12px; width:235px; height:68px; border-bottom:1px solid #9fb9c2; }.studio-hover-preview__bar i { width:22px; border-radius:3px 3px 0 0; background:linear-gradient(#69b7ba,#347f8d); }.studio-hover-preview__line,.studio-hover-preview__scatter { width:240px; height:76px; overflow:visible; }.studio-hover-preview__line .grid { fill:none; stroke:#d8e6e9; stroke-width:1; }.studio-hover-preview__line polyline { fill:none; stroke:#268e9a; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; }.studio-hover-preview__line circle { fill:#fff; stroke:#268e9a; stroke-width:2; }.studio-hover-preview__scatter .axis { fill:none; stroke:#9eb8c0; stroke-width:1; }.studio-hover-preview__scatter circle { fill:#338c99; opacity:.72; }.studio-hover-preview__heatmap { display:grid; grid-template-columns:repeat(6,28px); grid-auto-rows:13px; gap:3px; padding:5px; border-left:1px solid #9fb9c2; border-bottom:1px solid #9fb9c2; }.studio-hover-preview__heatmap i { display:block; background:#258b98; border-radius:2px; }
 .studio-preview-fade-enter-active,.studio-preview-fade-leave-active { transition:opacity .14s ease,transform .14s ease; }.studio-preview-fade-enter-from,.studio-preview-fade-leave-to { opacity:0; transform:translateY(4px); }
 @media (prefers-reduced-motion: reduce) { .studio-preview-fade-enter-active,.studio-preview-fade-leave-active { transition:none; } }
+.studio-hover-preview__mini-card .studio-hover-preview__mini-viz i { background:var(--mini-accent,#4f8196); }.studio-hover-preview__mini-card.is-kpi.is-variant-hero .studio-hover-preview__mini-viz { align-items:center; justify-content:center; }.studio-hover-preview__mini-card.is-kpi.is-variant-hero .studio-hover-preview__mini-viz i:first-child { width:65%; height:12px; }.studio-hover-preview__mini-card.is-kpi.is-variant-minimal { text-align:center; border-color:transparent; }.studio-hover-preview__mini-card.is-kpi.is-variant-minimal .studio-hover-preview__mini-viz { justify-content:center; }
 </style>

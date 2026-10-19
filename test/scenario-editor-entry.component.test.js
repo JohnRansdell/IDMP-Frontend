@@ -54,7 +54,7 @@ function create({ published = false, tab = 'indicators', link = true } = {}) {
   return { wrapper, writes }
 }
 const button = (wrapper, label) => wrapper.findAll('button').find(item => item.text() === label)
-const selectedIds = wrapper => wrapper.findAllComponents(Select).find(item => item.props('multiple') !== undefined).props('modelValue')
+const selectedIds = wrapper => wrapper.findComponent(Table).props('data').map(item => item.indicatorVersionId)
 
 test('indicator entry preselects an existing draft without dropping other bindings', async () => {
   const { wrapper, writes } = create()
@@ -83,13 +83,14 @@ test('published scenarios remain read-only until an editable draft is created', 
   wrapper.unmount()
 })
 
-test('override entry defaults new overrides to the bound indicator only', async () => {
+test('legacy override links open the current indicator association tab without writing obsolete rules', async () => {
   const { wrapper, writes } = create({ tab: 'overrides' })
   await flushPromises()
-  assert.equal(wrapper.findComponent(Tabs).props('modelValue'), 'overrides')
-  await button(wrapper, '新增覆盖').trigger('click')
+  assert.equal(wrapper.findComponent(Tabs).props('modelValue'), 'indicators')
+  assert.deepEqual(selectedIds(wrapper), [OLD_ID, CURRENT_ID])
   await button(wrapper, '保存草稿').trigger('click')
   await flushPromises()
-  assert.equal(writes.find(item => item.kind === 'overrides').payload.overrides[0].indicatorVersionId, CURRENT_ID)
+  assert.equal(writes.some(item => item.kind === 'overrides'), false)
+  assert.equal(writes.find(item => item.kind === 'indicators').payload.indicators[1].indicatorVersionId, CURRENT_ID)
   wrapper.unmount()
 })

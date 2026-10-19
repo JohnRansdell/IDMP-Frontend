@@ -7,6 +7,7 @@ export const METRIC_ITEM_EMPHASIS = Object.freeze(['normal', 'emphasis', 'hero']
 export const METRIC_ITEM_ALIGNMENTS = Object.freeze(['left', 'center'])
 export const METRIC_ITEM_TONES = Object.freeze(['mint', 'apricot', 'sky', 'neutral'])
 export const METRIC_GROUP_ITEM_APPEARANCES = Object.freeze(['flat', 'divider', 'tile'])
+export const METRIC_GROUP_ADD_SELECTION = '__metric_group_add__'
 
 export const METRIC_GROUP_PRESETS = Object.freeze([
   { id: 'uniform', name: '均匀指标', description: '平级指标的通用网格', thumbnail: 'uniform' },
@@ -37,10 +38,10 @@ export function createMetricGroupItem(source = {}, index = 0) {
   }
 }
 
-export function createMetricGroupConfig(sources = []) {
+export function createMetricGroupConfig() {
   return {
     title: '指标组', subtitle: '',
-    items: Array.from({ length: 4 }, (_, index) => createMetricGroupItem(sources[index] || {}, index)),
+    items: [],
     layout: { columns: 'auto', gap: 12 }, itemAppearance: 'tile'
   }
 }
@@ -101,7 +102,8 @@ export function metricGroupItemWidget(group, item) {
   return {
     id: `${group.id}::${item.id}`, type: 'kpi', title: item.label,
     sourceCode: item.sourceCode, sourceName: item.sourceName,
-    config: { ...(item.dataBinding ? { dataBinding: item.dataBinding } : {}), query: plain(group.config?.query), style: { kpiVariant: normalizeKpiVariant(item.kpiVariant) } }
+    layout: group.layout,
+    config: { ...(item.dataBinding ? { dataBinding: item.dataBinding } : {}), query: plain(group.config?.query), backendQuery: plain(group.config?.backendQuery), style: { kpiVariant: normalizeKpiVariant(item.kpiVariant) } }
   }
 }
 

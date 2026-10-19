@@ -1,13 +1,3 @@
-import { isLocalSceneDashboardId } from './sceneRegistry.js'
-
-export function dashboardOrigin(dashboardId) {
-  return isLocalSceneDashboardId(dashboardId) ? 'system-scene' : 'local'
-}
-
-export function shouldSkipRemoteDashboardBootstrap(dashboardId) {
-  return dashboardOrigin(dashboardId) === 'local'
-}
-
 export function canApplyDashboardLoad({ generation, latestGeneration, targetDashboardId, activeDashboardId } = {}) {
   return generation === latestGeneration && targetDashboardId === activeDashboardId
 }

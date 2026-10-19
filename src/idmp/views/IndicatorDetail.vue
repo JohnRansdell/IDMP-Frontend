@@ -1,82 +1,44 @@
 <template>
   <div class="idmp-page indicator-detail-page">
-    <PageHeader
-      :title="`查看指标/${indicatorName}`"
-      :status="indicatorStatus"
-    >
+    <PageHeader :title="`查看指标 / ${indicatorName}`" :status="indicatorStatus" :status-label="getStatusLabel(indicatorStatus)">
       <template #meta>
         <span class="mono-data">指标编码：{{ detail.code || routeIndicatorKey }}</span>
-        <span class="mono-data">指标 ID：{{ detail.id || '未返回' }}</span>
-        <span>只读详情</span>
       </template>
       <template #actions>
+        <el-button v-if="selectedVersion" @click="relatedDrawerOpen = true">更多关联</el-button>
         <el-button @click="router.push('/indicator')">返回指标目录</el-button>
-        <el-button type="primary" plain @click="openIndicatorEditor">
-          编辑指标
-        </el-button>
+        <el-button type="primary" plain :disabled="detailLoading || !!loadError || !detail.id" @click="openIndicatorEditor">编辑指标</el-button>
       </template>
     </PageHeader>
-
-    <div v-if="loadError" class="notice-strip is-warning detail-notice">
-      <el-icon><InfoFilled /></el-icon>
-      <span>{{ loadError }}</span>
-    </div>
-
-    <section class="detail-layout">
-      <article class="surface-card detail-main">
-        <div class="section-title">
+    <StatePanel v-if="detailLoading" type="loading" title="正在加载指标详情" />
+    <StatePanel v-else-if="loadError" :type="detailNotFound ? 'empty' : 'error'" :title="detailNotFound ? '未找到该指标' : '指标详情加载失败'" :description="loadError">
+      <template #actions><el-button type="primary" @click="loadIndicatorDetail">重试</el-button></template>
+    </StatePanel>
+    <section v-else-if="detail.id" class="detail-layout">
+      <article class="surface-card formula-definition" aria-label="指标公式">
+        <dl class="identity-grid" aria-label="指标标识信息">
+          <div><dt>指标名称</dt><dd class="identity-name">{{ indicatorName }}</dd></div>
+          <div><dt>指标 ID</dt><dd class="identity-id mono-data">{{ detail.id || '—' }}</dd></div>
           <div>
-            <h2>基础信息</h2>
-            <p class="section-title__description">当前只读页面优先使用后端指标详情、版本列表与版本定义接口。</p>
-          </div>
-          <StatusBadge :status="indicatorStatus" :label="indicatorStatus" :tone="statusTone(indicatorStatus)" />
-        </div>
-
-        <dl class="detail-grid">
-          <div>
-            <dt>指标名称</dt>
-            <dd>{{ detail.name || '-' }}</dd>
-          </div>
-          <div>
-            <dt>指标编码</dt>
-            <dd class="mono-data">{{ detail.code || routeIndicatorKey }}</dd>
-          </div>
-          <div>
-            <dt>分类</dt>
-            <dd>{{ detail.category || '-' }}</dd>
-          </div>
-          <div>
-            <dt>属性</dt>
-            <dd>{{ detail.attribute || '-' }}</dd>
-          </div>
-          <div>
-            <dt>版本</dt>
-            <dd>{{ detail.version || '-' }}</dd>
-          </div>
-          <div>
-            <dt>方向</dt>
-            <dd>{{ detail.direction || '-' }}</dd>
-          </div>
-          <div>
-            <dt>数据来源</dt>
-            <dd>{{ detail.source || '-' }}</dd>
-          </div>
-          <div>
-            <dt>关联场景</dt>
-            <dd>{{ detail.scenes === null ? '—' : `${detail.scenes} 个` }}</dd>
+            <dt>当前版本</dt>
+            <dd>
+              <el-select v-if="versionRows.length > 1" :model-value="selectedVersionId" class="version-selector" aria-label="查看指标版本" @update:model-value="selectVersionById">
+                <el-option v-for="version in versionRows" :key="resolveIndicatorVersionId(version)" :value="resolveIndicatorVersionId(version)" :label="`V${version.versionNo || '-'} · ${getStatusLabel(version.publicationStatus || version.status)}`" />
+              </el-select>
+              <span v-else class="current-version">{{ selectedVersionLabel }}</span>
+              <small class="version-id-text">版本 ID：<span class="mono-data">{{ selectedVersionId || '—' }}</span></small>
+            </dd>
           </div>
         </dl>
-
-        <div class="detail-description">
-          <span>指标说明</span>
-          <p>{{ detail.description || '当前指标目录接口未返回详细说明。' }}</p>
-        </div>
-
-        <section v-if="selectedVersion" class="formula-definition" aria-label="指标公式定义">
-          <h2>指标公式</h2>
-          <StatePanel v-if="versionLoading" type="loading" title="正在读取公式定义" />
-          <el-alert v-else-if="versionError" :title="versionError" type="error" :closable="false" show-icon />
-          <template v-else>
+        <div class="content-heading"><h2>指标公式</h2></div>
+        <el-popover v-if="detail.description" placement="bottom-start" trigger="click" :width="380" :content="detail.description">
+          <template #reference><button type="button" class="detail-description" aria-label="查看完整指标说明">{{ detail.description }}</button></template>
+        </el-popover>
+        <StatePanel v-if="versionsLoading || versionLoading" type="loading" title="正在读取指标公式" />
+        <StatePanel v-else-if="versionsError" type="error" title="指标版本加载失败" :description="versionsError"><template #actions><el-button @click="loadVersions(detail.id)">重试</el-button></template></StatePanel>
+        <StatePanel v-else-if="versionError" type="error" title="公式读取失败" :description="versionError"><template #actions><el-button @click="selectVersion(selectedVersion)">重试</el-button></template></StatePanel>
+        <div v-else-if="!selectedVersion" class="content-empty">暂无可查看的指标公式。</div>
+        <template v-else>
             <div v-if="readableFormula?.expression" class="formula-expression" :aria-label="readableFormula.displayExpression || readableFormula.expression">
               <template v-if="formulaRatio">
                 <div class="formula-fraction">
@@ -89,78 +51,29 @@
             </div>
             <el-alert v-for="warning in formulaWarnings" :key="warning" :title="warning" type="warning" :closable="false" show-icon />
             <p v-if="formulaNotes.length" class="formula-notes">{{ formulaNotes.join('；') }}</p>
-            <details :key="selectedVersionId" v-if="selectedVersion.formula" class="formula-technical">
-              <summary>查看完整定义</summary>
-              <JsonCodePreview :value="selectedVersion.formula" label="指标公式原始定义" />
-            </details>
-          </template>
-        </section>
-
-        <div class="related-scenarios">
-          <div class="section-title compact"><div><h2>关联场景</h2><p class="section-title__description">按指标主 ID 反查当前有效场景，并展示实际引用的指标版本。</p></div></div>
-          <StatePanel v-if="scenarioLoading" type="loading" title="正在加载关联场景" />
-          <StatePanel v-else-if="scenarioError" type="error" title="关联场景加载失败" :description="scenarioError" />
-          <StatePanel v-else-if="!scenarioRows.length" type="empty" title="暂无关联场景" description="该有效指标当前没有场景引用。" />
-          <el-table v-else :data="scenarioRows" size="small" table-layout="fixed">
-            <el-table-column prop="code" label="场景编码" min-width="180" />
-            <el-table-column prop="name" label="场景名称" min-width="180" />
-            <el-table-column label="场景版本" width="120"><template #default="{ row }">V{{ row.scenarioVersionNo || '-' }}</template></el-table-column>
-            <el-table-column prop="versionSource" label="版本来源" width="150" />
-            <el-table-column label="引用的指标版本" min-width="180"><template #default="{ row }">{{ scenarioReferenceText(row) }}</template></el-table-column>
-            <el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="openScenario(row)">查看</el-button></template></el-table-column>
-          </el-table>
-        </div>
+        </template>
       </article>
-
-      <aside class="detail-side">
-        <article class="surface-card version-card">
-          <div class="section-title compact">
-            <div>
-              <h2>版本信息</h2>
-            </div>
-          </div>
-          <StatePanel
-            v-if="!versionRows.length"
-            type="empty"
-            title="暂无版本"
-            description="当前指标尚未返回可查看的版本定义。"
-          />
-          <div v-else class="version-list">
-            <button
-              v-for="version in versionRows"
-              :key="resolveIndicatorVersionId(version)"
-              type="button"
-              class="version-item"
-              :class="{ 'is-active': resolveIndicatorVersionId(version) === toOpaqueId(selectedVersion?.id) }"
-              @click="selectVersion(version)"
-            >
-              <strong>V{{ version.versionNo || '-' }}</strong>
-              <span>{{ version.status ? getStatusLabel(version.status) : '-' }}</span>
-              <small class="mono-data version-id-text" :title="resolveIndicatorVersionId(version)">{{ resolveIndicatorVersionId(version) }}</small>
-            </button>
-          </div>
-          <dl v-if="selectedVersion" class="version-grid">
-            <div class="version-grid__wide">
-              <dt>版本 ID</dt>
-              <dd class="mono-data version-id-text" :title="selectedVersionId">{{ selectedVersionId || '-' }}</dd>
-            </div>
-            <div>
-              <dt>编译产物</dt>
-              <dd class="mono-data">{{ selectedVersion.currentArtifactId || '-' }}</dd>
-            </div>
-            <div>
-              <dt>资源版本</dt>
-              <dd>{{ selectedVersion.resourceVersion ?? selectedVersion.version ?? '-' }}</dd>
-            </div>
-            <div>
-              <dt>创建时间</dt>
-              <dd>{{ selectedVersion.createdAt || '-' }}</dd>
-            </div>
-          </dl>
-        </article>
+      <article class="surface-card related-scenarios" aria-label="关联场景">
+        <div class="content-heading"><h2>关联场景</h2></div>
+        <StatePanel v-if="scenarioLoading" type="loading" title="正在加载关联场景" />
+        <StatePanel v-else-if="scenarioError" type="error" title="关联场景加载失败" :description="scenarioError"><template #actions><el-button @click="loadRelatedScenarios">重试</el-button></template></StatePanel>
+        <div v-else-if="!scenarioRows.length" class="content-empty">
+          <span>暂无关联场景</span>
+          <el-button type="primary" link size="small" @click="router.push({ name: 'ScenarioList' })">前往场景管理</el-button>
+        </div>
+        <el-table v-else :data="scenarioRows" size="small" table-layout="fixed" max-height="280">
+          <el-table-column label="场景名称" min-width="240"><template #default="{ row }"><span class="scene-name">{{ row.name || row.scenarioName || '-' }}</span><p v-if="row.description" class="scene-description">{{ row.description }}</p></template></el-table-column>
+          <el-table-column label="场景编码" min-width="160" show-overflow-tooltip><template #default="{ row }">{{ row.code || row.scenarioCode || '-' }}</template></el-table-column>
+          <el-table-column label="统计周期" width="110"><template #default="{ row }">{{ periodLabel(row.configuredPeriodType || row.defaultPeriodType) }}</template></el-table-column>
+          <el-table-column label="操作" width="80"><template #default="{ row }"><el-button link type="primary" @click="openScenario(row)">查看</el-button></template></el-table-column>
+        </el-table>
+      </article>
+    </section>
+    <el-drawer v-model="relatedDrawerOpen" title="更多关联" size="min(680px, 100vw)" destroy-on-close>
         <article v-if="selectedVersion" class="surface-card policy-card">
           <div class="section-title compact"><div><h2>政策依据</h2><p class="section-title__description">仅能绑定已发布的指标版本和政策文件版本。</p></div></div>
           <StatePanel v-if="policyReferenceLoading" type="loading" title="正在读取政策引用" />
+          <StatePanel v-else-if="policyReferenceError" type="error" title="政策引用读取失败" :description="policyReferenceError"><template #actions><el-button @click="loadPolicyReferences(selectedVersionId)">重试</el-button></template></StatePanel>
           <el-table v-else :data="policyReferences" size="small" table-layout="fixed" empty-text="暂无有效政策引用">
             <el-table-column label="政策文件" min-width="170"><template #default="{ row }">{{ row.policyFileName || row.policyFileCode || row.policyFileVersionId }}</template></el-table-column>
             <el-table-column prop="relationRole" label="角色" width="100" />
@@ -169,10 +82,9 @@
           <div v-if="isPublishedVersion" class="policy-reference-form"><PolicyVersionPicker v-model="policyReferenceForm.policyFileVersionId" /><el-select v-model="policyReferenceForm.relationRole"><el-option v-for="item in POLICY_REFERENCE_ROLES" :key="item.value" :label="item.label" :value="item.value" /></el-select><el-button type="primary" :loading="policyReferenceSaving" @click="addPolicyReference">添加</el-button></div>
           <el-input v-if="isPublishedVersion" v-model="policyReferenceForm.citationLocation" class="policy-reference-input" placeholder="政策出处（可选）" />
           <el-input v-if="isPublishedVersion" v-model="policyReferenceForm.citationText" class="policy-reference-input" type="textarea" :rows="2" placeholder="政策原文（可选）" />
-          <div class="version-mapping-links"><div class="section-title compact"><div><h3>有效指标映射</h3><p class="section-title__description">反查当前指标版本作为源侧或目标侧的已发布有效映射。</p></div></div><StatePanel v-if="mappingReferenceLoading" type="loading" title="正在读取有效映射" /><StatePanel v-else-if="mappingReferenceError" type="error" title="有效映射读取失败" :description="mappingReferenceError" /><el-table v-else :data="mappingReferences" size="small" empty-text="暂无有效映射"><el-table-column prop="code" label="映射编码" min-width="150" /><el-table-column prop="mappingType" label="关系" width="110" /><el-table-column prop="comparability" label="可比性" width="120" /><el-table-column label="操作" width="68"><template #default="{ row }"><el-button link type="primary" @click="openMapping(row)">查看</el-button></template></el-table-column></el-table></div>
+          <div class="version-mapping-links"><div class="section-title compact"><div><h3>有效指标映射</h3><p class="section-title__description">反查当前指标版本作为源侧或目标侧的已发布有效映射。</p></div></div><StatePanel v-if="mappingReferenceLoading" type="loading" title="正在读取有效映射" /><StatePanel v-else-if="mappingReferenceError" type="error" title="有效映射读取失败" :description="mappingReferenceError"><template #actions><el-button @click="loadMappingReferences(selectedVersionId)">重试</el-button></template></StatePanel><el-table v-else :data="mappingReferences" size="small" empty-text="暂无有效映射"><el-table-column prop="code" label="映射编码" min-width="150" /><el-table-column prop="mappingType" label="关系" width="110" /><el-table-column prop="comparability" label="可比性" width="120" /><el-table-column label="操作" width="68"><template #default="{ row }"><el-button link type="primary" @click="openMapping(row)">查看</el-button></template></el-table-column></el-table></div>
         </article>
-      </aside>
-    </section>
+    </el-drawer>
     <PolicyFileViewer :version-id="policyViewerId" @close="policyViewerId = ''" />
   </div>
 </template>
@@ -182,13 +94,10 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
-import { InfoFilled } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
-import JsonCodePreview from '@/idmp/components/JsonCodePreview.vue'
 import PolicyVersionPicker from '@/idmp/components/PolicyVersionPicker.vue'
 import PolicyFileViewer from '@/idmp/components/PolicyFileViewer.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
-import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import {
   fetchIndicator,
   fetchAllIndicators as fetchIndicators,
@@ -196,7 +105,6 @@ import {
   fetchIndicatorVersion,
   fetchIndicatorVersions
 } from '@/idmp/api/modules/indicators'
-import { indicatorRows } from '@/idmp/data/demo'
 import { getStatusLabel } from '@/idmp/design/status'
 import { createPolicyReference, fetchMappingsByIndicatorVersion, fetchPolicyReferences, invalidatePolicyReference } from '@/idmp/api/modules/mappings'
 import { POLICY_REFERENCE_ROLES } from '@/idmp/api/adapters/mapping'
@@ -207,7 +115,12 @@ const route = useRoute()
 const router = useRouter()
 const routeIndicatorKey = computed(() => String(route.params.id || ''))
 const loadError = ref('')
+const detailLoading = ref(true)
+const detailNotFound = ref(false)
+const relatedDrawerOpen = ref(false)
 const versionRows = ref([])
+const versionsError = ref('')
+const versionsLoading = ref(false)
 const selectedVersion = ref(null)
 const versionLoading = ref(false)
 const versionError = ref('')
@@ -217,6 +130,7 @@ const scenarioLoading = ref(false)
 const scenarioError = ref('')
 const policyReferences = ref([])
 const policyReferenceLoading = ref(false)
+const policyReferenceError = ref('')
 const policyReferenceSaving = ref(false)
 const policyViewerId = ref('')
 const mappingReferences = ref([])
@@ -227,19 +141,17 @@ const detail = reactive({
   id: '',
   code: '',
   name: '',
-  category: '',
-  attribute: '',
-  version: '',
-  direction: '',
-  source: '',
   status: '',
-  scenes: null,
   description: ''
 })
 
 const indicatorName = computed(() => detail.name || detail.code || routeIndicatorKey.value || '待加载')
 const indicatorStatus = computed(() => detail.status || 'UNKNOWN')
 const selectedVersionId = computed(() => resolveIndicatorVersionId(selectedVersion.value))
+const selectedVersionLabel = computed(() => {
+  const number = selectedVersion.value?.versionNo ?? selectedVersion.value?.version
+  return number == null || number === '' ? (selectedVersionId.value ? '版本号未提供' : '暂无版本') : `V${String(number).replace(/^V/i, '')}`
+})
 const isPublishedVersion = computed(() => String(selectedVersion.value?.publicationStatus || selectedVersion.value?.status || '').toUpperCase() === 'PUBLISHED')
 const readableFormula = computed(() => selectedVersion.value?.formulaDefinition || null)
 const formulaWarnings = computed(() => readableFormula.value?.warnings?.length ? readableFormula.value.warnings
@@ -288,7 +200,7 @@ async function openFactorEditor(versionId) {
     const factorVersion = await loadFormulaFactorVersion(versionId)
     if (selectedVersionId.value !== indicatorVersionId || route.fullPath !== origin) return
     if (!factorVersion?.factorId) throw new Error('未找到对应的因子，请刷新后重试。')
-    await router.push({ name: 'FactorEditor', params: { id: String(factorVersion.factorId) }, query: { factorVersionId: versionId } })
+    await router.push({ name: 'FactorDetail', params: { id: String(factorVersion.factorId) }, query: { factorVersionId: versionId } })
   } catch (error) {
     if (selectedVersionId.value === indicatorVersionId && route.fullPath === origin) ElMessage.error(error?.message || '暂时无法打开因子，请稍后重试。')
   } finally { factorNavigationPending.value = '' }
@@ -314,35 +226,29 @@ function openIndicatorEditor() {
 function hydrateDetail(item) {
   Object.assign(detail, {
     id: toOpaqueId(item.id ?? item.indicatorId ?? ''),
-    code: item.code || routeIndicatorKey.value,
-    name: item.name || '',
-    category: item.category || '后端指标',
-    attribute: item.attribute || '定量',
-    version: item.versionNo ? `V${item.versionNo}` : item.version || 'V1',
-    direction: item.direction || '监测比较',
-    source: item.source || '后端接口',
-    status: item.status || 'UNKNOWN',
-    scenes: item.scenarioCount ?? null,
+    code: item.code || item.indicatorCode || routeIndicatorKey.value,
+    name: item.name || item.indicatorName || '',
+    status: item.publicationStatus || item.status || 'UNKNOWN',
     description: item.description || ''
   })
 }
 
 async function loadIndicatorDetail() {
+  detailLoading.value = true
+  detailNotFound.value = false
   loadError.value = ''
+  versionRows.value = []
+  selectedVersion.value = null
   try {
-    const target = await loadBackendDetail()
-    if (target) return
-    loadError.value = `未在指标接口中找到 ${routeIndicatorKey.value}，已显示本地兜底摘要。`
+    if (!(await loadBackendDetail())) {
+      detailNotFound.value = true
+      loadError.value = `未找到指标 ${routeIndicatorKey.value}，请返回目录确认记录是否存在。`
+    }
   } catch (error) {
-    loadError.value = error?.message || '指标详情接口暂不可用，已显示本地兜底摘要。'
-  }
-
-  const demoTarget = findIndicator(indicatorRows)
-  if (demoTarget) {
-    hydrateDetail(demoTarget)
-  } else {
-    detail.code = routeIndicatorKey.value
-    detail.name = routeIndicatorKey.value
+    detailNotFound.value = Number(error?.status) === 404
+    loadError.value = error?.message || '指标详情加载失败，请重试。'
+  } finally {
+    detailLoading.value = false
   }
 }
 
@@ -374,19 +280,21 @@ async function loadRelatedScenarios() {
   try {
     const page = await fetchIndicatorScenarios(detail.id, { page: 1, size: 100 })
     scenarioRows.value = normalizeList(page)
-    detail.scenes = Number(page?.total ?? scenarioRows.value.length)
   } catch (error) {
     scenarioRows.value = []
     scenarioError.value = error?.message || '关联场景接口暂不可用。'
-    detail.scenes = null
   } finally {
     scenarioLoading.value = false
   }
 }
 
-function scenarioReferenceText(row) {
-  const refs = Array.isArray(row.references) ? row.references : []
-  return refs.map((item) => `V${item.indicatorVersionNo || '-'}（${item.indicatorVersionId || '-'}）`).join('，') || '-'
+function periodLabel(value) {
+  return ({ DAILY: '日', WEEKLY: '周', MONTHLY: '月', QUARTERLY: '季', YEARLY: '年' })[value] || value || '未设置'
+}
+
+function selectVersionById(id) {
+  const version = versionRows.value.find(item => resolveIndicatorVersionId(item) === String(id))
+  if (version) void selectVersion(version)
 }
 
 function openScenario(row) {
@@ -397,13 +305,18 @@ function openScenario(row) {
 
 async function loadVersions(indicatorId) {
   if (!indicatorId) return
-  const versions = normalizeList(await fetchIndicatorVersions(indicatorId))
-  versionRows.value = versions
-  const requested = toOpaqueId(route.query.versionId || route.query.indicatorVersionId)
-  const latest = versions.find(version => resolveIndicatorVersionId(version) === requested) || pickLatestVersion(versions)
-  if (resolveIndicatorVersionId(latest) || latest?.id) {
-    await selectVersion(latest)
-  }
+  versionsLoading.value = true
+  versionsError.value = ''
+  try {
+    const versions = normalizeList(await fetchIndicatorVersions(indicatorId))
+    versionRows.value = versions
+    const requested = toOpaqueId(route.query.versionId || route.query.indicatorVersionId)
+    const latest = versions.find(version => resolveIndicatorVersionId(version) === requested) || pickLatestVersion(versions)
+    if (resolveIndicatorVersionId(latest) || latest?.id) await selectVersion(latest)
+  } catch (error) {
+    versionRows.value = []
+    versionsError.value = error?.message || '指标版本读取失败'
+  } finally { versionsLoading.value = false }
 }
 
 async function selectVersion(version) {
@@ -420,12 +333,12 @@ async function selectVersion(version) {
     const formula = extractFormula(versionDetail)
     if (revision !== versionRevision) return
     selectedVersion.value = {
+      ...version,
       ...versionDetail,
       id: versionId,
       formula: formula || versionDetail.formula || versionDetail.formulaAst
     }
-    detail.version = selectedVersion.value?.versionNo ? `V${selectedVersion.value.versionNo}` : detail.version
-    detail.status = selectedVersion.value?.status || detail.status
+    detail.status = selectedVersion.value?.publicationStatus || selectedVersion.value?.status || detail.status
   } catch (error) {
     if (revision !== versionRevision) return
     versionError.value = error?.message || '公式定义读取失败，请重新选择版本后重试'
@@ -438,13 +351,14 @@ async function selectVersion(version) {
 async function loadPolicyReferences(versionId) {
   if (!versionId) return
   policyReferenceLoading.value = true
+  policyReferenceError.value = ''
   try {
     const references = await fetchPolicyReferences(versionId)
     if (versionId === selectedVersionId.value) policyReferences.value = references
   } catch (error) {
     if (versionId !== selectedVersionId.value) return
     policyReferences.value = []
-    ElMessage.warning(error?.message || '政策引用读取失败')
+    policyReferenceError.value = error?.message || '政策引用读取失败'
   } finally { if (versionId === selectedVersionId.value) policyReferenceLoading.value = false }
 }
 
@@ -496,18 +410,6 @@ function findIndicator(rows) {
   return rows.find(item => [item.id, item.indicatorId, item.code].map(toOpaqueId).includes(routeIndicatorKey.value))
 }
 
-function statusTone(status) {
-  return {
-    '草稿': 'warning',
-    '待审核': 'info',
-    '已发布': 'success',
-    '已停用': 'neutral',
-    DRAFT: 'warning',
-    PUBLISHED: 'success',
-    DISABLED: 'neutral'
-  }[status] || 'neutral'
-}
-
 function toOpaqueId(value) {
   return value === null || value === undefined ? '' : String(value)
 }
@@ -548,77 +450,24 @@ onMounted(loadIndicatorDetail)
 </script>
 
 <style scoped lang="scss">
-.detail-notice {
-  margin-bottom: 16px;
-}
-
-.detail-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  gap: 16px;
-}
-
-.detail-main {
-  padding: 18px;
-}
-
-.detail-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin: 16px 0 0;
-  gap: 12px;
-}
-
-.detail-grid div {
-  min-width: 0;
-  padding: 12px;
-  border: 1px solid var(--idmp-border-subtle);
-  border-radius: var(--idmp-radius-sm);
-  background: var(--idmp-layer-02);
-}
-
-.detail-grid dt {
-  margin-bottom: 6px;
-  color: var(--idmp-text-helper);
-  font-size: 12px;
-}
-
-.detail-grid dd {
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  color: var(--idmp-text-primary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.detail-description {
-  margin-top: 16px;
-  padding: 14px;
-  border: 1px solid var(--idmp-border-subtle);
-  border-radius: var(--idmp-radius-sm);
-  background: var(--idmp-layer-02);
-
-  span {
-    color: var(--idmp-text-helper);
-    font-size: 12px;
-  }
-
-  p {
-    margin: 8px 0 0;
-    color: var(--idmp-text-secondary);
-    line-height: 22px;
-  }
-}
-
-.detail-side {
-  display: grid;
-  align-content: start;
-  gap: 16px;
-}
-
-.formula-definition { margin: 24px 0; padding-top: 20px; border-top: 1px solid var(--idmp-border-subtle); min-width: 0; scroll-margin-top: 80px; }
-.formula-definition h2 { margin: 0 0 18px; font-size: 15px; }
+.detail-layout { display: grid; gap: 14px; min-width: 0; }
+.formula-definition, .related-scenarios { min-width: 0; padding: 18px 20px; }
+.identity-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.25fr); gap: 14px 24px; margin: 0 0 16px; padding: 0 0 14px; border-bottom: 1px solid var(--idmp-border-subtle); }
+.identity-grid > div { min-width: 0; }
+.identity-grid dt { color: var(--idmp-text-helper); font-size: 12px; line-height: 20px; }
+.identity-grid dd { margin: 5px 0 0; color: var(--idmp-text-primary); font-size: 14px; line-height: 24px; overflow-wrap: anywhere; }
+.identity-name, .current-version { font-weight: 600; }
+.identity-id, .version-id-text .mono-data { user-select: all; }
+.version-id-text { display: block; margin-top: 3px; color: var(--idmp-text-helper); font-size: 12px; line-height: 20px; overflow-wrap: anywhere; }
+.content-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.content-heading h2 { margin: 0; font-size: 16px; }
+.version-selector { width: 180px; }
+.detail-description { display: block; width: 100%; margin: -2px 0 14px; padding: 0; overflow: hidden; color: var(--idmp-text-secondary); font: inherit; font-size: 13px; line-height: 22px; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; background: none; border: 0; }
+.detail-description:focus-visible { outline: 2px solid var(--idmp-interactive); outline-offset: 3px; }
+.content-empty { display: flex; align-items: center; gap: 12px; min-height: 56px; color: var(--idmp-text-helper); font-size: 13px; }
+.formula-definition .formula-expression { min-height: 86px; padding: 14px 18px; border-radius: var(--idmp-radius-sm); background: var(--idmp-layer-02); }
+.scene-name { font-weight: 500; }
+.scene-description { margin: 3px 0 0; overflow: hidden; color: var(--idmp-text-helper); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .formula-expression { display: flex; align-items: center; gap: 16px; max-width: 100%; margin: 0; font-size: 15px; font-weight: 500; line-height: 1.7; color: var(--idmp-text-primary); overflow-wrap: anywhere; }
 .formula-expression > span { min-width: 0; }
 .formula-fraction { display: grid; min-width: 0; max-width: 100%; text-align: center; }
@@ -631,127 +480,22 @@ onMounted(loadIndicatorDetail)
 .formula-factor-link:hover:not(:disabled) { background: #f0f2f4; box-shadow: 0 0 0 3px #f0f2f4; }
 .formula-factor-link:focus-visible { outline: 2px solid var(--idmp-interactive); outline-offset: 3px; }
 .formula-notes { margin: 16px 0 0; color: var(--idmp-text-helper); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
-.formula-technical { margin-top: 10px; }
-.formula-technical summary { cursor: pointer; font-size: 12px; color: var(--idmp-interactive); padding: 6px 0; width: fit-content; }
-.formula-technical summary:focus-visible { outline: 2px solid var(--idmp-interactive); outline-offset: 3px; }
 .formula-definition .el-alert { margin-top: 8px; }
 
-.version-card {
-  padding: 16px;
-}
 
-.policy-card { padding: 16px; }
+.policy-card { min-width: 0; }
+.section-title.compact { margin-bottom: 12px; }
+.section-title h2, .section-title h3 { margin: 0; font-size: 16px; }
+.section-title__description { color: var(--idmp-text-helper); font-size: 12px; line-height: 1.6; }
 .policy-reference-form { display: grid; grid-template-columns: minmax(0, 1fr) 128px auto; gap: 8px; margin: 12px 0 8px; }
 .policy-reference-input { margin-bottom: 8px; }
-
-.section-title.compact {
-  margin-bottom: 12px;
-
-  h2 {
-    margin: 0 0 4px;
-    font-size: 15px;
-  }
-}
-
-.version-list {
-  display: grid;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.version-item {
-  display: grid;
-  grid-template-columns: 46px minmax(0, 1fr);
-  gap: 4px 8px;
-  align-items: center;
-  padding: 10px;
-  text-align: left;
-  cursor: pointer;
-  background: var(--idmp-layer-02);
-  border: 1px solid var(--idmp-border-subtle);
-  border-radius: var(--idmp-radius-sm);
-
-  &.is-active {
-    border-color: var(--idmp-interactive);
-    background: var(--idmp-interactive-subtle);
-  }
-
-  strong {
-    color: var(--idmp-text-primary);
-  }
-
-  span,
-  small {
-    color: var(--idmp-text-helper);
-    font-size: 12px;
-  }
-
-  small {
-    grid-column: 1 / -1;
-  }
-}
-
-.version-id-text {
-  display: block;
-  max-width: 100%;
-  overflow: visible;
-  text-overflow: clip;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  word-break: break-all;
-  user-select: all;
-}
-
-.version-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin: 0 0 12px;
-
-  div {
-    min-width: 0;
-    padding: 10px;
-    background: var(--idmp-layer-02);
-    border: 1px solid var(--idmp-border-subtle);
-    border-radius: var(--idmp-radius-sm);
-  }
-
-  dt {
-    margin-bottom: 5px;
-    color: var(--idmp-text-helper);
-    font-size: 12px;
-  }
-
-  dd {
-    min-width: 0;
-    margin: 0;
-    overflow: hidden;
-    color: var(--idmp-text-primary);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .version-grid__wide {
-    grid-column: 1 / -1;
-  }
-
-  .version-id-text {
-    overflow: visible;
-    text-overflow: clip;
-    white-space: normal;
-  }
-}
-
-@media (max-width: 1180px) {
-  .detail-layout {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 520px) {
-  .policy-reference-form { grid-template-columns: 1fr; }
+.version-mapping-links { margin-top: 24px; }
+@media (max-width: 640px) {
+  .identity-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .formula-definition, .related-scenarios { padding: 14px; }
   .formula-expression { flex-wrap: wrap; gap: 10px; font-size: 14px; }
   .formula-suffix { flex-shrink: 1; }
+  .policy-reference-form { grid-template-columns: 1fr; }
 }
 </style>
 

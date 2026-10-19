@@ -26,10 +26,10 @@ test('published dashboard widgets support a bounded inclusive month range', () =
   })
 })
 
-test('a newly added source outside the dashboard range gets only its own latest month', () => {
+test('a newly added source outside the dashboard range gets its latest month as a half-open period', () => {
   const options = [{ value: '2026-09' }, { value: '2026-08' }]
   assert.deepEqual(suggestIndependentWidgetPeriod(options, ['2026-01', '2026-03']), {
-    periodMode: 'INDEPENDENT', periodStart: '2026-09-01', periodEnd: '2026-09-30', granularity: 'MONTHLY'
+    periodMode: 'INDEPENDENT', periodStart: '2026-09-01', periodEnd: '2026-10-01', granularity: 'MONTHLY'
   })
   assert.equal(suggestIndependentWidgetPeriod(options, ['2026-08', '2026-10']), null)
   assert.equal(suggestIndependentWidgetPeriod([], ['2026-01', '2026-03']), null)
@@ -59,7 +59,7 @@ test('formal dashboard periods expose bounded common months and never resolve to
   assert.deepEqual(options.map(option => option.value), ['2026-04', '2025-12'])
   assert.equal(resolvePublishedDashboardPeriod('', options), '2026-04')
   assert.equal(resolvePublishedDashboardPeriod('2025-12', options), '2025-12')
-  assert.equal(resolvePublishedDashboardPeriod('', []), '2025-12')
+  assert.equal(resolvePublishedDashboardPeriod('', []), '')
   assert.deepEqual(resolvePublishedDashboardPeriodRange([], options), ['2026-04', '2026-04'])
   assert.deepEqual(resolvePublishedDashboardPeriodRange(['2025-12', '2026-04'], options), ['2025-12', '2026-04'])
   assert.deepEqual(resolvePublishedDashboardPeriodRange(['2026-03', '2026-04'], options), ['2026-04', '2026-04'])

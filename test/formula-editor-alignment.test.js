@@ -157,6 +157,7 @@ test('versionless indicators do not restore stale presentation defaults over bac
   const scope = { form, indicatorWorkflow: { indicatorId: '100', versionId: '' }, isNew: ref(false),
     routeIndicatorKey: ref('100'), activeTab: ref('basic'),
     sessionStorage: { getItem: () => JSON.stringify(saved) }, syncCategorySelection() {},
+    restorePolicyDrafts: () => [],
     indicatorEditorStorageKey: id => `editor:${id}` }
   const restore = Function(...Object.keys(scope), `${body('restoreIndicatorEditorForm')}\nreturn restoreIndicatorEditorForm`)(...Object.values(scope))
   restore()

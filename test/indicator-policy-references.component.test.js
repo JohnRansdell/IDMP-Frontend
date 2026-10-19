@@ -1,5 +1,5 @@
-import test from 'node:test'
 import assert from 'node:assert/strict'
+import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import { JSDOM } from 'jsdom'
@@ -10,181 +10,142 @@ for (const name of ['window', 'document', 'HTMLElement', 'SVGElement', 'Element'
 Object.defineProperty(globalThis, 'navigator', { configurable: true, value: dom.window.navigator })
 const vue = await import('vue')
 const { mount, flushPromises } = await import('@vue/test-utils')
-const { descriptor } = parse(await readFile(new URL('../src/idmp/components/IndicatorPolicyReferences.vue', import.meta.url), 'utf8'))
-const compiled = compileScript(descriptor, { id: 'indicator-policy-references-test', inlineTemplate: true }).content
-const bindings = [...compiled.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]vue['"];?/g)]
-  .flatMap(([, names]) => names.split(',').map(name => {
-    const [imported, local = imported] = name.trim().split(/\s+as\s+/)
+const source = await readFile(new URL('../src/idmp/components/IndicatorPolicyReferences.vue', import.meta.url), 'utf8')
+// Expose script bindings only in this test compilation, without changing the production component.
+const { descriptor } = parse(source.replace('</script>', 'defineExpose({ form, references, error, loading, saving, viewerId, loadReferences, addReference, invalidate })\n</script>'))
+const compiled = compileScript(descriptor, { id: 'policy-reference-test', inlineTemplate: true }).content
+const vueBindings = [...compiled.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]vue['"];?/g)]
+  .flatMap(([, specifiers]) => specifiers.split(',').map(specifier => {
+    const [imported, local = imported] = specifier.trim().split(/\s+as\s+/)
     return `const ${local} = vue.${imported};`
   })).join('\n')
 const code = compiled.replace(/^import .*$/gm, '').replace('export default', 'return')
-const Button = vue.defineComponent({ props: ['disabled', 'loading'], setup: (props, { slots }) => () => vue.h('button', { disabled: props.disabled || props.loading }, slots.default?.()) })
-const Field = vue.defineComponent({ props: ['modelValue', 'disabled'], emits: ['update:modelValue'], setup: () => () => vue.h('div') })
-const Picker = vue.defineComponent({ props: ['modelValue', 'disabled'], emits: ['update:modelValue'], setup: () => () => vue.h('div') })
-const Viewer = vue.defineComponent({ props: ['versionId'], emits: ['close'], setup: () => () => vue.h('div') })
-const Row = vue.defineComponent({ props: ['row'], setup: (props, { slots }) => { vue.provide('row', props.row); return () => vue.h('div', slots.default?.()) } })
-const Table = vue.defineComponent({ props: ['data'], setup: (props, { slots }) => () => vue.h('div', props.data.map(row => vue.h(Row, { row }, slots))) })
-const Column = vue.defineComponent({ props: ['prop'], setup: (props, { slots }) => {
-  const row = vue.inject('row')
-  return () => vue.h('div', slots.default ? slots.default({ row }) : row[props.prop])
-} })
-const VERSION = '102027642463173253'
-const POLICY = '102027642463173261'
-const REFERENCE = { id: '102027642463173271', policyFileVersionId: POLICY, policyFileName: '医疗质量政策', policyVersionNo: '3', relationRole: 'DEFINITION', citationLocation: '第二章', citationText: '真实政策原文', resourceVersion: 4 }
-
-function create({ props = {}, rows = [REFERENCE], fetchRows, addReference, invalidateReference, confirm } = {}) {
+const Pass = vue.defineComponent({ setup: (_, { slots }) => () => vue.h('div', slots.default?.()) })
+const State = vue.defineComponent({ props: ['title', 'description'], setup: props => () => vue.h('div', `${props.title} ${props.description || ''}`) })
+const Alert = vue.defineComponent({ props: ['title'], setup: props => () => vue.h('div', props.title) })
+const Button = vue.defineComponent({ props: ['disabled'], emits: ['click'], setup: (props, { slots, emit }) => () => vue.h('button', { disabled: props.disabled, onClick: () => emit('click') }, slots.default?.()) })
+const Picker = vue.defineComponent({ name: 'PolicyVersionPicker', props: ['modelValue'], emits: ['update:modelValue'], setup: () => () => vue.h('div') })
+const Viewer = vue.defineComponent({ name: 'PolicyFileViewer', props: ['versionId'], setup: () => () => vue.h('div') })
+function create(overrides = {}, props = {}) {
   const calls = [], messages = []
-  let stored = [...rows]
-  const deps = {
-    Plus: {}, POLICY_REFERENCE_ROLES, policyReferenceRoleLabel,
-    PolicyVersionPicker: Picker, PolicyFileViewer: Viewer,
-    StatePanel: vue.defineComponent({ props: ['title', 'description'], setup: (p, { slots }) => () => vue.h('div', [p.title, p.description, slots.actions?.()]) }),
-    ElMessage: Object.fromEntries(['success', 'error'].map(kind => [kind, message => messages.push({ kind, message })])),
-    ElMessageBox: { confirm: confirm || (async () => {}) },
-    fetchPolicyReferences: async id => { calls.push({ kind: 'read', id }); return fetchRows ? fetchRows(id) : [...stored] },
-    createPolicyReference: async (id, payload) => {
-      calls.push({ kind: 'add', id, payload })
-      if (addReference) return addReference(id, payload)
-      stored.push({ ...REFERENCE, ...payload })
-    },
-    invalidatePolicyReference: async (id, resourceVersion) => {
-      calls.push({ kind: 'invalidate', id, resourceVersion })
-      if (invalidateReference) return invalidateReference(id, resourceVersion)
-      stored = stored.filter(row => row.id !== id)
-    }
+  const dependencies = {
+    POLICY_REFERENCE_ROLES, policyReferenceRoleLabel, PolicyVersionPicker: Picker, PolicyFileViewer: Viewer, StatePanel: State,
+    ElMessage: { success: value => messages.push(value), error: value => messages.push(value), warning: value => messages.push(value) },
+    ElMessageBox: { confirm: async () => {} },
+    fetchPolicyReferences: async id => { calls.push(['get', id]); return [] },
+    createPolicyReference: async (id, payload) => calls.push(['create', id, payload]),
+    invalidatePolicyReference: async (id, version) => calls.push(['invalidate', id, version]),
+    ...overrides
   }
-  const component = Function('vue', 'deps', `const { ${Object.keys(deps).join(',')} } = deps;\n${bindings}\n${code}`)(vue, deps)
-  const wrapper = mount(component, { props: { versionId: VERSION, published: true, ...props }, global: {
-    components: { ElButton: Button, ElSelect: Field, ElInput: Field, ElTable: Table, ElTableColumn: Column },
-    stubs: { ElForm: { template: '<form><slot/></form>' }, ElFormItem: { template: '<div><slot/></div>' }, ElOption: true, ElAlert: true, ElEmpty: true }
-  } })
+  const Component = Function('vue', 'deps', `const { ${Object.keys(dependencies).join(', ')} } = deps;\n${vueBindings}\n${code}`)(vue, dependencies)
+  const wrapper = mount(Component, {
+    props: { versionId: '100000000000000001', published: true, ...props },
+    global: { components: { ElAlert: Alert, ElButton: Button, ElForm: Pass, ElFormItem: Pass, ElSelect: Pass, ElOption: Pass, ElInput: Pass }, stubs: { ElTable: true, ElTableColumn: true } }
+  })
   return { wrapper, calls, messages }
 }
-const button = (wrapper, label) => wrapper.findAll('button').find(item => item.text() === label)
+function deferred() { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
 
-test('editor replaces demo policy rows and checkbox options with the real version-bound component', async () => {
-  const source = await readFile(new URL('../src/idmp/views/IndicatorEditor.vue', import.meta.url), 'utf8')
-  assert.ok(source.includes('<IndicatorPolicyReferences :version-id="indicatorWorkflow.versionId" :published="indicatorWorkflow.published"'))
-  for (const legacy of ['editorPolicyRows', 'policyOptions', 'v-model="form.policies"', 'prop="policies"']) assert.equal(source.includes(legacy), false)
-})
-
-test('reads actual references and displays Chinese roles, policy versions and citation text', async () => {
-  const { wrapper, calls } = create()
+test('new and draft versions show restrictions and never write policy references', async () => {
+  const { wrapper, calls } = create({}, { versionId: '', published: false })
   await flushPromises()
-  assert.deepEqual(calls, [{ kind: 'read', id: VERSION }])
-  for (const text of ['医疗质量政策', '定义依据', '第二章', '真实政策原文']) assert.ok(wrapper.text().includes(text))
-  assert.deepEqual(wrapper.findComponent(Table).props('data'), [REFERENCE])
+  assert.match(wrapper.text(), /请先创建并发布/)
+  assert.equal(wrapper.findComponent(Picker).exists(), false)
+  wrapper.vm.form.policyFileVersionId = 'policy'
+  await wrapper.vm.addReference()
+  assert.deepEqual(calls, [])
+  await wrapper.setProps({ versionId: 'draft' })
+  await flushPromises()
+  assert.match(wrapper.text(), /当前为未发布版本/)
+  assert.equal(wrapper.findComponent(Picker).exists(), false)
+  await wrapper.vm.addReference()
+  await wrapper.vm.invalidate({ id: 'reference', resourceVersion: 0 })
+  assert.deepEqual(calls, [['get', 'draft']])
   wrapper.unmount()
 })
 
-test('new and draft versions cannot add or invalidate policies', async () => {
-  for (const props of [{ versionId: '' }, { published: false }]) {
-    const { wrapper, calls } = create({ props })
-    await flushPromises()
-    assert.equal(wrapper.find('form').exists(), false)
-    assert.equal(button(wrapper, '失效'), undefined)
-    assert.equal(calls.length, props.versionId === '' ? 0 : 1)
-    wrapper.unmount()
-  }
-})
-
-test('adds to the current version with precise IDs and reloads persisted references', async () => {
-  const { wrapper, calls } = create({ rows: [] })
+test('published version saves exact policy ID, role and citation, then reloads backend data', async () => {
+  const row = { id: 'ref', policyFileVersionId: '100000000000000099', policyFileName: '真实政策' }
+  let reads = 0
+  const { wrapper, calls } = create({ fetchPolicyReferences: async () => ++reads === 1 ? [] : [row] })
   await flushPromises()
-  assert.equal(button(wrapper, '添加政策依据').attributes('disabled'), '')
-  wrapper.findComponent(Picker).vm.$emit('update:modelValue', POLICY)
-  const fields = wrapper.findAllComponents(Field)
-  fields[0].vm.$emit('update:modelValue', 'REFERENCE')
-  fields[1].vm.$emit('update:modelValue', '第一条')
-  fields[2].vm.$emit('update:modelValue', '政策原文')
-  await flushPromises()
-  await wrapper.find('form').trigger('submit')
-  await flushPromises()
-  assert.deepEqual(calls.find(item => item.kind === 'add'), { kind: 'add', id: VERSION,
-    payload: { policyFileVersionId: POLICY, relationRole: 'REFERENCE', citationLocation: '第一条', citationText: '政策原文' } })
-  assert.equal(calls.filter(item => item.kind === 'read').length, 2)
-  assert.equal(wrapper.findComponent(Table).props('data').length, 1)
-  assert.equal(wrapper.findComponent(Picker).props('modelValue'), '')
+  const picker = wrapper.findComponent(Picker)
+  picker.vm.$emit('update:modelValue', row.policyFileVersionId)
+  await vue.nextTick()
+  Object.assign(wrapper.vm.form, { relationRole: 'DEFINITION', citationLocation: '第三章', citationText: '定义原文' })
+  await wrapper.vm.addReference()
+  assert.deepEqual(calls, [['create', '100000000000000001', { policyFileVersionId: row.policyFileVersionId, relationRole: 'DEFINITION', citationLocation: '第三章', citationText: '定义原文' }]])
+  assert.deepEqual(wrapper.vm.references, [row])
+  assert.equal(wrapper.vm.form.policyFileVersionId, '')
+  assert.equal(reads, 2)
   wrapper.unmount()
 })
 
-test('invalidates the exact reference using its optimistic resource version', async () => {
-  const { wrapper, calls } = create()
+test('failed create preserves form and allows retry without duplicate in-flight submission', async () => {
+  const pending = deferred()
+  let writes = 0
+  const { wrapper } = create({ createPolicyReference: async () => { writes++; await pending.promise; throw new Error('保存失败') } })
   await flushPromises()
-  await button(wrapper, '失效').trigger('click')
-  await flushPromises()
-  assert.deepEqual(calls.find(item => item.kind === 'invalidate'), { kind: 'invalidate', id: REFERENCE.id, resourceVersion: 4 })
-  assert.deepEqual(wrapper.findComponent(Table).props('data'), [])
+  wrapper.vm.form.policyFileVersionId = 'policy'
+  const save = wrapper.vm.addReference()
+  await wrapper.vm.addReference()
+  assert.equal(writes, 1)
+  pending.resolve()
+  await save
+  assert.equal(wrapper.vm.form.policyFileVersionId, 'policy')
+  assert.equal(wrapper.vm.saving, false)
   wrapper.unmount()
 })
 
-test('canceling confirmation does not invalidate a reference', async () => {
-  const { wrapper, calls, messages } = create({ confirm: async () => { throw 'cancel' } })
+test('invalidate uses reference resourceVersion; cancel sends no write', async () => {
+  let cancel = true
+  const { wrapper, calls } = create({ ElMessageBox: { confirm: async () => { if (cancel) throw 'cancel' } } })
   await flushPromises()
-  await button(wrapper, '失效').trigger('click')
-  await flushPromises()
-  assert.equal(calls.some(item => item.kind === 'invalidate'), false)
-  assert.deepEqual(messages, [])
+  await wrapper.vm.invalidate({ id: 'ref', resourceVersion: 7 })
+  assert.deepEqual(calls, [['get', '100000000000000001']])
+  cancel = false
+  await wrapper.vm.invalidate({ id: 'ref', resourceVersion: 7 })
+  assert.deepEqual(calls.slice(1), [['invalidate', 'ref', 7], ['get', '100000000000000001']])
   wrapper.unmount()
 })
 
-test('view opens the selected policy version and closes without mutating the association', async () => {
-  const { wrapper, calls } = create()
+test('load failure is visible and refresh recovers from backend', async () => {
+  let failing = true
+  const { wrapper } = create({ fetchPolicyReferences: async () => { if (failing) throw new Error('网络中断'); return [{ id: 'real' }] } })
   await flushPromises()
-  await button(wrapper, '查看').trigger('click')
-  assert.equal(wrapper.findComponent(Viewer).props('versionId'), POLICY)
-  wrapper.findComponent(Viewer).vm.$emit('close')
+  assert.match(wrapper.text(), /政策引用读取失败.*网络中断/)
+  failing = false
+  await wrapper.findAll('button').find(button => button.text() === '刷新引用').trigger('click')
   await flushPromises()
+  assert.equal(wrapper.vm.error, '')
+  assert.deepEqual(wrapper.vm.references, [{ id: 'real' }])
+  wrapper.unmount()
+})
+
+test('switching versions clears form and preview and ignores stale reads and writes', async () => {
+  const oldRead = deferred(), oldWrite = deferred()
+  const { wrapper } = create({ fetchPolicyReferences: id => id === 'old' ? oldRead.promise : Promise.resolve([{ id: 'new-reference' }]), createPolicyReference: () => oldWrite.promise }, { versionId: 'old' })
+  wrapper.vm.form.policyFileVersionId = 'old-policy'
+  wrapper.vm.viewerId = 'old-preview'
+  const save = wrapper.vm.addReference()
+  await wrapper.setProps({ versionId: 'new' })
+  await flushPromises()
+  wrapper.vm.form.policyFileVersionId = 'new-policy'
+  oldRead.resolve([{ id: 'old-reference' }]); oldWrite.resolve()
+  await save; await flushPromises()
+  assert.deepEqual(wrapper.vm.references, [{ id: 'new-reference' }])
+  assert.equal(wrapper.vm.form.policyFileVersionId, 'new-policy')
   assert.equal(wrapper.findComponent(Viewer).props('versionId'), '')
-  assert.equal(calls.length, 1)
   wrapper.unmount()
 })
 
-test('failed loads show a retriable error rather than an empty reference list', async () => {
-  let fail = true
-  const { wrapper } = create({ fetchRows: async () => { if (fail) throw new Error('政策接口暂不可用'); return [REFERENCE] } })
+test('publishing current draft enables real policy selection and reloads references', async () => {
+  const { wrapper, calls } = create({}, { published: false })
   await flushPromises()
-  assert.ok(wrapper.text().includes('政策接口暂不可用'))
-  assert.equal(wrapper.findComponent(Table).exists(), false)
-  fail = false
-  await button(wrapper, '重试').trigger('click')
+  assert.equal(wrapper.findComponent(Picker).exists(), false)
+  await wrapper.setProps({ published: true })
   await flushPromises()
-  assert.deepEqual(wrapper.findComponent(Table).props('data'), [REFERENCE])
-  wrapper.unmount()
-})
-
-test('failed additions retain selection and citation input', async () => {
-  const { wrapper, messages } = create({ addReference: async () => { throw new Error('已经关联此政策文件版本') } })
-  await flushPromises()
-  wrapper.findComponent(Picker).vm.$emit('update:modelValue', POLICY)
-  await flushPromises()
-  await wrapper.find('form').trigger('submit')
-  await flushPromises()
-  assert.equal(wrapper.findComponent(Picker).props('modelValue'), POLICY)
-  assert.equal(messages[0].message, '已经关联此政策文件版本')
-  wrapper.unmount()
-})
-
-test('late responses cannot replace another indicator version references', async () => {
-  let resolveOld
-  const old = new Promise(resolve => { resolveOld = resolve })
-  const { wrapper } = create({ fetchRows: id => id === VERSION ? old : Promise.resolve([]) })
-  await wrapper.setProps({ versionId: 'new-version', published: false })
-  await flushPromises()
-  resolveOld([REFERENCE])
-  await flushPromises()
-  assert.deepEqual(wrapper.findComponent(Table).props('data'), [])
-  wrapper.unmount()
-})
-
-test('switching versions during confirmation cannot invalidate the previous version reference', async () => {
-  let resolveConfirmation
-  const { wrapper, calls } = create({ confirm: () => new Promise(resolve => { resolveConfirmation = resolve }) })
-  await flushPromises()
-  await button(wrapper, '失效').trigger('click')
-  await wrapper.setProps({ versionId: 'new-version' })
-  resolveConfirmation()
-  await flushPromises()
-  assert.equal(calls.some(item => item.kind === 'invalidate'), false)
+  assert.equal(wrapper.findComponent(Picker).exists(), true)
+  assert.equal(calls.length, 2)
   wrapper.unmount()
 })

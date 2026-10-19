@@ -7,13 +7,16 @@ import { createLayoutTemplateFromDashboard, instantiateLayoutTemplate } from '..
 import { createPersistableDashboardSnapshot, normalizeDashboardSchema } from '../src/idmp/features/dashboard/schema.js'
 import { addMetricGroupItem, applyMetricGroupPreset, createMetricGroupConfig, createMetricGroupItem, duplicateMetricGroupItem, METRIC_GROUP_PRESETS, metricGroupItemWidget, moveMetricGroupItem, normalizeMetricGroupConfig, removeMetricGroupItem, reorderMetricGroupItem } from '../src/idmp/features/dashboard/metricGroup.js'
 import { dashboardDetailToSchema, schemaToDashboardPayload } from '../src/idmp/api/adapters/dashboard.js'
+import { createDefaultBinding } from '../src/idmp/features/dashboard/smartDefaultBinding.js'
 
 const source = (code, name) => ({ code, name, unit: '%', currentValue: 1 })
 
-test('metric group defaults, normalizes and persists its items and grid layout', () => {
+test('new metric group stays empty until a source is explicitly added', () => {
   const config = createMetricGroupConfig([source('A', '指标 A'), source('B', '指标 B')])
-  assert.equal(config.items.length, 4)
-  const normalized = normalizeMetricGroupConfig({ ...config, layout: { columns: '3', gap: 14 } })
+  assert.deepEqual(config.items, [])
+  const selected = addMetricGroupItem(config, source('A', '指标 A'))
+  assert.equal(selected.config.items.length, 1)
+  const normalized = normalizeMetricGroupConfig({ ...selected.config, layout: { columns: '3', gap: 14 } })
   const schema = normalizeDashboardSchema({ version: 1, id: 'group', name: '组', layout: { engine: 'gridstack', columns: 24, float: false }, widgets: [{ id: 'group-1', type: 'metric-group', title: '核心指标', config: { metricGroup: normalized }, layout: { x: 0, y: 0, w: 12, h: 5 } }] })
   const restored = JSON.parse(JSON.stringify(createPersistableDashboardSnapshot(schema)))
   assert.equal(restored.widgets[0].config.metricGroup.layout.columns, '3')
@@ -30,6 +33,19 @@ test('metric group items use the existing KPI binding compiler with one shared d
   assert.equal(compileWidgetData('kpi', items[0].dataBinding, dataset).value, 11)
   assert.equal(compileWidgetData('kpi', items[1].dataBinding, dataset).value, 20)
   assert.equal(metricGroupItemWidget(group, items[0]).config.dataBinding.dataset, 'current')
+})
+
+test('a formal metric group item can use the same KPI preview payload as a standalone card', () => {
+  const item = createMetricGroupItem(source('FORMAL', '正式指标'))
+  const group = { id: 'group', layout: { x: 0, y: 0, w: 12, h: 5 }, config: { metricGroup: { items: [item] } } }
+  const virtual = metricGroupItemWidget(group, item)
+  const dataset = { id: 'backend', fields: [{ id: 'value', label: '指标值', semanticType: 'measure', aggregations: ['direct'] }], rows: [{ value: 0.42 }] }
+  virtual.config.dataBinding = createDefaultBinding('kpi', [dataset])
+  const payload = schemaToDashboardPayload({ id: 'dashboard', layout: { columns: 24, float: false }, widgets: [virtual] }, { dataSources: [{ code: 'FORMAL', name: '正式指标', indicatorVersionId: '123' }] }).widgets[0]
+  assert.equal(payload.dataSourceCode, 'FORMAL')
+  assert.deepEqual(payload.position, group.layout)
+  assert.equal(payload.fieldBindings.measures[0].field, 'value')
+  assert.equal(compileWidgetData('kpi', virtual.config.dataBinding, dataset).value, 0.42)
 })
 
 test('metric group items independently filter and aggregate one shared base dataset', () => {

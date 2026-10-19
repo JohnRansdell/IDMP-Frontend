@@ -19,17 +19,40 @@
           :aria-labelledby="group.id"
         >
           <div :id="group.id" class="idmp-nav__group-label">{{ group.label }}</div>
-          <RouterLink
-            v-for="item in group.items"
-            :key="item.path"
-            :to="item.path"
-            class="idmp-nav__item"
-            :class="{ 'is-active': activePath === item.path }"
-            :aria-current="activePath === item.path ? 'page' : undefined"
-          >
-            <el-icon><component :is="item.icon" /></el-icon>
-            <span>{{ item.label }}</span>
-          </RouterLink>
+          <template v-for="item in group.items" :key="item.path">
+            <div class="idmp-nav__row" :class="{ 'has-children': Boolean(item.children), 'is-active': activePath === item.path }">
+              <RouterLink
+                :to="item.path"
+                class="idmp-nav__item"
+                :class="{ 'is-active': activePath === item.path }"
+                :aria-current="activePath === item.path ? 'page' : undefined"
+              >
+                <el-icon><component :is="item.icon" /></el-icon>
+                <span>{{ item.label }}</span>
+              </RouterLink>
+              <button
+                v-if="item.children"
+                type="button"
+                class="idmp-nav__toggle"
+                :aria-expanded="dashboardMenuExpanded"
+                aria-controls="dashboard-submenu"
+                :aria-label="dashboardMenuExpanded ? '收起已有看板' : '展开已有看板'"
+                :title="dashboardMenuExpanded ? '收起已有看板' : '展开已有看板'"
+                @click="dashboardMenuExpanded = !dashboardMenuExpanded"
+              ><el-icon class="idmp-nav__toggle-icon" :class="{ 'is-expanded': dashboardMenuExpanded }" aria-hidden="true"><ArrowRight /></el-icon></button>
+            </div>
+            <div v-if="item.children && dashboardMenuExpanded" id="dashboard-submenu" class="idmp-nav__submenu" aria-label="已有看板">
+              <RouterLink
+                v-for="child in item.children"
+                :key="child.id"
+                :to="{ path: '/dashboard', query: { id: child.id } }"
+                class="idmp-nav__subitem"
+                :class="{ 'is-active': route.path === '/dashboard' && String(route.query.id || dashboardRequestedId) === String(child.id) }"
+                :title="child.name"
+              >{{ child.name }}</RouterLink>
+              <span v-if="!item.children.length" class="idmp-nav__submenu-empty">暂无看板</span>
+            </div>
+          </template>
         </section>
       </nav>
     </aside>
@@ -44,7 +67,7 @@
       </nav>
 
       <div class="idmp-topbar__right">
-        <div class="idmp-context">
+        <div v-if="isDashboardRoute" class="idmp-context">
           <span class="scene-label">{{ isDashboardRoute ? '场景看板' : '全局场景' }}</span>
           <el-select v-model="currentScene" class="scene-select" :aria-label="isDashboardRoute ? '场景看板' : '全局场景'">
             <el-option v-for="scene in currentSceneOptions" :key="scene.value" :label="scene.label" :value="scene.value" />
@@ -58,10 +81,10 @@
           </el-badge>
         </el-tooltip>
         <div class="idmp-user">
-          <el-avatar :size="30">管</el-avatar>
+          <el-avatar :size="30">{{ currentUserName.slice(0, 1) }}</el-avatar>
           <span class="idmp-user__copy">
-            <span class="idmp-user__name">指标管理员</span>
-            <span class="idmp-user__role">质量管理中心</span>
+            <span class="idmp-user__name">{{ currentUserName }}</span>
+            <span v-if="currentUserDepartment" class="idmp-user__role">{{ currentUserDepartment }}</span>
           </span>
         </div>
       </div>
@@ -83,6 +106,7 @@ import { dashboardCatalogRevision, dashboardRequestedId, designerImmersive, noti
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import {
   Aim,
+  ArrowRight,
   Bell,
   Connection,
   DocumentCopy,
@@ -96,37 +120,34 @@ import {
   Setting,
   TrendCharts
 } from '@element-plus/icons-vue'
-import { sceneOptions } from '@/idmp/data/demo'
+import { sessionState } from '@/idmp/auth/session'
 import { fetchUnreadNotificationCount } from '@/idmp/api/modules/warnings'
 import { fetchDashboardCatalog } from '@/idmp/api/modules/analysisDashboard'
 import { dashboardSummaryToCatalogEntry } from '@/idmp/api/adapters/dashboard'
-import { LOCAL_SCENE_DASHBOARDS } from '@/idmp/features/dashboard/sceneRegistry.js'
+import { readDashboardCatalog } from '@/idmp/features/dashboard/catalog.js'
 import { buildPageBreadcrumbs } from '@/router/breadcrumbs.js'
 
 const route = useRoute()
 const router = useRouter()
-const globalScene = ref(sceneOptions[0])
+const currentUserName = computed(() => sessionState.user?.displayName || sessionState.user?.nickname || sessionState.user?.username || '当前用户')
+const currentUserDepartment = computed(() => sessionState.user?.departmentName || sessionState.user?.deptName || '')
 const isDashboardRoute = computed(() => route.name === 'Dashboard')
 const remoteDashboardOptions = ref([])
-const currentSceneOptions = computed(() => {
-  if (!isDashboardRoute.value) return sceneOptions.map(scene => ({ label: scene, value: scene }))
-  return [
-    ...remoteDashboardOptions.value.map(item => ({ label: item.name, value: item.id })),
-    ...LOCAL_SCENE_DASHBOARDS.map(item => ({ label: `演示 · ${item.name}`, value: item.dashboardId }))
-  ]
-})
+const currentSceneOptions = computed(() => remoteDashboardOptions.value.map(item => ({ label: item.name, value: item.id })))
 const currentScene = computed({
-  get: () => isDashboardRoute.value ? dashboardRequestedId.value : globalScene.value,
-  set: (value) => { if (isDashboardRoute.value) dashboardRequestedId.value = value; else globalScene.value = value }
+  get: () => dashboardRequestedId.value,
+  set: value => { dashboardRequestedId.value = value }
 })
 const unreadCount = ref(0)
+const dashboardMenuExpanded = ref(true)
 async function refreshRemoteDashboardOptions() {
+  const localOptions = readDashboardCatalog(localStorage).map(item => ({ ...item, origin: 'local' }))
   try {
     const catalog = await fetchDashboardCatalog()
-    remoteDashboardOptions.value = (Array.isArray(catalog) ? catalog : []).map(dashboardSummaryToCatalogEntry)
+    const remoteOptions = (Array.isArray(catalog) ? catalog : []).map(dashboardSummaryToCatalogEntry)
+    remoteDashboardOptions.value = [...localOptions, ...remoteOptions.filter(remote => !localOptions.some(local => String(local.id) === String(remote.id)))]
   } catch {
-    // Dashboard.vue exposes the actionable error. Never substitute localStorage here.
-    remoteDashboardOptions.value = []
+    remoteDashboardOptions.value = localOptions
   }
 }
 let unreadRequestId = 0
@@ -140,12 +161,13 @@ async function loadUnreadCount() {
   }
 }
 
-const navGroups = [
+const navGroups = computed(() => [
   {
     id: 'nav-overview',
     label: '总览与分析',
     items: [
-      { label: '指标总览', path: '/dashboard', icon: markRaw(Histogram) },
+      { label: '看板总览', path: '/dashboard', icon: markRaw(Histogram), children: remoteDashboardOptions.value },
+      { label: '看板管理', path: '/dashboard/manage', icon: markRaw(Monitor) },
       { label: '指标分析', path: '/analysis', icon: markRaw(TrendCharts) },
       { label: '预警中心', path: '/alerts', icon: markRaw(Bell) }
     ]
@@ -185,7 +207,7 @@ const navGroups = [
       { label: '系统管理', path: '/system', icon: markRaw(Setting) }
     ]
   }
-]
+])
 
 const activePath = computed(() => route.meta.activeMenu || route.path)
 const displayBreadcrumbs = computed(() => buildPageBreadcrumbs(route))

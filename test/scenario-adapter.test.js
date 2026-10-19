@@ -10,8 +10,7 @@ import {
   scenarioFormToPatch,
   scenarioVersionCapabilities,
   selectScenarioVersion,
-  toIndicatorBinding,
-  toOverridePayload
+  toIndicatorBinding
 } from '../src/idmp/api/adapters/scenario.js'
 
 test('scenario page adapter accepts the page shape returned by the current server', () => {
@@ -39,7 +38,6 @@ test('scenario adapter preserves resource IDs beyond the JavaScript safe integer
 
   assert.equal(normalizeResourceId(id), id)
   assert.equal(toIndicatorBinding({ indicatorVersionId: id }, 0).indicatorVersionId, id)
-  assert.equal(toOverridePayload({ indicatorVersionId: id, overrideType: 'DISPLAY', targetNodePath: 'root', overrideValue: {}, priority: 0 }).indicatorVersionId, id)
   assert.equal(scenarioDetailToForm({ version: { indicators: [{ indicatorVersionId: id }] } }).indicators[0].indicatorVersionId, id)
 })
 
@@ -65,13 +63,13 @@ test('scenario list opens an existing draft before the published version', () =>
 
 test('scenario version capabilities enforce the business state rules', () => {
   assert.deepEqual(scenarioVersionCapabilities('DRAFT'), {
-    status: 'DRAFT', canView: true, canEdit: true, canValidate: true, canPublish: true, canStartEdit: false
+    status: 'DRAFT', canView: true, canEdit: true, canPublish: true, canStartEdit: false
   })
   assert.deepEqual(scenarioVersionCapabilities('PUBLISHED'), {
-    status: 'PUBLISHED', canView: true, canEdit: false, canValidate: false, canPublish: false, canStartEdit: true
+    status: 'PUBLISHED', canView: true, canEdit: false, canPublish: false, canStartEdit: true
   })
   assert.deepEqual(scenarioVersionCapabilities('ARCHIVED'), {
-    status: 'ARCHIVED', canView: true, canEdit: false, canValidate: false, canPublish: false, canStartEdit: false
+    status: 'ARCHIVED', canView: true, canEdit: false, canPublish: false, canStartEdit: false
   })
   assert.equal(normalizePublicationStatus(' unexpected '), 'UNKNOWN')
   assert.equal(scenarioDetailToForm({ version: {} }).publicationStatus, 'UNKNOWN')
@@ -104,4 +102,15 @@ test('scenario patch sends only an API-supported period value', () => {
     () => scenarioFormToPatch({ defaultPeriodType: 'EVERY_TWO_MONTHS' }),
     /默认统计周期无效/
   )
+})
+
+test('retired exclusion rules are absent from the editor model and never submitted in a basic-information patch', () => {
+  const legacy = { defaultExclusionDsl: { nodeType: 'PREDICATE' }, defaultExclusionDisplayText: '历史规则' }
+  const form = scenarioDetailToForm({ version: { id: '11', ...legacy } })
+  assert.equal(Object.hasOwn(form, 'defaultExclusionDsl'), false)
+  assert.equal(Object.hasOwn(form, 'defaultExclusionDisplayText'), false)
+  const patch = scenarioFormToPatch({ ...form, ...legacy, defaultExclusionDslText: 'not JSON' })
+  assert.equal(Object.hasOwn(patch, 'defaultExclusionDsl'), false)
+  assert.equal(Object.hasOwn(patch, 'defaultExclusionDisplayText'), false)
+  assert.equal(Object.hasOwn(patch, 'defaultExclusionDslText'), false)
 })

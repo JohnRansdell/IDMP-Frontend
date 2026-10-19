@@ -1,5 +1,6 @@
 <template>
-  <MetricGroupWidget v-if="widget.type === 'metric-group'" :widget="widget" :get-widget-kpi="getWidgetKpi" :designer="designer" :selected-item-id="selectedMetricItemId" @select-item="emit('metric-item-select', $event)" @duplicate="emit('metric-item-duplicate', $event)" @remove="emit('metric-item-remove', $event)" @add="emit('metric-item-add')" @reorder="emit('metric-item-reorder', $event)" />
+  <MetricGroupWidget v-if="widget.type === 'metric-group'" :widget="widget" :get-widget-kpi="getWidgetKpi" :designer="designer" :selected-item-id="selectedMetricItemId" @select-item="emit('metric-item-select', $event)" @duplicate="emit('metric-item-duplicate', $event)" @remove="emit('metric-item-remove', $event)" @add="emit('metric-item-add')" @reorder="emit('metric-item-reorder', $event)" @retry="emit('metric-item-retry', widget, $event)" />
+  <IndicatorRankingWidget v-else-if="widget.type === 'ranking' && widget.config?.ranking?.mode === 'indicators'" :widget="widget" :get-widget-kpi="getWidgetKpi" :designer="designer" :selected-item-id="selectedMetricItemId" @select-item="emit('metric-item-select', $event)" @add="emit('metric-item-add')" @retry="emit('metric-item-retry', widget, $event)" />
   <BindingWidget v-else-if="hasDataBinding(widget) && widget.type !== 'warnings'" :widget="widget" :title="getTitle(widget)" :interactive="interactive && !editing" :designer="designer" @analysis="interactive && !editing && emit('widget-analysis', widget)" @chart-click="interactive && emit('chart-click', widget, $event)" @action="emit('binding-action', $event)" />
   <KpiPresentation v-else-if="widget.type === 'primary'" :model="primaryKpiModel" :variant="widget.config?.style?.kpiVariant" :colors="visualStyle.kpi" :clickable="interactive" @click="emit('primary-analysis')" />
 
@@ -27,9 +28,40 @@
     </IdmpChart>
   </article>
 
-  <article v-else-if="widget.type === 'warnings'" class="dashboard-renderer-card db-list-card" :style="contentThemeStyle"><div class="db-section-title"><h2><el-icon><Bell /></el-icon>{{ getTitle(widget) }}</h2><button v-if="interactive" type="button" class="db-action-link" @click="emit('alerts')">查看全部</button></div><StatePanel v-if="warningState.status === 'loading'" type="loading" title="正在读取预警事件" /><StatePanel v-else-if="warningState.status === 'error'" type="error" title="预警事件读取失败" :description="warningState.error || '请稍后重试。'" /><ul v-else-if="warnings.length" class="db-warning-list"><li v-for="warning in warnings" :key="warning.id || warning.text"><span class="db-warning-icon" :class="`is-${warning.level}`"><el-icon><WarningFilled v-if="warning.level !== 'info'" /><InfoFilled v-else /></el-icon></span><span class="db-warning-text">{{ warning.severity ? `[${warning.severity}] ${warning.text}` : warning.text }}</span><time v-if="warning.time">{{ warning.time }}</time></li></ul><StatePanel v-else type="empty" title="暂无匹配预警" description="请调整预警组件的状态、级别或规则筛选条件。" /></article>
+  <article v-else-if="widget.type === 'warnings'" class="dashboard-renderer-card db-list-card db-warning-card" :class="{ 'is-dark-surface': surfaceTone === 'dark' }" :style="warningThemeStyle">
+    <div class="db-warning-header">
+      <h2 :title="getTitle(widget)"><span class="db-warning-header__icon"><el-icon><Bell /></el-icon></span><span>{{ getTitle(widget) }}</span></h2>
+      <span v-if="warningState.status === 'ready'" class="db-warning-count">当前筛选 {{ warningState.total ?? warnings.length }} 条</span>
+      <button v-if="interactive" type="button" class="db-action-link" @pointerdown.stop @click.stop="emit('alerts')">查看全部</button>
+    </div>
+    <div v-if="warningState.status === 'loading' || warningState.status === 'idle'" class="db-warning-state" role="status" :aria-busy="warningState.status === 'loading'">
+      <span class="db-warning-state__icon"><el-icon :class="{ 'is-loading': warningState.status === 'loading' }"><Loading v-if="warningState.status === 'loading'" /><Bell v-else /></el-icon></span>
+      <div class="db-warning-state__copy"><strong>{{ warningState.status === 'loading' ? '正在读取预警事件' : '等待读取预警事件' }}</strong><p>按当前状态、级别和规则筛选</p></div>
+    </div>
+    <div v-else-if="warningState.status === 'error'" class="db-warning-state is-error" role="alert">
+      <span class="db-warning-state__icon"><el-icon><WarningFilled /></el-icon></span>
+      <div class="db-warning-state__copy"><strong>预警事件读取失败</strong><p>{{ warningState.error || '请稍后重试。' }}</p></div>
+      <el-button size="small" type="primary" plain @pointerdown.stop @click.stop="emit('warning-retry')">重新读取</el-button>
+    </div>
+    <ul v-else-if="warnings.length" class="db-warning-list">
+      <li v-for="warning in warnings" :key="warning.id || warning.text">
+        <button type="button" class="db-warning-row" :class="`is-${warning.level}`" :disabled="!interactive || editing || !warning.eventId" :aria-label="warning.eventId ? `查看预警事件：${warning.text}` : undefined" @click="emit('warning-event', warning.eventId)">
+          <span class="db-warning-icon" :class="`is-${warning.level}`"><el-icon><WarningFilled v-if="warning.level !== 'info'" /><InfoFilled v-else /></el-icon></span>
+          <span class="db-warning-content"><span class="db-warning-content__title"><span v-if="warning.severity" class="db-warning-severity" :class="`is-${warning.level}`">{{ warningSeverityLabel(warning.severity) }}</span><span class="db-warning-text" :title="warning.name || warning.text">{{ warning.name || warning.text }}</span></span><span v-if="warning.detail" class="db-warning-detail">{{ warning.detail }}</span></span>
+          <time v-if="warning.time">{{ warning.time }}</time>
+        </button>
+      </li>
+    </ul>
+    <div v-else class="db-warning-state" role="status">
+      <span class="db-warning-state__icon"><el-icon><Bell /></el-icon></span>
+      <div class="db-warning-state__copy"><strong>当前条件下暂无预警事件</strong><p>可调整状态、级别或规则筛选条件</p></div>
+    </div>
+  </article>
 
-  <article v-else-if="widget.type === 'ranking'" class="dashboard-renderer-card db-list-card" :style="contentThemeStyle"><div class="db-section-title"><h2><el-icon><TrophyBase /></el-icon>科室指标排名</h2></div><ol class="db-ranking-list"><li v-for="row in ranking" :key="row.department"><span class="rank" :class="{ 'is-top': row.rank <= 3 }">{{ row.rank }}</span><span class="department">{{ row.department }}</span><span class="db-rank-bar"><i :style="{ width: `${Math.max(14, row.rawValue * 16)}%` }" /></span><strong>{{ row.value }}</strong></li></ol></article>
+  <article v-else-if="widget.type === 'ranking'" class="dashboard-renderer-card db-list-card" :style="contentThemeStyle">
+    <div class="db-section-title"><h2><el-icon><TrophyBase /></el-icon>{{ getTitle(widget) }}</h2></div>
+    <p class="db-ranking-empty">{{ widget.sourceCode ? '请配置分类维度与指标值，再查看排名。' : '请选择指标进行科室／分类排名，或切换为多指标排名逐项添加。' }}</p>
+  </article>
 </template>
 
 <script setup>
@@ -37,21 +69,22 @@ import { computed, inject } from 'vue'
 import BindingWidget from './BindingWidget.vue'
 import KpiPresentation from './KpiPresentation.vue'
 import MetricGroupWidget from './MetricGroupWidget.vue'
+import IndicatorRankingWidget from './IndicatorRankingWidget.vue'
 import DashboardDrillPie from '../DashboardDrillPie.vue'
 import { hasDataBinding } from '../bindingEngine.js'
 import { createDashboardChartTheme, clinicalTrendTone } from '../chartTheme.js'
 import { formatKpiComparison } from '../visualization.js'
-import { applyWidgetVisualStyle, resolveWidgetVisualStyle } from '../visualStyle.js'
+import { applyWidgetVisualStyle, resolveWidgetBackgroundMode, resolveWidgetVisualStyle, widgetPalette } from '../visualStyle.js'
 import { resolveWidgetSurfaceTone } from '../backgroundAssets.js'
-import { Bell, InfoFilled, TrophyBase, WarningFilled } from '@element-plus/icons-vue'
+import { Bell, InfoFilled, Loading, TrophyBase, WarningFilled } from '@element-plus/icons-vue'
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
-import StatePanel from '@/idmp/components/StatePanel.vue'
 
 const props = defineProps({
   widget: { type: Object, required: true }, primaryKpi: { type: Object, default: null }, supportingKpis: { type: Array, default: () => [] }, warnings: { type: Array, default: () => [] }, warningState: { type: Object, default: () => ({ status: 'ready', total: 0, error: '' }) }, ranking: { type: Array, default: () => [] }, department: { type: String, default: '' }, updatedAt: { type: String, default: '' }, interactive: { type: Boolean, default: false }, editing: { type: Boolean, default: false }, designer: { type: Boolean, default: false }, selectedMetricItemId: { type: String, default: '' },
   getWidgetKpi: { type: Function, required: true }, getTitle: { type: Function, required: true }, getDescription: { type: Function, required: true }, getIcon: { type: Function, required: true }, getChartOption: { type: Function, required: true }, isChartEmpty: { type: Function, required: true }, getChartAriaLabel: { type: Function, required: true }, getTableColumns: { type: Function, required: true }, getTableRows: { type: Function, required: true }, getPieDrillTargets: { type: Function, default: () => [] }, getPieDrillSource: { type: Function, default: () => 'live' }
 })
-const emit = defineEmits(['primary-analysis', 'indicator-analysis', 'widget-analysis', 'chart-click', 'alerts', 'metric-item-select', 'metric-item-duplicate', 'metric-item-remove', 'metric-item-add', 'metric-item-reorder', 'binding-action'])
+const emit = defineEmits(['primary-analysis', 'indicator-analysis', 'widget-analysis', 'chart-click', 'alerts', 'warning-retry', 'warning-event', 'metric-item-retry', 'metric-item-select', 'metric-item-duplicate', 'metric-item-remove', 'metric-item-add', 'metric-item-reorder', 'binding-action'])
+const warningSeverityLabel = severity => ({ CRITICAL: '严重', HIGH: '高', MEDIUM: '中', LOW: '低', INFO: '提示' })[String(severity).toUpperCase()] || severity
 const widgetKpi = computed(() => props.getWidgetKpi(props.widget))
 const dashboardSurfaceTone = inject('dashboardSurfaceTone', computed(() => 'light'))
 const dashboardAppearanceTheme = inject('dashboardAppearanceTheme', computed(() => 'default'))
@@ -63,6 +96,27 @@ const kpiValueStyle = computed(() => ({ color: visualStyle.value.kpi.valueColor 
 const kpiTitleStyle = computed(() => ({ color: visualStyle.value.kpi.titleColor || undefined }))
 const kpiTrendStyle = computed(() => ({ color: visualStyle.value.kpi.trendColor || undefined }))
 const contentThemeStyle = computed(() => ({ '--widget-theme-title': visualStyle.value.kpi.titleColor || undefined, '--widget-theme-text': visualStyle.value.kpi.titleColor || undefined }))
+// Neutral warning colors follow the widget scheme, then the dashboard theme.
+const warningThemeStyle = computed(() => {
+  const style = props.widget.config?.style || {}
+  const dark = surfaceTone.value === 'dark'
+  const accent = style.themeAccent || visualStyle.value.kpi.valueColor
+    || (style.palettePreset || style.colors?.length ? widgetPalette(props.widget)[0] : '')
+    || 'var(--db-accent, #1261a6)'
+  const surface = resolveWidgetBackgroundMode(style) === 'solid' && style.background
+    ? style.background : dark ? '#182b3a' : 'var(--db-surface, #ffffff)'
+  return {
+    ...contentThemeStyle.value,
+    '--warning-accent': accent,
+    '--warning-surface': surface,
+    '--warning-foreground': dark ? '#edf6fc' : 'var(--db-text, #25343b)',
+    '--warning-title': visualStyle.value.kpi.titleColor || 'var(--warning-foreground)',
+    '--warning-muted': 'color-mix(in srgb, var(--warning-foreground) 65%, var(--warning-surface))',
+    '--warning-ink': 'color-mix(in srgb, var(--warning-accent) 70%, var(--warning-foreground))',
+    '--warning-soft': 'color-mix(in srgb, var(--warning-accent) 10%, var(--warning-surface))',
+    '--warning-border': 'color-mix(in srgb, var(--warning-accent) 22%, var(--warning-surface))'
+  }
+})
 const legacyKpiStyle = computed(() => ({ color: visualStyle.value.kpi.titleColor || undefined }))
 const trendTone = computed(() => clinicalTrendTone(widgetKpi.value.status))
 const kpiVariant = computed(() => ['standard', 'hero', 'horizontal', 'status', 'trend', 'minimal'].includes(props.widget.config?.style?.kpiVariant) ? props.widget.config.style.kpiVariant : 'standard')
@@ -81,6 +135,10 @@ const textTitleStyle = computed(() => ({ color: visualStyle.value.text.titleColo
 @container (max-height: 135px) { .db-kpi-change,.db-kpi-target { display:none; } .db-kpi-card strong { margin-top:8px; } }
 .db-chart-card { display:flex; flex-direction:column; padding:16px 18px 12px; } .db-chart-card :deep(.idmp-chart-frame) { flex:1 1 auto; min-height:0; } .dashboard-chart-table-wrap { min-width:0; max-width:100%; overflow-x:auto; overscroll-behavior-inline:contain; } .dashboard-chart-table { width:max-content; min-width:100%; border-collapse:collapse; font-size:12px; } .dashboard-chart-table th,.dashboard-chart-table td { padding:8px 10px; border-bottom:1px solid var(--idmp-border-soft,#eaecf0); text-align:right; white-space:nowrap; } .dashboard-chart-table th { background:var(--table-header-background,#f3f7f8); } .is-table-zebra .dashboard-chart-table tbody tr:nth-child(even) { background:color-mix(in srgb, var(--table-header-background,#f3f7f8) 35%, transparent); } .is-table-compact .dashboard-chart-table th,.is-table-compact .dashboard-chart-table td { padding:4px 6px; } .dashboard-chart-table th:first-child,.dashboard-chart-table td:first-child { text-align:left; }
 .db-list-card { display:flex; flex-direction:column; overflow:hidden; }.db-warning-list,.db-ranking-list { flex:1 1 auto; min-height:0; margin:0; padding:0; overflow:auto; list-style:none; } .db-warning-list li { display:grid; grid-template-columns:30px minmax(0,1fr) auto; align-items:center; min-height:54px; gap:10px; border-bottom:1px solid var(--idmp-border-soft,#eaecf0); } .db-warning-icon { display:grid; place-items:center; width:26px; height:26px; border-radius:4px; color:var(--idmp-support-danger,#d92d20); background:var(--idmp-support-danger-bg,#fef3f2); } .db-warning-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .db-warning-list time { color:var(--idmp-text-disabled,#98a2b3); font-size:12px; } .db-ranking-list li { display:grid; grid-template-columns:28px 80px minmax(80px,1fr) 48px; align-items:center; min-height:39px; gap:10px; } .rank { display:grid; place-items:center; width:22px; height:22px; border-radius:4px; background:var(--idmp-layer-02,#f2f4f7); font-size:12px; } .rank.is-top { color:var(--idmp-interactive,#1570ef); } .db-rank-bar { height:6px; overflow:hidden; border-radius:6px; background:var(--idmp-layer-02,#f2f4f7); } .db-rank-bar i { display:block; height:100%; background:var(--idmp-interactive,#1570ef); } .db-action-link { border:0; background:transparent; color:var(--idmp-interactive,#1570ef); cursor:pointer; }
+.db-warning-row { display:grid; grid-column:1 / -1; grid-template-columns:30px minmax(0,1fr) auto; align-items:center; gap:10px; width:100%; min-height:54px; padding:0; border:0; background:transparent; color:inherit; font:inherit; text-align:left; }
+.db-warning-row:not(:disabled) { cursor:pointer; }
+.db-warning-row:not(:disabled):hover { background:var(--db-accent-soft,#edf5f3); }
+.db-warning-row:focus-visible { outline:2px solid var(--db-accent,#4f8583); outline-offset:-2px; }
 .db-supporting-metrics.is-variant-hero { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 16px; align-content:start; }.db-supporting-metrics.is-variant-hero .db-section-title { grid-column:1 / -1; }.db-supporting-metrics.is-variant-hero .db-supporting-metric:first-of-type { grid-column:1 / -1; min-height:68px; background:color-mix(in srgb,var(--db-surface,#fff) 55%,#e6f3f5); }.db-supporting-metrics.is-variant-hero .db-supporting-metric:first-of-type strong { font-size:28px; }.db-supporting-metrics.is-variant-horizontal .db-supporting-metric { grid-template-columns:minmax(80px,1fr) auto auto; min-height:48px; }.db-supporting-metrics.is-variant-horizontal .db-supporting-metric__comparisons,.db-supporting-metrics.is-variant-horizontal .db-supporting-metric__target { display:none; }.db-supporting-metrics.is-variant-status .db-supporting-metric { padding-left:10px; border-left:3px solid var(--db-border,#c8d5da); }.db-supporting-metrics.is-variant-trend .db-supporting-metric { grid-template-columns:minmax(90px,1fr) auto minmax(150px,1fr); }.db-supporting-metrics.is-variant-trend .db-supporting-metric__change,.db-supporting-metrics.is-variant-trend .db-supporting-metric__target { display:none; }.db-supporting-metrics.is-variant-minimal .db-section-title,.db-supporting-metrics.is-variant-minimal .db-supporting-metric__change,.db-supporting-metrics.is-variant-minimal .db-supporting-metric__comparisons,.db-supporting-metrics.is-variant-minimal .db-supporting-metric__target { display:none; }.db-supporting-metrics.is-variant-minimal { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; align-content:center; }.db-supporting-metrics.is-variant-minimal .db-supporting-metric { display:grid; grid-template-columns:1fr; min-height:58px; border:0; text-align:center; }.db-supporting-metrics.is-variant-minimal .db-supporting-metric strong { text-align:center; font-size:26px; }
 
 /* Shared Clinical Light surface content. Saved outer-card styling stays in DashboardWidget. */
@@ -143,6 +201,9 @@ const textTitleStyle = computed(() => ({ color: visualStyle.value.text.titleColo
  .db-ranking-list li { grid-template-columns:22px minmax(0,1fr) 44px; gap:7px; } .db-ranking-list .db-rank-bar { display:none; }
  .db-supporting-metric { grid-template-columns:minmax(0,1fr) auto; gap:6px; } .db-supporting-metric__change,.db-supporting-metric__target { display:none; }
 }
+@container (max-height: 130px) { .db-warning-row { min-height:32px; } }
+@container (max-width: 420px) { .db-warning-row { grid-template-columns:26px minmax(0,1fr); gap:7px; min-height:44px; } }
+@container (max-width: 160px) { .db-warning-row { grid-template-columns:1fr; min-height:0; } }
 
 /* Variants rearrange the established KPI presentation only; source values,
    comparisons and clinical trend tone remain untouched. */
@@ -154,4 +215,44 @@ const textTitleStyle = computed(() => ({ color: visualStyle.value.text.titleColo
 @container (max-width: 330px) { .db-kpi-card.is-variant-horizontal { display:flex; flex-wrap:wrap; align-content:center; gap:4px 8px; }.db-kpi-card.is-variant-horizontal .db-kpi-card__top { width:100%; }.db-kpi-card.is-variant-horizontal strong,.db-kpi-card.is-variant-horizontal .db-kpi-change,.db-kpi-card.is-variant-horizontal .db-kpi-comparisons { display:block; }.db-kpi-card.is-variant-horizontal .db-kpi-comparisons { margin-left:auto; }.db-kpi-card.is-variant-hero strong,.db-kpi-card.is-variant-minimal strong { font-size:30px; } }
 .db-kpi-card.is-variant-horizontal .db-kpi-comparisons span:first-child,
 .db-kpi-card.is-variant-minimal .db-kpi-comparisons span:first-child { display:inline !important; }
+/* Keep warning states compact without implying a healthy system. */
+.db-warning-card { padding:12px; gap:10px; }
+.db-warning-header { display:flex; flex:0 0 auto; flex-wrap:wrap; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--warning-border); border-radius:8px; background:linear-gradient(110deg,var(--warning-soft),color-mix(in srgb,var(--warning-accent) 5%,var(--warning-surface))); }
+.db-warning-header h2 { display:flex; flex:1 1 110px; min-width:0; align-items:center; gap:7px; margin:0; color:var(--warning-title); font-size:13px; font-weight:600; }
+.db-warning-header h2 > span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.db-warning-header__icon { display:grid; flex:0 0 auto; place-items:center; width:24px; height:24px; border-radius:6px; color:var(--warning-ink); background:color-mix(in srgb,var(--warning-accent) 16%,var(--warning-surface)); }
+.db-warning-count { padding:3px 6px; border-radius:4px; color:var(--warning-ink); background:var(--warning-surface); font-size:11px; white-space:nowrap; }
+.db-warning-header .db-action-link { flex:0 0 auto; padding:2px 0; color:var(--warning-ink); font-size:12px; white-space:nowrap; }
+.db-warning-state { display:flex; flex:0 1 auto; align-items:center; gap:10px; min-height:0; padding:12px; border:1px solid var(--warning-border); border-radius:8px; background:color-mix(in srgb,var(--warning-accent) 5%,var(--warning-surface)); overflow:auto; }
+.db-warning-state__icon { display:grid; flex:0 0 auto; place-items:center; width:32px; height:32px; border-radius:8px; background:var(--warning-soft); color:var(--warning-ink); font-size:18px; }
+.db-warning-state__copy { flex:1; min-width:0; }
+.db-warning-state__copy strong { color:var(--warning-title); font-size:12px; font-weight:500; }
+.db-warning-state__copy p { margin:4px 0 0; color:var(--warning-muted); font-size:11px; line-height:1.5; overflow-wrap:anywhere; }
+.db-warning-state.is-error { flex-wrap:wrap; border-color:#f3dec3; background:#fffaf2; }
+.db-warning-state.is-error .db-warning-state__icon { background:#fff0d9; color:#b77922; }
+.db-warning-state.is-error .db-warning-state__copy strong { color:#8f6229; }
+.db-warning-card .db-warning-list li { display:block; min-height:0; border-bottom:1px solid var(--warning-border); }
+.db-warning-card .db-warning-list li:last-child { border-bottom:0; }
+.db-warning-card .db-warning-row { box-sizing:border-box; grid-template-columns:26px minmax(0,1fr) auto; gap:8px; min-height:52px; padding:8px 6px; border-left:3px solid var(--warning-accent); border-radius:4px; }
+.db-warning-card .db-warning-row.is-danger { border-left-color:#d64c54; }
+.db-warning-card .db-warning-row.is-warning { border-left-color:#db942c; }
+.db-warning-card .db-warning-row:not(:disabled):hover { background:var(--warning-soft); }
+.db-warning-card .db-warning-icon.is-danger,.db-warning-severity.is-danger { color:#c83e49; background:#fff0f1; }
+.db-warning-card .db-warning-icon.is-warning,.db-warning-severity.is-warning { color:#b97616; background:#fff5e3; }
+.db-warning-card .db-warning-icon.is-info,.db-warning-severity.is-info { color:var(--warning-ink); background:var(--warning-soft); }
+.db-warning-card .db-warning-text { color:var(--warning-title); }
+.db-warning-card .db-warning-list time { color:var(--warning-muted); }
+.db-warning-card .db-warning-row:focus-visible { outline-color:var(--warning-accent); }
+.db-warning-card .db-warning-state .el-button { --el-color-primary:var(--warning-ink); --el-color-primary-light-9:var(--warning-soft); --el-color-primary-light-7:var(--warning-border); }
+.db-warning-content { min-width:0; }
+.db-warning-content__title { display:flex; align-items:center; gap:6px; min-width:0; }
+.db-warning-severity { flex:0 0 auto; padding:1px 5px; border-radius:4px; font-size:10px; line-height:18px; }
+.db-warning-card .db-warning-text { display:block; min-width:0; white-space:nowrap; text-overflow:ellipsis; font-size:12px; }
+.db-warning-detail { display:block; margin-top:3px; color:var(--warning-muted); font-size:11px; overflow-wrap:anywhere; }
+.db-warning-card.is-dark-surface .db-warning-state.is-error { background:#473926; border-color:#715634; }
+.db-warning-card.is-dark-surface .db-warning-state.is-error .db-warning-state__copy strong { color:#f2d19f; }
+@container (max-width:420px) { .db-warning-card .db-warning-row { grid-template-columns:26px minmax(0,1fr); } }
+@container (max-height:150px) { .db-warning-card { padding:8px; gap:6px; } .db-warning-header { padding:5px 8px; } .db-warning-state { padding:8px; } .db-warning-state__copy p { margin-top:2px; } .db-warning-card .db-warning-row { min-height:32px; padding-block:4px; } }
+@container (max-width:160px) { .db-warning-header { padding:5px; gap:4px; } .db-warning-header h2 { flex-basis:100%; } .db-warning-count { font-size:10px; } .db-warning-state { padding:8px; } .db-warning-state__icon { display:none; } .db-warning-card .db-warning-row { grid-template-columns:minmax(0,1fr); } }
+.db-ranking-empty { margin:8px 0; color:var(--db-muted,#78878e); font-size:12px; line-height:1.6; }
 </style>

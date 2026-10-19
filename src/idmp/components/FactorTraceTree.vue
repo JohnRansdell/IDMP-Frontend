@@ -7,7 +7,7 @@
         <div class="trace-name"><strong>{{ factor.factorName || factor.factorCode }}</strong><small>{{ factor.factorKind === 'DERIVED' ? '复合因子' : '原子因子' }} · V{{ factor.versionNo }} · {{ factor.factorVersionId }}</small></div>
         <span>{{ factor.resultMatched ? factor.result?.displayValue ?? factor.result?.value ?? '-' : '未匹配结果' }}</span>
         <span v-if="factor.result?.qualityStatus">{{ getStatusLabel(factor.result.qualityStatus) }}</span>
-        <el-button v-if="factor.factorId" link type="primary" @click="router.push({path:`/factor/edit/${factor.factorId}`,query:{factorVersionId:String(factor.factorVersionId)}})">查看因子</el-button>
+        <el-button v-if="factor.factorId" link type="primary" @click="router.push({path:`/factor/view/${factor.factorId}`,query:{factorVersionId:String(factor.factorVersionId)}})">查看因子</el-button>
       </div>
       <el-alert v-if="errors[index]" :title="errors[index]" type="error" :closable="false"><el-button size="small" @click="expand(factor,index)">重试</el-button></el-alert>
       <div v-if="expanded[index]" class="trace-children">

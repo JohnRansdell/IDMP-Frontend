@@ -1,0 +1,1 @@
+import{O as u}from"./index-b8YFvXin.js";function f(s){var t;return Number((s==null?void 0:s.status)||((t=s==null?void 0:s.response)==null?void 0:t.status)||0)}function m(s,t="请求失败"){const a=f(s),n={401:"登录已失效，请重新登录",403:"当前账号无权限",409:"数据或状态冲突",400:"请求参数校验失败",422:"业务校验失败",500:"服务暂时不可用，请稍后重试"}[a];return u(s==null?void 0:s.message,n||t)}export{m as f};

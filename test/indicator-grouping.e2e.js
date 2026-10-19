@@ -36,6 +36,8 @@ function mockBackend() {
     window.__groupingRequests.push({ path: p, method: init.method || 'GET', body })
     let data = {}
     if (p.endsWith('/auth/me')) data = { user: { id: '1', username: 'tester', displayName: '验收用户' }, roles: ['SYSTEM_ADMIN'], permissions: [], menus: [] }
+    else if (p.endsWith('/policy-references')) data = []
+    else if (p.endsWith('/meta/policy-files/600')) data = { policyFile: { id: '600', documentNumber: '测试文号' } }
     else if (p.endsWith('/meta/drill-paths')) data = { records: [{ ...path.path, currentPublishedVersionId: '91' }], total: 1 }
     else if (p.endsWith('/meta/drill-path-versions/91')) data = path
     else if (p.endsWith('/sql-imports') || p.endsWith('/sql-imports/grouping-test')) data = { importId: 'grouping-test', status: metadata ? 'READY_FOR_TRIAL' : 'AWAITING_METADATA', preview, resources: [], metadata }
@@ -155,7 +157,7 @@ try {
   await waitFor(() => evaluate(`window.__groupingRequests.some(r=>r.path.endsWith('/formula') && r.method==='PUT')`))
   assert.deepEqual(await evaluate(`window.__groupingRequests.find(r=>r.path.endsWith('/formula') && r.method==='PUT').body.dimensionGrain`), ['DEPT_CODE', 'DIAGNOSIS'])
   await writeFile('.tmp/grouping-browser/screenshots/normal-indicator-grouping.png', Buffer.from((await cdp.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'))
-  await evaluate(`(() => { window.__indicatorFixture.form.name='转科比例验收'; window.__indicatorFixture.form.definition='转科比例定义'; window.__indicatorFixture.form.significance='质量监测'; window.__indicatorFixture.form.sources=['HIS','病案']; window.__indicatorFixture.form.categoryPath=['医疗质量','质量安全']; window.__indicatorFixture.form.policies=['绩效考核2024版']; })()`)
+  await evaluate(`(() => { window.__indicatorFixture.form.name='转科比例验收'; window.__indicatorFixture.form.definition='转科比例定义'; window.__indicatorFixture.form.significance='质量监测'; window.__indicatorFixture.form.sources=['HIS','病案']; window.__indicatorFixture.form.policyDrafts=[{policyFileVersionId:'601', policyFileId:'600',policyFileName:'来源测试',versionNo:'1',citationLocation:'',citationText:''}]; window.__indicatorFixture.form.categoryPath=['医疗质量','质量安全']; })()`)
   assert.equal(await evaluate(`window.__indicatorFixture.indicatorWorkflow.masterResourceVersion`), 7)
   await evaluate(`window.__indicatorFixture.saveIndicatorBasicInfo()`)
   const metadataBody = await evaluate(`window.__groupingRequests.find(r=>r.path.endsWith('/indicators/1') && r.method==='PUT')?.body`)

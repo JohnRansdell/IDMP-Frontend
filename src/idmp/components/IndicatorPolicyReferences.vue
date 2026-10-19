@@ -1,136 +1,110 @@
 <template>
-  <section class="surface-card table-card policy-references">
-    <div class="section-title"><h2>政策依据</h2></div>
-    <el-empty v-if="!versionId" description="尚未创建指标版本" />
-    <template v-else>
-      <el-alert v-if="!published" title="指标发布后可关联政策文件" type="info" :closable="false" show-icon />
-      <StatePanel v-if="loading" type="loading" title="正在读取政策依据" />
-      <StatePanel v-else-if="error" type="error" title="政策依据读取失败" :description="error">
-        <template #actions><el-button @click="load">重试</el-button></template>
-      </StatePanel>
-      <el-table v-else :data="references" empty-text="暂无有效政策依据" table-layout="fixed">
-        <el-table-column label="政策文件" min-width="220" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.policyFileName || row.policyFileCode || '-' }}</template>
-        </el-table-column>
-        <el-table-column prop="policyVersionNo" label="文件版本" width="100" />
-        <el-table-column label="关系类型" width="110"><template #default="{ row }">{{ policyReferenceRoleLabel(row.relationRole) }}</template></el-table-column>
-        <el-table-column prop="citationLocation" label="政策出处" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="citationText" label="政策原文" min-width="240" show-overflow-tooltip />
-        <el-table-column label="操作" width="130">
-          <template #default="{ row }">
-            <el-button link type="primary" @click="viewerId = String(row.policyFileVersionId)">查看</el-button>
-            <el-button v-if="canManage" link type="danger" :disabled="saving || removing" @click="invalidate(row)">失效</el-button>
-          </template>
-        </el-table-column>
+  <div class="indicator-policy-references">
+    <div class="policy-toolbar">
+      <span v-if="versionId" class="mono-data">指标版本：{{ versionId }}</span>
+      <el-button :disabled="!versionId || loading || saving" @click="loadReferences">刷新引用</el-button>
+    </div>
+    <el-alert v-if="!versionId" title="请先创建并发布指标版本，再添加政策依据。" type="info" :closable="false" />
+    <el-alert v-else-if="!published" title="当前为未发布版本，可查看已有引用；发布指标版本后才能添加或失效政策引用。" type="info" :closable="false" />
+    <template v-if="versionId">
+      <StatePanel v-if="loading" type="loading" title="正在读取政策引用" />
+      <StatePanel v-else-if="error" type="error" title="政策引用读取失败" :description="error" />
+      <el-table v-else :data="references" empty-text="当前指标版本暂无有效政策引用" table-layout="fixed">
+        <el-table-column label="政策文件" min-width="200"><template #default="{ row }">{{ row.policyFileName || row.policyFileCode || row.policyFileVersionId }}</template></el-table-column>
+        <el-table-column prop="policyVersionNo" label="政策版本" width="100" />
+        <el-table-column label="引用用途" width="110"><template #default="{ row }">{{ policyReferenceRoleLabel(row.relationRole) }}</template></el-table-column>
+        <el-table-column prop="citationLocation" label="出处" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="citationText" label="引用原文" min-width="220" show-overflow-tooltip />
+        <el-table-column label="操作" width="130"><template #default="{ row }">
+          <el-button link type="primary" @click="viewerId = String(row.policyFileVersionId)">查看文件</el-button>
+          <el-button v-if="published" link type="danger" :disabled="saving" @click="invalidate(row)">失效</el-button>
+        </template></el-table-column>
       </el-table>
-      <el-form v-if="canManage" class="reference-form" label-position="top" @submit.prevent="add">
-        <div class="reference-fields">
-          <el-form-item label="政策文件">
-            <PolicyVersionPicker v-model="form.policyFileVersionId" :disabled="saving" aria-label="关联政策文件" />
-          </el-form-item>
-          <el-form-item label="关系类型">
-            <el-select v-model="form.relationRole" :disabled="saving" aria-label="政策依据关系类型">
-              <el-option v-for="item in POLICY_REFERENCE_ROLES" :key="item.value" :label="item.label" :value="item.value" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="政策出处（可选）"><el-input v-model="form.citationLocation" :maxlength="500" :disabled="saving" /></el-form-item>
-        </div>
-        <el-form-item label="政策原文（可选）"><el-input v-model="form.citationText" type="textarea" :rows="2" :maxlength="10000" :disabled="saving" /></el-form-item>
-        <el-button type="primary" :icon="Plus" :loading="saving" :disabled="!form.policyFileVersionId || removing" native-type="submit">添加政策依据</el-button>
+      <el-form v-if="published" class="policy-reference-form" label-position="top" :disabled="saving" @submit.prevent="addReference">
+        <el-form-item label="已发布政策版本" required><PolicyVersionPicker v-model="form.policyFileVersionId" /></el-form-item>
+        <el-form-item label="引用用途"><el-select v-model="form.relationRole"><el-option v-for="role in POLICY_REFERENCE_ROLES" :key="role.value" :value="role.value" :label="role.label" /></el-select></el-form-item>
+        <el-form-item label="政策出处"><el-input v-model.trim="form.citationLocation" maxlength="500" placeholder="例如：第三章第十二条（可选）" /></el-form-item>
+        <el-form-item label="引用原文"><el-input v-model="form.citationText" type="textarea" :rows="3" maxlength="10000" placeholder="填写支撑指标口径的政策原文（可选）" /></el-form-item>
+        <el-button type="primary" :loading="saving" :disabled="!form.policyFileVersionId || saving" @click="addReference">添加政策引用</el-button>
       </el-form>
     </template>
     <PolicyFileViewer :version-id="viewerId" @close="viewerId = ''" />
-  </section>
+  </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
 import { ElMessage } from '@/idmp/utils/message'
-import StatePanel from '@/idmp/components/StatePanel.vue'
-import PolicyVersionPicker from '@/idmp/components/PolicyVersionPicker.vue'
-import PolicyFileViewer from '@/idmp/components/PolicyFileViewer.vue'
 import { createPolicyReference, fetchPolicyReferences, invalidatePolicyReference } from '@/idmp/api/modules/mappings'
 import { POLICY_REFERENCE_ROLES, policyReferenceRoleLabel } from '@/idmp/api/adapters/mapping'
+import PolicyVersionPicker from './PolicyVersionPicker.vue'
+import PolicyFileViewer from './PolicyFileViewer.vue'
+import StatePanel from './StatePanel.vue'
 
 const props = defineProps({ versionId: { type: String, default: '' }, published: { type: Boolean, default: false } })
-const canManage = computed(() => Boolean(props.versionId) && props.published)
-const references = ref([]), loading = ref(false), error = ref(''), saving = ref(false), removing = ref(false), viewerId = ref('')
-const form = reactive({ policyFileVersionId: '', relationRole: 'SOURCE', citationLocation: '', citationText: '' })
-let revision = 0
-let contextRevision = 0
+const references = ref([]), loading = ref(false), saving = ref(false), error = ref(''), viewerId = ref('')
+const emptyForm = () => ({ policyFileVersionId: '', relationRole: 'SOURCE', citationLocation: '', citationText: '' })
+const form = reactive(emptyForm())
+let contextRevision = 0, requestRevision = 0
 
-function resetForm() {
-  Object.assign(form, { policyFileVersionId: '', relationRole: 'SOURCE', citationLocation: '', citationText: '' })
-}
-
-async function load() {
-  const current = ++revision
+async function loadReferences() {
   const id = props.versionId
-  references.value = []
-  error.value = ''
-  loading.value = Boolean(id)
+  const request = ++requestRevision
+  references.value = []; error.value = ''; loading.value = Boolean(id)
   if (!id) return
   try {
-    const rows = await fetchPolicyReferences(id)
-    if (current === revision) references.value = rows
-  } catch (failure) {
-    if (current === revision) error.value = failure?.message || '无法读取政策依据，请重试'
-  } finally { if (current === revision) loading.value = false }
+    const result = await fetchPolicyReferences(id)
+    if (request === requestRevision) references.value = result
+  } catch (e) {
+    if (request === requestRevision) error.value = e?.message || '请稍后重试'
+  } finally { if (request === requestRevision) loading.value = false }
 }
 
-async function add() {
-  if (!canManage.value || saving.value || removing.value || !form.policyFileVersionId) return
-  const current = contextRevision
-  const id = props.versionId
+async function addReference() {
+  if (saving.value || !props.versionId || !props.published) return
+  if (!form.policyFileVersionId) return ElMessage.warning('请选择已发布政策版本')
+  const context = contextRevision, id = props.versionId
+  const payload = { ...form, policyFileVersionId: String(form.policyFileVersionId) }
   saving.value = true
   try {
-    await createPolicyReference(id, { ...form, policyFileVersionId: String(form.policyFileVersionId) })
-    if (current !== contextRevision) return
-    resetForm()
-    await load()
-    if (current === contextRevision) ElMessage.success('政策依据已添加')
-  } catch (failure) {
-    if (current === contextRevision) ElMessage.error(failure?.message || '添加政策依据失败')
-  } finally { if (current === contextRevision) saving.value = false }
+    await createPolicyReference(id, payload)
+    if (context !== contextRevision) return
+    Object.assign(form, emptyForm())
+    ElMessage.success('政策引用已添加')
+    await loadReferences()
+  } catch (e) {
+    if (context === contextRevision) ElMessage.error(e?.message || '添加政策引用失败')
+  } finally { if (context === contextRevision) saving.value = false }
 }
 
-async function invalidate(row) {
-  if (!canManage.value || saving.value || removing.value) return
-  const current = contextRevision
-  removing.value = true
+async function invalidate(reference) {
+  if (saving.value || !props.versionId || !props.published) return
+  const context = contextRevision
+  saving.value = true
   try {
-    await ElMessageBox.confirm('确认使该政策依据失效？', '失效政策依据', { type: 'warning' })
-    if (current !== contextRevision || !canManage.value) return
-    await invalidatePolicyReference(String(row.id), row.resourceVersion)
-    if (current !== contextRevision) return
-    await load()
-    if (current === contextRevision) ElMessage.success('政策依据已失效')
-  } catch (failure) {
-    if (current === contextRevision && failure !== 'cancel' && failure !== 'close') {
-      ElMessage.error(failure?.message || '失效政策依据失败')
-      if (failure?.status === 409) await load()
-    }
-  } finally { if (current === contextRevision) removing.value = false }
+    await ElMessageBox.confirm('确认使该政策引用失效？', '失效政策引用', { type: 'warning' })
+    if (context !== contextRevision) return
+    await invalidatePolicyReference(reference.id, reference.resourceVersion)
+    if (context !== contextRevision) return
+    ElMessage.success('政策引用已失效')
+    await loadReferences()
+  } catch (e) {
+    if (context === contextRevision && e !== 'cancel' && e !== 'close') ElMessage.error(e?.message || '失效政策引用失败')
+  } finally { if (context === contextRevision) saving.value = false }
 }
 
 watch(() => [props.versionId, props.published], () => {
-  contextRevision++
-  saving.value = false
-  removing.value = false
-  viewerId.value = ''
-  resetForm()
-  load()
+  contextRevision++; saving.value = false; viewerId.value = ''
+  Object.assign(form, emptyForm())
+  void loadReferences()
 }, { immediate: true })
-onBeforeUnmount(() => { revision++; contextRevision++ })
+onBeforeUnmount(() => { contextRevision++; requestRevision++ })
 </script>
 
 <style scoped>
-.policy-references { min-width: 0; }
-.section-title h2 { font-size: 18px; }
-.reference-form { max-width: 960px; margin-top: 24px; }
-.reference-fields { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 2fr); gap: 16px; }
-.reference-form :deep(.el-select) { width: 100%; }
-@media (max-width: 760px) { .reference-fields { grid-template-columns: minmax(0, 1fr); gap: 0; } }
+.policy-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.policy-toolbar .mono-data { overflow-wrap: anywhere; }
+.policy-reference-form { margin-top: 20px; max-width: 760px; }
+.policy-reference-form :deep(.el-select) { width: 100%; }
 </style>

@@ -9,8 +9,6 @@
       </template>
     </PageHeader>
 
-    <el-alert class="mapping-notice" type="info" :closable="false" show-icon title="映射仅关联已发布指标版本，不改变指标公式、因子或计算结果。" />
-
     <el-tabs v-model="activePane" @tab-change="refreshCurrent">
       <el-tab-pane label="映射关系" name="mappings">
         <section class="surface-card filter-card">
@@ -186,7 +184,6 @@ onBeforeUnmount(() => { clearTimeout(policySearchTimer); ++policyRequest })
 
 <style scoped lang="scss">
 .indicator-mapping { min-width: 0; }
-.mapping-notice { margin-bottom: 16px; }
 .mapping-form { display: block; }
 .mapping-filter { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 10px 14px; }
 .mapping-filter :deep(.el-form-item) { min-width: 0; margin: 0; }

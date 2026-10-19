@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createQualitySafetyDemoSchema } from '../src/idmp/features/dashboard/acceptanceExample.js'
-import { canRestoreQualitySafetyDemo, createQualitySafetyDemoRestoreResult } from '../src/idmp/features/dashboard/qualitySafetyDemoRestore.js'
+import { createQualitySafetyDemoSchema } from './fixtures/frontend/acceptanceExample.js'
+import { canRestoreQualitySafetyDemo, createQualitySafetyDemoRestoreResult } from './fixtures/frontend/qualitySafetyDemoRestore.js'
 import { createDashboardEditingSnapshot } from '../src/idmp/features/dashboard/editSession.js'
 
 test('restore entry is available only while editing the canonical quality safety system dashboard', () => {

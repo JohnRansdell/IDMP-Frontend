@@ -5,7 +5,7 @@
     >
       <template #meta>
         <span class="data-source-badge" :class="{ 'is-live': sourceMode === 'live' }">
-          {{ sourceMode === 'live' ? '接口数据' : sourceMode === 'demo' ? '演示数据' : '正在加载' }}
+          {{ tableLoading ? '正在加载' : loadError ? '加载失败' : '接口数据' }}
         </span>
         <span>共 {{ filteredRows.length }} 条</span>
       </template>
@@ -41,10 +41,10 @@
       </template>
     </PageHeader>
 
-    <div v-if="loadError" class="notice-strip is-warning indicator-source-notice">
-      <span>{{ loadError }} 当前已明确切换为演示数据，不代表后端真实指标目录。</span>
-      <el-button link type="primary" :loading="tableLoading" @click="loadBackendIndicators">重试接口</el-button>
-    </div>
+    <StatePanel v-if="tableLoading" type="loading" title="正在加载指标目录" />
+    <StatePanel v-else-if="loadError" type="error" title="指标目录加载失败" :description="loadError">
+      <template #actions><el-button type="primary" @click="loadBackendIndicators">重试</el-button></template>
+    </StatePanel>
 
     <section class="surface-card filter-card">
         <el-form :model="filters" aria-label="指标筛选">
@@ -120,7 +120,7 @@
       </el-form>
     </section>
 
-    <section v-if="viewMode === 'table'" class="surface-card table-card">
+    <section v-if="!tableLoading && !loadError && viewMode === 'table'" class="surface-card table-card">
       <StatePanel
         v-if="!tableLoading && !filteredRows.length"
         type="empty"
@@ -169,7 +169,7 @@
             <template #default="{ row }">
               <button type="button" class="action-link" @click="openDetail(row)">查看</button>
                <button type="button" class="action-link" @click="openEditor(row.code)">编辑</button>
-              <button v-if="sourceMode === 'live' && row.indicatorId" type="button" class="action-link danger-link" @click="openDelete(row)">删除</button>
+              <button v-if="row.indicatorId" type="button" class="action-link danger-link" @click="openDelete(row)">删除</button>
             </template>
           </el-table-column>
         </el-table>
@@ -186,7 +186,7 @@
       </div>
     </section>
 
-    <section v-else class="indicator-card-wrap">
+    <section v-else-if="!tableLoading && !loadError" class="indicator-card-wrap">
       <div v-if="pagedRows.length" class="indicator-card-grid">
         <article v-for="row in pagedRows" :key="row.code" class="surface-card indicator-card">
           <div class="indicator-card__head">
@@ -245,7 +245,6 @@ import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
  import ResourceDeleteDialog from '@/idmp/components/ResourceDeleteDialog.vue'
 import { deleteIndicator, fetchIndicatorDeletionImpact, fetchAllIndicators, fetchAllIndicatorVersions } from '@/idmp/api/modules/indicators'
-import { indicatorRows } from '@/idmp/data/demo'
 import { getStatusLabel } from '@/idmp/design/status'
 
 const router = useRouter()
@@ -271,13 +270,7 @@ const emptyFilters = () => ({
 
 const filters = reactive(emptyFilters())
 const appliedFilters = ref(emptyFilters())
-const sourceRows = computed(() => (
-  sourceMode.value === 'live'
-    ? backendIndicatorRows.value
-    : sourceMode.value === 'demo'
-      ? indicatorRows
-      : []
-))
+const sourceRows = computed(() => backendIndicatorRows.value)
 const categories = computed(() => [...new Set(sourceRows.value.map(item => item.category).filter(Boolean))])
 const statuses = computed(() => [...new Set(sourceRows.value.map(item => item.status).filter(Boolean))])
 
@@ -315,6 +308,7 @@ const resetFilters = () => {
 const loadBackendIndicators = async () => {
   tableLoading.value = true
   loadError.value = ''
+  selectedRows.value = []
   try {
     const [indicators, publishedVersions] = await Promise.all([
       fetchAllIndicators(),
@@ -327,7 +321,7 @@ const loadBackendIndicators = async () => {
     sourceMode.value = 'live'
   } catch (error) {
     backendIndicatorRows.value = []
-    sourceMode.value = 'demo'
+    sourceMode.value = 'error'
     loadError.value = error?.message || '指标目录接口暂不可用。'
   } finally {
     tableLoading.value = false
@@ -345,11 +339,11 @@ function normalizeList(payload) {
 const toIndicatorRow = (item) => ({
   code: item.code,
   name: item.name,
-  category: item.category || '后端指标',
-  attribute: item.attribute || '定量',
-  version: item.versionNo ? `V${item.versionNo}` : 'V1',
-  direction: item.direction || '监测比较',
-  source: item.source || '后端接口',
+  category: item.category || '—',
+  attribute: item.attribute || '—',
+  version: item.versionNo ? `V${item.versionNo}` : item.version || '—',
+  direction: item.direction || '—',
+  source: item.source || '—',
   status: item.status || '未知',
   // 场景数由指标主对象接口聚合返回；字段缺失时保留未知状态，避免误显示为 0。
   scenes: toScenarioCount(item.scenarioCount),
@@ -362,11 +356,11 @@ const toIndicatorRow = (item) => ({
 const toPublishedIndicatorVersionRow = (item) => ({
   code: item.indicatorCode || item.code,
   name: item.indicatorName || item.name || item.indicatorCode || item.code,
-  category: item.category || '后端指标',
-  attribute: item.attribute || '定量',
+  category: item.category || '—',
+  attribute: item.attribute || '—',
   version: item.versionNo ? `V${item.versionNo}` : `版本 ${item.id || item.versionId || '-'}`,
-  direction: item.direction || '监测比较',
-  source: item.source || '已发布版本',
+  direction: item.direction || '—',
+  source: item.source || '—',
   status: item.status || item.publicationStatus || 'PUBLISHED',
   // 指标版本列表并不保证返回 scenarioCount，不能以 0 覆盖指标目录的聚合结果。
   scenes: toScenarioCount(item.scenarioCount ?? item.indicator?.scenarioCount),

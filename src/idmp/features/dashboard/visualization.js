@@ -1,4 +1,5 @@
 import { IDMP_CHART_COLORS } from '../../charts/theme.js'
+import { departmentIdentity, normalizeDepartmentDataset } from './dimensionNames.js'
 
 const DASHBOARD_DRILL_LEVELS = new Set([
   'HOSPITAL',
@@ -168,19 +169,21 @@ export function createPublishedIndicatorSources(indicators = [], publishedVersio
   }).filter(Boolean)
 }
 
-export function applyIndicatorAnalysisToSource(source, payload = {}) {
+export function applyIndicatorAnalysisToSource(source, payload = {}, departmentNames = {}, paths = []) {
   if (!source) return source
-  const comparisons = Array.isArray(payload?.dimensionComparison) ? payload.dimensionComparison : []
+  const rawComparisons = Array.isArray(payload?.dimensionComparison) ? payload.dimensionComparison : []
+  const named = normalizeDepartmentDataset({ rows: rawComparisons.map(item => ({ ...(isRecord(item?.dimensions) ? item.dimensions : {}),
+    ...(item.departmentCode != null ? { departmentCode: item.departmentCode } : {}), ...(item.departmentName ? { departmentName: item.departmentName } : {}) })) }, { paths, names: new Map(Object.entries(departmentNames)) })
+  const comparisons = rawComparisons.map((item, index) => ({ ...item, dimensions: named.rows[index] }))
   const overview = resolvePrimaryAnalysisOverview(payload)
   const unit = source.unit || payload?.unit || payload?.displayUnit || overview?.unit || overview?.displayUnit || ''
   const hasData = Boolean(payload?.dataAvailable && overview)
   const trend = payload?.dataAvailable && Array.isArray(payload?.trend) ? payload.trend : []
   const departmentData = comparisons
-    .filter((item) => item?.dimensions?.out_dept_code || item?.dimensions?.out_dept_id)
-    .map((item) => ({
-      name: item.dimensions?.out_dept_name || item.dimensions?.out_dept_code || item.dimensions?.out_dept_id,
-      value: normalizeAnalysisNumber(item?.value, unit)
-    }))
+    .map((item) => {
+      const identity = departmentIdentity(item, paths)
+      return { name: identity.name || (identity.code ? `科室编码：${identity.code}` : ''), value: normalizeAnalysisNumber(item?.value, unit) }
+    })
     .filter((item) => item.name && item.value !== null)
   const bindingRows = payload?.dataAvailable
     ? comparisons.map((item) => ({
@@ -214,7 +217,10 @@ export function applyIndicatorAnalysisToSource(source, payload = {}) {
     bindingRows,
     analysisCurrentRows,
     analysisTrendRows,
-    analysisComparisonRows
+    analysisComparisonRows,
+    analysisDimensionDisplayFields: named.dimensionDisplayFields,
+    analysisDepartmentFields: named.departmentFields,
+    analysisNameDiagnostics: named.nameDiagnostics
   }
 }
 
@@ -242,7 +248,7 @@ export function resolvePrimaryAnalysisOverview(payload = {}) {
 }
 
 export function getVisualizationTitle(sourceName, visualType) {
-  if (visualType === 'bar') return `${sourceName}科室对比`
+  if (visualType === 'bar') return `${sourceName}对比`
   if (visualType === 'line') return `${sourceName}趋势`
   if (visualType === 'pie') return `${sourceName}构成`
   if (visualType === 'table') return `${sourceName}数据明细`
@@ -251,7 +257,7 @@ export function getVisualizationTitle(sourceName, visualType) {
   if (visualType === 'funnel') return `${sourceName}漏斗分析`
   if (visualType === 'scatter') return `${sourceName}散点分析`
   if (visualType === 'heatmap') return `${sourceName}热力分析`
-  if (visualType === 'map') return `${sourceName}演示区域分布`
+  if (visualType === 'map') return `${sourceName}区域分布`
   return sourceName
 }
 
@@ -310,7 +316,7 @@ function createVirtualScatterOption(widget, options) { const source = getWidgetS
 function createVirtualHeatmapOption(widget, options) { const source = getWidgetSource(widget, options), rows = source.departmentData || []; return { grid: { top: 18, bottom: 54, left: 12, right: 16, containLabel: true }, xAxis: { type: 'category', data: rows.map(row => row.name) }, yAxis: { type: 'category', data: ['指标值'] }, visualMap: { min: 0, max: Math.max(...rows.map(row => Number(row.value) || 0), 1), calculable: true, orient: 'horizontal', left: 'center', bottom: 0 }, series: [{ type: 'heatmap', data: rows.map((row, index) => [index, 0, Number(row.value) || 0]) }] } }
 // Geo adapter boundary: this intentionally uses named demo regions until a
 // sanctioned GeoJSON source is supplied. It is not presented as hospital GIS.
-function createVirtualMapOption(widget, options) { const source = getWidgetSource(widget, options), rows = source.departmentData || []; return { tooltip: { trigger: 'axis' }, grid: { top: 22, left: 62, right: 22, bottom: 30 }, xAxis: { type: 'value' }, yAxis: { type: 'category', inverse: true, data: rows.map(row => row.name) }, series: [{ name: '演示区域分布', type: 'bar', data: rows.map(row => Number(row.value) || 0), itemStyle: { color: '#4f8583', borderRadius: [0, 4, 4, 0] } }] } }
+function createVirtualMapOption(widget, options) { const source = getWidgetSource(widget, options), rows = source.departmentData || []; return { tooltip: { trigger: 'axis' }, grid: { top: 22, left: 62, right: 22, bottom: 30 }, xAxis: { type: 'value' }, yAxis: { type: 'category', inverse: true, data: rows.map(row => row.name) }, series: [{ name: '区域分布', type: 'bar', data: rows.map(row => Number(row.value) || 0), itemStyle: { color: '#4f8583', borderRadius: [0, 4, 4, 0] } }] } }
 
 function createVirtualBarOption(widget, presetOptions) {
   const source = getWidgetSource(widget, presetOptions)

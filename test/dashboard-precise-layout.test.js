@@ -1,6 +1,7 @@
+import { schemaToMockDashboardPayload } from './fixtures/frontend/mockDashboardPayload.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { dashboardDetailToSchema, schemaToDashboardPayload, schemaToMockDashboardPayload } from '../src/idmp/api/adapters/dashboard.js'
+import { dashboardDetailToSchema, schemaToDashboardPayload } from '../src/idmp/api/adapters/dashboard.js'
 import { normalizeDashboardSchema } from '../src/idmp/features/dashboard/schema.js'
 import { applyWidgetLayoutToCanvas, drawnRectangleToGridLayout, gridWidthToPercentage, percentageToGridWidth, validatePreciseLayout } from '../src/idmp/features/dashboard/preciseLayout.js'
 const widgets = [{ id: 'kpi', type: 'kpi', config: {}, layout: { x: 0, y: 0, w: 6, h: 3 } }, { id: 'chart', type: 'chart', chartKind: 'line', config: {}, layout: { x: 8, y: 0, w: 8, h: 6 } }]

@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createAcceptanceExampleSchema, createQualitySafetyShowcaseSchema } from '../src/idmp/features/dashboard/acceptanceExample.js'
-import { createWidgetBindingDatasets } from '../src/idmp/features/dashboard/fieldCatalog.js'
-import { dashboardAcceptanceSources } from '../src/idmp/features/dashboard/acceptanceData.js'
+import { createAcceptanceExampleSchema, createQualitySafetyShowcaseSchema } from './fixtures/frontend/acceptanceExample.js'
+import { createWidgetBindingDatasets } from './fixtures/frontend/fieldCatalog.js'
+import { dashboardAcceptanceSources } from './fixtures/frontend/acceptanceData.js'
 import { deriveDependentFilterOptions, queryWidgetDatasetWithRuntime } from '../src/idmp/features/dashboard/queryAdapter.js'
 import { DASHBOARD_RECOVERY_STATUS, persistDashboardSchema, recoverDashboardSchema } from '../src/idmp/features/dashboard/persistence.js'
 

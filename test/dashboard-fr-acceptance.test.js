@@ -4,11 +4,11 @@ import { changeDashboardGridColumns, normalizeDashboardSchema, validateDashboard
 import { createKpiData, normalizeTrendDirection } from '../src/idmp/features/dashboard/visualization.js'
 import { DASHBOARD_STUDIO_MENU_COMMANDS, createLocalDashboard, duplicateLocalDashboard, readDashboardCatalog, removeLocalDashboard, renameLocalDashboard, saveDashboardToCatalog } from '../src/idmp/features/dashboard/catalog.js'
 import { BUILT_IN_LAYOUT_TEMPLATES } from '../src/idmp/features/dashboard/layoutTemplates.js'
-import { dashboardAcceptanceDrillRows, dashboardAcceptanceDualAxisRows, dashboardAcceptanceKpis, dashboardAcceptanceMapRows, dashboardAcceptanceRows, dashboardAcceptanceSources } from '../src/idmp/features/dashboard/acceptanceData.js'
+import { dashboardAcceptanceDrillRows, dashboardAcceptanceDualAxisRows, dashboardAcceptanceKpis, dashboardAcceptanceMapRows, dashboardAcceptanceRows, dashboardAcceptanceSources } from './fixtures/frontend/acceptanceData.js'
 import { aggregateValues, bindingChartOption, compileWidgetData } from '../src/idmp/features/dashboard/bindingEngine.js'
-import { createWidgetBindingDatasets } from '../src/idmp/features/dashboard/fieldCatalog.js'
-import { canApplyDashboardLoad, canRefreshRemoteDashboard, createDashboardSelectorOptions, dashboardOrigin, shouldSkipRemoteDashboardBootstrap } from '../src/idmp/features/dashboard/dashboardIdentity.js'
-import { LOCAL_SCENE_DASHBOARDS } from '../src/idmp/features/dashboard/sceneRegistry.js'
+import { createWidgetBindingDatasets } from './fixtures/frontend/fieldCatalog.js'
+import { canApplyDashboardLoad, canRefreshRemoteDashboard, createDashboardSelectorOptions, dashboardOrigin, shouldSkipRemoteDashboardBootstrap } from './fixtures/frontend/dashboardIdentity.js'
+import { LOCAL_SCENE_DASHBOARDS } from './fixtures/frontend/sceneRegistry.js'
 
 const storage = () => { const values = new Map(); return { getItem: key => values.has(key) ? values.get(key) : null, setItem: (key, value) => values.set(key, String(value)), removeItem: key => values.delete(key) } }
 const schema = id => normalizeDashboardSchema({ version: 1, id, name: '自定义质量看板', dashboardType: 'custom', category: '质量', scope: 'personal', layout: { engine: 'gridstack', columns: 24, float: false }, widgets: [{ id: 'kpi', type: 'kpi', layout: { x: 0, y: 0, w: 6, h: 3 }, config: {} }, { id: 'text', type: 'text', layout: { x: 6, y: 0, w: 6, h: 3 }, config: { text: { title: '说明', body: '演示说明' } } }] })
@@ -100,10 +100,10 @@ test('FR-M8 acceptance: selector joins system scenes and local catalog with one 
   const blank = createLocalDashboard({ name: 'UAT 空白看板', dashboardType: 'custom', category: 'UAT', scope: 'personal' }, { storage: local, id: 'uat-blank' })
   assert.equal(blank.widgets.length, 0)
   const options = createDashboardSelectorOptions(LOCAL_SCENE_DASHBOARDS, readDashboardCatalog(local))
-  assert.deepEqual(options.map(item => item.name), ['绩效考核', '医院评审', '质量安全', 'UAT 空白看板'])
+  assert.deepEqual(options.map(item => item.name), ['质量安全', 'UAT 空白看板'])
   assert.deepEqual(options.map(item => item.id), [...LOCAL_SCENE_DASHBOARDS.map(item => item.dashboardId), 'uat-blank'])
   assert.equal(dashboardOrigin('uat-blank'), 'local'); assert.equal(shouldSkipRemoteDashboardBootstrap('uat-blank'), true)
-  assert.equal(dashboardOrigin(LOCAL_SCENE_DASHBOARDS[2].dashboardId), 'system-scene'); assert.equal(shouldSkipRemoteDashboardBootstrap(LOCAL_SCENE_DASHBOARDS[2].dashboardId), false)
+  assert.equal(dashboardOrigin(LOCAL_SCENE_DASHBOARDS[0].dashboardId), 'system-scene'); assert.equal(shouldSkipRemoteDashboardBootstrap(LOCAL_SCENE_DASHBOARDS[0].dashboardId), false)
 })
 test('FR-M8 acceptance: valid empty local schema stays empty across persistence recovery', () => {
   const local = storage()

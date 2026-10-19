@@ -258,8 +258,8 @@ const loginForm = reactive({
 })
 
 const roleForm = reactive({
-  roleCode: `DEMO_ROLE_${createCodeSuffix()}`,
-  roleName: '演示角色',
+  roleCode: '',
+  roleName: '',
   description: '前端系统管理页面创建'
 })
 
@@ -472,7 +472,7 @@ async function handleCreateRole() {
       message: `后端已返回角色 ${createdRole.value?.roleCode || roleForm.roleCode}。`
     }
     ElMessage.success('角色创建成功')
-    roleForm.roleCode = `DEMO_ROLE_${createCodeSuffix()}`
+    roleForm.roleCode = ''
   } catch (error) {
     roleFeedback.value = {
       status: 'FAILED',

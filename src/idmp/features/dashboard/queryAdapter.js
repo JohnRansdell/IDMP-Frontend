@@ -1,4 +1,5 @@
 import { applyFilters, filterValueType, validateFilterDefinitions } from './filterEngine.js'
+import { resolveGlobalFilterField } from './departmentFilters.js'
 
 // V1 filters the already queried row universe. It never invents an API filter DTO,
 // joins datasets, or re-filters an aggregate/preset option.
@@ -10,13 +11,13 @@ export function queryWidgetDataset(dataset, widget, definitions = [], runtimeVal
   if (query.inheritGlobalFilters !== false) for (const def of definitions) {
     if (def.enabled === false || query.ignoredGlobalFilterIds?.includes(def.id)) continue
     if (independentPeriod && def.type === 'date-range') continue
-    if (dataset.appliedGlobalFilterFields?.includes(def.field)) continue
+    const field = resolveGlobalFilterField(def, dataset.fields)
+    if (dataset.appliedGlobalFilterFields?.includes(field?.id || def.field)) continue
     if (validateFilterDefinitions([def]).length) { diagnostics.push('全局筛选定义无效'); continue }
-    const field = dataset.fields.find(item => item.id === def.field)
     if (!field?.filterable || filterValueType(field) !== def.dataType) continue // incompatible widget, by design
     const value = Object.hasOwn(runtimeValues, def.id) ? runtimeValues[def.id] : def.defaultValue
     if (value === null || value === undefined || value === '' || Array.isArray(value) && !value.length) continue
-    conditions.push({ field: def.field, operator: def.type === 'multi-select' ? 'in' : def.type === 'date-range' ? 'between' : 'equals', value })
+    conditions.push({ field: field.id, operator: def.type === 'multi-select' ? 'in' : def.type === 'date-range' ? 'between' : 'equals', value })
   }
   const global = applyFilters(dataset.rows, conditions, dataset.fields)
   const component = applyFilters(global.rows, widget.config?.dataBinding?.filters || [], dataset.fields)
@@ -60,22 +61,23 @@ export function deriveDependentFilterOptions(datasets = [], definitions = [], ru
     const options = []
     for (const dataset of datasets) {
       if (definition.optionSourceCode && dataset.sourceCode !== definition.optionSourceCode) continue
-      const target = dataset.fields.find(field => field.id === definition.field && field.filterable && filterValueType(field) === definition.dataType)
-      if (!target) continue
+      const target = resolveGlobalFilterField(definition, dataset.fields)
+      if (!target?.filterable || filterValueType(target) !== definition.dataType) continue
       let canApplyAllParents = true
       const conditions = upstream.flatMap(def => {
-        const source = dataset.fields.find(field => field.id === def.field && field.filterable && filterValueType(field) === def.dataType)
+        const candidate = resolveGlobalFilterField(def, dataset.fields)
+        const source = candidate?.filterable && filterValueType(candidate) === def.dataType ? candidate : null
         const value = Object.hasOwn(runtimeValues, def.id) ? runtimeValues[def.id] : def.defaultValue
         const hasValue = !(value === null || value === undefined || value === '' || Array.isArray(value) && !value.length)
         // A dataset which can provide child values but cannot apply a selected
         // parent must not leak unscoped options into the dependent control.
         if (!source && hasValue) { canApplyAllParents = false; return [] }
         if (!source || !hasValue) return []
-        return [{ field: def.field, operator: def.type === 'multi-select' ? 'in' : def.type === 'date-range' ? 'between' : 'equals', value }]
+        return [{ field: source.id, operator: def.type === 'multi-select' ? 'in' : def.type === 'date-range' ? 'between' : 'equals', value }]
       })
       if (!canApplyAllParents) continue
       for (const row of applyFilters(dataset.rows, conditions, dataset.fields).rows) {
-        const value = row?.[definition.field]
+        const value = row?.[target.id]
         if ((typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') && value !== '' && !(typeof value === 'number' && !Number.isFinite(value)) && !options.some(item => item === value)) options.push(value)
       }
     }

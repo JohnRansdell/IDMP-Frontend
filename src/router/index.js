@@ -20,7 +20,12 @@ const routes = [
         component: () => import('@/idmp/views/Dashboard.vue'),
         meta: { title: '指标看板', breadcrumb: [B.home, '指标看板'] }
       },
-      { path: 'dashboard/manage', redirect: '/dashboard' },
+      {
+        path: 'dashboard/manage',
+        name: 'DashboardManagement',
+        component: () => import('@/idmp/views/DashboardManagement.vue'),
+        meta: { title: '看板管理', activeMenu: '/dashboard/manage', breadcrumb: [B.home, '看板管理'] }
+      },
       {
         path: 'indicator',
         name: 'IndicatorManagement',
@@ -92,6 +97,12 @@ const routes = [
         name: 'FactorTemplateInstantiate',
         component: () => import('@/idmp/views/FactorTemplateInstantiate.vue'),
         meta: { title: '从模板创建因子', activeMenu: '/factor', breadcrumb: [B.home, B.factors, B.factorTemplates, '创建因子'] }
+      },
+      {
+        path: 'factor/view/:id',
+        name: 'FactorDetail',
+        component: () => import('@/idmp/views/FactorDetail.vue'),
+        meta: { title: '因子详情', activeMenu: '/factor', breadcrumb: [B.home, B.factors, '因子详情'] }
       },
       {
         path: 'factor/edit/:id?',

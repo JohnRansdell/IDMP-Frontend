@@ -40,11 +40,10 @@ export function suggestIndependentWidgetPeriod(options = [], dashboardRange = []
     .filter(value => /^\d{4}-\d{2}$/.test(value)).sort()
   if (selected.length && months.some(month => month >= selected[0] && month <= selected[selected.length - 1])) return null
   const month = months[0]
-  const [year, number] = month.split('-').map(Number)
   return {
     periodMode: 'INDEPENDENT',
     periodStart: `${month}-01`,
-    periodEnd: new Date(Date.UTC(year, number, 0)).toISOString().slice(0, 10),
+    periodEnd: nextMonthStart(month),
     granularity: 'MONTHLY'
   }
 }
@@ -83,13 +82,13 @@ export function createPublishedDashboardPeriodOptions(periodLists = []) {
   }))
 }
 
-export function resolvePublishedDashboardPeriod(currentPeriod, options = [], fallback = '2025-12') {
+export function resolvePublishedDashboardPeriod(currentPeriod, options = [], fallback = '') {
   const values = (Array.isArray(options) ? options : []).map(option => option?.value).filter(Boolean)
   if (values.includes(currentPeriod)) return currentPeriod
   return values[0] || currentPeriod || fallback
 }
 
-export function resolvePublishedDashboardPeriodRange(currentRange, options = [], fallback = '2025-12') {
+export function resolvePublishedDashboardPeriodRange(currentRange, options = [], fallback = '') {
   const values = (Array.isArray(options) ? options : []).map(option => option?.value).filter(Boolean)
   if (!values.length) {
     const fallbackPeriod = Array.isArray(currentRange) ? currentRange.find(Boolean) : ''
@@ -99,9 +98,19 @@ export function resolvePublishedDashboardPeriodRange(currentRange, options = [],
   const selected = (Array.isArray(currentRange) ? currentRange : []).filter(value => values.includes(value)).sort()
   if (selected.length === 2) return [selected[0], selected[1]]
   if (selected.length === 1) return [selected[0], selected[0]]
-  // A formal dashboard can expose years of common history. Querying that
-  // entire range before the viewer becomes interactive is both surprising and
-  // expensive, so the first load uses the latest common month. Viewers can
-  // still expand the month range explicitly when they want a longer trend.
+  // Callers without an explicit default still fall back to the latest month.
   return [values[0], values[0]]
+}
+
+export function defaultPublishedDashboardPeriodRange(options = [], months = 6) {
+  const values = (Array.isArray(options) ? options : [])
+    .map(option => String(option?.value || ''))
+    .filter(value => /^\d{4}-\d{2}$/.test(value))
+    .sort((left, right) => right.localeCompare(left))
+  if (!values.length) return []
+  const latest = values[0]
+  const [year, month] = latest.split('-').map(Number)
+  const firstMonth = new Date(Date.UTC(year, month - Math.max(1, months), 1)).toISOString().slice(0, 7)
+  const oldestAvailable = values.filter(value => value >= firstMonth && value <= latest).at(-1) || latest
+  return [oldestAvailable, latest]
 }

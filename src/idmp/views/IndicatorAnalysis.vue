@@ -35,6 +35,7 @@
             </el-option>
           </el-select>
           <el-button type="primary" @click="switchIndicatorAnalysis">查看分析</el-button>
+          <el-button :disabled="!selectedBackendIndicator || !currentIndicatorVersionId" @click="showDataDiagnostics = true">计算诊断</el-button>
           <el-button :icon="Download" :loading="pdfExportLoading" :disabled="!canExportPdf" @click="exportAnalysisPdf">导出PDF</el-button>
         </div>
       </template>
@@ -53,7 +54,6 @@
         <h2>查询条件</h2>
         <div v-if="backendAnalysisGranularity !== 'STATIC'" class="instant-query-panel__context">
           <span>源数据可用范围：<strong>{{ availablePeriodText || '暂未获取' }}</strong></span>
-          <el-button link type="primary" @click="showDataDiagnostics = true">数据说明</el-button>
         </div>
       </div>
       <div class="instant-query-panel__controls">
@@ -84,17 +84,21 @@
           <el-tag :type="runtimeQueryResult.executionMode === 'AD_HOC_SOURCE' ? 'warning' : 'success'">{{ runtimeQueryExecutionModeLabel }}</el-tag>
           <span>参数快照：{{ runtimeQueryParameterSnapshot }}</span>
         </div>
-        <el-table :data="runtimeQueryRows" border max-height="420" empty-text="当前条件没有结果">
-          <el-table-column v-for="column in runtimeQueryColumns" :key="column" :prop="column" :label="column" min-width="140">
-            <template #default="{ row }">{{ formatRuntimeQueryCell(row[column]) }}</template>
-          </el-table-column>
-        </el-table>
+        <el-collapse v-model="runtimeQueryExpanded">
+          <el-collapse-item name="results" :title="`查询结果明细（${runtimeQueryRows.length} 条）`">
+            <el-table :data="runtimeQueryRows" border max-height="420" empty-text="当前条件没有结果">
+              <el-table-column v-for="column in runtimeQueryColumns" :key="column" :prop="column" :label="column" min-width="140">
+                <template #default="{ row }">{{ formatRuntimeQueryCell(row[column]) }}</template>
+              </el-table-column>
+            </el-table>
+          </el-collapse-item>
+        </el-collapse>
       </div>
     </section>
     <section v-if="analysisNotice" class="analysis-state-notice" :class="`is-${analysisAvailability.status.toLowerCase()}`">
       <div><strong>{{ analysisNotice.title }}</strong><p>{{ analysisNotice.message }}</p></div>
       <el-button v-if="analysisAvailability.status === 'NO_DATA' && isCompleteDateRange(analysisPeriodRange)" size="small" type="primary" plain @click="clearTrendPeriod">查看全部已有周期</el-button>
-      <el-button v-else size="small" @click="showDataDiagnostics = true">查看数据诊断</el-button>
+      <el-button v-else size="small" @click="showDataDiagnostics = true">查看计算诊断</el-button>
     </section>
 
     <section class="metric-overview" :class="{ 'is-single': !summaryMetrics.length }" aria-label="指标核心数据">
@@ -117,76 +121,6 @@
       </div>
     </section>
 
-    <section ref="sceneComparisonRef" class="surface-card scene-comparison" aria-label="不同场景计算值对比">
-      <div class="scene-comparison__head">
-        <div class="scene-comparison__label"><span>不同场景对比</span><small>并列展示各场景的原始统计周期，不跨场景重算或强制聚合。</small></div>
-        <div class="scene-comparison__controls">
-          <el-select v-model="scenarioComparisonSelectedIds" multiple collapse-tags collapse-tags-tooltip clearable filterable placeholder="全部关联场景" :disabled="!scenarioComparisonTarget || !scenarioComparisonOptions.length">
-            <el-option v-for="scene in scenarioComparisonOptions" :key="scene.value" :label="scene.label" :value="scene.value" />
-          </el-select>
-          <div class="date-range-fields" aria-label="场景对比时间范围"><el-date-picker v-model="scenarioComparisonPeriodRange" type="daterange" unlink-panels value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" /></div>
-          <el-button size="small" type="primary" :loading="scenarioComparisonLoading" :disabled="!scenarioComparisonTarget" @click="applyScenarioComparisonFilters">应用筛选</el-button>
-          <el-button size="small" :loading="scenarioComparisonLoading" :disabled="!scenarioComparisonTarget" @click="loadScenarioComparison">刷新对比</el-button>
-        </div>
-      </div>
-      <StatePanel v-if="!scenarioComparisonTarget" type="unavailable" title="请选择已发布指标版本后查看场景对比" description="场景对比仅适用于已发布指标版本关联的已发布场景。" />
-      <StatePanel v-else-if="scenarioComparisonLoading" type="loading" title="正在读取场景正式结果" />
-      <StatePanel v-else-if="scenarioComparisonError" type="error" title="场景对比加载失败" :description="scenarioComparisonError" />
-      <StatePanel v-else-if="scenarioComparisonLoaded && !scenarioComparisonScenarios.length" type="empty" title="暂无已发布场景结果" description="请确认场景已发布、已关联当前指标版本，并已完成场景化正式计算。" />
-      <div v-if="scenarioComparisonScenarios.length" class="scenario-result-grid">
-        <article v-for="scene in scenarioComparisonScenarios" :key="sceneKey(scene)" class="scenario-result-card" :class="{ 'is-clickable': canViewScenarioPeriods(scene), 'has-notice': scenePointNotice(latestScenePoint(scene)) }" :role="canViewScenarioPeriods(scene) ? 'button' : undefined" :tabindex="canViewScenarioPeriods(scene) ? 0 : undefined" @click="openScenarioPeriodsFromCard(scene)" @keydown.enter.prevent="openScenarioPeriodsFromCard(scene)">
-          <div class="scenario-result-card__head"><strong :title="sceneTitle(scene)">{{ scene.scenarioName || scene.name || scene.scenarioCode || '未命名场景' }}</strong><StatusBadge :status="scene.resultAvailability" /></div>
-          <div v-if="String(scene.resultAvailability).toUpperCase() === 'NO_ACTIVE_RESULT'" class="scenario-result-card__empty"><span>尚未生成已激活的正式结果。</span><el-button type="primary" plain @click.stop="openScenarioCalculation(scene)">创建场景计算</el-button></div>
-          <template v-else>
-            <div class="scenario-result-card__latest"><strong>{{ scenePointValue(latestScenePoint(scene)) }}</strong></div>
-            <p v-if="scenePointNotice(latestScenePoint(scene))" class="scenario-result-card__notice">{{ scenePointNotice(latestScenePoint(scene)) }}</p>
-            <div class="scenario-result-card__actions"><span>{{ scenarioPeriodTypeLabel(scene.configuredPeriodType) }} · {{ scenePointCount(scene) }} 个结果</span><span class="scenario-result-card__open">详情 ›</span></div>
-          </template>
-        </article>
-      </div>
-    </section>
-
-    <el-drawer v-model="scenarioPeriodDrawerOpen" :title="selectedScenarioName" size="560px" append-to-body destroy-on-close>
-      <template v-if="selectedScenarioForPeriods">
-        <div class="scenario-period-drawer__summary"><div><span>统计周期</span><strong>{{ scenarioPeriodTypeLabel(selectedScenarioForPeriods.configuredPeriodType) }}</strong></div><div><span>结果点</span><strong>{{ selectedScenarioPointTotal }}</strong></div><StatusBadge :status="selectedScenarioForPeriods.resultAvailability" /></div>
-        <p class="scenario-period-drawer__hint">周期明细仅用于查看该场景的原始正式结果，不与其他场景强制对齐。</p>
-        <el-table :data="selectedScenarioPointRows" size="small" max-height="calc(100vh - 300px)" empty-text="暂无正式结果点"><el-table-column label="周期" min-width="200"><template #default="{ row }">{{ formatPeriodLabel(row.periodStart, row.periodEnd) }}</template></el-table-column><el-table-column label="结果" width="104"><template #default="{ row }">{{ scenePointValue(row) }}</template></el-table-column><el-table-column label="状态" width="108"><template #default="{ row }"><StatusBadge :status="row.outcomeStatus || row.qualityStatus" /></template></el-table-column><el-table-column label="操作" width="70"><template #default="{ row }"><el-button v-if="row.resultId" link type="primary" @click="openScenarioPointDrill(row)">下钻</el-button></template></el-table-column></el-table>
-        <div v-if="selectedScenarioPointTotal > scenarioPeriodPageSize" class="scenario-period-drawer__pagination"><span>共 {{ selectedScenarioPointTotal }} 条</span><el-pagination v-model:current-page="scenarioPeriodPage" small background layout="prev, pager, next" :page-size="scenarioPeriodPageSize" :total="selectedScenarioPointTotal" /></div>
-      </template>
-    </el-drawer>
-
-    <section v-if="showMortalityChainPanel" class="surface-card chain-panel" aria-label="住院死亡率计算链路">
-      <div class="chain-panel__header">
-        <div>
-          <h2>住院死亡率计算链路</h2>
-          <p>展示第16章后端链路中的数据域、因子试算、公式结果、异步任务与编译状态</p>
-        </div>
-        <StatusBadge
-          :status="mortalityChainLoading ? 'RUNNING' : mortalityChainBatchStatus"
-          :label="mortalityChainLoading ? '同步中' : mortalityChainStatusText"
-        />
-      </div>
-
-      <div class="chain-equation">
-        <span>死亡患者记录数</span>
-        <strong>{{ chainDeathValue }}</strong>
-        <em>÷</em>
-        <span>出院病案记录数</span>
-        <strong>{{ chainDischargeValue }}</strong>
-        <em>=</em>
-        <span>住院死亡率</span>
-        <strong>{{ chainDisplayValue }}</strong>
-      </div>
-
-      <div class="chain-grid">
-        <article v-for="node in mortalityChainNodes" :key="node.label" class="chain-node">
-          <span>{{ node.label }}</span>
-          <strong>{{ node.value }}</strong>
-          <small>{{ node.meta }}</small>
-        </article>
-      </div>
-    </section>
-
     <section class="surface-card analysis-panel">
       <el-tabs v-model="activeTab" class="analysis-tabs">
         <el-tab-pane label="趋势分析" name="trend">
@@ -198,26 +132,6 @@
             <div class="trend-controls">
               <div class="date-range-fields trend-period-picker" aria-label="趋势时间范围"><el-date-picker v-model="trendPeriodDraft" type="daterange" unlink-panels format="YYYY-MM-DD" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" size="small" /></div>
               <el-tag v-if="isSourceDefaultTrendRange" size="small" type="info" effect="plain">源数据可用范围</el-tag>
-              <div v-for="code in trendGrainFields" :key="code" class="trend-grain-field">
-                <label :for="`trend-grain-${code}`">{{ code }}</label>
-                <el-autocomplete
-                  :id="`trend-grain-${code}`"
-                  v-model="trendGrainDraft[code]"
-                  :fetch-suggestions="(query, callback) => loadTrendGrainSuggestions(code, query, callback)"
-                  :trigger-on-focus="true"
-                  :debounce="350"
-                  clearable
-                  placeholder="全部"
-                  size="small"
-                  @input="clearFollowingTrendGrain(code)"
-                  @select="item => selectTrendGrainOption(code, item)"
-                >
-                  <template #default="{ item }">
-                    <span>{{ item.label }}</span>
-                    <small v-if="item.label !== item.value" class="trend-grain-option-code">{{ item.value }}</small>
-                  </template>
-                </el-autocomplete>
-              </div>
               <el-button size="small" type="primary" @click="applyTrendConditions">应用</el-button>
               <el-button size="small" :disabled="!trendPeriodDraft.some(Boolean) && !analysisPeriodRange.some(Boolean)" @click="clearTrendPeriod">全部时间</el-button>
               <el-radio-group v-model="period" size="small" aria-label="趋势统计粒度" @change="applyTrendGranularity">
@@ -225,6 +139,41 @@
               </el-radio-group>
             </div>
           </div>
+          <el-collapse v-if="trendGrainFields.length" v-model="trendAdvancedExpanded" class="trend-advanced-filters">
+            <el-collapse-item name="grain">
+              <template #title>
+                <span>高级筛选{{ Object.keys(trendGrainApplied).length ? '（已应用）' : '' }}</span>
+                <el-tooltip content="按一组业务维度查看趋势；请选择完整组合，或清空全部条件查看整体趋势。" placement="top">
+                  <span class="trend-advanced-help" tabindex="0" aria-label="高级筛选使用说明" @click.stop>说明</span>
+                </el-tooltip>
+              </template>
+              <div class="trend-advanced-fields">
+                <div v-for="field in trendGrainMetadata" :key="field.code" class="trend-grain-field">
+                  <label :for="`trend-grain-${field.code}`" :title="field.code">{{ field.label }}</label>
+                  <el-select
+                    :id="`trend-grain-${field.code}`"
+                    v-model="trendGrainDraft[field.code]"
+                    filterable remote clearable
+                    :remote-method="search => loadTrendGrainOptions(field.code, search)"
+                    :loading="trendGrainLoading[field.code]"
+                    placeholder="全部"
+                    size="small"
+                    @visible-change="visible => visible && loadTrendGrainOptions(field.code, '')"
+                    @change="clearFollowingTrendGrain(field.code)"
+                  >
+                    <el-option v-for="item in trendGrainOptions(field.code)" :key="item.value" :label="item.label" :value="item.value">
+                      <span>{{ item.label }}</span>
+                      <small v-if="item.label !== item.value" class="trend-grain-option-code">{{ item.value }}</small>
+                    </el-option>
+                  </el-select>
+                </div>
+                <div class="trend-advanced-actions">
+                  <el-button size="small" type="primary" @click="applyTrendConditions">应用筛选</el-button>
+                  <el-button size="small" @click="clearTrendGrainFilters">清空筛选</el-button>
+                </div>
+              </div>
+            </el-collapse-item>
+          </el-collapse>
           <div v-if="!trendLoading && !trendTableRows.length && isCompleteDateRange(analysisPeriodRange)" class="trend-empty-guidance">
             <span>所选时间段没有可展示的趋势点。可查看该指标全部已生成周期。</span>
             <el-button link type="primary" @click="clearTrendPeriod">查看全部已有周期</el-button>
@@ -276,7 +225,7 @@
             <div>
               <h2>科室指标排名</h2>
               <p v-if="hasBackendRankData">{{ rankPeriodDescription }}，按 {{ currentProfile.name }} 由高到低排列。</p>
-              <p v-else>当前指标暂无正式科室维度结果。</p>
+              <p v-else>{{ '当前指标暂无正式科室维度结果。' }}</p>
             </div>
             <StatusBadge :status="hasBackendRankData ? 'ACTIVE' : 'NO_DATA'" :label="hasBackendRankData ? '科室正式结果' : '暂无正式数据'" tone="neutral" />
           </div>
@@ -369,7 +318,18 @@
         </el-tab-pane>
       </el-tabs>
     </section>
-    <el-drawer v-model="showDataDiagnostics" title="数据说明" size="620px" destroy-on-close>
+    <el-drawer v-model="showDataDiagnostics" title="计算诊断" size="620px" destroy-on-close>
+      <CalculationDiagnostics
+        v-if="showDataDiagnostics && selectedBackendIndicator && currentIndicatorVersionId"
+        :indicator-id="String(selectedBackendIndicator.id || selectedBackendIndicator.indicatorId)"
+        :indicator-version-id="String(currentIndicatorVersionId)"
+        :period-range="reportPeriodRange"
+        :granularity="backendAnalysisGranularity"
+        :instant-result="rangeSummary"
+        :has-runtime-parameters="Boolean(indicatorRuntimeParameters.length)"
+        :pending="analysisLoading || rangeSummaryLoading"
+        @open-batch="openCalculationBatch"
+      />
       <p class="diagnostics-intro">这里说明当前指标的计算口径、结果可用性和追溯信息。</p>
       <section class="diagnostics-section diagnostics-explanation">
         <h3>指标计算口径</h3>
@@ -422,17 +382,18 @@ import RuntimeParameterFields from '@/idmp/components/RuntimeParameterFields.vue
 import DrillExplorer from '@/idmp/features/analysis/DrillExplorer.vue'
 import IndicatorDrillAnalysis from '@/idmp/features/analysis/IndicatorDrillAnalysis.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
-import { fetchIndicatorAnalysis, fetchIndicatorAvailablePeriod, fetchIndicatorGrainOptions, fetchIndicatorScenarioComparison, fetchAllIndicatorScenarios, fetchAllIndicators, fetchIndicatorVersion, fetchAllIndicatorVersions, queryIndicatorVersion } from '@/idmp/api/modules/indicators'
+import { fetchIndicatorAnalysis, fetchIndicatorAvailablePeriod, fetchIndicatorGrainOptions, fetchAllIndicators, fetchIndicatorVersion, fetchAllIndicatorVersions, queryIndicatorVersion } from '@/idmp/api/modules/indicators'
 import { fetchFactorVersion } from '@/idmp/api/modules/factors'
 import { collectFormulaFactorVersionIds, createIndicatorDataExplanation, extractIndicatorFormula, normalizeIndicatorInstantSummary } from '@/idmp/api/adapters/indicator'
-import { deriveDrillPathResultIds, reconcileScenarioPointWithRoot } from '@/idmp/api/adapters/drill'
+import { deriveDrillPathResultIds } from '@/idmp/api/adapters/drill'
 import { searchResultDrill } from '@/idmp/api/modules/drill'
 import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
 import { resolveIndicatorCalculationMode } from '@/idmp/features/analysis/calculationMode'
 import { departmentAchievement, departmentDrillContext, loadDepartmentComparisons, normalizeDepartmentComparisons } from '@/idmp/features/analysis/departmentRanking'
 import { DRILL_GRANULARITIES } from '@/idmp/features/analysis/drillPeriods'
 import { useAnalysisPeriod } from '@/idmp/features/analysis/useAnalysisPeriod'
-import { fetchMortalityReadonlyChain } from '@/idmp/api/modules/mortality'
+import CalculationDiagnostics from '@/idmp/features/analysis/CalculationDiagnostics.vue'
+import { loadTrendGrainMemberNames, namedTrendGrainOptions, trendGrainField, trendGrainNames } from '@/idmp/features/analysis/trendGrain.js'
 import { getStatusLabel } from '@/idmp/design/status'
 import { periodOptions } from '@/idmp/features/analysis/indicatorProfiles'
 import { resolvePrimaryAnalysisOverview } from '@/idmp/features/dashboard/visualization'
@@ -459,25 +420,10 @@ const availablePeriod = ref(null)
 let analysisRefreshSequence = 0
 let trendRefreshSequence = 0
 const analysisErrorMessage = ref('')
-const mortalityChain = ref(null)
-const mortalityChainLoading = ref(false)
+const analysisLoading = ref(false)
 const selectedIndicatorCode = ref(String(route.query.indicator || ''))
 const backendIndicators = ref([])
 const indicatorOptionsLoading = ref(false)
-const sceneComparisonRef = ref()
-const scenarioComparison = ref(null)
-const scenarioComparisonLoading = ref(false)
-const scenarioComparisonError = ref('')
-const scenarioComparisonLoaded = ref(false)
-let scenarioComparisonSequence = 0
-const scenarioComparisonSelectedIds = ref(initialScenarioVersionIds())
-const scenarioComparisonPeriodRange = ref([])
-const scenarioComparisonOptions = ref([])
-const scenarioComparisonIdByCode = ref(new Map())
-const scenarioPeriodDrawerOpen = ref(false)
-const selectedScenarioForPeriods = ref(null)
-const scenarioPeriodPage = ref(1)
-const scenarioPeriodPageSize = 10
 const drillStartLevel = ref(String(route.query.drillStartLevel || 'HOSPITAL').toUpperCase())
 const drillParentKeys = ref(parseDrillParentKeys(route.query.drillParentKeys))
 const analysisPeriodRange = ref(initialAnalysisPeriodRange())
@@ -486,17 +432,22 @@ let sourceTrendRangePending = !isCompleteDateRange(analysisPeriodRange.value)
 const reportPeriodRange = ref(initialReportPeriodRange())
 const trendPeriodDraft = ref([...analysisPeriodRange.value])
 const trendGrainDraft = ref({})
+const trendAdvancedExpanded = ref([])
+const trendGrainCandidates = ref({})
+const trendGrainResolvedNames = ref({})
+const trendGrainLoading = ref({})
+const trendGrainRequestGenerations = new Map()
 const trendGrainApplied = ref({})
 const showDataDiagnostics = ref(false)
 const indicatorRuntimeParameterValues = ref({})
 const runtimeQueryResult = ref(null)
+const runtimeQueryExpanded = ref([])
 const reportParameterSnapshot = ref({})
-const scenarioComparisonAppliedRange = ref([])
 const drillExplorerRef = ref()
 const staticDrillExplorerRef = ref()
 const pdfExportLoading = ref(false)
 const canExportPdf = computed(() => Boolean(selectedBackendIndicator.value && currentIndicatorVersionId.value)
-  && !mortalityChainLoading.value && !rangeSummaryLoading.value && !trendLoading.value && !scenarioComparisonLoading.value)
+  && !analysisLoading.value && !rangeSummaryLoading.value && !trendLoading.value)
 
 function parseDrillParentKeys(value) {
   const text = Array.isArray(value) ? value[0] : value
@@ -553,46 +504,93 @@ const trendAnalysisGranularity = computed(() => {
 })
 const trendGrainFields = computed(() => Array.isArray(backendIndicatorVersion.value?.dimensionGrain)
   ? backendIndicatorVersion.value.dimensionGrain.map(String).filter(Boolean) : [])
-let grainOptionWarningField = ''
+const trendGrainMetadata = computed(() => trendGrainFields.value.map((code, index) => trendGrainField(code, index, backendIndicatorVersion.value?.drillConfig?.drillPaths || [])))
+const trendGrainNameMaps = computed(() => {
+  const maps = trendGrainNames(trendGrainMetadata.value, [backendAnalysis.value, trendBackendAnalysis.value]
+    .filter(analysis => String(analysis?.indicatorVersionId || '') === String(currentIndicatorVersionId.value)))
+  for (const [code, names] of Object.entries(trendGrainResolvedNames.value)) {
+    if (maps[code]) for (const [value, name] of names) maps[code].set(value, name)
+  }
+  return maps
+})
 
-async function loadTrendGrainSuggestions(code, search, callback) {
+function trendGrainOptions(code) {
+  const field = trendGrainMetadata.value.find(field => field.code === code)
+  if (!field) return []
+  return namedTrendGrainOptions(trendGrainCandidates.value[code], field, trendGrainNameMaps.value[code])
+}
+
+async function loadTrendGrainOptions(code, search = '') {
   const indicator = selectedBackendIndicator.value
   const versionId = currentIndicatorVersionId.value
-  if (!indicator || !versionId) return callback([])
   const index = trendGrainFields.value.indexOf(code)
-  if (index < 0) return callback([])
-  const params = { indicatorVersionId: versionId, fieldCode: code, search, limit: 30 }
+  if (!indicator || !versionId || index < 0) return
+  const params = { indicatorVersionId: versionId, fieldCode: code, search, limit: 100 }
   if (isCompleteDateRange(trendPeriodDraft.value) && !isSourceDefaultTrendRange.value) {
     params.periodStart = trendPeriodDraft.value[0]
     params.periodEnd = trendPeriodDraft.value[1]
   }
   trendGrainFields.value.slice(0, index).forEach(field => {
-    const value = String(trendGrainDraft.value[field] || '').trim()
+    const value = String(trendGrainDraft.value[field] ?? '').trim()
     if (value) params[`filter.${field}`] = value
   })
+  const generation = (trendGrainRequestGenerations.get(code) || 0) + 1
+  trendGrainRequestGenerations.set(code, generation)
+  trendGrainLoading.value[code] = true
   try {
-    const options = await fetchIndicatorGrainOptions(String(indicator.id || indicator.indicatorId), params)
-    grainOptionWarningField = ''
-    callback((Array.isArray(options) ? options : []).map(item => ({
-      value: String(item.value || ''), label: String(item.label || item.value || '')
-    })).filter(item => item.value))
-  } catch {
-    callback([])
-    if (grainOptionWarningField !== code) {
-      grainOptionWarningField = code
-      ElMessage.warning('组合粒度候选值暂不可用，可继续输入确切取值')
+    let options = await fetchIndicatorGrainOptions(String(indicator.id || indicator.indicatorId), params)
+    if (trendGrainRequestGenerations.get(code) !== generation || currentIndicatorVersionId.value !== versionId) return
+    const definition = trendGrainMetadata.value.find(field => field.code === code)
+    if (!definition) return
+    const missing = namedTrendGrainOptions(options, definition, trendGrainNameMaps.value[code]).filter(item => item.nameMissing).map(item => item.value)
+    if (missing.length || (search && !options?.length && definition.named && !trendGrainNameMaps.value[code]?.size)) {
+      let analysis = [backendAnalysis.value, trendBackendAnalysis.value].find(analysis => String(analysis?.indicatorVersionId || '') === String(versionId) && analysis.dimensionComparison?.some(row => row.resultId))
+      if (!analysis) analysis = await fetchIndicatorAnalysis(String(indicator.id || indicator.indicatorId), { ...buildTrendAnalysisParams(trendPeriodDraft.value, versionId, trendAnalysisGranularity.value) })
+      const names = await loadTrendGrainMemberNames({ analysis, paths: backendIndicatorVersion.value?.drillConfig?.drillPaths || [],
+        field: definition, versionId, selected: { ...trendGrainDraft.value }, requiredCodes: missing, search: searchResultDrill,
+        loadAnalysis: query => fetchIndicatorAnalysis(String(indicator.id || indicator.indicatorId), query) })
+      if (trendGrainRequestGenerations.get(code) !== generation || currentIndicatorVersionId.value !== versionId) return
+      trendGrainResolvedNames.value[code] = new Map([...(trendGrainResolvedNames.value[code] || []), ...names])
     }
+    // Some catalogs only search codes. Resolve a typed member name through
+    // the current formal rows, then verify the codes against the same filters.
+    if (search && !options?.length) {
+      const matches = [...(trendGrainNameMaps.value[code] || new Map())].filter(([value, name]) => name.includes(search) || value.includes(search)).slice(0, 10)
+      const responses = await Promise.all(matches.map(([value]) => fetchIndicatorGrainOptions(String(indicator.id || indicator.indicatorId), { ...params, search: value })))
+      options = responses.flat().filter(item => matches.some(([value]) => value === String(item.value)))
+    }
+    if (trendGrainRequestGenerations.get(code) !== generation || currentIndicatorVersionId.value !== versionId) return
+    // Keep selected options available so the select never falls back to its code.
+    const selected = (trendGrainCandidates.value[code] || []).filter(item => String(item.value) === String(trendGrainDraft.value[code]))
+    const names = new Map(trendGrainNameMaps.value[code] || [])
+    selected.filter(item => !item.nameMissing && item.label !== item.value).forEach(item => names.set(String(item.value), item.label))
+    const field = trendGrainMetadata.value.find(field => field.code === code)
+    if (!field) return
+    const named = namedTrendGrainOptions(options, field, names)
+    trendGrainCandidates.value[code] = [...new Map([...selected, ...named].map(item => [String(item.value), item])).values()]
+  } catch {
+    if (trendGrainRequestGenerations.get(code) === generation) ElMessage.warning('筛选候选项读取失败，请重新展开下拉框重试')
+  } finally {
+    if (trendGrainRequestGenerations.get(code) === generation) trendGrainLoading.value[code] = false
   }
 }
 
 function clearFollowingTrendGrain(code) {
   const index = trendGrainFields.value.indexOf(code)
-  trendGrainFields.value.slice(index + 1).forEach(field => { trendGrainDraft.value[field] = '' })
+  trendGrainFields.value.slice(index + 1).forEach(field => {
+    trendGrainDraft.value[field] = ''
+    trendGrainCandidates.value[field] = []
+    trendGrainRequestGenerations.set(field, (trendGrainRequestGenerations.get(field) || 0) + 1)
+    trendGrainLoading.value[field] = false
+  })
 }
 
-function selectTrendGrainOption(code, item) {
-  trendGrainDraft.value[code] = item.value
-  clearFollowingTrendGrain(code)
+function clearTrendGrainFilters() {
+  trendGrainDraft.value = {}
+  trendGrainCandidates.value = {}
+  trendGrainFields.value.forEach(code => trendGrainRequestGenerations.set(code, (trendGrainRequestGenerations.get(code) || 0) + 1))
+  trendGrainLoading.value = {}
+  applyTrendConditions()
 }
 const analysisOverview = computed(() => resolvePrimaryAnalysisOverview(backendAnalysis.value))
 const indicatorDataExplanation = computed(() => createIndicatorDataExplanation({
@@ -699,7 +697,7 @@ const summaryMetrics = computed(() => {
     const metrics = []
     if (!backendAnalysis.value) {
       return [
-        { label: '分析状态', value: mortalityChainLoading.value || rangeSummaryLoading.value ? '正在读取' : '暂无正式结果', description: analysisErrorMessage.value || '后端尚未返回可展示的指标结果' },
+        { label: '分析状态', value: analysisLoading.value || rangeSummaryLoading.value ? '正在读取' : '暂无正式结果', description: analysisErrorMessage.value || '后端尚未返回可展示的指标结果' },
         { label: '分子 / 分母', value: '-', description: '后端结果未返回' },
         { label: '维度分析', value: '-', description: '后端维度结果未返回' }
       ]
@@ -760,16 +758,9 @@ const rankTableData = computed(() => {
   return []
 })
 
-const hasBackendMortalityData = computed(() => Boolean(
-  mortalityChain.value?.indicatorResult ||
-  mortalityChain.value?.deathFactor ||
-  mortalityChain.value?.dischargeFactor ||
-  mortalityChain.value?.calcBatch
-))
-const showMortalityChainPanel = computed(() => isMortalityIndicator(selectedBackendIndicator.value) && hasBackendMortalityData.value)
 const analysisSourceLabel = computed(() => rangeSummary.value
   ? rangeSummary.value.status === 'READY' ? '即时计算' : '区间结果不可用'
-  : hasBackendAnalysisData.value ? '已发布结果' : hasBackendMortalityData.value ? '计算链路摘要' : '暂无正式结果')
+  : hasBackendAnalysisData.value ? '已发布结果' : '暂无正式结果')
 const availablePeriodText = computed(() => {
   const value = availablePeriod.value
   if (!value) return ''
@@ -787,43 +778,18 @@ const availablePeriodDetailText = computed(() => {
     : `所有依赖数据同时可用于计算的日期范围为 ${availablePeriodText.value}。`
 })
 const analysisMetadata = computed(() => {
-  const chain = mortalityChain.value
-  const config = chain?.config || {}
   const context = backendAnalysis.value?.resultContext || {}
   return {
-    version: rangeSummary.value ? String(rangeSummary.value.indicatorVersionId || currentIndicatorVersionId.value || '-')
-      : hasBackendAnalysisData.value
-      ? String(backendAnalysis.value.indicatorVersionId || currentIndicatorVersionId.value || '后端未返回')
-      : selectedBackendIndicator.value
-        ? String(currentIndicatorVersionId.value || '未激活结果')
-      : hasBackendMortalityData.value ? String(config.indicatorVersionId || '后端未返回') : '-',
-    batch: rangeSummary.value ? '-'
-      : hasBackendAnalysisData.value
-      ? String(context.batchId || '后端未返回')
-      : hasBackendMortalityData.value ? String(config.indicatorBatchId || '后端未返回') : '-',
-    watermark: rangeSummary.value ? '-' : resolveChainWatermark(chain),
+    version: String(rangeSummary.value?.indicatorVersionId || backendAnalysis.value?.indicatorVersionId || currentIndicatorVersionId.value || '-'),
+    batch: rangeSummary.value ? '-' : String(context.batchId || context.calculationBatchId || '-'),
+    watermark: rangeSummary.value ? '-' : firstPresent(context.dataWatermark, context.watermark),
   }
 })
 const analysisUpdatedAt = computed(() => {
   if (rangeSummary.value) return '后端未返回更新时间'
-  const chain = mortalityChain.value
   const context = backendAnalysis.value?.resultContext || {}
-  if (hasBackendAnalysisData.value) {
-    return firstPresent(context.activatedAt, analysisOverview.value?.periodEnd, '后端未返回更新时间')
-  }
-  return firstPresent(
-    chain?.indicatorResult?.updatedAt,
-    chain?.indicatorResult?.finishedAt,
-    chain?.calcBatch?.finishedAt,
-    chain?.asyncTask?.finishedAt,
-    hasBackendMortalityData.value ? '后端未返回更新时间' : '-'
-  )
+  return hasBackendAnalysisData.value ? firstPresent(context.activatedAt, analysisOverview.value?.periodEnd, '后端未返回更新时间') : '-'
 })
-const mortalityChainBatchStatus = computed(() =>
-  mortalityChain.value?.indicatorResult?.batchStatus ||
-  mortalityChain.value?.calcBatch?.batchStatus ||
-  (hasBackendMortalityData.value ? 'READY' : 'DRAFT')
-)
 const drillPathResultIds = computed(() => {
   const derived = deriveDrillPathResultIds(
     backendAnalysis.value || {}, backendIndicatorVersion.value?.drillConfig?.drillPaths || []
@@ -875,25 +841,6 @@ const { granularity: rankGranularity, selectedPeriod: rankSelectedPeriod, period
 const rankPeriodDescription = computed(() => rankInitialized.value
   ? `${rankGranularityLabel.value} · ${rankSelectedPeriodLabel.value || '暂无周期'} · 科室正式结果`
   : `科室正式结果 · ${formatAnalysisPeriod(backendAnalysis.value?.overview) || '静态结果'}`)
-const scenarioComparisonTarget = computed(() => {
-  const indicator = selectedBackendIndicator.value
-  const indicatorId = indicator?.id || indicator?.indicatorId
-  const indicatorVersionId = currentIndicatorVersionId.value
-  return indicatorId && indicatorVersionId
-    ? { indicatorId: String(indicatorId), indicatorVersionId: String(indicatorVersionId) }
-    : null
-})
-const scenarioComparisonScenarios = computed(() => Array.isArray(scenarioComparison.value?.scenarios)
-  ? scenarioComparison.value.scenarios
-  : [])
-const selectedScenarioName = computed(() => selectedScenarioForPeriods.value?.scenarioName || selectedScenarioForPeriods.value?.name || selectedScenarioForPeriods.value?.scenarioCode || '场景周期详情')
-const selectedScenarioPoints = computed(() => [...(selectedScenarioForPeriods.value?.points || [])]
-  .sort((left, right) => String(right?.periodEnd || right?.periodStart || '').localeCompare(String(left?.periodEnd || left?.periodStart || ''))))
-const selectedScenarioPointTotal = computed(() => selectedScenarioPoints.value.length)
-const selectedScenarioPointRows = computed(() => {
-  const start = (scenarioPeriodPage.value - 1) * scenarioPeriodPageSize
-  return selectedScenarioPoints.value.slice(start, start + scenarioPeriodPageSize)
-})
 
 const trendSeries = computed(() => {
   const actualValues = currentTrend.value.actual
@@ -968,66 +915,6 @@ const trendOption = computed(() => ({
   series: trendSeries.value
 }))
 
-const mortalityDeathRecord = computed(() => mortalityChain.value?.deathFactor?.results?.records?.[0])
-const mortalityDischargeRecord = computed(() => mortalityChain.value?.dischargeFactor?.results?.records?.[0])
-const mortalityIndicatorRecord = computed(() => mortalityChain.value?.indicatorResult?.results?.records?.[0])
-const chainDeathValue = computed(() => formatCount(mortalityDeathRecord.value?.valueDecimal))
-const chainDischargeValue = computed(() => formatCount(mortalityDischargeRecord.value?.valueDecimal))
-const chainDisplayValue = computed(() => mortalityIndicatorRecord.value?.displayValue || '-')
-const chainRawValue = computed(() => formatDecimal(mortalityIndicatorRecord.value?.resultValue))
-const mortalityChainStatusText = computed(() => {
-  if (!hasBackendMortalityData.value) return '暂无正式计算链路'
-  const batchStatus = mortalityChain.value.indicatorResult?.batchStatus || mortalityChain.value.calcBatch?.batchStatus || '-'
-  const qualityStatus = mortalityChain.value.indicatorResult?.qualityStatus || mortalityChain.value.calcBatch?.qualityStatus || '-'
-  return `${displayStatus(batchStatus)} / ${displayStatus(qualityStatus)}`
-})
-const mortalityChainNodes = computed(() => {
-  const chain = mortalityChain.value
-  const config = chain?.config || {}
-  return [
-    {
-      label: '死亡数据域',
-      value: config.deathDomainCode || '-',
-      meta: config.deathSourceTable || '-'
-    },
-    {
-      label: '出院数据域',
-      value: config.dischargeDomainCode || '-',
-      meta: config.dischargeSourceTable || '-'
-    },
-    {
-      label: '分子因子',
-      value: chainDeathValue.value,
-      meta: `版本 ${config.deathFactorVersionId || '-'}`
-    },
-    {
-      label: '分母因子',
-      value: chainDischargeValue.value,
-      meta: `版本 ${config.dischargeFactorVersionId || '-'}`
-    },
-    {
-      label: '公式结果',
-      value: chainDisplayValue.value,
-      meta: `原始值 ${chainRawValue.value}`
-    },
-    {
-      label: '异步任务',
-      value: displayStatus(chain?.asyncTask?.status),
-      meta: `任务 ${config.indicatorBatchId || '-'}`
-    },
-    {
-      label: '计算批次',
-      value: displayStatus(chain?.calcBatch?.batchStatus || chain?.indicatorResult?.batchStatus),
-      meta: displayStatus(chain?.calcBatch?.qualityStatus || chain?.indicatorResult?.qualityStatus)
-    },
-    {
-      label: '编译产物',
-      value: buildArtifactStatus(chain),
-      meta: '死亡因子 / 出院因子 / 指标公式'
-    }
-  ]
-})
-
 const rankStatusTone = (status) => {
   if (status === '超标' || status === '未达标') return 'danger'
   if (status === '预警') return 'warning'
@@ -1057,13 +944,6 @@ async function exportAnalysisPdf() {
     const indicatorId = String(selectedBackendIndicator.value.id || selectedBackendIndicator.value.indicatorId)
     const versionId = currentIndicatorVersionId.value
     const filename = analysisPdfFilename(currentProfile.value.name, versionId)
-    const scenarios = scenarioComparisonScenarios.value.flatMap(scene => {
-      const name = scene.scenarioName || scene.name || scene.scenarioCode || '-'
-      return scene.points?.length ? scene.points.map(point => [name,
-        formatPeriodLabel(point.periodStart, point.periodEnd), scenePointValue(point), point.numeratorValue,
-        point.denominatorValue, displayStatus(point.outcomeStatus || point.qualityStatus), point.resultId, point.snapshotId])
-        : [[name, '-', '-', '-', '-', displayStatus(scene.resultAvailability), '-', '-']]
-    })
     const overview = analysisOverview.value || {}
     const report = buildAnalysisPdfReport({
       versionId, primaryMetric: primaryMetric.value, summaryMetrics: summaryMetrics.value,
@@ -1072,14 +952,12 @@ async function exportAnalysisPdf() {
         ['运行参数', rangeSummary.value ? JSON.stringify(reportParameterSnapshot.value) : '未执行即时查询'],
         ['趋势时间', formatRange(analysisPeriodRange.value) || '全部已加载正式周期'],
         ['趋势统计粒度', backendAnalysisGranularity.value === 'STATIC' ? '静态' : period.value],
-        ['组合粒度筛选', Object.keys(trendGrainApplied.value).length ? JSON.stringify(trendGrainApplied.value) : '全部'],
-        ['场景对比时间', formatRange(scenarioComparisonAppliedRange.value) || '全部已加载正式周期']
+        ['组合粒度筛选', Object.keys(trendGrainApplied.value).length ? JSON.stringify(trendGrainApplied.value) : '全部']
       ],
       trendRows: trendTableRows.value, hasPeerTrend: hasPeerTrend.value, unit: currentProfile.value.unit,
       trendDescription: `统计粒度：${backendAnalysisGranularity.value === 'STATIC' ? '静态' : period.value}；时间范围：${formatRange(analysisPeriodRange.value) || '全部已加载正式周期'}`,
       chartPng: trendTableRows.value.length ? renderAnalysisChartPng(trendOption.value) : null,
-      rankRows: rankTableData.value, rankDescription: rankErrorMessage.value || rankPeriodDescription.value, scenarioRows: scenarios,
-      scenarioDescription: scenarioComparisonError.value || '各场景保留各自原始统计周期，不跨场景合并。',
+      rankRows: rankTableData.value, rankDescription: rankErrorMessage.value || rankPeriodDescription.value,
       provenance: [
         ['计算公式', indicatorDataExplanation.value.formulaText],
         ...indicatorDataExplanation.value.operands.map(item => [item.role === 'NUMERATOR' ? '分子因子版本' : item.role === 'DENOMINATOR' ? '分母因子版本' : '参与因子版本', item.factorVersionIds.join('、')]),
@@ -1093,211 +971,6 @@ async function exportAnalysisPdf() {
     ElMessage.success('PDF 已导出')
   } catch (error) { ElMessage.error(error?.message || 'PDF 导出失败，请稍后重试。') }
   finally { pdfExportLoading.value = false }
-}
-
-const scrollToSceneComparison = () => {
-  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-  sceneComparisonRef.value?.scrollIntoView({
-    behavior: reducedMotion ? 'auto' : 'smooth',
-    block: 'center'
-  })
-}
-
-function applyScenarioComparisonFilters() {
-  if (!validateOptionalDateRange(scenarioComparisonPeriodRange.value, '场景对比时间')) return
-  loadScenarioComparison()
-}
-
-async function loadScenarioComparison() {
-  if (!validateOptionalDateRange(scenarioComparisonPeriodRange.value, '场景对比时间')) return
-  const target = scenarioComparisonTarget.value
-  const sequence = ++scenarioComparisonSequence
-  scenarioComparison.value = null
-  scenarioComparisonError.value = ''
-  scenarioComparisonLoaded.value = false
-  if (!target) return
-  scenarioComparisonLoading.value = true
-  const appliedRange = [...scenarioComparisonPeriodRange.value]
-  try {
-    const response = await fetchIndicatorScenarioComparison(target.indicatorId, {
-      indicatorVersionId: target.indicatorVersionId,
-      ...(scenarioComparisonSelectedIds.value.length ? { scenarioVersionIds: scenarioComparisonSelectedIds.value } : {}),
-      ...(isCompleteDateRange(scenarioComparisonPeriodRange.value)
-        ? { periodStart: scenarioComparisonPeriodRange.value[0], periodEnd: scenarioComparisonPeriodRange.value[1] }
-        : {})
-    })
-    const result = await reconcileScenarioComparisonRoots(response)
-    if (sequence !== scenarioComparisonSequence) return
-    scenarioComparison.value = result
-    scenarioComparisonAppliedRange.value = appliedRange
-    mergeScenarioComparisonOptions(result?.scenarios)
-    void loadScenarioComparisonOptions(target)
-    scenarioComparisonLoaded.value = true
-  } catch (error) {
-    if (sequence !== scenarioComparisonSequence) return
-    scenarioComparisonError.value = error?.message || '无法读取场景正式结果'
-  } finally {
-    if (sequence === scenarioComparisonSequence) scenarioComparisonLoading.value = false
-  }
-}
-
-function sceneKey(scene) {
-  return String(scene?.scenarioVersionId || scene?.scenarioCode || scene?.scenarioName || scene?.name || '')
-}
-
-async function loadScenarioComparisonOptions(target = scenarioComparisonTarget.value) {
-  if (!target?.indicatorId) return
-  try {
-    const records = await fetchAllIndicatorScenarios(target.indicatorId)
-    const current = new Map(scenarioComparisonOptions.value.map((scene) => [String(scene.value), scene]))
-    const byCode = new Map(scenarioComparisonIdByCode.value)
-    records.forEach((scene) => {
-      const value = scene?.scenarioVersionId || scene?.versionId || scene?.id
-      if (!value) return
-      const name = scene.scenarioName || scene.name || scene.scenarioCode || String(value)
-      current.set(String(value), { value: String(value), label: name })
-      if (scene.scenarioCode) byCode.set(String(scene.scenarioCode), String(value))
-    })
-    scenarioComparisonOptions.value = [...current.values()]
-    scenarioComparisonIdByCode.value = byCode
-  } catch {
-    // 场景选项缺失不妨碍已有结果展示；没有版本 ID 时禁用补算入口，避免误发起非场景计算。
-  }
-}
-
-async function reconcileScenarioComparisonRoots(comparison = {}) {
-  const scenarios = await Promise.all((Array.isArray(comparison.scenarios) ? comparison.scenarios : []).map(async (scenario) => ({
-    ...scenario,
-    points: await Promise.all((Array.isArray(scenario.points) ? scenario.points : []).map(resolveScenarioPointRoot))
-  })))
-  return { ...comparison, scenarios }
-}
-
-async function resolveScenarioPointRoot(point) {
-  if (!point?.resultId) return point
-  for (const rootLevel of ['HOSPITAL', 'ALL_SINGLE_DISEASE']) {
-    try {
-      const drillResult = await searchResultDrill(point.resultId, {
-        currentLevel: rootLevel,
-        parentKeys: {},
-        filters: {},
-        pageNum: 1,
-        pageSize: 20,
-        sort: [{ field: 'indicatorValue', direction: 'DESC' }]
-      })
-      const resolved = reconcileScenarioPointWithRoot(point, drillResult, rootLevel)
-      if (String(resolved.resultId) !== String(point.resultId) || resolved.displayValue !== point.displayValue) return resolved
-    } catch {
-      // 不同指标支持的路径不同；组织根不可用时继续尝试病种根。
-    }
-  }
-  return point
-}
-
-function mergeScenarioComparisonOptions(scenes) {
-  const current = new Map(scenarioComparisonOptions.value.map((scene) => [String(scene.value), scene]))
-  ;(Array.isArray(scenes) ? scenes : []).forEach((scene) => {
-    const value = resolveScenarioVersionId(scene)
-    if (!value) return
-    const name = scene.scenarioName || scene.name || scene.scenarioCode || String(value)
-    current.set(String(value), { value: String(value), label: name })
-  })
-  scenarioComparisonOptions.value = [...current.values()]
-}
-
-function resolveScenarioVersionId(scene) {
-  return scene?.scenarioVersionId || scene?.id || scenarioComparisonIdByCode.value.get(String(scene?.scenarioCode || '')) || ''
-}
-
-function latestScenePoint(scene) {
-  const points = Array.isArray(scene?.points) ? scene.points : []
-  return points.reduce((latest, point) => {
-    if (!latest) return point
-    return String(point?.periodEnd || point?.periodStart || '') > String(latest?.periodEnd || latest?.periodStart || '')
-      ? point
-      : latest
-  }, null)
-}
-
-function scenePointValue(point) {
-  if (isUsableDisplayValue(point?.displayValue)) return point.displayValue
-  if (isUsableRawValue(point?.value)) return formatMetricValue(point.value, currentProfile.value.unit)
-  return '—'
-}
-
-function scenePointNotice(point) {
-  if (!point) return ''
-  const outcome = String(point.outcomeStatus || '').toUpperCase()
-  const quality = String(point.qualityStatus || '').toUpperCase()
-  const flags = Array.isArray(point.qualityFlags) ? point.qualityFlags.filter(Boolean) : []
-  if (flags.length) return `质量提示：${flags.join('、')}`
-  if (outcome && outcome !== 'CALCULATED') return `结果状态：${displayStatus(outcome)}`
-  if (quality && quality !== 'PASSED') return `质量状态：${displayStatus(quality)}`
-  return ''
-}
-
-function scenePointCount(scene) {
-  return Array.isArray(scene?.points) ? scene.points.length : 0
-}
-
-function sceneTitle(scene) {
-  const name = scene?.scenarioName || scene?.name || scene?.scenarioCode || '未命名场景'
-  const code = scene?.scenarioCode || scene?.scenarioVersionId || ''
-  return code && code !== name ? `${name} · ${code}` : name
-}
-
-function canViewScenarioPeriods(scene) {
-  return String(scene?.resultAvailability || '').toUpperCase() !== 'NO_ACTIVE_RESULT' && scenePointCount(scene) > 0
-}
-
-function scenarioPeriodTypeLabel(value) {
-  return ({ DAILY: '日度', WEEKLY: '周度', MONTHLY: '月度', QUARTERLY: '季度', YEARLY: '年度', CUSTOM: '自定义' })[String(value || '').toUpperCase()] || '原始周期'
-}
-
-function openScenarioPeriods(scene) {
-  selectedScenarioForPeriods.value = scene
-  scenarioPeriodPage.value = 1
-  scenarioPeriodDrawerOpen.value = true
-}
-
-function openScenarioPeriodsFromCard(scene) {
-  if (canViewScenarioPeriods(scene)) openScenarioPeriods(scene)
-}
-
-function openScenarioPointDrill(point) {
-  router.push({ path: '/analysis/drill', query: { resultId: String(point.resultId), period: formatPeriodLabel(point.periodStart, point.periodEnd), source: 'live' } })
-}
-
-function openScenarioCalculation(scene) {
-  const scenarioVersionId = resolveScenarioVersionId(scene)
-  if (!scenarioVersionId) {
-    ElMessage.warning('场景对比响应未返回场景版本 ID，且无法从关联场景中匹配；为避免创建非场景计算，已阻止提交。')
-    return
-  }
-  const point = latestScenePoint(scene)
-  const selectedRange = isCompleteDateRange(scenarioComparisonPeriodRange.value) ? scenarioComparisonPeriodRange.value : reportPeriodRange.value
-  const periodStart = point?.periodStart || selectedRange?.[0]
-  const periodEnd = point?.periodEnd || selectedRange?.[1]
-  router.push({
-    path: '/calc',
-    query: {
-      ownerType: 'INDICATOR',
-      ownerVersionId: currentIndicatorVersionId.value,
-      batchType: 'FULL',
-      scenarioVersionId: String(scenarioVersionId),
-      returnTo: '/analysis',
-      returnIndicator: indicatorCode.value,
-      returnIndicatorVersionId: currentIndicatorVersionId.value,
-      ...(scenarioComparisonSelectedIds.value.length ? { returnScenarioVersionIds: scenarioComparisonSelectedIds.value.join(',') } : {}),
-      ...(periodStart ? { periodStart: toCalculationDateTime(periodStart) } : {}),
-      ...(periodEnd ? { periodEnd: toCalculationDateTime(periodEnd) } : {})
-    }
-  })
-}
-
-function toCalculationDateTime(value) {
-  const text = String(value || '')
-  return text.includes('T') ? text : `${text}T00:00:00`
 }
 
 const openDepartmentDrill = (row) => {
@@ -1328,11 +1001,6 @@ function formatExplanationOperandValue(operand) {
   if (!operand?.hasResultValue) return '-'
   const value = formatCount(operand.value)
   return value === '-' ? '-' : `${value}${operand.unit || ''}`
-}
-
-function formatDecimal(value) {
-  const number = Number(value)
-  return Number.isFinite(number) ? number.toFixed(8) : '-'
 }
 
 function displayStatus(value) {
@@ -1415,27 +1083,8 @@ function formatPeriodLabel(periodStart, periodEnd) {
   return start || end || '-'
 }
 
-function buildArtifactStatus(chain) {
-  return [
-    chain?.deathFactorArtifact?.status,
-    chain?.dischargeFactorArtifact?.status,
-    chain?.indicatorFormulaArtifact?.status
-  ].filter(Boolean).map(displayStatus).join(' / ') || '-'
-}
-
 function firstPresent(...values) {
   return values.find((value) => value !== undefined && value !== null && value !== '') || '-'
-}
-
-function resolveChainWatermark(chain) {
-  if (!hasBackendMortalityData.value) return '-'
-  return firstPresent(
-    chain?.indicatorResult?.dataWatermark,
-    chain?.indicatorResult?.watermark,
-    chain?.calcBatch?.dataWatermark,
-    chain?.calcBatch?.watermark,
-    '后端未返回数据水位'
-  )
 }
 
 function switchIndicatorAnalysis() {
@@ -1476,7 +1125,7 @@ async function applyReportPeriod() {
 function reportQueryPayload() {
   const payload = { summaryOnly: true }
   if (backendAnalysisGranularity.value !== 'STATIC') {
-    payload.periodStart = `${reportPeriodRange.value[0]}T00:00:00`
+    payload.periodStart = `${normalizeDateValue(reportPeriodRange.value[0])}T00:00:00`
     payload.periodEnd = nextDayStart(reportPeriodRange.value[1])
   }
   if (indicatorRuntimeParameters.value.length) {
@@ -1491,6 +1140,7 @@ async function loadRangeSummary() {
   const requestSequence = ++rangeSummaryRequestSequence
   rangeSummary.value = null
   runtimeQueryResult.value = null
+  runtimeQueryExpanded.value = []
   rangeSummaryErrorMessage.value = ''
   rangeSummaryLoading.value = true
   const [periodStart, periodEnd] = backendAnalysisGranularity.value === 'STATIC' ? ['', ''] : reportPeriodRange.value
@@ -1522,10 +1172,11 @@ function clearInstantQueryResult() {
   rangeSummaryErrorMessage.value = ''
   rangeSummaryLoading.value = false
   runtimeQueryResult.value = null
+  runtimeQueryExpanded.value = []
 }
 
 function nextDayStart(value) {
-  const parts = String(value || '').split('-').map(Number)
+  const parts = normalizeDateValue(value).split('-').map(Number)
   if (parts.length !== 3 || parts.some(part => !Number.isFinite(part))) return ''
   const date = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + 1))
   return `${date.toISOString().slice(0, 10)}T00:00:00`
@@ -1569,7 +1220,7 @@ function applyTrendConditions() {
   }
   if (JSON.stringify(previousRange) === JSON.stringify(analysisPeriodRange.value)
     && wasSourceDefault === keepSourceDefault) refreshTrendAnalysis()
-  else refreshMortalityAnalysis({ preserveRangeSummary: true })
+  else refreshIndicatorAnalysis({ preserveRangeSummary: true })
 }
 
 function applyTrendGranularity() {
@@ -1627,8 +1278,7 @@ async function loadBackendAnalysisIndicators() {
       if (backendName && route.query.indicatorName !== backendName) {
         await router.replace({ path: '/analysis', query: { ...route.query, indicatorName: backendName } })
       }
-      await refreshMortalityAnalysis()
-      void loadScenarioComparison()
+      await refreshIndicatorAnalysis()
     } else if (backendIndicators.value.length) {
       const firstOption = createBackendAnalysisOptions(backendIndicators.value)[0]
       if (firstOption?.code) {
@@ -1757,7 +1407,6 @@ function createGenericAnalysisProfile(indicator) {
     markLineValue: null,
     yAxisMax: null,
     summary: [{ label: '当前指标值', value: '-', tone: 'neutral' }],
-    sceneComparisons: [],
     trends: { 月度: emptyTrend(), 季度: emptyTrend(), 年度: emptyTrend() },
     rankRows: []
   }
@@ -1771,22 +1420,12 @@ function normalizeList(payload) {
   return []
 }
 
-function normalizeText(value) {
-  return String(value || '').replace(/\s/g, '').replace(/[（）()]/g, '')
-}
-
-function isMortalityIndicator(indicator) {
-  const code = String(indicator?.code || indicator?.indicatorCode || '')
-  const name = normalizeText(indicator?.name || indicator?.indicatorName)
-  return /MORTALITY|DEATH/i.test(code) || name.includes('住院死亡率')
-}
-
-async function refreshMortalityAnalysis({ preserveRangeSummary = false } = {}) {
+async function refreshIndicatorAnalysis({ preserveRangeSummary = false } = {}) {
   const refreshSequence = ++analysisRefreshSequence
   if (!preserveRangeSummary) ++rangeSummaryRequestSequence
   const trendSequence = ++trendRefreshSequence
   trendLoading.value = false
-  mortalityChainLoading.value = true
+  analysisLoading.value = true
   backendAnalysis.value = null
   if (!preserveRangeSummary) {
     rangeSummary.value = null
@@ -1799,10 +1438,9 @@ async function refreshMortalityAnalysis({ preserveRangeSummary = false } = {}) {
   formulaFactorVersions.value = {}
   availablePeriod.value = null
   analysisErrorMessage.value = ''
-  mortalityChain.value = null
   const backendIndicator = selectedBackendIndicator.value
   if (!backendIndicator) {
-    mortalityChainLoading.value = false
+    analysisLoading.value = false
     return
   }
   const initialVersionId = currentIndicatorVersionId.value
@@ -1829,7 +1467,6 @@ async function refreshMortalityAnalysis({ preserveRangeSummary = false } = {}) {
 
     const granularity = backendAnalysisGranularity.value
     const backendIndicatorId = String(backendIndicator.id || backendIndicator.indicatorId)
-    const mortalityIndicator = isMortalityIndicator(backendIndicator)
     const useRangeSummary = !preserveRangeSummary && calculationMode !== 'STATIC' && isCompleteDateRange(reportPeriodRange.value)
       && !validateSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)
     if (useRangeSummary) void loadRangeSummary()
@@ -1838,10 +1475,9 @@ async function refreshMortalityAnalysis({ preserveRangeSummary = false } = {}) {
     const trendParams = backendAnalysisGranularity.value === 'STATIC'
       ? buildAnalysisParams([], currentIndicatorVersionId.value, 'STATIC')
       : buildTrendAnalysisParams(analysisPeriodRange.value, currentIndicatorVersionId.value, trendAnalysisGranularity.value)
-    const [analysisData, trendResult, chain] = await Promise.allSettled([
+    const [analysisData, trendResult] = await Promise.allSettled([
       granularity ? fetchIndicatorAnalysis(backendIndicatorId, analysisParams) : Promise.resolve(null),
       fetchIndicatorAnalysis(backendIndicatorId, trendParams),
-      mortalityIndicator ? fetchMortalityReadonlyChain() : Promise.resolve(null)
     ])
 
     if (refreshSequence !== analysisRefreshSequence) return
@@ -1883,7 +1519,10 @@ async function refreshMortalityAnalysis({ preserveRangeSummary = false } = {}) {
       if (!trendBackendAnalysis.value) trendBackendAnalysis.value = resolvedAnalysisData.value
       if (resolvedAnalysisData.value?.granularity) reportGranularity.value = String(resolvedAnalysisData.value.granularity)
       if (!reportPeriodRange.value.length && resolvedAnalysisData.value?.overview?.periodStart && resolvedAnalysisData.value?.overview?.periodEnd) {
-        reportPeriodRange.value = [resolvedAnalysisData.value.overview.periodStart, resolvedAnalysisData.value.overview.periodEnd]
+        reportPeriodRange.value = [
+          normalizeDateValue(resolvedAnalysisData.value.overview.periodStart),
+          normalizeDateValue(resolvedAnalysisData.value.overview.periodEnd)
+        ]
       }
       const versionId = String(
         resolvedAnalysisData.value.indicatorVersionId ||
@@ -1904,12 +1543,10 @@ async function refreshMortalityAnalysis({ preserveRangeSummary = false } = {}) {
 
     if (backendIndicatorVersion.value) await loadAnalysisFormulaFactorVersions(backendIndicatorVersion.value, refreshSequence)
 
-    mortalityChain.value = mortalityIndicator && chain.status === 'fulfilled' ? chain.value : null
-    mortalityChainLoading.value = false
+    analysisLoading.value = false
   } catch (error) {
     if (refreshSequence !== analysisRefreshSequence) return
-    mortalityChain.value = null
-    mortalityChainLoading.value = false
+    analysisLoading.value = false
     if (selectedBackendIndicator.value) {
       analysisErrorMessage.value = error?.message
         ? `指定周期正式结果暂不可用：${error.message}`
@@ -1997,13 +1634,7 @@ async function loadAvailablePeriod(versionId, refreshSequence) {
   }
 }
 
-onMounted(async () => {
-  await loadBackendAnalysisIndicators()
-  if (route.query.focus === 'scenario-comparison') {
-    await nextTick()
-    scrollToSceneComparison()
-  }
-})
+onMounted(loadBackendAnalysisIndicators)
 
 watch(indicatorCode, () => {
   selectedIndicatorCode.value = indicatorCode.value
@@ -2013,18 +1644,17 @@ watch(indicatorCode, () => {
   sourceTrendRangePending = !isCompleteDateRange(analysisPeriodRange.value)
   trendGrainDraft.value = {}
   trendGrainApplied.value = {}
+  trendAdvancedExpanded.value = []
+  trendGrainCandidates.value = {}
+  trendGrainLoading.value = {}
+  trendGrainResolvedNames.value = {}
+  trendGrainFields.value.forEach(code => trendGrainRequestGenerations.set(code, (trendGrainRequestGenerations.get(code) || 0) + 1))
   reportPeriodRange.value = initialReportPeriodRange()
-  scenarioComparisonSelectedIds.value = []
-  scenarioComparisonPeriodRange.value = []
-  scenarioComparisonOptions.value = []
-  scenarioComparisonIdByCode.value = new Map()
-  scenarioPeriodDrawerOpen.value = false
-  selectedScenarioForPeriods.value = null
   indicatorRuntimeParameterValues.value = {}
   runtimeQueryResult.value = null
+  runtimeQueryExpanded.value = []
   period.value = '月度'
-  refreshMortalityAnalysis()
-  loadScenarioComparison()
+  refreshIndicatorAnalysis()
 })
 
 function initialAnalysisPeriodRange() {
@@ -2047,12 +1677,6 @@ function sourceAvailableTrendRange(availability) {
   const start = normalizeDateValue(availability?.earliestDataDate)
   const end = normalizeDateValue(availability?.latestDataDate)
   return start && end && start <= end ? [start, end] : []
-}
-
-function initialScenarioVersionIds() {
-  const value = route.query.scenarioVersionIds
-  const values = Array.isArray(value) ? value : String(value || '').split(',')
-  return values.map((item) => String(item).trim()).filter(Boolean)
 }
 
 function isCompleteDateRange(range) {
@@ -2409,6 +2033,30 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
   padding: 13px 16px;
 }
 
+.scene-comparison.is-unlinked {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  min-height: 0;
+
+  .scene-comparison__head { margin-bottom: 0; }
+}
+
+.scene-comparison__empty-inline {
+  display: flex;
+  flex: 1 1 280px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  min-width: 0;
+  color: var(--idmp-text-secondary);
+  font-size: 13px;
+  line-height: 22px;
+
+  .el-button { flex-shrink: 0; }
+}
+
 .scene-comparison__head {
   display: flex;
   align-items: center;
@@ -2606,105 +2254,6 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
   }
 }
 
-.chain-panel {
-  min-width: 0;
-  margin-bottom: 16px;
-  padding: 16px 18px;
-}
-
-.chain-panel__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 12px;
-
-  h2 {
-    margin: 0 0 4px;
-    color: var(--idmp-text-primary);
-    font-size: 15px;
-    line-height: 22px;
-  }
-
-  p {
-    margin: 0;
-    color: var(--idmp-text-helper);
-    font-size: 12px;
-    line-height: 18px;
-  }
-}
-
-.chain-equation {
-  display: flex;
-  min-height: 46px;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 9px;
-  padding: 10px 12px;
-  border: 1px solid var(--idmp-border-subtle);
-  border-radius: var(--idmp-radius-md);
-  background: var(--idmp-interactive-subtle);
-
-  span,
-  em {
-    color: var(--idmp-text-helper);
-    font-size: 12px;
-    font-style: normal;
-    line-height: 20px;
-  }
-
-  strong {
-    color: var(--idmp-interactive);
-    font-size: 18px;
-    font-weight: 650;
-    line-height: 24px;
-  }
-}
-
-.chain-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 12px;
-}
-
-.chain-node {
-  display: flex;
-  min-width: 0;
-  min-height: 82px;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 11px 12px;
-  border: 1px solid var(--idmp-border-subtle);
-  border-radius: var(--idmp-radius-md);
-  background: var(--idmp-layer-01);
-
-  span {
-    color: var(--idmp-text-helper);
-    font-size: 12px;
-    line-height: 18px;
-  }
-
-  strong {
-    overflow: hidden;
-    color: var(--idmp-text-primary);
-    font-size: 16px;
-    font-weight: 650;
-    line-height: 22px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  small {
-    overflow: hidden;
-    color: var(--idmp-text-disabled);
-    font-size: 12px;
-    line-height: 18px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-}
-
 .analysis-panel {
   min-width: 0;
   padding: 0 18px 16px;
@@ -2783,6 +2332,17 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
   color: var(--idmp-text-secondary);
 }
 
+.trend-advanced-filters { margin-bottom: 8px; }
+.trend-advanced-filters :deep(.el-collapse-item__header) { height: 34px; line-height: 34px; }
+.trend-advanced-filters :deep(.el-collapse-item__content) { padding-bottom: 8px; }
+.trend-advanced-help { margin-left: 8px; color: var(--idmp-text-helper); font-size: 12px; font-weight: 400; cursor: help; }
+.trend-advanced-fields { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+.trend-advanced-fields .trend-grain-field { flex: 0 1 220px; flex-direction: row; align-items: center; min-width: min(180px, 100%); max-width: 260px; }
+.trend-advanced-fields .trend-grain-field label { flex: 0 0 auto; max-width: 84px; }
+.trend-advanced-fields .trend-grain-field :deep(.el-select) { width: auto; min-width: 0; flex: 1 1 120px; }
+.trend-advanced-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.trend-advanced-actions .el-button + .el-button { margin-left: 0; }
+
 .trend-grain-field label {
   flex: 0 1 auto;
   min-width: 0;
@@ -2791,7 +2351,7 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
   white-space: nowrap;
 }
 
-.trend-grain-field :deep(.el-autocomplete) {
+.trend-grain-field :deep(.el-select) {
   min-width: 80px;
   flex: 1 1 110px;
 }

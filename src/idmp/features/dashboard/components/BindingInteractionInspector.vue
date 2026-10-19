@@ -53,7 +53,12 @@ function patchClick(change) {
   emit('change', { ...props.widget.config?.interaction, clickFilter: next })
 }
 function patchAction(action) {
-  const next = { ...props.widget.config?.interaction, clickAction: action, clickFilter: { ...clickFilter.value, enabled: action === 'cross-filter' }, drill: { hierarchy: drillHierarchy.value } }
+  const current = props.widget.config?.interaction || {}
+  const next = { ...current, clickAction: action, clickFilter: { ...clickFilter.value, enabled: action === 'cross-filter' } }
+  // Formal indicators use their published backend path; only local data drill
+  // needs a persisted hierarchy.
+  if (action === 'drill' && !backendDrillSupported.value) next.drill = { hierarchy: drillHierarchy.value }
+  else delete next.drill
   emit('change', next)
 }
 function patchQuery(change) { emit('query-change', { ...props.widget.config?.query, ...change }) }

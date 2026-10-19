@@ -64,7 +64,7 @@ export function normalizeWidgetMetadata(widget = {}) {
   normalized.config = isPlainObject(widget.config) ? clonePersistableValue(widget.config) : {}
   normalized.config.style = { ...DEFAULT_WIDGET_STYLE, ...(isPlainObject(normalized.config.style) ? normalized.config.style : {}) }
   if (['kpi', 'primary', 'supporting'].includes(type)) normalized.config.style.kpiVariant = normalizeKpiVariant(normalized.config.style.kpiVariant)
-  if (type === 'metric-group') normalized.config.metricGroup = normalizeMetricGroupConfig(normalized.config.metricGroup)
+  if (type === 'metric-group' || (type === 'ranking' && normalized.config.ranking?.mode === 'indicators')) normalized.config.metricGroup = normalizeMetricGroupConfig(normalized.config.metricGroup)
   return normalized
 }
 

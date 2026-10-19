@@ -1,3 +1,5 @@
+import { resolveGlobalFilterField } from './departmentFilters.js'
+
 const organizationFields = {
   DEPARTMENT: ['OUT_DEPT_CODE', 'deptCode', 'IN_DEPT_CODE', 'departmentCode'],
   MEDICAL_GROUP: ['MEDICAL_GROUP_CODE', 'medicalGroupCode'],
@@ -47,7 +49,10 @@ export function buildRemoteWidgetQuery(widget, { periodStart, periodEnd, definit
       if (definition.enabled === false || localQuery.ignoredGlobalFilterIds?.includes(definition.id)) continue
       const value = Object.hasOwn(values, definition.id) ? values[definition.id] : definition.defaultValue
       if (definition.type === 'date-range') continue
-      addFilter(definition.field, value)
+      const field = resolveGlobalFilterField(definition, fields)
+      if (!field?.filterable) continue
+      const error = addFilter(field.code || field.id, value)
+      if (error) return { empty: true }
     }
   }
   addFilter('deptCode', department)
@@ -92,7 +97,9 @@ export function buildRemoteWidgetQuery(widget, { periodStart, periodEnd, definit
     const level = scope.organizationScope?.level
     const ids = scope.organizationScope?.ids || []
     if (!ids.length) return { error: '组件组织范围缺少编码' }
-    const field = (organizationFields[level] || []).map(code => matchingField(fields, code)).find(Boolean)
+    const field = level === 'DEPARTMENT'
+      ? resolveGlobalFilterField({ field: 'OUT_DEPT_CODE' }, fields)
+      : (organizationFields[level] || []).map(code => matchingField(fields, code)).find(Boolean)
     if (!field) return { error: `数据源不支持 ${level || '未知'} 组织层级筛选` }
     const error = addFilter(field.code || field.id, ids)
     if (error) return { empty: true }
@@ -131,10 +138,10 @@ export function buildRemoteFilterOptionQuery(definition, definitions, values, fi
       if (value[1] && (!periodEnd || value[1] < periodEnd)) periodEnd = value[1]
       return
     }
-    const field = matchingField(fields, parent.field)
+    const field = resolveGlobalFilterField(parent, fields)
     if (!field) throw new Error(`候选值数据源不支持上游字段 ${parent.field}`)
     filters[field.code || field.id] = value
   }
   for (const id of definition.dependsOn || []) visit(id)
-  return { fieldCode: definition.field, ...range, periodStart, periodEnd, limit: 500, filters }
+  return { fieldCode: resolveGlobalFilterField(definition, fields)?.code || resolveGlobalFilterField(definition, fields)?.id || definition.field, ...range, periodStart, periodEnd, limit: 500, filters }
 }

@@ -104,8 +104,8 @@ try {
   assert.equal(await evaluate(`document.querySelector('.formula-technical').open`), false)
   assert.match(await evaluate(`document.querySelector('.formula-notes').textContent`), /分母为 0.*保留 2 位小数/)
   assert.equal(await evaluate(`!!document.querySelector('.formula-factors,.formula-rules')`), false)
-  const numeratorPath = `/factor/edit/${numerator.factorId}`
-  const denominatorPath = `/factor/edit/${denominator.factorId}`
+  const numeratorPath = `/factor/view/${numerator.factorId}`
+  const denominatorPath = `/factor/view/${denominator.factorId}`
   assert.equal(await evaluate(`document.querySelectorAll('.formula-factor-link').length`), 2)
   await evaluate(`document.querySelector('.formula-definition').scrollIntoView({block:'center'})`)
   await delay(400)
@@ -150,16 +150,16 @@ try {
   await evaluate(`document.querySelector('.formula-technical').scrollIntoView({block:'start'})`)
   await screenshot('formula-json-desktop.png')
   await evaluate(`document.querySelector('.formula-numerator button').click()`)
-  await waitFor(() => evaluate(`location.pathname===${JSON.stringify(numeratorPath)} && document.querySelector('.factor-editor .saved-summary')?.textContent.includes(${JSON.stringify(String(numerator.id))})`), 'Numerator editor navigation')
+  await waitFor(() => evaluate(`location.pathname===${JSON.stringify(numeratorPath)} && document.querySelector('.factor-detail-page .factor-basic')?.textContent.includes(${JSON.stringify(String(numerator.id))})`), 'Numerator detail navigation')
   assert.equal(await evaluate(`new URLSearchParams(location.search).get('factorVersionId')`), String(numerator.id))
-  assert.ok(await evaluate(`document.querySelector('.factor-editor h1').textContent.includes(${JSON.stringify(nameFor(detail.formula.root.left))})`))
-  await screenshot('factor-editor.png')
+  assert.ok(await evaluate(`document.querySelector('.factor-detail-page h1').textContent.includes(${JSON.stringify(nameFor(detail.formula.root.left))})`))
+  await screenshot('factor-detail.png')
   await evaluate(`history.back()`)
   await waitFor(() => evaluate(`!!document.querySelector('.formula-denominator button')`), 'Return to indicator')
   await evaluate(`document.querySelector('.formula-denominator button').click()`)
-  await waitFor(() => evaluate(`location.pathname===${JSON.stringify(denominatorPath)} && document.querySelector('.factor-editor .saved-summary')?.textContent.includes(${JSON.stringify(String(denominator.id))})`), 'Denominator editor navigation')
+  await waitFor(() => evaluate(`location.pathname===${JSON.stringify(denominatorPath)} && document.querySelector('.factor-detail-page .factor-basic')?.textContent.includes(${JSON.stringify(String(denominator.id))})`), 'Denominator detail navigation')
   assert.equal(await evaluate(`new URLSearchParams(location.search).get('factorVersionId')`), String(denominator.id))
-  assert.ok(await evaluate(`document.querySelector('.factor-editor h1').textContent.includes(${JSON.stringify(nameFor(detail.formula.root.right))})`))
+  assert.ok(await evaluate(`document.querySelector('.factor-detail-page h1').textContent.includes(${JSON.stringify(nameFor(detail.formula.root.right))})`))
   await send('Page.navigate', { url: 'http://127.0.0.1:5173/indicator/view/90000?versionId=90002' })
   await waitFor(() => evaluate(`document.querySelector('.formula-expression')?.textContent==='版本2业务公式'`), 'Explicit version selection')
   assert.equal(await evaluate(`!!document.querySelector('.formula-fraction')`), false)

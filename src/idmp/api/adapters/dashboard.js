@@ -1,5 +1,7 @@
 import { normalizeDashboardSchema } from '../../features/dashboard/schema.js'
 import { createDefaultBinding, preferredMeasureAggregation } from '../../features/dashboard/smartDefaultBinding.js'
+import { singleIndicatorTemplatePlan } from '../../features/dashboard/templateBinding.js'
+import { dashboardWidgetResultShape, isPeriodField, normalizePeriodDataset } from '../../features/dashboard/periodFields.js'
 
 const FRONTEND_TYPE_BY_REMOTE = Object.freeze({
   KPI: { type: 'kpi', visualType: 'kpi' },
@@ -16,17 +18,14 @@ const REMOTE_TYPE_BY_FRONTEND = Object.freeze({
   radar: 'RADAR', funnel: 'FUNNEL', scatter: 'SCATTER', heatmap: 'HEATMAP', map: 'MAP'
 })
 
-const RESULT_SHAPE_BY_FRONTEND = Object.freeze({
-  kpi: 'OVERVIEW', gauge: 'OVERVIEW', line: 'TREND',
-  bar: 'COMPARISON', pie: 'COMPARISON', table: 'COMPARISON', ranking: 'COMPARISON',
-  radar: 'COMPARISON', funnel: 'COMPARISON', heatmap: 'COMPARISON', map: 'COMPARISON'
-})
-
 const stringId = value => value === null || value === undefined ? '' : String(value)
 const object = value => value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 const MOCK_MODE = 'MOCK'
 const MOCK_WIDGET_KEY = '__idmpMockWidget'
 const METRIC_GROUP_KEY = '__idmpMetricGroup'
+const INDICATOR_RANKING_KEY = '__idmpIndicatorRanking'
+const TEMPLATE_SLOT_KEY = '__idmpTemplateSlot'
+const CLICK_ACTION_KEY = '__idmpClickAction'
 
 export function dashboardSummaryToCatalogEntry(item = {}) {
   return {
@@ -56,6 +55,14 @@ export function dashboardDetailToSchema(detail = {}) {
   })
 }
 
+// Opening a historical demo draft preserves metadata but requires explicit real component bindings.
+export function dashboardDetailToEditableSchema(detail = {}) {
+  const schema = dashboardDetailToSchema(detail)
+  return isMockDashboardDetail(detail)
+    ? normalizeDashboardSchema({ ...schema, widgets: [], globalFilters: [] })
+    : schema
+}
+
 export function dashboardDetailMeta(detail = {}) {
   const dashboard = object(detail.dashboard), version = object(detail.version)
   return {
@@ -75,43 +82,11 @@ export function selectDashboardVersion(detail = {}, versions = [], { editing = f
   return (Array.isArray(versions) ? versions : []).find(version => stringId(version?.id) === targetId) || fallback
 }
 
-// The current backend stores widget style as an opaque JSON object, but does
-// not yet expose a first-class Mock data source.  A MOCK board therefore uses
-// legal TEXT widgets as storage carriers and keeps its original frontend
-// widget contract in style.__idmpMockWidget.  This is deliberately isolated so
-// it can be removed once the backend adds native MOCK/LIVE data modes.
+// Detect historical demo boards so the UI can request real bindings instead of rendering fixtures.
 export function isMockDashboardDetail(detail = {}) {
-  return String(object(object(detail).version).style?.dataMode || '').toUpperCase() === MOCK_MODE
-}
-
-export function schemaToMockDashboardPayload(schema, { resourceVersion } = {}) {
-  const toMockWidget = widget => {
-    const config = object(widget.config)
-    return {
-      code: String(widget.id),
-      title: String(widget.title || '演示组件'),
-      type: 'TEXT',
-      position: { ...widget.layout },
-      fieldBindings: {},
-      query: { resultShape: 'OVERVIEW' },
-      filterBindings: object(config.interaction).clickFilter || {},
-      drill: object(config.interaction).drill || {},
-      chart: { text: object(config.text), chartKind: 'mock' },
-      style: { ...object(config.style), [MOCK_WIDGET_KEY]: {
-        type: widget.type, sourceCode: widget.sourceCode || '', sourceName: widget.sourceName || '',
-        kpiIndex: widget.kpiIndex, chartKind: widget.chartKind, visualType: widget.visualType,
-        preset: widget.preset, config
-      } }
-    }
-  }
-  return {
-    ...(resourceVersion === undefined ? {} : { resourceVersion }),
-    name: schema.name, description: schema.description || null, type: String(schema.dashboardType || 'CUSTOM').toUpperCase(),
-    category: schema.category || null, applicableScope: { scope: schema.scope, sceneCode: schema.sceneCode || undefined },
-    layout: { columns: schema.layout.columns, float: schema.layout.float }, theme: { name: schema.appearance?.theme || 'default' },
-    style: { appearance: schema.appearance || {}, presentation: schema.presentation || {}, dataMode: MOCK_MODE, mockDatasetVersion: 'frontend-fixture-v1' },
-    globalFilters: schema.globalFilters || [], interactions: {}, widgets: schema.widgets.map(toMockWidget)
-  }
+  const version = object(object(detail).version)
+  return String(version.style?.dataMode || '').toUpperCase() === MOCK_MODE
+    || (Array.isArray(version.widgets) && version.widgets.some(widget => Boolean(widget?.style?.[MOCK_WIDGET_KEY])))
 }
 
 export function schemaToDashboardPayload(schema, { resourceVersion, dataSources = [] } = {}) {
@@ -126,11 +101,12 @@ export function schemaToDashboardPayload(schema, { resourceVersion, dataSources 
       .map(binding => binding?.indicatorVersionId || sources.get(binding?.sourceCode)?.indicatorVersionId || sources.get(binding?.sourceCode)?.analysisIndicatorVersionId)
       .map(numericId)
       .filter(Boolean)
-    if (widget.type === 'metric-group') {
+    if (widget.type === 'metric-group' || (widget.type === 'ranking' && config.ranking?.mode === 'indicators')) {
+      const indicatorRanking = widget.type === 'ranking'
       return {
         code: String(widget.id), title: String(widget.title || '指标组'), type: 'TEXT', position: { ...widget.layout },
-        fieldBindings: {}, query: { resultShape: 'OVERVIEW' }, filterBindings: {}, drill: {}, chart: { chartKind: 'metric-group' },
-        style: { ...object(config.style), [METRIC_GROUP_KEY]: { config } }
+        fieldBindings: {}, query: { resultShape: 'OVERVIEW' }, filterBindings: {}, drill: {}, chart: { chartKind: indicatorRanking ? 'indicator-ranking' : 'metric-group' },
+        style: { ...object(config.style), [indicatorRanking ? INDICATOR_RANKING_KEY : METRIC_GROUP_KEY]: { config } }
       }
     }
     return {
@@ -142,9 +118,10 @@ export function schemaToDashboardPayload(schema, { resourceVersion, dataSources 
         ...(indicatorVersionIds.length > 1 ? { indicatorVersionIds } : {})
       }),
       position: { ...widget.layout }, fieldBindings: config.dataBinding || {},
-      query: { ...object(config.backendQuery), resultShape: RESULT_SHAPE_BY_FRONTEND[kind] || 'COMPARISON' },
+      query: { ...object(config.backendQuery), resultShape: dashboardWidgetResultShape(widget) },
       filterBindings: object(config.interaction).clickFilter || {}, drill: object(config.interaction).drill || {},
-      chart: { ...(object(config.chart)), ...(indicatorBindings.length ? { indicatorBindings } : {}), ...(widget.type === 'text' ? { text: object(config.text) } : {}), chartKind: kind }, style: object(config.style)
+      chart: { ...(object(config.chart)), ...(Array.isArray(config.tableColumns) ? { tableColumns: config.tableColumns } : {}), ...(indicatorBindings.length ? { indicatorBindings } : {}), ...(widget.type === 'text' ? { text: object(config.text) } : {}), chartKind: kind },
+      style: { ...object(config.style), ...(config.templateSlot ? { [TEMPLATE_SLOT_KEY]: config.templateSlot } : {}), ...(config.interaction?.clickAction === 'drill' ? { [CLICK_ACTION_KEY]: 'drill' } : {}) }
     }
   }
   return {
@@ -167,19 +144,35 @@ export function dashboardDataSourceToFrontend(source = {}) {
     origin: 'dashboard-data-source', originLabel: '已发布指标',
     indicatorId: stringId(source.indicatorId), indicatorCode: String(source.code || ''),
     indicatorVersionId: stringId(source.indicatorVersionId), analysisIndicatorId: stringId(source.indicatorId),
+    indicatorVersionNo: String(source.indicatorVersionNo || ''),
     analysisIndicatorVersionId: stringId(source.indicatorVersionId), analysisEnabled: true,
     filterable: source.filterable === true, drillable: source.drillable === true,
     trendData: [], trendLabels: [], departmentData: [], pieData: []
   }
 }
 
+// The dashboard endpoint can retain sources after their indicator is deleted.
+// Only the current management catalog authorizes a source for new selection.
+export function currentPublishedDashboardDataSources(sources = [], indicators = []) {
+  const current = new Map((Array.isArray(indicators) ? indicators : []).map(indicator => [String(indicator.code || ''), indicator]))
+  return (Array.isArray(sources) ? sources : []).flatMap(source => {
+    const indicator = current.get(String(source.code || ''))
+    if (!indicator || String(indicator.status || '').toUpperCase() !== 'PUBLISHED') return []
+    if (indicator.deleted === true || indicator.isDeleted === true || indicator.deletedAt) return []
+    if (source.indicatorId && indicator.id && stringId(source.indicatorId) !== stringId(indicator.id)) return []
+    return [{ ...source, name: indicator.name || source.name, category: indicator.category || source.category }]
+  })
+}
+
 export function sortDashboardDataSourcesByIndicatorCreatedAt(sources = [], indicators = []) {
-  const indicatorMetadata = new Map((Array.isArray(indicators) ? indicators : []).map((indicator, index) => [
-    stringId(indicator?.id || indicator?.indicatorId),
-    { index, createdAt: indicator?.createdAt || '' }
-  ]))
+  const indicatorMetadata = new Map()
+  ;(Array.isArray(indicators) ? indicators : []).forEach((indicator, index) => {
+    const metadata = { index, createdAt: indicator?.createdAt || '' }
+    indicatorMetadata.set(`id:${stringId(indicator?.id || indicator?.indicatorId)}`, metadata)
+    if (indicator?.code) indicatorMetadata.set(`code:${indicator.code}`, metadata)
+  })
   const ranked = (Array.isArray(sources) ? sources : []).map((source, index) => {
-    const indicator = indicatorMetadata.get(stringId(source?.indicatorId))
+    const indicator = indicatorMetadata.get(`code:${source?.code}`) || indicatorMetadata.get(`id:${stringId(source?.indicatorId)}`)
     const createdTime = indicator?.createdAt ? Date.parse(indicator.createdAt) : NaN
     return { source, index, indicatorIndex: indicator?.index, createdTime }
   })
@@ -202,13 +195,13 @@ export function dashboardFieldsToFrontend(fields = []) {
     const dataType = dataTypes[String(field.dataType || '').toUpperCase()] || 'string'
     const semanticType = String(field.role || field.semanticType || '').toUpperCase() === 'MEASURE'
       ? 'measure'
-      : String(field.role || field.semanticType || '').toUpperCase() === 'TIME' || dataType === 'date' ? 'time' : 'dimension'
+      : String(field.role || field.semanticType || '').toUpperCase() === 'TIME' || dataType === 'date' || isPeriodField(field.code) ? 'time' : 'dimension'
     const filterTypes = (Array.isArray(field.supportedFilterTypes) ? field.supportedFilterTypes : field.filterTypes || [])
       .map(value => String(value).toLowerCase().replaceAll('_', '-'))
     const defaultAggregation = normalizeAggregation(field.defaultAggregation || field.recommendedAggregation)
     const granularities = (field.supportedGranularities || field.granularities || []).map(value => String(value).toLowerCase())
     return {
-      id: String(field.code || ''), label: field.name || field.code || '', dataType, semanticType,
+      id: String(field.code || ''), label: field.code === 'periodType' ? '周期类型（月度／季度／年度）' : field.name || field.code || '', dataType, semanticType,
       businessSemanticType: String(field.semanticType || '').toUpperCase() || null,
       unit: field.unit || '', filterable: field.filterable === true, sortable: field.sortable === true, groupable: field.groupable === true,
       // Published indicator rows are already calculated by the backend. Its
@@ -220,6 +213,7 @@ export function dashboardFieldsToFrontend(fields = []) {
       filterTypes: filterTypes.length ? filterTypes : dataType === 'date' ? ['date-range'] : ['select', 'multi-select'],
       preferredFilterType: filterTypes[0] || (dataType === 'date' ? 'date-range' : 'multi-select'),
       dictionaryCode: field.dictionaryCode || null,
+      ...(field.departmentCodeField ? { departmentCodeField: field.departmentCodeField, departmentNameField: field.departmentNameField || '' } : {}),
       drillable: field.drillable === true, drillLevel: field.drillLevel || null
     }
   }).filter(field => field.id)
@@ -241,7 +235,7 @@ export function widgetResultToDataset(result = {}, fields = [], id = 'backend') 
   const timeYoy = relativeChange(timeComparison.yearOverYear)
   const timeMom = relativeChange(timeComparison.periodOverPeriod || timeComparison.monthOverMonth)
   const hasTimeComparison = timeYoy !== undefined || timeMom !== undefined
-  return {
+  return normalizePeriodDataset({
     id,
     label: '正式指标结果',
     fields: datasetFields,
@@ -261,7 +255,7 @@ export function widgetResultToDataset(result = {}, fields = [], id = 'backend') 
       name: String(mapDefinition.name || result.mapName || 'idmp-map'),
       geoJSON: mapDefinition.geoJSON || mapDefinition.geoJson
     } : null
-  }
+  })
 }
 
 function mergeDashboardFields(catalogFields, resultFields) {
@@ -308,9 +302,10 @@ export function applyDefaultDashboardBindings(schema, fieldsBySource = {}) {
         return { ...widget, config: { ...widget.config, dataBinding: { ...widget.config.dataBinding, measures } } }
       }
       const kind = widget.type === 'chart' ? widget.chartKind : widget.type
-      const binding = createDefaultBinding(kind, [{ id: 'backend', fields }])
+      const templatePlan = singleIndicatorTemplatePlan(widget, [{ id: 'backend', fields }])
+      const binding = templatePlan?.binding || createDefaultBinding(kind, [{ id: 'backend', fields }])
       if (!binding) return widget
-      return { ...widget, config: { ...widget.config, dataBinding: binding } }
+      return { ...widget, ...(templatePlan ? { type: templatePlan.type, chartKind: templatePlan.chartKind, visualType: templatePlan.visualType } : {}), config: { ...widget.config, dataBinding: binding } }
     })
   }
 }
@@ -318,8 +313,14 @@ export function applyDefaultDashboardBindings(schema, fieldsBySource = {}) {
 function remoteWidgetToSchemaWidget(widget = {}) {
   const remoteType = String(widget.type || '').toUpperCase()
   const mapped = FRONTEND_TYPE_BY_REMOTE[remoteType] || { type: 'chart', chartKind: remoteType.toLowerCase() || 'line', visualType: remoteType.toLowerCase() || 'line' }
-  const chart = object(widget.chart), query = object(widget.query), style = object(widget.style)
+  const chart = object(widget.chart), query = object(widget.query), style = { ...object(widget.style) }
   const metricGroup = object(style[METRIC_GROUP_KEY])
+  const indicatorRanking = object(style[INDICATOR_RANKING_KEY])
+  if (remoteType === 'TEXT' && chart.chartKind === 'indicator-ranking' && indicatorRanking.config) {
+    const restoredStyle = { ...style }
+    delete restoredStyle[INDICATOR_RANKING_KEY]
+    return { id: String(widget.code), type: 'ranking', title: widget.title || '指标排名', visualType: 'ranking', config: { ...object(indicatorRanking.config), style: restoredStyle }, layout: { x: Number(widget.position?.x || 0), y: Number(widget.position?.y || 0), w: Number(widget.position?.w || 12), h: Number(widget.position?.h || 7) } }
+  }
   if (remoteType === 'TEXT' && chart.chartKind === 'metric-group' && metricGroup.config) {
     const restoredStyle = { ...style }
     delete restoredStyle[METRIC_GROUP_KEY]
@@ -343,12 +344,16 @@ function remoteWidgetToSchemaWidget(widget = {}) {
     ...(Object.keys(object(widget.filterBindings)).length ? { clickFilter: widget.filterBindings } : {}),
     ...(Object.keys(object(widget.drill)).length ? { drill: widget.drill } : {})
   }
-  if (Object.keys(interaction).length) interaction.clickAction = interaction.drill?.hierarchy ? 'drill' : interaction.clickFilter?.enabled ? 'cross-filter' : 'none'
+  if (style[CLICK_ACTION_KEY] === 'drill') interaction.clickAction = 'drill'
+  else if (Object.keys(interaction).length) interaction.clickAction = interaction.drill?.hierarchy ? 'drill' : interaction.clickFilter?.enabled ? 'cross-filter' : 'none'
+  delete style[CLICK_ACTION_KEY]
+  const templateSlot = object(style[TEMPLATE_SLOT_KEY])
+  delete style[TEMPLATE_SLOT_KEY]
   const binding = frontendBinding(widget.fieldBindings)
   return {
     id: String(widget.code), type: mapped.type, ...(mapped.chartKind ? { chartKind: chart.chartKind || mapped.chartKind } : {}),
     visualType: mapped.visualType, sourceCode: widget.dataSourceCode || '', sourceName: widget.dataSourceName || '', title: widget.title || '',
-    config: { ...(binding ? { dataBinding: binding } : {}), ...(widget.indicatorVersionId ? { analysisIndicatorVersionId: stringId(widget.indicatorVersionId) } : {}), ...(Array.isArray(chart.indicatorBindings) ? { indicatorBindings: chart.indicatorBindings } : {}), ...(Object.keys(query).length ? { backendQuery: query } : {}), ...(Object.keys(interaction).length ? { interaction } : {}), ...(Object.keys(chart).length ? { chart } : {}), style, ...(remoteType === 'TEXT' ? { text: object(widget.text || chart.text) } : {}) },
+    config: { ...(Object.keys(templateSlot).length ? { templateSlot } : {}), ...(binding ? { dataBinding: binding } : {}), ...(widget.indicatorVersionId ? { analysisIndicatorVersionId: stringId(widget.indicatorVersionId) } : {}), ...(Array.isArray(chart.tableColumns) ? { tableColumns: chart.tableColumns } : {}), ...(Array.isArray(chart.indicatorBindings) ? { indicatorBindings: chart.indicatorBindings } : {}), ...(Object.keys(query).length ? { backendQuery: query } : {}), ...(Object.keys(interaction).length ? { interaction } : {}), ...(Object.keys(chart).length ? { chart } : {}), style, ...(remoteType === 'TEXT' ? { text: object(widget.text || chart.text) } : {}) },
     layout: { x: Number(widget.position?.x || 0), y: Number(widget.position?.y || 0), w: Number(widget.position?.w || 4), h: Number(widget.position?.h || 3) }
   }
 }

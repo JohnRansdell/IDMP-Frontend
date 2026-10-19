@@ -107,9 +107,11 @@ export function trialFactorVersion(versionId, payload, idempotencyKey) {
   })
 }
 
-export function queryFactorVersion(versionId, payload) {
+export function queryFactorVersion(versionId, payload, options = {}) {
   return requestJson(`/factor-versions/${encodeURIComponent(versionId)}/query`, {
     method: 'POST',
+    timeoutMs: 120000,
+    cache: options.cache,
     body: JSON.stringify(payload)
   })
 }
