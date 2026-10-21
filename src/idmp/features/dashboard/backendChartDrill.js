@@ -42,10 +42,8 @@ export function projectedDrillNavigation(row, path, context) {
     const value = row[keys.get(String(identity).toLowerCase())] ?? parents[identity]
     if (value === null || value === undefined || value === '') break
     parents[identity] = String(value)
-    for (const field of [level.dimensionFieldCode, level.displayFieldCode].filter(Boolean)) {
-      const companion = row[keys.get(field.toLowerCase())]
-      if (companion !== null && companion !== undefined && companion !== '') parents[field] = String(companion)
-    }
+    // Display names can change independently of the frozen result snapshot.
+    // Only the configured member identity is a navigation key.
     index += 1
   }
   const filters = Object.fromEntries(Object.entries(context.filters || {}).filter(([field, values]) => {

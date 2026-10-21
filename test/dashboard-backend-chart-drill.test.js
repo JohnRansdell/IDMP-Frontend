@@ -2,8 +2,21 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   backendChartValue, findBackendChartRow, loadBackendChartLevel,
-  loadBackendChartRoot, nextBackendChartNavigation
+  loadBackendChartRoot, nextBackendChartNavigation, projectedDrillNavigation
 } from '../src/idmp/features/dashboard/backendChartDrill.js'
+
+test('projected drill uses stable identities rather than refreshed display names', () => {
+  const path = { maxLevel: 'DOCTOR', levels: [
+    { levelCode: 'ROOT' },
+    { levelCode: 'DEPT', dimensionFieldCode: '科室', memberKeyFieldCode: '科室', displayFieldCode: '科室名称' },
+    { levelCode: 'DOCTOR', dimensionFieldCode: '医生', memberKeyFieldCode: '医生', displayFieldCode: '医生名称' }
+  ] }
+  for (const name of ['骨科（东院）', '骨科(东院)', '科室新名称']) {
+    assert.deepEqual(projectedDrillNavigation({ 科室: '9012', 科室名称: name }, path, {
+      currentLevel: 'DEPT', parentKeys: {}, filters: { 科室: '9012', 病种: ['A'] }
+    }), { filters: { 病种: ['A'] }, initialNavigation: { currentLevel: 'DOCTOR', parentKeys: { 科室: '9012' }, label: '所选成员' } })
+  }
+})
 
 test('formal chart drill resolves the canonical root and skips an absent medical group level', async () => {
   const calls = []
