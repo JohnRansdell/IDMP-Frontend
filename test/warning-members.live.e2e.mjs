@@ -8,14 +8,19 @@ const origin = process.env.IDMP_FRONTEND_URL || 'http://127.0.0.1:5177'
 const versionId = '102027642463201863', tag = 'WARN_REAL_1792601340979'
 const evidence = '.tmp/warning-members'
 await mkdir(evidence, { recursive: true })
-async function members(params) {
-  const response = await fetch(`${origin}/api/v1/analysis/warning-rules/member-options?${new URLSearchParams({ indicatorVersionId: versionId, ...params })}`)
-  const result = await response.json()
+async function get(path) {
+  const response = await fetch(`${origin}/api/v1${path}`, { signal: AbortSignal.timeout(45000) })
+  const result = JSON.parse(await response.text(), (_key, value, context) => typeof value === 'number' && !Number.isSafeInteger(value) ? context.source : value)
   assert.equal(response.status, 200, JSON.stringify(result))
   return result.data
 }
+const members = params => get(`/analysis/warning-rules/member-options?${new URLSearchParams({ indicatorVersionId: versionId, ...params })}`)
 const full = await members({ targetCode: 'BASE', dimension: 'OUT_DEPT_CODE', size: '100' })
-assert.equal(full.values.length, 24)
+const batch = await get('/calc/batches/102027642463210782')
+const formula = batch.targets.find(target => target.targetCode === 'BASE').nodes.find(node => node.nodeType === 'FORMULA')
+const april = (await get(`/calc/nodes/${formula.nodeId}/results?pageNum=1&pageSize=100`)).results.records
+assert.equal(april.length, 24)
+assert.ok(april.every(row => full.values.includes(String(row.dimensions.out_dept_code))), 'Every April department must be selectable; candidates also include other active periods')
 assert.ok(full.values.includes('22'))
 let after, collected = []
 do {
@@ -45,7 +50,12 @@ try {
   const codes = item('OUT_DEPT_CODE 成员').locator('.el-select')
   await codes.click()
   await page.getByRole('option', { name: '22', exact: true }).waitFor()
-  assert.equal(await page.getByRole('option').count(), 24, 'All 24 departments must be real loaded options')
+  assert.equal(await page.getByRole('option').count(), Math.min(50, full.values.length))
+  if (full.values.length > 50) {
+    await page.getByRole('button', { name: '加载更多成员', exact: true }).click()
+    await page.getByRole('option', { name: full.values.at(-1), exact: true }).waitFor()
+  }
+  assert.equal(await page.getByRole('option').count(), full.values.length, 'All candidate pages must be available without typing codes')
   for (const value of ['22', '21', '14']) await page.getByRole('option', { name: value, exact: true }).click()
   await page.keyboard.press('Escape')
   for (const value of ['22', '21', '14']) assert.ok((await codes.innerText()).includes(value))
@@ -72,5 +82,5 @@ try {
   assert.ok(memberRequests.length >= 4)
   assert.ok(memberRequests.every(request => request.status === 200))
   await writeFile(`${evidence}/checks.json`, JSON.stringify({ passed: true, candidates: full.values.length, memberRequests, errors }, null, 2))
-  console.log('PASS live: 24 real BASE candidates, cursor paging, search, actual multi-select, target reset, drill names, mobile')
+  console.log(`PASS live: ${full.values.length} real BASE candidates (all 24 April departments included), cursor paging, search, actual multi-select, target reset, drill names, mobile`)
 } finally { await browser.close() }

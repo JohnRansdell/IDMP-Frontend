@@ -3,7 +3,7 @@
 ## Environment
 
 - Frontend branch: `feature/warning-nested-group-rules`, local Vite port 5177.
-- Backend branch: `feature/warning-nested-group-rules`, lab-server deployment `8e1fc2f`.
+- Backend branch: `feature/warning-nested-group-rules`, lab-server deployment `f0187e1`.
 - No API interception, mock responses, fabricated result rows, or direct database writes.
 - Indicator: `102027642463201862`; published version: `102027642463201863`.
 - Real formula and factor/source configuration copied from published version `102027642463173253`.
@@ -39,9 +39,9 @@ Boundary rules also exercise LT, LTE, and NE; all six comparison operators and A
 Member 22 is urology: 23 / 35 = 0.65714286 and triggers. Member 21 has value 0.2 and does not;
 member 14 has value 1 and is excluded by NOT. Hospital total is 122 / 291 = 0.41924399.
 
-Final formal batch: `102027642463210076`; repeated calculation: `102027642463210474`.
+Final formal batch: `102027642463210782`; repeated calculation: `102027642463211180`.
 Event counts remained `[10, 10, 1, 1, 21, 2, 0]` after recalculation.
-Sample event: `102027642463210386`; notification: `102027642463210453`.
+Sample event: `102027642463211088`; notification: `102027642463211157`.
 The notification contains the full nested condition and department code/name.
 Browser assertions report no page exceptions or failed API responses.
 
@@ -52,7 +52,15 @@ Browser assertions report no page exceptions or failed API responses.
 2. Nested notifications used the old single-threshold template, leaving the threshold blank and omitting the group.
    Fixed in backend `8e1fc2f`, with three formatter regressions; deployed before final real retesting.
 
-Both fixes were committed and pushed before deployment. No master merge was performed.
+3. The member selector used selected values as its only options. Earlier browser
+   acceptance manually entered member codes and therefore did NOT cover candidate
+   loading. The previous end-to-end claim was incomplete for this workflow.
+   Backend `f0187e1` and frontend `bc06882` add active-result candidate discovery,
+   literal search, cursor paging, error/retry state, and stale-response protection.
+   The real nested acceptance script now clicks loaded options instead of typing
+   member codes. All seven rules and 45 events were verified again in iteration 4.
+
+All backend fixes were committed and pushed before deployment. No master merge was performed.
 All acceptance rules are disabled afterward; the isolated indicator's automatic schedules are disabled.
 Published definitions, formal results, and events are retained for inspection.
 
@@ -67,3 +75,22 @@ node test/warning-nested-rules.live.e2e.mjs
 This explicitly creates test data and real station notifications. Use an isolated acceptance environment.
 Local state, raw evidence and screenshots are in ignored `.tmp/warning-real/`.
 Advance the iteration when retesting after a fix to avoid reusing old idempotency keys and events.
+
+## Member Candidate Regression
+
+`node test/warning-members.live.e2e.mjs` is a read-only real API/browser regression
+for this exact indicator. It does not intercept APIs or save rules.
+
+- BASE returns 54 distinct department codes across active formal periods, including
+  every one of the 24 April departments. Candidates are not restricted to April.
+- Five-item API cursor pages concatenate exactly to the complete candidate list.
+- The page loads 50 options, then the remaining four through "加载更多成员".
+- Codes 22, 21 and 14 are selected by clicking actual options, without manual entry.
+- Remote search for 22 returns that code; switching targets clears prior selections.
+- The custom drill target loads both code and name candidates; 泌尿外科 is selectable.
+- Desktop and 390px mobile screenshots checked; no horizontal overflow or page errors.
+- Evidence: ignored `.tmp/warning-members/{checks.json,candidates.json,*.png}`.
+- Frontend: 16 targeted unit/component tests, mocked browser workflow and build pass.
+- Backend: 2 application, 4 controller and 2 real MySQL member-query tests pass.
+- After the final run, all 27 current/historical acceptance rules were verified
+  DISABLED, and the four indicator schedules remain PAUSED.
