@@ -123,6 +123,8 @@
 </template>
 
 <script setup>
+import { fetchDepartmentNames } from '@/idmp/api/modules/departments'
+import { isDepartmentLevel, namedDrillRecord } from '../dashboard/dimensionNames.js'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import StatePanel from '@/idmp/components/StatePanel.vue'
@@ -275,6 +277,17 @@ async function loadDrill() {
   errorMessage.value = ''
   try {
     const response = await searchResultDrill(activeResultId.value, buildPayload(), { source: props.source })
+    const levelCode = response.context.currentLevel || currentLevel.value
+    const definition = props.configuredPaths.find(path => path.pathCode === lastDrillDimension.value)?.levels?.find(level => level.levelCode === levelCode)
+      || { levelCode }
+    if (props.source !== 'mock' && isDepartmentLevel(definition)) {
+      const names = await fetchDepartmentNames()
+      response.records = response.records.map(row => {
+        if (isStatusRecord(row)) return row
+        const named = namedDrillRecord(row, definition, names)
+        return { ...named, dimensionName: named.dimensionLabel }
+      })
+    }
     if (requestId !== drillRequestId) return
     result.value = response
     currentLevel.value = result.value.context.currentLevel || currentLevel.value

@@ -498,6 +498,7 @@ import { createWidgetBindingDatasets, numericValue } from '@/idmp/features/dashb
 import { bindingKind, emptyBinding } from '@/idmp/features/dashboard/bindingEngine.js'
 import { resolveDrillHierarchy } from '@/idmp/features/dashboard/drillDown.js'
 import { annotateDepartmentFilterFields, departmentSelectionCodes, isDepartmentFilterField, loadDepartmentCodeOptions, resolveGlobalFilterField } from '@/idmp/features/dashboard/departmentFilters.js'
+import { fetchDepartmentDictionary, fetchDepartmentNames } from '@/idmp/api/modules/departments'
 import { singleIndicatorTemplatePlan } from '@/idmp/features/dashboard/templateBinding.js'
 import { createDefaultBinding } from '@/idmp/features/dashboard/smartDefaultBinding.js'
 import { createMultiIndicatorDataset, multiIndicatorMeasureField, normalizeIndicatorBindings, singleIndicatorProjectionBinding } from '@/idmp/features/dashboard/multiIndicator.js'
@@ -520,7 +521,7 @@ import { fetchIndicatorAnalysis, fetchIndicatorVersion, fetchAllIndicators as fe
 import { deriveDrillPathResultIds } from '@/idmp/api/adapters/drill'
 import { searchResultDrill } from '@/idmp/api/modules/drill'
 import { initialBackendChartNavigation, loadBackendChartLevel, loadBackendChartRoot, resolveChartDrillPath } from '@/idmp/features/dashboard/backendChartDrill.js'
-import { collectDepartmentNames, departmentIdentity, normalizeDepartmentDataset } from '@/idmp/features/dashboard/dimensionNames.js'
+import { normalizeDepartmentDataset } from '@/idmp/features/dashboard/dimensionNames.js'
 import { explainComparisonAvailability } from '@/idmp/features/dashboard/comparisonAvailability.js'
 import { normalizePage } from '@/idmp/api/adapters/warning'
 import {
@@ -910,7 +911,7 @@ provide('dashboardResolveWidgetDrill', async (widget, params) => {
     const path = resolveChartDrillPath(configuredPaths, widget.config?.dataBinding?.dimensions?.[0]?.field)
     return { resultId: row.drillContext.resultId, drillContext: row.drillContext, selectedRow: row, path, configuredPaths,
       indicatorVersionId: String(widget.config?.analysisIndicatorVersionId || source.analysisIndicatorVersionId || source.indicatorVersionId || ''),
-      departmentNames: Object.fromEntries(collectDepartmentNames(projected.rows, configuredPaths)) }
+      departmentNames: Object.fromEntries(await fetchDepartmentNames()) }
   }
   const scope = widget?.config?.backendQuery || {}
   const selectedMonth = remotePeriodRange.value.at(-1)
@@ -944,7 +945,7 @@ provide('dashboardResolveWidgetDrill', async (widget, params) => {
     path, pathCode,
     pathResultIds: { [pathCode]: resultId },
     indicatorName: source.name,
-    departmentNames: Object.fromEntries(collectDepartmentNames([...(analysis.departmentComparison || []), ...(analysis.dimensionComparison || [])], configuredPaths)),
+    departmentNames: Object.fromEntries(await fetchDepartmentNames()),
     period: query.periodStart && query.periodEnd ? `${query.periodStart} ～ ${query.periodEnd}` : '',
     maxLevels: Object.fromEntries(configuredPaths.filter(path => path?.pathCode && path?.maxLevel).map(path => [path.pathCode, path.maxLevel])),
     configuredPaths
@@ -2729,7 +2730,6 @@ async function handleSelectedDataSourceChange(code) {
 }
 
 let remoteFilterOptionGeneration = 0
-const departmentOptionRequests = new Map()
 async function loadRemoteFilterOptions() {
   const generation = ++remoteFilterOptionGeneration
   const definitions = globalFilterDefinitions.value || []
@@ -2749,26 +2749,7 @@ async function loadRemoteFilterOptions() {
         periodEnd: range.periodEnd ? new Date(new Date(`${range.periodEnd}T00:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10) : null
       })
       if (isDepartmentFilterField(definition.field, fields)) {
-        const sample = widgets.find(widget => widget.sourceCode === sourceCode)
-        const key = JSON.stringify({ sourceCode, versionId: sample?.config?.analysisIndicatorVersionId, query })
-        if (!departmentOptionRequests.has(key)) {
-          const request = loadDepartmentCodeOptions({
-            fields, query,
-            fetchOptions: payload => fetchDashboardFilterOptions(sourceCode, payload),
-            fetchNameRows: async binding => {
-              if (!sample) return []
-              const widget = schemaToDashboardPayload({ ...(editingDashboardSchema.value || dashboardSchema.value), widgets: [sample] }, { dataSources: availableIndicatorSources.value }).widgets[0]
-              const result = await previewDashboardWidget({
-                widget: { ...widget, type: 'BAR_CHART', query: { ...widget.query, resultShape: 'COMPARISON' }, fieldBindings: { dataset: 'backend', dimensions: [{ field: binding.codeField }], measures: [{ field: 'value', aggregation: 'direct' }], series: [], sort: [] } },
-                ...range, granularity: 'MONTHLY', filters: query.filters
-              })
-              return result.rows || []
-            }
-          }).catch(error => { departmentOptionRequests.delete(key); throw error })
-          departmentOptionRequests.set(key, request)
-          if (departmentOptionRequests.size > 24) departmentOptionRequests.delete(departmentOptionRequests.keys().next().value)
-        }
-        next[definition.id] = await departmentOptionRequests.get(key)
+        next[definition.id] = await loadDepartmentCodeOptions({ fields, fetchDictionary: fetchDepartmentDictionary })
       } else {
         const rows = await fetchDashboardFilterOptions(sourceCode, query)
         next[definition.id] = (Array.isArray(rows) ? rows : []).map(item => ({ value: item.value, label: item.label || String(item.value) }))
@@ -2931,55 +2912,22 @@ async function dashboardIndicatorVersion(source, widget) {
   return dashboardIndicatorVersionRequests.get(String(versionId))
 }
 
-async function loadDashboardDepartmentNames(analysis, paths = [], requiredCodes = [], field = '') {
-  const rows = [...(analysis?.departmentComparison || []), ...(analysis?.dimensionComparison || [])]
-  const names = collectDepartmentNames(rows, paths)
-  const codes = requiredCodes.length ? requiredCodes : rows.map(row => departmentIdentity(row, paths).code).filter(Boolean)
-  if (!codes.length || codes.every(code => names.has(code))) return { names, diagnostics: [] }
-  const path = resolveChartDrillPath(paths, field)
-  const pathCode = path?.pathCode || 'ORGANIZATION'
-  const resultId = deriveDrillPathResultIds(analysis, paths)[pathCode]
-    || (pathCode === 'ORGANIZATION' ? analysis?.departmentComparison?.find(row => row?.resultId)?.resultId : '')
-  if (!resultId) return { names, diagnostics: ['当前正式结果没有可用于读取科室名称的下钻结果。'] }
+async function loadDashboardDepartmentNames() {
   try {
-    const root = await loadBackendChartRoot(searchResultDrill, { resultId, path, configuredPaths: paths })
-    const level = await loadBackendChartLevel(searchResultDrill, root, initialBackendChartNavigation(root))
-    for (const row of level.records) {
-      if (row.dimensionLabel && !row.dimensionLabel.includes('编码：')) names.set(String(row.dimensionKey), row.dimensionLabel)
-    }
-    return { names, diagnostics: [] }
+    return { names: await fetchDepartmentNames(), diagnostics: [] }
   } catch (error) {
-    return { names, diagnostics: [`科室名称读取失败：${error?.message || '下钻结果不可用'}`] }
+    return { names: new Map(), diagnostics: [`科室字典读取失败：${error?.message || '请稍后重试'}`] }
   }
 }
 
 async function normalizeDashboardWidgetDataset(widget, dataset, query) {
   const source = getWidgetSource(widget)
-  if (!source?.analysisIndicatorId) return normalizeDepartmentDataset(dataset)
   try {
-    const version = await dashboardIndicatorVersion(source, widget)
+    const version = source?.analysisIndicatorId ? await dashboardIndicatorVersion(source, widget) : null
     const paths = version?.drillConfig?.drillPaths || version?.drillPaths || []
-    const normalized = normalizeDepartmentDataset(dataset, { paths })
-    const names = collectDepartmentNames(normalized.rows, paths)
-    const codes = normalized.rows.map(row => departmentIdentity(row, paths).code).filter(code => code && !names.has(code))
-    if (!codes.length) return dataset.rowMode === 'PROJECTED' ? normalized : explainDashboardComparison(widget, normalized, query)
-    if (dataset.rowMode === 'PROJECTED') {
-      const context = dataset.rows.find(row => row.drillContext)?.drillContext
-      if (!context) return normalized
-      const path = resolveChartDrillPath(paths, widget.config?.dataBinding?.dimensions?.[0]?.field)
-      const root = await loadBackendChartRoot(searchResultDrill, { resultId: context.resultId,
-        drillContext: { ...context, filters: {} }, path, departmentNames: Object.fromEntries(names),
-        indicatorVersionId: String(widget.config?.analysisIndicatorVersionId || source.analysisIndicatorVersionId || source.indicatorVersionId || '') })
-      const members = await loadBackendChartLevel(searchResultDrill, root, initialBackendChartNavigation(root))
-      for (const row of members.records) if (row.dimensionLabel && !row.dimensionLabel.includes('编码：')) names.set(String(row.dimensionKey), row.dimensionLabel)
-      return normalizeDepartmentDataset(dataset, { paths, names })
-    }
-    const analysis = await fetchIndicatorAnalysis(source.analysisIndicatorId, {
-      periodStart: query?.periodStart, periodEnd: query?.periodEnd, granularity: query?.granularity || 'MONTHLY',
-      indicatorVersionId: widget.config?.analysisIndicatorVersionId || source.analysisIndicatorVersionId || source.indicatorVersionId
-    })
-    const resolved = await loadDashboardDepartmentNames(analysis, paths, codes, widget.config?.dataBinding?.dimensions?.[0]?.field)
-    return explainDashboardComparison(widget, normalizeDepartmentDataset(dataset, { paths, ...resolved }), query)
+    const resolved = await loadDashboardDepartmentNames()
+    const normalized = normalizeDepartmentDataset(dataset, { paths, ...resolved })
+    return dataset.rowMode === 'PROJECTED' || !source?.analysisIndicatorId ? normalized : explainDashboardComparison(widget, normalized, query)
   } catch (error) {
     return explainDashboardComparison(widget, normalizeDepartmentDataset(dataset, { diagnostics: [`科室名称读取失败：${error?.message || '指标配置不可用'}`] }), query)
   }

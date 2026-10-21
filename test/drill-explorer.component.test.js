@@ -8,6 +8,7 @@ const dom = new JSDOM('<!doctype html><html><body></body></html>')
 for (const name of ['window', 'document', 'HTMLElement', 'SVGElement', 'Element', 'Node', 'Document', 'Text', 'Comment']) globalThis[name] = dom.window[name]
 Object.defineProperty(globalThis, 'navigator', { configurable: true, value: dom.window.navigator })
 const vue = await import('vue')
+const { isDepartmentLevel, namedDrillRecord } = await import('../src/idmp/features/dashboard/dimensionNames.js')
 const { mount, flushPromises } = await import('@vue/test-utils')
 const source = await readFile(new URL('../src/idmp/features/analysis/DrillExplorer.vue', import.meta.url), 'utf8')
 const { descriptor } = parse(source)
@@ -24,7 +25,7 @@ const Button = vue.defineComponent({ setup: (_, { slots }) => () => vue.h('butto
 
 function create(fetchResultFactors = async () => ({ context: {}, factors: [] }), props = {}, drillResponse = {}) {
   const requests = []
-  const component = Function('vue', 'deps', `const { useRoute, useRouter, StatePanel, FactorTraceTree, searchResultDrill, fetchResultFactors, limitDrillNextLevels, isStatusRecord, getStatusLabel } = deps;\n${bindings}\n${code}`)(vue, {
+  const component = Function('vue', 'deps', `const { useRoute, useRouter, StatePanel, FactorTraceTree, searchResultDrill, fetchResultFactors, limitDrillNextLevels, isStatusRecord, getStatusLabel, fetchDepartmentNames, isDepartmentLevel, namedDrillRecord } = deps;\n${bindings}\n${code}`)(vue, {
     useRoute: () => ({ query: {} }), useRouter: () => ({ push() {}, replace() {} }),
     StatePanel: vue.defineComponent({ props: ['title'], setup: props => () => vue.h('div', props.title) }),
     FactorTraceTree: vue.defineComponent({ setup: () => () => vue.h('div', 'trace-tree') }),
@@ -32,7 +33,8 @@ function create(fetchResultFactors = async () => ({ context: {}, factors: [] }),
       requests.push({ id, payload })
       return { context: {}, breadcrumb: [], summary: {}, columns: [], records: [], nextLevels: [], pageInfo: {}, ...drillResponse }
     },
-    fetchResultFactors, limitDrillNextLevels: levels => levels, isStatusRecord: () => false, getStatusLabel: value => value
+    fetchResultFactors, limitDrillNextLevels: levels => levels, isStatusRecord: () => false, getStatusLabel: value => value,
+    fetchDepartmentNames: async () => new Map(), isDepartmentLevel, namedDrillRecord
   })
   const wrapper = mount(component, {
     props: { resultId: 'dept-result', startPathCode: 'CUSTOM_DEPT', startLevel: 'DEPT',

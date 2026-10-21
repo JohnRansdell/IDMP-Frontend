@@ -387,6 +387,8 @@ import { fetchFactorVersion } from '@/idmp/api/modules/factors'
 import { collectFormulaFactorVersionIds, createIndicatorDataExplanation, extractIndicatorFormula, normalizeIndicatorInstantSummary } from '@/idmp/api/adapters/indicator'
 import { deriveDrillPathResultIds } from '@/idmp/api/adapters/drill'
 import { searchResultDrill } from '@/idmp/api/modules/drill'
+import { fetchDepartmentNames } from '@/idmp/api/modules/departments'
+import { isDepartmentCodeField } from '@/idmp/features/shared/departmentDictionary.js'
 import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
 import { resolveIndicatorCalculationMode } from '@/idmp/features/analysis/calculationMode'
 import { departmentAchievement, departmentDrillContext, loadDepartmentComparisons, normalizeDepartmentComparisons } from '@/idmp/features/analysis/departmentRanking'
@@ -542,8 +544,11 @@ async function loadTrendGrainOptions(code, search = '') {
     if (trendGrainRequestGenerations.get(code) !== generation || currentIndicatorVersionId.value !== versionId) return
     const definition = trendGrainMetadata.value.find(field => field.code === code)
     if (!definition) return
+    const departmentNames = isDepartmentCodeField(code) ? await fetchDepartmentNames() : null
+    if (trendGrainRequestGenerations.get(code) !== generation || currentIndicatorVersionId.value !== versionId) return
+    if (departmentNames) trendGrainResolvedNames.value[code] = departmentNames
     const missing = namedTrendGrainOptions(options, definition, trendGrainNameMaps.value[code]).filter(item => item.nameMissing).map(item => item.value)
-    if (missing.length || (search && !options?.length && definition.named && !trendGrainNameMaps.value[code]?.size)) {
+    if (!departmentNames && (missing.length || (search && !options?.length && definition.named && !trendGrainNameMaps.value[code]?.size))) {
       let analysis = [backendAnalysis.value, trendBackendAnalysis.value].find(analysis => String(analysis?.indicatorVersionId || '') === String(versionId) && analysis.dimensionComparison?.some(row => row.resultId))
       if (!analysis) analysis = await fetchIndicatorAnalysis(String(indicator.id || indicator.indicatorId), { ...buildTrendAnalysisParams(trendPeriodDraft.value, versionId, trendAnalysisGranularity.value) })
       const names = await loadTrendGrainMemberNames({ analysis, paths: backendIndicatorVersion.value?.drillConfig?.drillPaths || [],
@@ -554,7 +559,7 @@ async function loadTrendGrainOptions(code, search = '') {
     }
     // Some catalogs only search codes. Resolve a typed member name through
     // the current formal rows, then verify the codes against the same filters.
-    if (search && !options?.length) {
+    if (!departmentNames && search && !options?.length) {
       const matches = [...(trendGrainNameMaps.value[code] || new Map())].filter(([value, name]) => name.includes(search) || value.includes(search)).slice(0, 10)
       const responses = await Promise.all(matches.map(([value]) => fetchIndicatorGrainOptions(String(indicator.id || indicator.indicatorId), { ...params, search: value })))
       options = responses.flat().filter(item => matches.some(([value]) => value === String(item.value)))
@@ -562,6 +567,7 @@ async function loadTrendGrainOptions(code, search = '') {
     if (trendGrainRequestGenerations.get(code) !== generation || currentIndicatorVersionId.value !== versionId) return
     // Keep selected options available so the select never falls back to its code.
     const selected = (trendGrainCandidates.value[code] || []).filter(item => String(item.value) === String(trendGrainDraft.value[code]))
+      .map(item => departmentNames?.has(String(item.value)) ? { ...item, label: departmentNames.get(String(item.value)), nameMissing: false } : item)
     const names = new Map(trendGrainNameMaps.value[code] || [])
     selected.filter(item => !item.nameMissing && item.label !== item.value).forEach(item => names.set(String(item.value), item.label))
     const field = trendGrainMetadata.value.find(field => field.code === code)
@@ -632,7 +638,7 @@ const backendDepartmentComparisons = computed(() =>
   normalizeDepartmentComparisons(
     (rankInitialized.value ? rankAnalysis.value : backendAnalysis.value)?.departmentComparison,
     rankInitialized.value ? [] : backendAnalysis.value?.dimensionComparison,
-    rankInitialized.value ? {} : departmentNamesByCode.value
+    departmentNamesByCode.value
   )
 )
 const backendDimensionResults = computed(() =>
@@ -1515,7 +1521,7 @@ async function refreshIndicatorAnalysis({ preserveRangeSummary = false } = {}) {
     }
     if (resolvedAnalysisData?.status === 'fulfilled' && resolvedAnalysisData?.value) {
       backendAnalysis.value = resolvedAnalysisData.value
-      if (resolvedAnalysisData.value?.granularity === 'STATIC') void loadDepartmentNames(resolvedAnalysisData.value, refreshSequence)
+      void loadDepartmentNames(resolvedAnalysisData.value, refreshSequence)
       if (!trendBackendAnalysis.value) trendBackendAnalysis.value = resolvedAnalysisData.value
       if (resolvedAnalysisData.value?.granularity) reportGranularity.value = String(resolvedAnalysisData.value.granularity)
       if (!reportPeriodRange.value.length && resolvedAnalysisData.value?.overview?.periodStart && resolvedAnalysisData.value?.overview?.periodEnd) {
@@ -1576,34 +1582,8 @@ async function loadAnalysisFormulaFactorVersions(version, refreshSequence) {
 }
 
 async function loadDepartmentNames(analysis, refreshSequence) {
-  const paths = backendIndicatorVersion.value?.drillConfig?.drillPaths || []
-  const path = paths.find(item => item?.levels?.some(level =>
-    String(level.dimensionFieldCode || '').toUpperCase() === 'OUT_DEPT_CODE'
-  ))
-  const level = path?.levels?.find(item => String(item.dimensionFieldCode || '').toUpperCase() === 'OUT_DEPT_CODE')
-  const anchor = path && deriveDrillPathResultIds(analysis, paths)[path.pathCode]
-  if (!anchor || !level) return
-
-  const names = {}
   try {
-    for (let pageNum = 1; pageNum <= 10; pageNum += 1) {
-      const response = await searchResultDrill(anchor, {
-        pathCode: path.pathCode,
-        currentLevel: level.levelCode,
-        parentKeys: {},
-        filters: {},
-        pageNum,
-        pageSize: 100,
-        sort: [{ field: 'indicatorValue', direction: 'DESC' }]
-      })
-      if (refreshSequence !== analysisRefreshSequence) return
-      response.records.forEach(record => {
-        const code = String(record.dimensions?.out_dept_code || record.dimensions?.OUT_DEPT_CODE || record.dimensionKey || '')
-        const name = String(record.dimensions?.out_dept_name || record.dimensions?.OUT_DEPT_NAME || record.dimensionName || '')
-        if (code && name) names[code] = name
-      })
-      if (pageNum >= response.pageInfo.totalPages || !response.records.length) break
-    }
+    const names = Object.fromEntries(await fetchDepartmentNames())
     if (refreshSequence === analysisRefreshSequence) departmentNamesByCode.value = names
   } catch {
     // 下钻名称不可用时，排名仍可显示正式结果中的科室编码和值。

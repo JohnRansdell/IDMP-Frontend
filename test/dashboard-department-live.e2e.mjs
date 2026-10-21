@@ -8,6 +8,7 @@ import { parseJsonPreservingLargeIntegers as parse } from '../src/idmp/api/reque
 import { annotateDepartmentFilterFields, departmentFilterBinding, isDepartmentFilterField, loadDepartmentCodeOptions } from '../src/idmp/features/dashboard/departmentFilters.js'
 import { buildRemoteWidgetQuery } from '../src/idmp/features/dashboard/remoteQuery.js'
 import { expandDashboardResponse } from '../src/idmp/features/dashboard/compactResponse.js'
+import { createDepartmentDictionaryLoader } from '../src/idmp/features/shared/departmentDictionary.js'
 
 const env = loadEnv('development', process.cwd(), '')
 const target = env.VITE_API_PROXY_TARGET || env.VITE_API_BASE_URL
@@ -42,17 +43,14 @@ const sets = metadata.map(item => new Set(item.periods.filter(period => period.p
 const month = [...sets[0]].filter(value => sets.every(set => set.has(value))).sort().at(-1)
 assert.ok(month)
 const start = month + '-01', end = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5)), 1)).toISOString().slice(0, 10)
+const dictionary = createDepartmentDictionaryLoader(({ page, size }) => api(`/meta/departments?page=${page}&size=${size}`))
 const optionLists = await Promise.all(metadata.map(item => loadDepartmentCodeOptions({
-  fields: item.fields, query: { periodStart: start, periodEnd: end, filters: {}, limit: 500 },
-  fetchOptions: body => api(`/analysis/dashboard-data-sources/${item.widget.dataSourceCode}/filter-options`, body),
-  fetchNameRows: async binding => (await api('/analysis/dashboard-query/preview', {
-    widget: { ...item.widget, type: 'BAR_CHART', query: { resultShape: 'COMPARISON' }, fieldBindings: { dataset: 'backend', dimensions: [{ field: binding.codeField }], measures: [{ field: 'value', aggregation: 'direct' }], series: [], sort: [] } },
-    periodStart: start, periodEnd: end, granularity: 'MONTHLY', filters: {}
-  })).rows || []
+  fields: item.fields, fetchDictionary: dictionary
 })))
 const options = optionLists[0].filter(option => optionLists.every(list => list.some(item => item.value === option.value)))
 assert.ok(options.length >= 2)
-const first = options.find(option => option.label === '产科') || options[0], second = options.find(option => option.value !== first.value)
+const first = options.find(option => option.value === '5'), second = options.find(option => option.value === '22')
+assert.ok(first && second, 'Known departments with real results must be in the master dictionary')
 assert.notEqual(first.label, first.value)
 const evidence = '.tmp/dashboard-department-live'
 await mkdir(evidence, { recursive: true })

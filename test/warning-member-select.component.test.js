@@ -3,6 +3,7 @@ import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import { JSDOM } from 'jsdom'
+import { isDepartmentCodeField } from '../src/idmp/features/shared/departmentDictionary.js'
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>')
 for (const name of ['window', 'document', 'HTMLElement', 'SVGElement', 'Element', 'Node', 'Document', 'Text', 'Comment']) globalThis[name] = dom.window[name]
@@ -19,11 +20,12 @@ const bindings = [...compiled.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]vue['"
 const code = compiled.replace(/^import .*$/gm, '').replace('export default', 'return')
 const Select = vue.defineComponent({ name: 'ElSelect', props: ['modelValue', 'loading'],
   setup: (_, { slots }) => () => vue.h('div', [slots.default?.(), slots.footer?.()]) })
-const Option = vue.defineComponent({ name: 'ElOption', props: ['value'], setup: props => () => vue.h('span', props.value) })
+const Option = vue.defineComponent({ name: 'ElOption', props: ['value', 'label'], setup: props => () => vue.h('span', { 'data-value': props.value }, props.label) })
 const Button = vue.defineComponent({ setup: (_, { slots, attrs }) => () => vue.h('button', attrs, slots.default?.()) })
 function create(fetch, props = {}) {
   const calls = []
-  const Component = Function('vue', 'fetchWarningMemberOptions', `${bindings}\n${code}`)(vue, async params => { calls.push(params); return fetch(params) })
+  const Component = Function('vue', 'fetchWarningMemberOptions', 'fetchDepartmentNames', 'isDepartmentCodeField', `${bindings}\n${code}`)(vue,
+    async params => { calls.push(params); return fetch(params) }, async () => new Map([['22', '泌尿外科']]), isDepartmentCodeField)
   const wrapper = mount(Component, { props: { indicatorVersionId: '102027642463201863', targetCode: 'BASE', dimension: 'OUT_DEPT_CODE', ...props },
     global: { components: { ElSelect: Select, ElOption: Option, ElButton: Button } } })
   return { wrapper, calls }
@@ -38,10 +40,10 @@ test('loads real candidate response, appends pages and preserves selected values
   assert.equal(calls[0].size, 50)
   await wrapper.get('button').trigger('click'); await flushPromises()
   assert.equal(calls[1].after, '21')
-  assert.deepEqual(wrapper.findAll('span').map(item => item.text()), ['saved', '14', '21', '22'])
+  assert.deepEqual(wrapper.findAll('span').map(item => item.text()), ['saved', '14', '21', '泌尿外科（22）'])
   await wrapper.vm.searchMembers('22'); await flushPromises()
   assert.equal(calls[2].search, '22')
-  assert.deepEqual(wrapper.findAll('span').map(item => item.text()), ['saved', '22'])
+  assert.deepEqual(wrapper.findAll('span').map(item => item.text()), ['saved', '泌尿外科（22）'])
   wrapper.findComponent(Select).vm.$emit('update:modelValue', ['saved', '22'])
   assert.deepEqual(wrapper.emitted('update:modelValue')[0], [['saved', '22']])
   wrapper.unmount()
@@ -68,6 +70,6 @@ test('read-only rules display saved members without fetching candidates', async 
   const { wrapper, calls } = create(() => { throw new Error('Must not query') }, { disabled: true, modelValue: ['22'] })
   await flushPromises()
   assert.deepEqual(calls, [])
-  assert.equal(wrapper.text(), '22')
+  assert.equal(wrapper.text(), '泌尿外科（22）')
   wrapper.unmount()
 })

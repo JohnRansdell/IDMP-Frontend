@@ -1,4 +1,4 @@
-import { DEPARTMENT_FIELD_PAIRS, dimensionFieldValue, isDepartmentLevel, isMemberName } from './dimensionNames.js'
+import { DEPARTMENT_FIELD_PAIRS, isDepartmentLevel } from './dimensionNames.js'
 
 const key = field => String(field?.code || field?.id || '').toLowerCase()
 const match = (fields, name) => fields.find(field => key(field) === String(name || '').toLowerCase())
@@ -64,33 +64,9 @@ export function departmentSelectionCodes(value, options = []) {
   return Array.isArray(value) ? value.map(convert) : value == null || value === '' ? value : convert(value)
 }
 
-export async function loadDepartmentCodeOptions({ fields, query, fetchOptions, fetchNameRows = async () => [] }) {
+export async function loadDepartmentCodeOptions({ fields, fetchDictionary }) {
   const binding = departmentFilterBinding(fields)
   if (!binding) throw new Error('当前数据源没有可用的科室编码字段')
-  const raw = await fetchOptions({ ...query, fieldCode: binding.codeField })
-  if (!Array.isArray(raw)) throw new Error('科室编码候选值格式不完整')
-  const names = new Map()
-  // Comparison rows often already include the name alongside its code.
-  try {
-    for (const row of await fetchNameRows(binding)) {
-      const code = dimensionFieldValue(row, binding.codeField)
-      const name = dimensionFieldValue(row, binding.nameField)
-      if (code != null && isMemberName(name, code)) names.set(String(code), String(name).trim())
-    }
-  } catch { /* The scoped name option query below can still resolve these codes. */ }
-  const missing = raw.map(option => String(option?.value ?? option)).filter(code => !names.has(code))
-  // Never zip separately sorted code and name lists. Ask for a name within one exact code.
-  if (binding.nameField && match(fields, binding.nameField)?.filterable) {
-    let cursor = 0
-    const worker = async () => {
-      while (cursor < missing.length) {
-        const code = missing[cursor++]
-        const options = await fetchOptions({ ...query, fieldCode: binding.nameField, filters: { ...query.filters, [binding.codeField]: [code] } })
-        const labels = [...new Set((Array.isArray(options) ? options : []).map(option => String(option?.value ?? option)).filter(name => isMemberName(name, code)))]
-        if (labels.length === 1) names.set(code, labels[0])
-      }
-    }
-    await Promise.all(Array.from({ length: Math.min(4, missing.length) }, worker))
-  }
-  return departmentCodeOptions(raw, names)
+  const entries = await fetchDictionary()
+  return departmentCodeOptions(entries.map(entry => ({ value: entry.code, label: entry.name })))
 }

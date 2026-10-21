@@ -15,27 +15,40 @@ async function get(path) {
   return result.data
 }
 const members = params => get(`/analysis/warning-rules/member-options?${new URLSearchParams({ indicatorVersionId: versionId, ...params })}`)
-const full = await members({ targetCode: 'BASE', dimension: 'OUT_DEPT_CODE', size: '100' })
+const dictionary = []
+for (let pageNum = 1; ; pageNum++) {
+  const page = await get(`/meta/departments?page=${pageNum}&size=500`)
+  dictionary.push(...page.records)
+  if (dictionary.length >= Number(page.total)) break
+}
+assert.ok(dictionary.length >= 1045)
+const namesByCode = new Map(dictionary.map(entry => [entry.code, entry.name]))
+assert.equal(namesByCode.get('0101'), '测试门诊')
+assert.equal(namesByCode.get('22'), '泌尿外科')
+const full = { values: [] }
+let cursor
+do {
+  const page = await members({ targetCode: 'BASE', dimension: 'OUT_DEPT_CODE', size: '100', ...(cursor ? { after: cursor } : {}) })
+  full.values.push(...page.values); cursor = page.nextAfter
+} while (cursor)
+assert.deepEqual(full.values, dictionary.map(entry => entry.code).sort())
 const batch = await get('/calc/batches/102027642463210782')
 const formula = batch.targets.find(target => target.targetCode === 'BASE').nodes.find(node => node.nodeType === 'FORMULA')
 const april = (await get(`/calc/nodes/${formula.nodeId}/results?pageNum=1&pageSize=100`)).results.records
 assert.equal(april.length, 24)
-assert.ok(april.every(row => full.values.includes(String(row.dimensions.out_dept_code))), 'Every April department must be selectable; candidates also include other active periods')
+assert.ok(april.every(row => full.values.includes(String(row.dimensions.out_dept_code))), 'Every April department must be selectable from the master')
 assert.ok(full.values.includes('22'))
-let after, collected = []
-do {
-  const next = await members({ targetCode: 'BASE', dimension: 'OUT_DEPT_CODE', size: '5', ...(after ? { after } : {}) })
-  assert.ok(next.values.length <= 5)
-  collected.push(...next.values); after = next.nextAfter
-} while (after)
-assert.deepEqual(collected, full.values)
-assert.deepEqual((await members({ targetCode: 'BASE', dimension: 'out_dept_code', search: '22' })).values, ['22'])
+const firstPage = await members({ targetCode: 'BASE', dimension: 'OUT_DEPT_CODE', size: '5' })
+assert.deepEqual(firstPage.values, full.values.slice(0, 5))
+assert.equal(firstPage.nextAfter, full.values[4])
+assert.ok((await members({ targetCode: 'BASE', dimension: 'out_dept_code', search: '泌尿外科' })).values.includes('22'))
 await writeFile(`${evidence}/candidates.json`, JSON.stringify(full, null, 2))
 const browser = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
-const errors = [], memberRequests = []
+const errors = [], memberRequests = [], dictionaryRequests = []
 page.on('pageerror', error => errors.push(error.message))
 page.on('response', response => { if (response.url().includes('/member-options')) memberRequests.push({ url: response.url(), status: response.status() }) })
+page.on('response', response => { if (response.url().includes('/meta/departments')) dictionaryRequests.push({ url: response.url(), status: response.status() }) })
 try {
   await page.goto(`${origin}/alerts`)
   await page.getByRole('tab', { name: '预警规则', exact: true }).click()
@@ -49,20 +62,23 @@ try {
   await page.getByRole('option', { name: '组合粒度（OUT_DEPT_CODE）', exact: true }).click()
   const codes = item('OUT_DEPT_CODE 成员').locator('.el-select')
   await codes.click()
-  await page.getByRole('option', { name: '22', exact: true }).waitFor()
+  await page.getByRole('option', { name: `${namesByCode.get(full.values[0])}（${full.values[0]}）`, exact: true }).waitFor()
   assert.equal(await page.getByRole('option').count(), Math.min(50, full.values.length))
   if (full.values.length > 50) {
     await page.getByRole('button', { name: '加载更多成员', exact: true }).click()
-    await page.getByRole('option', { name: full.values.at(-1), exact: true }).waitFor()
+    await page.getByRole('option', { name: `${namesByCode.get(full.values[99])}（${full.values[99]}）`, exact: true }).waitFor()
   }
-  assert.equal(await page.getByRole('option').count(), full.values.length, 'All candidate pages must be available without typing codes')
-  for (const value of ['22', '21', '14']) await page.getByRole('option', { name: value, exact: true }).click()
+  assert.equal(await page.getByRole('option').count(), 100, 'Additional candidate pages must load without typing codes')
+  for (const value of ['22', '21', '14']) {
+    await codes.locator('input').fill(value)
+    await page.getByRole('option', { name: `${namesByCode.get(value)}（${value}）`, exact: true }).click()
+  }
   await page.keyboard.press('Escape')
   for (const value of ['22', '21', '14']) assert.ok((await codes.innerText()).includes(value))
   await dialog.screenshot({ path: `${evidence}/base-selected.png` })
   const searched = page.waitForResponse(response => response.url().includes('/member-options') && response.url().includes('search=22'))
   await codes.locator('input').fill('22')
-  await page.getByRole('option', { name: '22', exact: true }).waitFor()
+  await page.getByRole('option', { name: '泌尿外科（22）', exact: true }).waitFor()
   await searched
   await page.keyboard.press('Escape')
   await item('分组粒度').locator('.el-select').click()
@@ -70,6 +86,7 @@ try {
   assert.ok(!(await codes.innerText()).includes('22'), 'Changing target must clear prior member selection')
   const names = item('OUT_DEPT_NAME 成员').locator('.el-select')
   await names.click()
+  await names.locator('input').fill('泌尿外科')
   await page.getByRole('option', { name: '泌尿外科', exact: true }).click()
   await page.keyboard.press('Escape')
   assert.ok((await names.innerText()).includes('泌尿外科'))
@@ -81,6 +98,8 @@ try {
   assert.deepEqual(errors, [])
   assert.ok(memberRequests.length >= 4)
   assert.ok(memberRequests.every(request => request.status === 200))
-  await writeFile(`${evidence}/checks.json`, JSON.stringify({ passed: true, candidates: full.values.length, memberRequests, errors }, null, 2))
+  assert.equal(dictionaryRequests.length, Math.ceil(dictionary.length / 500), 'All department selectors share one full-list request')
+  assert.ok(dictionaryRequests.every(request => request.status === 200))
+  await writeFile(`${evidence}/checks.json`, JSON.stringify({ passed: true, candidates: full.values.length, memberRequests, dictionaryRequests, errors }, null, 2))
   console.log(`PASS live: ${full.values.length} real BASE candidates (all 24 April departments included), cursor paging, search, actual multi-select, target reset, drill names, mobile`)
 } finally { await browser.close() }
