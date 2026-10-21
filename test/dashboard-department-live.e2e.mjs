@@ -82,7 +82,8 @@ function send(method, params = {}) { return new Promise((resolve, reject) => { c
 async function evaluate(expression) { const data = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }); if (data.exceptionDetails) throw new Error(JSON.stringify(data.exceptionDetails)); return data.result.value }
 const selector = `.filter-control[data-filter-field="${definition.field}"]`
 async function selectCode(code) {
-  assert.equal(await evaluate(`(() => { const root=document.querySelector(${JSON.stringify(selector)}); const details=root?.querySelector('details'); if(details)details.open=true; const checkbox=root?.querySelector('input[data-filter-option="${code}"]'); if(!checkbox)return false; checkbox.click();return true })()`), true)
+  assert.equal(await evaluate(`(() => { const root=document.querySelector(${JSON.stringify(selector)}); const details=root?.querySelector('details'); if(details&&!details.open)root.querySelector('summary').click(); const checkbox=root?.querySelector('input[data-filter-option="${code}"]'); if(!checkbox)return false; checkbox.click();return true })()`), true)
+  await evaluate(`document.querySelector(${JSON.stringify(selector)}+' .filter-apply')?.click()`)
 }
 async function awaitQueries(values, label) {
   for (const item of metadata) {

@@ -1,5 +1,10 @@
 # Warning Nested Conditions: Real Acceptance
 
+The formal calculation/rule evidence below records the earlier result-derived
+member catalog. Department candidates now use the source master dictionary;
+see `2026-10-22_department-dictionary-acceptance.md` for the new 1,045-member
+regression and the separately verified missing source-master code `833`.
+
 ## Environment
 
 - Frontend branch: `feature/warning-nested-group-rules`, local Vite port 5177.
