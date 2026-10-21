@@ -15,6 +15,7 @@ await page.route('**/api/v1/**', async route => {
   else if (path === '/indicator-versions') data = { records: [{ id: '101', indicatorName: '住院死亡率', versionNo: 'V1' }, { id: '102', indicatorName: '无分组测试指标', versionNo: 'V1' }], total: 2, pageNum: 1, pageSize: 200 }
   else if (path === '/system/users') data = [{ id: '1', username: 'tester' }]
   else if (path === '/analysis/warning-rules/scope-options') data = url.searchParams.get('indicatorVersionId') === '102' ? [] : [{ targetCode: 'BASE', label: '组合粒度', dimensions: ['DEPT_CODE'] }, { targetCode: 'DRILL:ORG:DEPT', label: '组织 / 科室', dimensions: ['DEPT_CODE', 'DEPT_NAME'] }]
+  else if (path === '/analysis/warning-rules/member-options') data = { values: ['4101', '4102'], nextAfter: null }
   else if (path === '/analysis/warning-rules' && req.method() === 'POST') {
     const payload = req.postDataJSON(); requests.push(payload)
     data = { id: '10', code: payload.code, name: payload.name, enableStatus: 'DISABLED', resourceVersion: 0, version: { ...payload, id: '11', publicationStatus: 'DRAFT', resourceVersion: 0 } }
@@ -53,8 +54,9 @@ try {
   await item('分组粒度').locator('.el-select').click()
   await page.getByRole('option', { name: '组合粒度（DEPT_CODE）', exact: true }).click()
   for (const member of ['4101', '4102']) {
-    await item('DEPT_CODE 成员').locator('input').fill(member)
-    await item('DEPT_CODE 成员').locator('input').press('Enter')
+    await item('DEPT_CODE 成员').locator('.el-select').click()
+    await page.getByRole('option', { name: member, exact: true }).click()
+    await page.keyboard.press('Escape')
   }
   const root = dialog.locator('.warning-editor > .warning-condition')
   const preview = dialog.locator('output[aria-label="当前条件"]')

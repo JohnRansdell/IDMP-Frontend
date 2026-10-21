@@ -11,7 +11,9 @@
       <el-alert v-if="error" :title="error" type="error" :closable="false" />
       <el-empty v-else-if="!loading && !options.length" description="该指标尚未配置分组粒度或下钻路径" :image-size="50" />
       <el-form-item v-for="dimension in availableDimensions" :key="dimension" :label="`${dimension} 成员（可选）`">
-        <el-select :model-value="scope.members?.[dimension] || []" multiple filterable allow-create default-first-option :disabled="disabled" placeholder="全部成员" @update:model-value="setMembers(dimension, $event)"><el-option v-for="value in scope.members?.[dimension] || []" :key="String(value)" :value="value" :label="String(value)" /></el-select>
+        <WarningMemberSelect :model-value="scope.members?.[dimension] || []" :indicator-version-id="indicatorVersionId"
+          :target-code="scope.targetCode" :dimension="dimension" :disabled="disabled"
+          @update:model-value="setMembers(dimension, $event)" />
       </el-form-item>
     </template>
     <template v-if="showConditions">
@@ -27,6 +29,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import WarningConditionBuilder from './WarningConditionBuilder.vue'
+import WarningMemberSelect from './WarningMemberSelect.vue'
 import { fetchWarningScopeOptions } from '@/idmp/api/modules/warnings'
 import { describeWarningCondition } from '@/idmp/api/adapters/warning'
 const props = defineProps({ condition: { type: Object, required: true }, scope: { type: Object, required: true }, indicatorVersionId: String, warningType: String, disabled: Boolean })

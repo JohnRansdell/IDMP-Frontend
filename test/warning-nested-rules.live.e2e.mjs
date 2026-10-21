@@ -110,8 +110,9 @@ async function createRule(spec) {
     await item('分组粒度').locator('.el-select').click()
     await page.getByRole('option', { name: spec.targetCode === 'BASE' ? /^组合粒度/ : /全院到出院科室 \/ 出院科室/ }).click()
     for (const member of spec.members || []) {
-      await item('OUT_DEPT_CODE 成员').locator('input').fill(member)
-      await item('OUT_DEPT_CODE 成员').locator('input').press('Enter')
+      await item('OUT_DEPT_CODE 成员').locator('.el-select').click()
+      await page.getByRole('option', { name: member, exact: true }).click()
+      await page.keyboard.press('Escape')
     }
   }
   const root = dialog.locator('.warning-editor > .warning-condition')

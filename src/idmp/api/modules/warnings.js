@@ -5,6 +5,10 @@ export function fetchWarningScopeOptions(indicatorVersionId) {
   return requestJson(withQuery('/analysis/warning-rules/scope-options', { indicatorVersionId }))
 }
 
+export function fetchWarningMemberOptions(params) {
+  return requestJson(withQuery('/analysis/warning-rules/member-options', params))
+}
+
 export function fetchWarningRules(params = {}) {
   return requestJson(withQuery('/analysis/warning-rules', params))
 }
