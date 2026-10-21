@@ -79,8 +79,8 @@ export function buildWarningRulePayload(form) {
     periodType: form.periodType,
     // Keep the backend DTO shape, but never bind a rule to a scenario.
     scenarioScope: {},
-    scopePolicy: { includeNoScenario: true },
-    condition,
+    scopePolicy: { includeNoScenario: true, ...(form.resultScope ? { resultScope: form.resultScope } : {}) },
+    condition: form.conditionTree ? cleanWarningCondition(form.conditionTree, form.warningType) : condition,
     dedupPolicy: { scope: 'PERIOD' },
     notificationPolicy: { channels: ['IN_APP'], recipientUserIds: recipients },
     severity: form.severity,
@@ -128,11 +128,50 @@ export function validateWarningRuleForm(form) {
   if (!opaquePositiveId(form.indicatorVersionId)) return '请选择已发布指标版本'
   if (!WARNING_PERIOD_TYPES.includes(form.periodType)) return '请选择统计周期'
   if (!WARNING_TYPES.some((item) => item.value === form.warningType)) return '请选择预警类型'
-  if (!WARNING_OPERATORS.includes(form.operator) || !String(form.threshold || '').trim()) return '请填写合法的比较符和阈值'
+  if (form.resultScope?.mode === 'GROUPED' && (!form.resultScope.dimensions?.length || !form.resultScope.targetCode)) return '请选择分组粒度'
+  const conditionError = validateWarningCondition(form.conditionTree || { operator: form.operator, threshold: form.threshold, windowSize: form.windowSize }, form.warningType)
+  if (conditionError) return conditionError
   if (!uniquePositiveIds(form.recipientUserIds).length) return '请至少选择一位站内通知接收人'
-  if (form.warningType === 'VOLATILITY' && (!Number.isInteger(Number(form.windowSize)) || Number(form.windowSize) < 2)) return '波动预警的窗口周期数至少为 2'
   if (form.effectiveStartDate && form.effectiveEndDate && form.effectiveStartDate > form.effectiveEndDate) return '生效开始日期不能晚于结束日期'
   return ''
+}
+
+export function cleanWarningCondition(node, type) {
+  if (node.logic) return { logic: node.logic, children: node.children.map(child => cleanWarningCondition(child, type)) }
+  return { operator: node.operator || 'GT', threshold: String(node.threshold).trim(),
+    ...(type === 'TREND' ? { measure: node.measure || 'DELTA' } : {}),
+    ...(type === 'VOLATILITY' ? { windowSize: Number(node.windowSize || 3) } : {}) }
+}
+
+export function describeWarningCondition(node, type) {
+  if (!node) return '-'
+  if (node.logic === 'NOT') return `非（${describeWarningCondition(node.children?.[0], type)}）`
+  if (node.logic) return `（${(node.children || []).map(child => describeWarningCondition(child, type)).join(node.logic === 'AND' ? ' 且 ' : ' 或 ')}）`
+  const symbols = { GT: '>', GTE: '≥', LT: '<', LTE: '≤', EQ: '=', NE: '≠' }
+  const subject = type === 'TREND' ? (node.measure === 'CHANGE_RATE' ? '变化率' : '变化值')
+    : type === 'VOLATILITY' ? `最近 ${node.windowSize || 3} 个周期的标准差` : type === 'THRESHOLD' ? '指标值' : ''
+  const threshold = String(node.threshold ?? '').trim() || '待填写'
+  return `${subject ? `${subject} ` : ''}${symbols[node.operator || 'GT'] || node.operator} ${threshold}`
+}
+
+export function validateWarningCondition(root, type) {
+  let count = 0
+  function visit(node, depth) {
+    if (depth > 8 || ++count > 100) return '条件最多 8 层、100 个节点'
+    if (!node || typeof node !== 'object') return '条件节点不合法'
+    if (node.logic) {
+      if (!['AND', 'OR', 'NOT'].includes(node.logic) || !Array.isArray(node.children) || !node.children.length) return '请选择合法逻辑，条件组不能为空'
+      if (node.logic === 'NOT' && node.children.length !== 1) return '非条件组只能包含一个条件'
+      for (const child of node.children) { const error = visit(child, depth + 1); if (error) return error }
+      return ''
+    }
+    const raw = String(node.threshold ?? '').trim()
+    if (!WARNING_OPERATORS.includes(node.operator) || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(raw)
+      || raw.length > 100 || !Number.isFinite(Number(raw))) return '请填写合法的比较符和数字阈值'
+    if (type === 'VOLATILITY' && (!Number.isInteger(Number(node.windowSize ?? 3)) || Number(node.windowSize ?? 3) < 2 || Number(node.windowSize ?? 3) > 60)) return '波动窗口必须为 2～60 的整数'
+    return ''
+  }
+  return visit(root, 1)
 }
 
 function opaquePositiveId(value) {
