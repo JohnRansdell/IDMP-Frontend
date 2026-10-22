@@ -716,8 +716,8 @@ const selectionHasLockedWidget = computed(() => designerWidgets.value.some(widge
 const selectedDataCode = ref('')
 let selectedDataSourceManuallySelected = false
 const addWidgetType = ref('kpi')
-const indicatorDataSources = ref([])
-const catalogIndicatorSources = ref([])
+const indicatorDataSources = shallowRef([])
+const catalogIndicatorSources = shallowRef([])
 const remoteWidgetDatasets = shallowRef({})
 const remoteMultiIndicatorDatasets = shallowRef({})
 const remoteWidgetPreviewGenerations = new Map()
@@ -829,9 +829,12 @@ const viewerWidgets = computed(() => deriveResponsiveLayout((dashboardSchema.val
 const previewWidgets = computed(() => designerWidgets.value)
 const useSchemaViewer = computed(() => Boolean(dashboardSchema.value))
 const dashboardDefinition = ref(null)
-const dashboardQueryResult = ref(null)
+const dashboardQueryResult = shallowRef(null)
 // Only data dependencies invalidate this catalog; selection/hover does not aggregate rows.
-const bindingDatasets = computed(() => new Map(availableIndicatorSources.value.map(source => [source.code, createWidgetBindingDatasets(source, { result: dashboardQueryResult.value })])))
+// Formal sources use component queries, never the full indicator-analysis row universe.
+const bindingDatasets = computed(() => new Map(availableIndicatorSources.value
+  .filter(source => source.origin !== 'dashboard-data-source')
+  .map(source => [source.code, createWidgetBindingDatasets(source, { result: dashboardQueryResult.value })])))
 function getBindingDatasets(widget) {
   const remote = remoteWidgetDatasets.value[String(widget?.id)]
   const indicatorBindings = normalizeIndicatorBindings(widget?.config?.indicatorBindings, widget)
@@ -972,7 +975,8 @@ watch([globalFilterDefinitions, filterRuntimeValues, currentDependentFilterOptio
   const normalized = normalizeDependentFilterValues(readyDefinitions, filterRuntimeValues.value, currentDependentFilterOptions.value)
   if (JSON.stringify(normalized) !== JSON.stringify(filterRuntimeValues.value)) filterRuntimeValues.value = normalized
 }, { deep: true })
-watch([globalFilterDefinitions, period, remotePeriodRange, remotePeriodSelection, filterRuntimeValues, () => JSON.stringify(remoteFieldCatalog.value), () => JSON.stringify(availableIndicatorSources.value)], () => { void loadRemoteFilterOptions() }, { deep: true })
+const filterSourceCatalogKey = computed(() => JSON.stringify(availableIndicatorSources.value.map(source => [source.code, source.indicatorVersionId, source.analysisIndicatorVersionId])))
+watch([globalFilterDefinitions, period, remotePeriodRange, remotePeriodSelection, filterRuntimeValues, remoteFieldCatalog, filterSourceCatalogKey], () => { void loadRemoteFilterOptions() }, { deep: true })
 watch(requestedDashboardId, nextDashboardId => { if (nextDashboardId !== activeDashboardId.value) void requestDashboardSwitch(nextDashboardId) })
 watch(() => route.query.id, async nextDashboardId => {
   const id = typeof nextDashboardId === 'string' ? nextDashboardId.trim() : ''
@@ -2650,7 +2654,6 @@ async function loadPublishedIndicatorCatalog() {
       }
       catalogIndicatorSources.value = nextSources
       if (!nextSources.some(source => source.code === selectedDataCode.value)) selectedDataCode.value = nextSources[0]?.code || ''
-      await refreshSchemaPublishedIndicatorSources()
       return true
     } catch (error) {
       indicatorCatalogError.value = error?.message || '指标目录刷新失败，请重试。'
@@ -2926,7 +2929,7 @@ async function refreshSchemaPublishedIndicatorSources() {
   ])]
   const sources = sourceCodes
     .map(code => catalogIndicatorSources.value.find(source => source.code === code))
-    .filter(Boolean)
+    .filter(source => source?.origin === 'indicator-catalog')
   await Promise.allSettled(sources.map(source => hydrateIndicatorSource(source)))
 }
 
