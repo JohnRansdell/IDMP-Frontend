@@ -1753,8 +1753,8 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
 .instant-query-panel__context strong { color: var(--idmp-text-secondary); font-weight: 500; }
 .instant-query-panel__controls { display: flex; align-items: flex-end; gap: 12px 16px; min-width: 0; }
 .runtime-query-result__summary span { margin: 0; color: var(--idmp-text-helper); font-size: 12px; }
-.instant-query-panel__period { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; min-width: 0; }
-.instant-query-panel__period label { flex: 0 0 auto; color: var(--idmp-text-primary); font-size: 13px; font-weight: 600; }
+.instant-query-panel__period { display: flex; flex: 0 0 auto; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0; }
+.instant-query-panel__period label { flex: 0 0 auto; min-height: 19px; color: var(--idmp-text-primary); font-size: 13px; font-weight: 600; }
 .instant-query-panel__controls :deep(.runtime-parameter-fields) { display: flex; flex: 1 1 auto; align-items: flex-end; flex-wrap: wrap; gap: 12px; min-width: 0; }
 .instant-query-panel__controls :deep(.runtime-parameter-field) { flex: 1 1 170px; max-width: 280px; gap: 6px; }
 .instant-query-panel__controls :deep(.runtime-parameter-field label) { min-height: 19px; font-size: 13px; }
@@ -2609,7 +2609,7 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
   .instant-query-panel__context { justify-content: flex-start; }
   .instant-query-panel__controls { align-items: stretch; }
   .instant-query-panel__period, .instant-query-panel__controls :deep(.runtime-parameter-fields) { flex: 1 1 100%; }
-  .report-period-picker { flex: 1 1 0; width: auto; min-width: 0; }
+  .report-period-picker { flex: 0 0 auto; width: 100%; min-width: 0; }
   .instant-query-panel__actions { width: 100%; margin-left: 0; }
   .instant-query-panel__actions .el-button { width: 100%; }
 

@@ -120,8 +120,8 @@ onBeforeUnmount(() => { generation++; queryRevision++ })
 .runtime-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 h2 { margin: 0; font-size: 16px; }
 h3 { margin: 0; font-size: 14px; }
-.query-period { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; min-width: 0; }
-.query-period label { flex: 0 0 auto; color: var(--idmp-text-primary); font-size: 13px; font-weight: 600; }
+.query-period { display: flex; flex: 0 0 auto; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0; }
+.query-period label { flex: 0 0 auto; min-height: 19px; color: var(--idmp-text-primary); font-size: 13px; font-weight: 600; }
 .query-period :deep(.el-date-editor) { width: 400px; min-width: 0; max-width: 100%; }
 .query-controls :deep(.runtime-parameter-fields) { display: flex; flex: 1 1 auto; align-items: flex-end; flex-wrap: wrap; gap: 12px; min-width: 0; }
 .query-controls :deep(.runtime-parameter-field) { flex: 1 1 170px; max-width: 280px; gap: 6px; }
