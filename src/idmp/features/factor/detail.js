@@ -10,5 +10,5 @@ export function assertFactorVersionOwner(version, factorId) {
   if (factorIdText(version?.factorId) !== factorIdText(factorId)) throw new Error('所选版本不属于当前因子，无法显示或运行，请重新选择')
 }
 export function factorQueryRows(result = {}) {
-  return (result.records || result.rows || []).map(row => ({ ...row, dimensions: row.dimensions || Object.fromEntries((result.grainFieldCodes || []).map(field => [field, row[field]])) }))
+  return (result.records || result.rows || []).map(row => ({ ...row, value: row.value ?? row.resultValue ?? row.factor_value, dimensions: row.dimensions || Object.fromEntries((result.grainFieldCodes || []).map(field => [field, row[field]])) }))
 }

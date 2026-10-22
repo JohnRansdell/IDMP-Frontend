@@ -19,3 +19,8 @@ test('query rows retain returned dimensions and support flat grouped result colu
   assert.deepEqual(factorQueryRows({ grainFieldCodes: ['dept'], records: [{ dept: 'A', value: 3 }] }), [{ dept: 'A', value: 3, dimensions: { dept: 'A' } }])
   assert.deepEqual(factorQueryRows({ rows: [{ value: 0, dimensions: { group: 'B' } }] }), [{ value: 0, dimensions: { group: 'B' } }])
 })
+
+test('query result values accept the backend factor_value column including zero', () => {
+  const rows = factorQueryRows({ rows: [{ factor_value: 109675885.65 }, { factor_value: 0 }] })
+  assert.deepEqual(rows.map(row => row.value), [109675885.65, 0])
+})
