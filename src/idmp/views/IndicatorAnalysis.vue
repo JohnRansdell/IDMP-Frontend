@@ -1390,7 +1390,7 @@ function buildAnalysisParams(range = [], versionId = currentIndicatorVersionId.v
 }
 
 function buildTrendAnalysisParams(range, versionId, granularity) {
-  const params = buildAnalysisParams(range, versionId, granularity)
+  const params = { ...buildAnalysisParams(range, versionId, granularity), sections: 'TREND' }
   if (trendGrainFields.value.length && Object.keys(trendGrainApplied.value).length && granularity !== 'STATIC') {
     params.grainSelection = 'EXACT'
     Object.entries(trendGrainApplied.value).forEach(([code, value]) => { params[`filter.${code}`] = value })
@@ -1479,7 +1479,7 @@ async function refreshIndicatorAnalysis({ preserveRangeSummary = false } = {}) {
 
     const analysisParams = buildAnalysisParams(analysisPeriodRange.value)
     const trendParams = backendAnalysisGranularity.value === 'STATIC'
-      ? buildAnalysisParams([], currentIndicatorVersionId.value, 'STATIC')
+      ? buildTrendAnalysisParams([], currentIndicatorVersionId.value, 'STATIC')
       : buildTrendAnalysisParams(analysisPeriodRange.value, currentIndicatorVersionId.value, trendAnalysisGranularity.value)
     const [analysisData, trendResult] = await Promise.allSettled([
       granularity ? fetchIndicatorAnalysis(backendIndicatorId, analysisParams) : Promise.resolve(null),
