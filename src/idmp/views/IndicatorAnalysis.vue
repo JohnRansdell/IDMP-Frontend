@@ -158,8 +158,6 @@
                     :loading="trendGrainLoading[field.code]"
                     placeholder="全部"
                     size="small"
-                    @visible-change="visible => visible && loadTrendGrainOptions(field.code, '')"
-                    @change="clearFollowingTrendGrain(field.code)"
                   >
                     <el-option v-for="item in trendGrainOptions(field.code)" :key="item.value" :label="item.label" :value="item.value">
                       <span>{{ item.label }}</span>
@@ -536,10 +534,6 @@ async function loadTrendGrainOptions(code, search = '') {
     params.periodStart = trendPeriodDraft.value[0]
     params.periodEnd = trendPeriodDraft.value[1]
   }
-  trendGrainFields.value.slice(0, index).forEach(field => {
-    const value = String(trendGrainDraft.value[field] ?? '').trim()
-    if (value) params[`filter.${field}`] = value
-  })
   const generation = (trendGrainRequestGenerations.get(code) || 0) + 1
   trendGrainRequestGenerations.set(code, generation)
   trendGrainLoading.value[code] = true
@@ -583,16 +577,6 @@ async function loadTrendGrainOptions(code, search = '') {
   } finally {
     if (trendGrainRequestGenerations.get(code) === generation) trendGrainLoading.value[code] = false
   }
-}
-
-function clearFollowingTrendGrain(code) {
-  const index = trendGrainFields.value.indexOf(code)
-  trendGrainFields.value.slice(index + 1).forEach(field => {
-    trendGrainDraft.value[field] = ''
-    trendGrainCandidates.value[field] = []
-    trendGrainRequestGenerations.set(field, (trendGrainRequestGenerations.get(field) || 0) + 1)
-    trendGrainLoading.value[field] = false
-  })
 }
 
 function clearTrendGrainFilters() {

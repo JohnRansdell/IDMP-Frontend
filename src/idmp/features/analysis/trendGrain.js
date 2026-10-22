@@ -13,6 +13,8 @@ const labels = {
   WARD_CODE: '病区', WARD_ID: '病区', SEX_CODE: '性别', GENDER_CODE: '性别'
 }
 
+const codeLabels = { IN_ICD10: '入院诊断编码', OUT_ICD10: '出院诊断编码' }
+
 export function trendGrainField(code, index = 0, paths = []) {
   const level = paths.flatMap(path => path.levels || []).find(level =>
     [level.memberKeyFieldCode, level.dimensionFieldCode].some(field => String(field || '').toLowerCase() === code.toLowerCase()))
@@ -20,7 +22,7 @@ export function trendGrainField(code, index = 0, paths = []) {
   const displayFields = dimensionDisplayFields(paths)
   const displayField = level?.displayFieldCode || Object.entries(displayFields).find(([field]) => field.toLowerCase() === code.toLowerCase())?.[1]
     || (/_CODE$|_ID$/i.test(code) ? code.replace(/_(CODE|ID)$/i, '_NAME') : /(?:Code|Id)$/.test(code) ? code.replace(/(?:Code|Id)$/, 'Name') : `${code}_NAME`)
-  const label = (/[\u3400-\u9fff]/.test(level?.levelName || '') ? level.levelName : '') || labels[normalized] || (/[\u3400-\u9fff]/.test(code) ? code.replace(/编码$/, '') : `自定义维度 ${index + 1}`)
+  const label = (/[\u3400-\u9fff]/.test(level?.levelName || '') ? level.levelName : '') || labels[normalized] || codeLabels[normalized] || (/[\u3400-\u9fff]/.test(code) ? code.replace(/编码$/, '') : `自定义维度 ${index + 1}`)
   return { code, label, displayField, valueIsName: /_NAME$|名称$|Name$/i.test(code), named: Boolean(level?.displayFieldCode || labels[normalized] || /科室|医生|医师|病种|病区|医院|医疗组/.test(code)) }
 }
 
