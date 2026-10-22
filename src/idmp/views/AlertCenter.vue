@@ -25,7 +25,19 @@
 
 <el-dialog class="warning-rule-dialog" v-model="ruleDialogOpen" :title="editingRule ? '预警规则' : '创建预警规则'" width="min(960px, 96vw)" destroy-on-close><el-alert type="info" :closable="false" show-icon title="指标预警当前只支持 IN_APP 站内通知；规则必须先发布，再启用。" /><div v-if="editingRule" class="rule-workflow"><div><span>当前流程</span><strong>{{ ruleWorkflowText(editingRule) }}</strong></div><p>{{ ruleWorkflowHint(editingRule) }}</p></div><el-form label-position="top" class="rule-form" :class="{ 'is-readonly': editingRule?.readOnly }"><div class="form-grid"><el-form-item label="规则编码" required><el-input v-model.trim="ruleForm.code" :disabled="Boolean(editingRule)" /></el-form-item><el-form-item label="规则名称" required><el-input v-model.trim="ruleForm.name" :disabled="Boolean(editingRule)" /></el-form-item><el-form-item label="预警类型" required><el-select v-model="ruleForm.warningType" :disabled="editingRule?.readOnly"><el-option v-for="item in WARNING_TYPES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item><el-form-item label="严重程度" required><el-select v-model="ruleForm.severity" :disabled="editingRule?.readOnly"><el-option v-for="item in WARNING_SEVERITIES" :key="item" :label="warningLabel(item)" :value="item" /></el-select></el-form-item><el-form-item label="已发布指标版本" required><el-select v-model="ruleForm.indicatorVersionId" filterable allow-create default-first-option :disabled="Boolean(editingRule)"><el-option v-for="item in indicatorVersions" :key="item.id" :label="indicatorLabel(item)" :value="item.id" /></el-select></el-form-item><el-form-item label="统计周期" required><el-select v-model="ruleForm.periodType" :disabled="editingRule?.readOnly"><el-option v-for="item in WARNING_PERIOD_TYPES" :key="item" :label="warningLabel(item)" :value="item" /></el-select></el-form-item><el-form-item label="生效开始日期"><el-date-picker v-model="ruleForm.effectiveStartDate" type="date" value-format="YYYY-MM-DD" :disabled="editingRule?.readOnly" /></el-form-item><el-form-item label="生效结束日期"><el-date-picker v-model="ruleForm.effectiveEndDate" type="date" value-format="YYYY-MM-DD" :disabled="editingRule?.readOnly" /></el-form-item></div><el-form-item label="说明"><el-input v-model="ruleForm.description" type="textarea" :rows="2" :disabled="Boolean(editingRule)" /></el-form-item><WarningRuleConditions v-model:condition="ruleForm.conditionTree" v-model:scope="ruleForm.resultScope" :indicator-version-id="ruleForm.indicatorVersionId" :warning-type="ruleForm.warningType" :disabled="editingRule?.readOnly" /><section class="rule-section"><h3>站内通知</h3><el-form-item label="接收用户" required><el-select v-model="ruleForm.recipientUserIds" multiple filterable :loading="usersLoading" :disabled="editingRule?.readOnly"><el-option v-for="user in users" :key="user.id" :label="userLabel(user)" :value="String(user.id)" /></el-select></el-form-item></section></el-form><template #footer><el-button @click="ruleDialogOpen = false">关闭</el-button><el-button v-if="!editingRule || dialogRuleCapabilities.canEdit" :loading="mutating" @click="saveRule">{{ editingRule ? '保存草稿' : '创建草稿' }}</el-button><el-button v-if="dialogRuleCapabilities.canPublish" type="primary" :loading="mutating" @click="publishRule(editingRule)">发布规则</el-button><el-button v-if="dialogRuleCapabilities.canEnable" type="success" :loading="mutating" @click="toggleRule(editingRule, true)">启用规则</el-button><el-button v-if="dialogRuleCapabilities.canDisable" type="warning" :loading="mutating" @click="toggleRule(editingRule, false)">停用规则</el-button></template></el-dialog>
 
-    <el-dialog v-model="eventDialogOpen" title="预警事件详情" width="820px" destroy-on-close><StatePanel v-if="eventDetailLoading" type="loading" title="正在读取预警事件" /><StatePanel v-else-if="eventDetailError" type="error" title="预警详情读取失败" :description="eventDetailError" /><template v-else-if="eventDetail"><dl class="detail-grid"><div><dt>事件 ID</dt><dd class="mono-data">{{ eventDetail.id }}</dd></div><div><dt>状态</dt><dd><StatusBadge :status="eventDetail.status" :label="warningLabel(eventDetail.status)" /></dd></div><div><dt>类型</dt><dd>{{ warningLabel(eventDetail.warningType) }}</dd></div><div><dt>当前值 / 阈值</dt><dd>{{ displayValue(eventDetail.actualValue) }} / {{ displayValue(eventDetail.thresholdValue) }}</dd></div><div><dt>指标结果 ID</dt><dd class="mono-data">{{ eventDetail.indicatorResultId || '-' }}</dd></div><div><dt>触发时间</dt><dd>{{ eventDetail.triggerTime || '-' }}</dd></div></dl><section v-if="eventDetail.comparisonContext?.condition" class="rule-section"><h3>触发条件</h3><p>{{ describeWarningCondition(eventDetail.comparisonContext.condition) }}</p><p>{{ comparisonSummary(eventDetail.comparisonContext) }}</p></section><section class="rule-section"><h3>比较上下文</h3><pre>{{ formatJson(eventDetail.comparisonContext) }}</pre></section><section class="rule-section"><h3>站内投递记录</h3><StatePanel v-if="deliveriesLoading" type="loading" title="正在读取投递记录" /><el-table v-else :data="deliveries" size="small" empty-text="暂无投递记录"><el-table-column prop="channel" label="渠道" width="100" /><el-table-column prop="recipient" label="接收人" min-width="120" /><el-table-column prop="status" label="状态" width="100" /><el-table-column prop="attemptCount" label="尝试次数" width="100" /><el-table-column prop="lastError" label="最近错误" min-width="160" /></el-table></section></template><template #footer><el-button v-if="eventDetail?.indicatorResultId" @click="openResultDrill(eventDetail)">查看结果下钻</el-button><el-button @click="eventDialogOpen = false">关闭</el-button></template></el-dialog>
+    <el-dialog class="warning-event-dialog" v-model="eventDialogOpen" title="预警事件详情" width="min(820px, 96vw)" destroy-on-close>
+      <StatePanel v-if="eventDetailLoading" type="loading" title="正在读取预警事件" />
+      <StatePanel v-else-if="eventDetailError" type="error" title="预警详情读取失败" :description="eventDetailError" />
+      <template v-else-if="eventDetail">
+        <WarningEventSummary :event="eventDetail" />
+        <section class="event-deliveries"><h3>站内投递记录</h3>
+          <StatePanel v-if="deliveriesLoading" type="loading" title="正在读取投递记录" />
+          <StatePanel v-else-if="deliveriesError" type="error" title="投递记录读取失败" :description="deliveriesError" />
+          <el-table v-else :data="deliveries" size="small" empty-text="暂无投递记录"><el-table-column prop="channel" label="渠道" width="100" /><el-table-column prop="recipient" label="接收人" min-width="120" /><el-table-column prop="status" label="状态" width="100" /><el-table-column prop="attemptCount" label="尝试次数" width="100" /><el-table-column prop="lastError" label="最近错误" min-width="160" /></el-table>
+        </section>
+      </template>
+      <template #footer><el-button v-if="eventDetail?.indicatorResultId" @click="openResultDrill(eventDetail)">查看结果下钻</el-button><el-button @click="eventDialogOpen = false">关闭</el-button></template>
+    </el-dialog>
   </div>
 </template>
 
@@ -40,6 +52,7 @@ import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
 import WarningRuleConditions from '@/idmp/components/WarningRuleConditions.vue'
+import WarningEventSummary from '@/idmp/components/WarningEventSummary.vue'
 import { notifyNotificationsRead } from '@/idmp/layout/shellState.js'
 import { fetchAllIndicatorVersions as fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
 import { fetchSystemUsers } from '@/idmp/api/modules/system'
@@ -62,6 +75,7 @@ const ruleFilters = reactive({ code: '', name: '', enableStatus: '', publication
 const ruleDialogOpen = ref(false); const editingRule = ref(null)
 const dialogRuleCapabilities = computed(() => editingRule.value ? ruleCapabilities(editingRule.value) : {})
 const eventDialogOpen = ref(false); const eventDetail = ref(null); const eventDetailLoading = ref(false); const eventDetailError = ref(''); const deliveries = ref([]); const deliveriesLoading = ref(false)
+const deliveriesError = ref('')
 const ruleForm = reactive(emptyRuleForm())
 
 function emptyRuleForm() { return { code: '', name: '', description: '', warningType: 'THRESHOLD', indicatorVersionId: '', periodType: 'MONTHLY', conditionTree: { operator: 'GT', threshold: '', measure: 'DELTA', windowSize: 3 }, resultScope: { mode: 'MAIN', dimensions: [], members: {} }, operator: 'GT', threshold: '', measure: 'DELTA', windowSize: 2, recipientUserIds: [], severity: 'MEDIUM', effectiveStartDate: '', effectiveEndDate: '' } }
@@ -70,7 +84,6 @@ function opaqueId(value) { return value === undefined || value === null || value
 function indicatorLabel(item) { return `${item.indicatorName || item.name || item.indicatorCode || item.code || '未命名指标'} · ${item.id}` }
 function userLabel(user) { return `${user.nickname || user.name || user.username || `用户 ${user.id}`} · ${user.id}` }
 function displayValue(value) { return value === undefined || value === null || value === '' ? '-' : String(value) }
-function formatJson(value) { return JSON.stringify(value || {}, null, 2) }
 function severityTone(value) { return ({ CRITICAL: 'danger', HIGH: 'danger', MEDIUM: 'warning', LOW: 'info', INFO: 'neutral' })[String(value).toUpperCase()] || 'neutral' }
 function comparisonSummary(context = {}) { const bits = []; Object.entries(context.dimensionSnapshot || {}).forEach(([key, value]) => bits.push(`${key}: ${value ?? '空'}`)); if (context.condition?.logic) bits.push(describeWarningCondition(context.condition)); if (context.periodType) bits.push(warningLabel(context.periodType)); if (context.baselineValue !== undefined && context.baselineValue !== null) bits.push(`基线 ${context.baselineValue}`); if (context.deviationValue !== undefined && context.deviationValue !== null) bits.push(`偏差 ${context.deviationValue}`); if (context.baselineScenarioVersionId) bits.push(`基准场景 ${context.baselineScenarioVersionId}`); return bits.join(' · ') || '无比较上下文' }
 function ruleCapabilities(rule) { return warningRuleCapabilities(rule) }
@@ -137,16 +150,22 @@ async function openEvent(eventId) {
   eventDialogOpen.value = true
   eventDetail.value = null
   deliveries.value = []
+  deliveriesError.value = ''
   eventDetailError.value = ''
   eventDetailLoading.value = true
   try {
     const detail = await fetchWarningEvent(eventId)
     if (generation !== eventDetailGeneration) return
     eventDetail.value = detail
+    eventDetailLoading.value = false
     deliveriesLoading.value = true
-    const page = normalizePage(await fetchWarningDeliveries(eventId, { page: 1, size: 100 }))
-    if (generation !== eventDetailGeneration) return
-    deliveries.value = page.records
+    try {
+      const page = normalizePage(await fetchWarningDeliveries(eventId, { page: 1, size: 100 }))
+      if (generation !== eventDetailGeneration) return
+      deliveries.value = page.records
+    } catch (error) {
+      if (generation === eventDetailGeneration) deliveriesError.value = error?.message || '无法读取投递记录'
+    }
   } catch (error) {
     if (generation === eventDetailGeneration) eventDetailError.value = error?.message || '无法读取预警详情'
   } finally {
@@ -186,6 +205,11 @@ onMounted(bootstrap)
 </script>
 
 <style scoped lang="scss">
+:global(.warning-event-dialog) { max-height: calc(100dvh - 48px); margin: 24px auto; display: flex; flex-direction: column; }
+:global(.warning-event-dialog .el-dialog__body) { min-height: 0; overflow-y: auto; }
+:global(.warning-event-dialog .el-dialog__header), :global(.warning-event-dialog .el-dialog__footer) { flex-shrink: 0; }
+.event-deliveries { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--idmp-border-subtle); }
+.event-deliveries h3 { margin: 0 0 12px; font-size: 14px; }
 :global(.warning-rule-dialog) { max-height: calc(100dvh - 48px); margin: 24px auto; display: flex; flex-direction: column; }
 :global(.warning-rule-dialog .el-dialog__body) { overflow-y: auto; min-height: 0; }
 :global(.warning-rule-dialog .el-dialog__header), :global(.warning-rule-dialog .el-dialog__footer) { flex-shrink: 0; }
