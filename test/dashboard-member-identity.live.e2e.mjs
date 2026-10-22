@@ -82,13 +82,13 @@ async function drill(code, phase) {
   await page.waitForFunction(id => document.querySelector(`[data-widget-id="${id}"] [data-testid="backend-chart-drill"]`)?.getAttribute('aria-busy') === 'false', widgetId, { timeout: 45000 })
   const records = (payload.data || payload).records
   assert.ok(records.length > 0)
-  const zeroNumerators = records.every(row => Number(row.numeratorValue) === 0)
-  if (zeroNumerators) assert.match(await drillView.innerText(), /分子均为 0/)
+  const zeroValues = records.every(row => Number(row.value ?? row.indicatorValue) === 0)
+  if (zeroValues) assert.match(await drillView.innerText(), /指标值均为 0/)
   else assert.ok(await drillView.locator('.idmp-chart').count(), await drillView.innerText())
   await drillView.getByRole('button', { name: '查看数据表', exact: true }).click()
   assert.equal(await drillView.locator('tbody tr').count(), records.length)
   await widget.screenshot({ path: `${evidence}/${phase}-${code}.png` })
-  checks.push({ phase, code, label: point.name, request, records: records.length, zeroNumerators })
+  checks.push({ phase, code, label: point.name, request, records: records.length, zeroValues })
   await drillView.getByRole('button', { name: '返回原图表', exact: true }).click()
 }
 try {

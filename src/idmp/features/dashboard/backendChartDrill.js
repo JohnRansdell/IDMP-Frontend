@@ -1,5 +1,6 @@
 import { limitDrillNextLevels, normalizeOrganizationDrillLevel } from '../../api/adapters/drill.js'
 import { isDepartmentLevel, namedDrillRecord } from './dimensionNames.js'
+import { numericValue } from './fieldCatalog.js'
 
 const PAGE_SIZE = 200
 const MAX_CHART_ROWS = 500
@@ -183,8 +184,8 @@ export function findBackendChartRow(result, params = {}) {
 
 export function backendChartValue(row, kind, unit = '') {
   if (kind === 'pie') {
-    const value = Number(row?.numerator)
-    return row?.numerator !== null && row?.numerator !== undefined && Number.isFinite(value) && value >= 0 ? value : null
+    const value = numericValue(row?.indicatorValue)
+    return value !== null && value >= 0 ? value : null
   }
   const displayed = String(row?.displayValue ?? '').trim()
   if (/^[+-]?(?:\d+\.?\d*|\.\d+)\s*%$/.test(displayed)) return Number(displayed.replace('%', '').trim())

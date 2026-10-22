@@ -51,6 +51,16 @@ test('formal chart drill resolves the canonical root and skips an absent medical
     currentLevel: 'ATTENDING_DOCTOR', parentKeys: { HOSPITAL_CODE: 'HOSPITAL-1', OUT_DEPT_CODE: '17' }, label: 'MICU'
   })
   assert.equal(backendChartValue(result.records[0], 'bar', '%'), 20)
-  assert.equal(backendChartValue(result.records[0], 'pie', '%'), 1)
+  assert.equal(backendChartValue(result.records[0], 'pie', '%'), 0.2)
   assert.equal(calls.at(-1).payload.snapshotId, 'organization-snapshot')
+})
+
+test('pie drill uses unrounded indicator values rather than numerators or display percentages', () => {
+  assert.equal(backendChartValue({ indicatorValue: 0.12345678, displayValue: '12.35%', numerator: 987 }, 'pie', '%'), 0.12345678)
+  assert.equal(backendChartValue({ indicatorValue: '0.25', numerator: null }, 'pie'), 0.25)
+  assert.equal(backendChartValue({ indicatorValue: 0, numerator: 987 }, 'pie'), 0)
+  assert.equal(backendChartValue({ indicatorValue: 0.5, numerator: 0 }, 'pie'), 0.5)
+  for (const indicatorValue of [null, undefined, '', ' ', '-', '12%', NaN, Infinity, -0.2, false, {}]) {
+    assert.equal(backendChartValue({ indicatorValue, displayValue: '20%', numerator: 987 }, 'pie'), null)
+  }
 })

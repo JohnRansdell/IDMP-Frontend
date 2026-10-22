@@ -65,8 +65,8 @@ const chartIssue = computed(() => {
   const rows = currentEntry.value?.result.records || []
   if (!rows.length) return ''
   const values = rows.map(row => backendChartValue(row, props.kind, props.unit))
-  if (values.some(value => value === null)) return props.kind === 'pie' ? '当前层分子数据不完整，无法绘制构成图；请查看数据表。' : '当前层指标值不完整，无法绘制柱状图；请查看数据表。'
-  if (props.kind === 'pie' && values.every(value => value === 0)) return '当前层分子均为 0，无法绘制构成图；请查看数据表。'
+  if (values.some(value => value === null)) return props.kind === 'pie' ? '当前层指标值存在缺失、无效或负值，无法绘制饼图；请查看数据表。' : '当前层指标值不完整，无法绘制柱状图；请查看数据表。'
+  if (props.kind === 'pie' && values.every(value => value === 0)) return '当前层指标值均为 0，无法绘制饼图；请查看数据表。'
   return ''
 })
 const rawOption = computed(() => {
