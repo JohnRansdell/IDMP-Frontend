@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFile } from 'node:fs/promises'
+import { computed, reactive, ref } from 'vue'
 import {
-  backendChartValue, findBackendChartRow, loadBackendChartLevel,
+  backendChartMeasure, backendChartValue, findBackendChartRow, loadBackendChartLevel,
   loadBackendChartRoot, nextBackendChartNavigation, projectedDrillNavigation
 } from '../src/idmp/features/dashboard/backendChartDrill.js'
 
@@ -63,4 +65,46 @@ test('pie drill uses unrounded indicator values rather than numerators or displa
   for (const indicatorValue of [null, undefined, '', ' ', '-', '12%', NaN, Infinity, -0.2, false, {}]) {
     assert.equal(backendChartValue({ indicatorValue, displayValue: '20%', numerator: 987 }, 'pie'), null)
   }
+})
+
+test('pie drill resolves the top-level selected measure without falling back to a different value', () => {
+  const row = { indicatorValue: 0.25, numerator: 5, denominator: 20 }
+  for (const [field, expected] of [['value', 0.25], ['indicatorValue', 0.25], ['numeratorValue', 5], ['numerator', 5], ['denominatorValue', 20], ['denominator', 20]]) {
+    const measure = backendChartMeasure({ config: { dataBinding: { measures: [{ field }] } } })
+    assert.equal(measure.error, '')
+    assert.equal(backendChartValue(row, 'pie', '%', measure.field), expected)
+    assert.equal(backendChartValue({ indicatorValue: 1 }, 'pie', '', field), expected === 0.25 ? 1 : null)
+  }
+  assert.equal(backendChartMeasure().field, 'value')
+  const unknown = backendChartMeasure({ config: { dataBinding: { measures: [{ field: 'factor-x' }] } } })
+  assert.match(unknown.error, /不支持.*factor-x/)
+  assert.equal(backendChartValue(row, 'pie', '', unknown.field), null)
+})
+
+test('pie drill component updates values, series name and diagnostics with its top-level binding', async () => {
+  const source = await readFile(new URL('../src/idmp/features/dashboard/components/BackendChartDrill.vue', import.meta.url), 'utf8')
+  const block = source.slice(source.indexOf('const measure = computed('), source.indexOf('const chartOption = computed('))
+  const props = reactive({ kind: 'pie', unit: '%', widget: { config: { dataBinding: { measures: [{ field: 'value', label: '指标值' }] } } } })
+  const currentEntry = ref({ result: { records: [
+    { dimensionLabel: '医生甲', indicatorValue: 0.25, displayValue: '25%', numerator: 5, denominator: 20 },
+    { dimensionLabel: '医生乙', indicatorValue: 0.5, displayValue: '50%', numerator: 20, denominator: 40 }
+  ] } })
+  const { rawOption, chartIssue } = Function('computed', 'props', 'currentEntry', 'backendChartMeasure', 'backendChartValue',
+    `${block}; return { rawOption, chartIssue }`)(computed, props, currentEntry, backendChartMeasure, backendChartValue)
+  for (const [field, label, values] of [
+    ['value', '指标值', [0.25, 0.5]], ['numeratorValue', '转科人次', [5, 20]], ['denominatorValue', '入院人次', [20, 40]], ['value', '指标值', [0.25, 0.5]]
+  ]) {
+    props.widget.config.dataBinding.measures = [{ field, label }]
+    assert.equal(chartIssue.value, '')
+    assert.equal(rawOption.value.series[0].name, label)
+    assert.deepEqual(rawOption.value.series[0].data.map(point => point.value), values)
+    assert.match(rawOption.value.tooltip.formatter({ data: rawOption.value.series[0].data[0] }), /指标值：25%.*分子：5.*分母：20/)
+  }
+  props.widget.config.dataBinding.measures = [{ field: 'numeratorValue', label: '转科人次' }]
+  currentEntry.value.result.records[0].numerator = null
+  assert.match(chartIssue.value, /转科人次存在缺失/)
+  currentEntry.value.result.records.forEach(row => { row.numerator = 0 })
+  assert.match(chartIssue.value, /转科人次均为 0/)
+  props.widget.config.dataBinding.measures = [{ field: 'factor-x' }]
+  assert.match(chartIssue.value, /不支持.*factor-x/)
 })

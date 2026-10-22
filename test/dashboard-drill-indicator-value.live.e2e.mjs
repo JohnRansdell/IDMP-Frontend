@@ -19,7 +19,7 @@ async function ready() {
     && !document.querySelector('[data-testid="dashboard-period-apply"].is-loading'), null, { timeout: 90000 })
   await page.waitForLoadState('networkidle')
 }
-async function snapshot(widget, phase) {
+async function snapshot(widget, phase, field) {
   const state = await widget.locator('[data-testid="backend-chart-drill"] .idmp-chart').evaluate(async element => {
     const url = performance.getEntriesByType('resource').find(entry => /\/echarts\.js\?v=/.test(entry.name))?.name
     const echarts = await import(url)
@@ -29,13 +29,15 @@ async function snapshot(widget, phase) {
     return { data: data.map(point => ({ name: point.name, value: point.value, row: point.row })),
       tooltip: option.tooltip.formatter({ data: data.find(point => point.value > 0) }) }
   })
+  const rowField = { value: 'indicatorValue', numeratorValue: 'numerator', denominatorValue: 'denominator' }[field]
   assert.ok(state.data.length > 0)
-  assert.ok(state.data.some(point => point.value > 0 && point.value !== Number(point.row.numerator)), 'real results must distinguish indicator values from numerators')
-  for (const point of state.data) assert.equal(point.value, Number(point.row.indicatorValue))
+  assert.ok(state.data.some(point => point.value > 0))
+  for (const point of state.data) assert.equal(point.value, Number(point.row[rowField]))
+  if (field === 'value') assert.ok(state.data.some(point => point.value > 0 && point.value !== Number(point.row.numerator)), 'real results must distinguish indicator values from numerators')
   assert.match(state.tooltip, /指标值：/)
   assert.match(state.tooltip, /分子：/)
   assert.match(state.tooltip, /分母：/)
-  checks.push({ phase, ...state })
+  checks.push({ phase, field, ...state })
   await widget.screenshot({ path: `${evidence}/${phase}.png` })
 }
 try {
@@ -53,9 +55,21 @@ try {
     ['dashboard-widget-1791798674947-4', '10', 'transfer'],
     ['dashboard-widget-1791875881995-2', '9012', 'tcm']
   ]) {
-    for (const [viewport, width, height] of [['desktop', 1600, 1000], ['mobile', 390, 844]]) {
+    for (const [field, label, viewport, width, height] of [
+      ['value', '指标值', 'desktop', 1600, 1000], ['value', '指标值', 'mobile', 390, 844],
+      ['numeratorValue', '分子值', 'desktop', 1600, 1000], ['denominatorValue', '分母值', 'desktop', 1600, 1000]
+    ]) {
       await page.setViewportSize({ width, height })
       await page.waitForTimeout(400)
+      // Exercise unsaved bindings against real result rows without changing the published dashboard.
+      await page.evaluate(({ id, field, label }) => {
+        let component = document.querySelector('.dashboard-period-picker').__vueParentComponent
+        while (component && !component.setupState.dashboardSchema) component = component.parent
+        const state = component.setupState
+        state.dashboardSchema = { ...state.dashboardSchema, widgets: state.dashboardSchema.widgets.map(widget => widget.id !== id ? widget : {
+          ...widget, config: { ...widget.config, dataBinding: { ...widget.config.dataBinding, measures: [{ ...widget.config.dataBinding.measures[0], field, label }] } }
+        }) }
+      }, { id, field, label })
       const widget = page.locator(`[data-widget-id="${id}"]`)
       await widget.scrollIntoViewIfNeeded()
       const original = await widget.locator('.idmp-chart').first().evaluate((element, code) => {
@@ -70,7 +84,8 @@ try {
       }, code)
       await page.waitForFunction(id => document.querySelector(`[data-widget-id="${id}"] [data-testid="backend-chart-drill"]`)?.getAttribute('aria-busy') === 'false', id, { timeout: 60000 })
       await page.waitForLoadState('networkidle')
-      await snapshot(widget, `${name}-${viewport}`)
+      await snapshot(widget, `${name}-${field}-${viewport}`, field)
+      assert.match(await widget.locator('.backend-chart-drill__level').innerText(), new RegExp(label))
       const drill = widget.getByTestId('backend-chart-drill')
       await drill.getByRole('button', { name: '查看数据表', exact: true }).click()
       await drill.locator('tbody tr').first().waitFor()

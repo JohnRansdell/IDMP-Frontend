@@ -182,9 +182,28 @@ export function findBackendChartRow(result, params = {}) {
   return (result?.records || []).find(row => candidates.some(value => [row.dimensionKey, row.dimensionName, row.dimensionLabel].map(String).includes(value))) || null
 }
 
-export function backendChartValue(row, kind, unit = '') {
+const CHART_MEASURE_FIELDS = {
+  value: { rowField: 'indicatorValue', label: '指标值' },
+  indicatorvalue: { rowField: 'indicatorValue', label: '指标值' },
+  numeratorvalue: { rowField: 'numerator', label: '分子值' },
+  numerator: { rowField: 'numerator', label: '分子值' },
+  denominatorvalue: { rowField: 'denominator', label: '分母值' },
+  denominator: { rowField: 'denominator', label: '分母值' }
+}
+
+export function backendChartMeasure(widget = {}) {
+  const binding = widget.config?.dataBinding?.measures?.[0]
+  const field = binding?.field || 'value'
+  const key = String(field).toLowerCase()
+  const definition = Object.hasOwn(CHART_MEASURE_FIELDS, key) ? CHART_MEASURE_FIELDS[key] : null
+  return { field, label: binding?.label || definition?.label || field,
+    error: definition ? '' : `当前下钻结果不支持顶层绑定的度量 ${binding?.label || field}，请调整组件字段配置。` }
+}
+
+export function backendChartValue(row, kind, unit = '', field = 'value') {
   if (kind === 'pie') {
-    const value = numericValue(row?.indicatorValue)
+    const rowField = CHART_MEASURE_FIELDS[String(field).toLowerCase()]?.rowField
+    const value = rowField ? numericValue(row?.[rowField]) : null
     return value !== null && value >= 0 ? value : null
   }
   const displayed = String(row?.displayValue ?? '').trim()
