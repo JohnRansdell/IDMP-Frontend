@@ -130,7 +130,7 @@
               <p>{{ hasPeerTrend ? '展示本院实际值与同级医院均值的周期变化' : '展示本院实际值的周期变化；同级医院基准数据暂未接入' }}</p>
             </div>
             <div class="trend-controls">
-              <div class="date-range-fields trend-period-picker" aria-label="趋势时间范围"><el-date-picker v-model="trendPeriodDraft" type="daterange" unlink-panels format="YYYY-MM-DD" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" size="small" /></div>
+              <div class="date-range-fields trend-period-picker" aria-label="趋势时间范围"><el-date-picker v-model="trendMonthRange" type="monthrange" unlink-panels format="YYYY-MM" value-format="YYYY-MM" range-separator="至" start-placeholder="开始月份" end-placeholder="结束月份" size="small" /></div>
               <el-tag v-if="isSourceDefaultTrendRange" size="small" type="info" effect="plain">源数据可用范围</el-tag>
               <el-button size="small" type="primary" @click="applyTrendConditions">应用</el-button>
               <el-button size="small" :disabled="!trendPeriodDraft.some(Boolean) && !analysisPeriodRange.some(Boolean)" @click="clearTrendPeriod">全部时间</el-button>
@@ -433,6 +433,10 @@ const isSourceDefaultTrendRange = ref(false)
 let sourceTrendRangePending = !isCompleteDateRange(analysisPeriodRange.value)
 const reportPeriodRange = ref(initialReportPeriodRange())
 const trendPeriodDraft = ref([...analysisPeriodRange.value])
+const trendMonthRange = computed({
+  get: () => trendPeriodDraft.value.map(value => String(value).slice(0, 7)),
+  set: range => { trendPeriodDraft.value = normalizeTrendMonthRange(range) }
+})
 const trendGrainDraft = ref({})
 const trendAdvancedExpanded = ref([])
 const trendGrainCandidates = ref({})
@@ -1638,9 +1642,20 @@ watch(indicatorCode, () => {
 })
 
 function initialAnalysisPeriodRange() {
-  return route.query.trendStart && route.query.trendEnd
+  const range = route.query.trendStart && route.query.trendEnd
     ? [normalizeDateValue(route.query.trendStart), normalizeDateValue(route.query.trendEnd)]
     : readRememberedAnalysisPeriod(route.query.indicator, route.query.indicatorVersionId)
+  return normalizeTrendMonthRange(range)
+}
+
+function normalizeTrendMonthRange(range) {
+  if (!Array.isArray(range) || range.length !== 2) return []
+  const months = range.map(value => String(value || '').slice(0, 7))
+  if (months.some(value => !/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(value)) || months[0] > months[1]) return []
+  const end = new Date(`${months[1]}-01T00:00:00Z`)
+  end.setUTCMonth(end.getUTCMonth() + 1)
+  end.setUTCDate(0)
+  return [`${months[0]}-01`, end.toISOString().slice(0, 10)]
 }
 
 function initialReportPeriodRange() {
@@ -1656,7 +1671,7 @@ function normalizeDateValue(value) {
 function sourceAvailableTrendRange(availability) {
   const start = normalizeDateValue(availability?.earliestDataDate)
   const end = normalizeDateValue(availability?.latestDataDate)
-  return start && end && start <= end ? [start, end] : []
+  return start && end && start <= end ? normalizeTrendMonthRange([start, end]) : []
 }
 
 function isCompleteDateRange(range) {
