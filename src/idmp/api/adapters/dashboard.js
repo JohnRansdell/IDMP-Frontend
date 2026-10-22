@@ -248,8 +248,10 @@ export function widgetResultToDataset(result = {}, fields = [], id = 'backend') 
       yoy: timeYoy !== undefined ? timeYoy : result.comparison?.yoy ?? result.yoy ?? null,
       mom: timeMom !== undefined ? timeMom : result.comparison?.mom ?? result.mom ?? null,
       unit: hasTimeComparison ? '%' : result.comparison?.unit || result.comparisonUnit || '',
-      trendDirection: result.comparison?.trendDirection || result.trendDirection || null
+      trendDirection: result.comparison?.trendDirection || result.trendDirection || null,
+      ...(result.periodContext || {})
     },
+    periodContext: result.periodContext || null,
     status: result.status || 'EMPTY',
     rowMode: result.rowMode || 'UNPROJECTED',
     serverCalculated: true,

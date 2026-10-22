@@ -1,7 +1,8 @@
 <template>
   <KpiPresentation v-if="kind === 'kpi' && model.status === 'ready'" :model="boundKpiModel" :variant="widget.config?.style?.kpiVariant" :colors="visualStyle.kpi" :clickable="interactive" data-testid="binding-widget" :data-binding-status="model.status" @click="openAnalysis" />
   <article v-else class="dashboard-renderer-card" :class="[kind === 'kpi' ? 'db-kpi-card' : 'db-chart-card', { 'is-dark-surface': surfaceTone === 'dark', 'is-clickable': interactive && kind === 'kpi' }]" data-testid="binding-widget" :data-binding-status="model.status" :role="interactive && kind === 'kpi' ? 'button' : undefined" :tabindex="interactive && kind === 'kpi' ? 0 : undefined" @click="openAnalysis" @keydown.enter="openAnalysis" @keydown.space.prevent="openAnalysis">
-    <div class="db-section-title"><h2 :style="{ color: visualStyle.kpi.titleColor || undefined }">{{ title }}</h2><nav v-if="drill.active" class="drill-breadcrumb" aria-label="组件下钻路径"><button v-for="(part, index) in drill.breadcrumb" :key="`${part}-${index}`" type="button" @click="drill.back(widget.id, index)">{{ part }}</button><button type="button" @click="drill.reset(widget.id)">返回顶层</button></nav></div>
+    <div class="db-section-title"><h2 :title="title" :style="{ color: visualStyle.kpi.titleColor || undefined }">{{ title }}</h2><nav v-if="drill.active" class="drill-breadcrumb" aria-label="组件下钻路径"><button v-for="(part, index) in drill.breadcrumb" :key="`${part}-${index}`" type="button" @click="drill.back(widget.id, index)">{{ part }}</button><button type="button" @click="drill.reset(widget.id)">返回顶层</button></nav></div>
+    <small v-if="dataset?.periodContext?.label" class="binding-period">{{ dataset.periodContext.label }}{{ kind === 'line' ? ' · 月度趋势' : '' }}</small>
     <p v-if="dataset?.filterDiagnostics?.length" role="status" class="filter-diagnostic">{{ dataset.filterDiagnostics.join('；') }}</p>
     <p v-if="dataset?.nameDiagnostics?.length" role="status" class="filter-diagnostic">{{ dataset.nameDiagnostics.join('；') }}</p>
     <p v-if="allZeroComparison" role="status" class="binding-zero-notice">当前分类的指标值均为 0，已保留分类与实际结果。</p>
@@ -13,10 +14,6 @@
     <IdmpChart v-else :option="option" :error="mapError" height="100%" fit-container :aria-label="`${title}，${model.series?.length || 1} 个系列`" @chart-click="onChartClick">
       <template #table><table><thead><tr><th>维度</th><th v-for="series in model.series" :key="series.name">{{ series.name }}</th></tr></thead><tbody><tr v-for="(category, index) in model.categories" :key="category"><td>{{ category }}</td><td v-for="series in model.series" :key="series.name">{{ formatVisibleValue(series.values[index]) }}</td></tr></tbody></table></template>
     </IdmpChart>
-    <div v-if="kind === 'kpi'" class="db-kpi-comparisons binding-kpi-comparisons" :style="{ color: visualStyle.kpi.trendColor || undefined }">
-      <span>同比 {{ formatKpiComparison(kpiComparison.yoy, kpiComparison.unit) }}</span>
-      <span>环比 {{ formatKpiComparison(kpiComparison.mom, kpiComparison.unit) }}</span>
-    </div>
   </article>
 </template>
 <script setup>
@@ -24,7 +21,6 @@ import { computed, inject, ref, watch } from 'vue'
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
 import BackendChartDrill from './BackendChartDrill.vue'
 import { bindingKind, compileWidgetData, bindingChartOption, formatDashboardKpiMetric, formatDashboardMetric, normalizeDashboardMetricUnit } from '../bindingEngine.js'
-import { formatKpiComparison } from '../visualization.js'
 import { createDashboardChartTheme } from '../chartTheme.js'
 import { applyWidgetVisualStyle, resolveWidgetVisualStyle } from '../visualStyle.js'
 import { resolveWidgetSurfaceTone } from '../backgroundAssets.js'
@@ -67,12 +63,13 @@ const kpiComparison = computed(() => {
   const result = dataset.value?.comparison || {}
   const row = model.value?.status === 'ready' ? dataset.value?.rows?.[0] : null
   return {
-    yoy: result.yoy ?? row?.yoy ?? null,
-    mom: result.mom ?? row?.mom ?? null,
+    ...result,
+    yoy: dataset.value?.periodContext ? result.yoy : result.yoy ?? row?.yoy ?? null,
+    mom: dataset.value?.periodContext ? result.mom : result.mom ?? row?.mom ?? null,
     unit: normalizeDashboardMetricUnit(result.unit || row?.comparisonUnit || model.value?.unit || '')
   }
 })
-const boundKpiModel = computed(() => ({ title: props.title, value: displayKpiValue.value, unit: kpiDisplay.value.unit, yoy: kpiComparison.value.yoy, mom: kpiComparison.value.mom, comparisonUnit: kpiComparison.value.unit }))
+const boundKpiModel = computed(() => ({ ...kpiComparison.value, title: props.title, value: displayKpiValue.value, unit: kpiDisplay.value.unit, periodLabel: dataset.value?.periodContext?.label, comparisonUnit: kpiComparison.value.unit }))
 const surfaceTone = computed(() => resolveWidgetSurfaceTone(props.widget))
 const mapError = computed(() => kind.value === 'map' && model.value.status === 'ready' && !dataset.value?.mapDefinition?.geoJSON ? '缺少地图区域边界数据' : '')
 const option = computed(() => createDashboardChartTheme(applyWidgetVisualStyle(props.widget, bindingChartOption(kind.value, model.value, { mapDefinition: dataset.value?.mapDefinition })), surfaceTone.value))
@@ -99,6 +96,12 @@ function openAnalysis() { if (props.interactive && kind.value === 'kpi') emit('a
 .binding-state__action { margin-top:8px; padding:5px 10px; border:1px solid var(--db-accent,#1261a6); border-radius:4px; background:transparent; color:var(--db-accent,#1261a6); cursor:pointer; }
 .filter-diagnostic { margin:0 0 6px; font-size:11px; color:var(--db-warning,#a47735); }
 .binding-zero-notice { margin:0 0 6px; font-size:11px; color:var(--db-muted,#78878e); }
+.binding-period { flex-shrink:0; margin:0 0 6px; color:var(--db-muted,#667085); font-size:11px; }
+.db-kpi-card .db-section-title { flex:0 0 20px; min-height:20px; margin-bottom:4px; }
+.db-kpi-card .db-section-title h2 { display:block; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; line-height:20px; }
+.db-kpi-card .binding-state { flex:1 1 auto; min-height:0; overflow:auto; padding:4px; margin:0; }
+.db-kpi-card .binding-state strong { margin:0; font-size:12px; line-height:1.4; }
+.db-kpi-card .binding-state p { margin:4px 0; }
 .binding-state__action + .binding-state__action { margin-left:8px; }
 table { width:100%; font-size:12px; border-collapse:collapse; } td,th { padding:6px; text-align:left; }
 .binding-table-wrap { max-width:100%; overflow:auto; overscroll-behavior-inline:contain; max-height:100%; }.binding-table-wrap table { width:max-content; min-width:100%; }.binding-table-wrap th { position:sticky; top:0; background:var(--table-header-background,var(--db-surface,#fff)); }.binding-table-wrap td,.binding-table-wrap th { border-bottom:1px solid var(--db-border,#e3e9eb); white-space:nowrap; }.binding-table-wrap.is-zebra tbody tr:nth-child(even) { background:color-mix(in srgb, var(--table-header-background,#f3f7f8) 35%, transparent); }.binding-table-wrap.is-compact td,.binding-table-wrap.is-compact th { padding:4px 6px; }

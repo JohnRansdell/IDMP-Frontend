@@ -65,6 +65,23 @@ for (const kind of ['gauge','radar','funnel','scatter','heatmap']) test(`WidgetR
 test('WidgetRenderer table uses its table branch without IdmpChart', () => { const wrapper = mount(Renderer, { props: props({ id:'table', type:'chart', chartKind:'table', title:'表格', config:{} }) }); assert.equal(wrapper.find('table').exists(), true); assert.equal(wrapper.find('.chart-option').exists(), false); wrapper.unmount() })
 test('WidgetRenderer formats percentage KPI comparisons only at presentation', () => { const wrapper = mount(Renderer, { props: { ...props({ id:'kpi', type:'kpi', title:'KPI', config:{} }), getWidgetKpi: () => ({ title:'KPI', value:'52.63%', unit:'%', mom:1.24, yoy:-0.12, trendDirection:'up', status:'success', target:'≥ 50%' }) } }); assert.match(wrapper.text(), /环比 \+1\.24%/); assert.match(wrapper.text(), /同比 -0\.12%/); wrapper.unmount() })
 test('KPI presentation applies a visible variant class and rearranges the bound KPI structure', () => { const wrapper = mount(KpiPresentationComponent, { props: { variant: 'horizontal', model: { title: '出院人数', value: '120', yoy: 4.2, mom: 1.1, status: 'success' } } }); assert.equal(wrapper.classes().includes('is-variant-horizontal'), true); assert.equal(wrapper.find('.kpi-presentation__head').exists(), true); assert.equal(wrapper.find('.kpi-presentation__comparisons').text().includes('同比 +4.2'), true); wrapper.unmount() })
+
+test('quarterly KPI visibly identifies its current and comparison periods', () => {
+  const wrapper = mount(KpiPresentationComponent, { props: { model: { title: '出院人数', value: '120', periodLabel: '2026年第1季度', yoy: 25, mom: null, comparisonUnit: '%', showMom: true, yoyPeriod: '2025年第1季度', momPeriod: '2025年第4季度' } } })
+  assert.match(wrapper.text(), /2026年第1季度/)
+  assert.match(wrapper.text(), /同比 \+25%对比 2025年第1季度/)
+  assert.match(wrapper.text(), /环比 暂无可比数据对比 2025年第4季度/)
+  wrapper.unmount()
+})
+
+test('annual and custom KPI cards do not show a duplicate or ambiguous period-on-period comparison', () => {
+  for (const periodLabel of ['2026年', '2026-03-01 ~ 2026-05-31']) {
+    const wrapper = mount(KpiPresentationComponent, { props: { model: { title: '出院人数', value: '120', periodLabel, yoy: null, showMom: false, yoyPeriod: '2025年' } } })
+    assert.match(wrapper.text(), /同比 暂无可比数据/)
+    assert.doesNotMatch(wrapper.text(), /环比/)
+    wrapper.unmount()
+  }
+})
 test('bound KPI forwards its analysis click in viewer mode', async () => {
   const widget = { id: 'bound-kpi', type: 'kpi', title: 'KPI', config: { dataBinding: { dataset: 'backend', dimensions: [], measures: [{ field: 'value', aggregation: 'direct' }], series: [], sort: [] } } }
   const wrapper = mount(Renderer, { props: { ...props(widget), interactive: true } })

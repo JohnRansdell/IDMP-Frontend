@@ -28,7 +28,7 @@ function intersectValues(left, right) {
   return intersection.length ? (intersection.length === 1 ? intersection[0] : intersection) : null
 }
 
-export function buildRemoteWidgetQuery(widget, { periodStart, periodEnd, definitions = [], values = {}, fields = [], department = '', interactions = {} } = {}) {
+export function buildRemoteWidgetQuery(widget, { periodStart, periodEnd, granularity = 'MONTHLY', definitions = [], values = {}, fields = [], department = '', interactions = {} } = {}) {
   const scope = widget?.config?.backendQuery || {}
   const filters = {}
   const localQuery = widget?.config?.query || {}
@@ -117,7 +117,7 @@ export function buildRemoteWidgetQuery(widget, { periodStart, periodEnd, definit
   return {
     query: {
       periodStart: start, periodEnd: end,
-      granularity: ['FIXED', 'INDEPENDENT'].includes(scope.periodMode) ? scope.granularity || scope.periodGranularity || 'MONTHLY' : 'MONTHLY',
+      granularity: ['FIXED', 'INDEPENDENT'].includes(scope.periodMode) ? scope.granularity || scope.periodGranularity || 'MONTHLY' : granularity,
       widgetCodes: [String(widget.id)], filters
     }
   }
