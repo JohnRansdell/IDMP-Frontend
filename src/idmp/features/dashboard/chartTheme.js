@@ -29,6 +29,15 @@ export function createDashboardChartTheme(option = {}, surfaceTone = 'light', ap
     ...(series.type === 'gauge' ? { center: series.center ?? ['50%', '54%'], radius: series.radius ?? '76%', title: { offsetCenter: [0, '72%'], overflow: 'truncate', width: 120, ...series.title }, detail: { offsetCenter: [0, '36%'], fontSize: 20, ...series.detail } } : {})
   }))
   const compactSeries = themedSeries.map(series => ['pie', 'funnel'].includes(series.type) ? { label: { show: false }, labelLine: { show: false } } : series.type === 'gauge' ? { title: { show: false }, detail: { fontSize: 16 } } : {})
+  // ECharts merges media options; every size tier must restore what compact mode hides.
+  const responsiveDefaults = {
+    ...(hasCartesianAxes ? { grid: safeGrid } : {}),
+    legend: { show: hasLegend },
+    ...(option.visualMap ? { visualMap: { show: option.visualMap.show !== false } } : {}),
+    series: themedSeries.map(series => ['pie', 'funnel'].includes(series.type)
+      ? { label: { show: series.label?.show !== false }, labelLine: { show: series.labelLine?.show !== false } }
+      : series.type === 'gauge' ? { title: { show: series.title?.show !== false }, detail: { fontSize: series.detail?.fontSize ?? 20 } } : {})
+  }
   return {
     ...option, color: Array.isArray(option.color) && option.color.length ? option.color : mint ? MINT_MEDICAL_PALETTE : DASHBOARD_PALETTE, backgroundColor: 'transparent',
     textStyle: { fontFamily: 'Inter, system-ui, sans-serif', color: tokens.text, ...option.textStyle },
@@ -36,9 +45,10 @@ export function createDashboardChartTheme(option = {}, surfaceTone = 'light', ap
     ...(hasLegend ? { legend: { ...option.legend, type: option.legend?.type || 'scroll', itemWidth: 10, itemHeight: 8, itemGap: 14, textStyle: { color: tokens.legend, fontSize: 11, ...option.legend?.textStyle } } } : {}),
     ...(hasCartesianAxes ? { grid: safeGrid } : {}),
     media: [
+      { option: responsiveDefaults },
       ...(Array.isArray(option.media) ? option.media : []),
-      { query: { maxHeight: 220 }, option: { grid: { left: 10, right: 10, top: 12, bottom: 18, containLabel: true }, legend: { show: false }, visualMap: { show: false }, series: compactSeries } },
-      { query: { maxWidth: 420 }, option: { grid: { left: 10, right: 10, top: hasLegend && !legendAtBottom ? 38 : 16, bottom: legendAtBottom ? 46 : hasBottomScale ? 48 : 24, containLabel: true }, legend: { type: 'scroll', show: hasLegend, itemGap: 8, textStyle: { fontSize: 10 } }, xAxis: { axisLabel: { fontSize: 10, interval: 'auto', hideOverlap: true, overflow: 'truncate' } }, yAxis: { axisLabel: { fontSize: 10, hideOverlap: true, overflow: 'truncate' } } } }
+      { query: { maxWidth: 420 }, option: { ...responsiveDefaults, grid: { left: 10, right: 10, top: hasLegend && !legendAtBottom ? 38 : 16, bottom: legendAtBottom ? 46 : hasBottomScale ? 48 : 24, containLabel: true }, legend: { type: 'scroll', show: hasLegend, itemGap: 8, textStyle: { fontSize: 10 } }, xAxis: { axisLabel: { fontSize: 10, interval: 'auto', hideOverlap: true, overflow: 'truncate' } }, yAxis: { axisLabel: { fontSize: 10, hideOverlap: true, overflow: 'truncate' } } } },
+      { query: { maxHeight: 220 }, option: { grid: { left: 10, right: 10, top: 12, bottom: 18, containLabel: true }, legend: { show: false }, visualMap: { show: false }, series: compactSeries } }
     ],
     ...(option.xAxis ? { xAxis: axis(option.xAxis) } : {}),
     ...(option.yAxis ? { yAxis: axis(option.yAxis) } : {}),
