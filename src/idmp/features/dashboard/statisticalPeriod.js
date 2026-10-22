@@ -1,6 +1,6 @@
 const pad = value => String(value).padStart(2, '0')
 const iso = date => date.toISOString().slice(0, 10)
-const day = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || '')) && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && iso(new Date(`${value}T00:00:00Z`)) === value
+const monthValue = value => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(value || ''))
 const addDays = (value, amount) => iso(new Date(Date.parse(`${value}T00:00:00Z`) + amount * 86400000))
 const addMonths = (value, amount) => {
   const date = new Date(`${value}T00:00:00Z`)
@@ -11,13 +11,13 @@ const addMonths = (value, amount) => {
 export function defaultDashboardPeriod(options = []) {
   const month = options.map(option => String(option?.value || '')).filter(value => /^\d{4}-\d{2}$/.test(value)).sort().at(-1)
     || new Date().toISOString().slice(0, 7)
-  return { type: 'MONTHLY', month, year: Number(month.slice(0, 4)), quarter: Math.ceil(Number(month.slice(5)) / 3), startDate: `${month}-01`, endDate: addDays(addMonths(`${month}-01`, 1), -1) }
+  return { type: 'MONTHLY', month, year: Number(month.slice(0, 4)), quarter: Math.ceil(Number(month.slice(5)) / 3), startMonth: month, endMonth: month }
 }
 
 export function resolveDashboardPeriod(selection = {}) {
   const type = selection.type || 'MONTHLY'
   let start, end
-  if (type === 'MONTHLY' && /^\d{4}-(0[1-9]|1[0-2])$/.test(selection.month || '')) {
+  if (type === 'MONTHLY' && monthValue(selection.month)) {
     start = `${selection.month}-01`
     end = addMonths(start, 1)
   } else if (['QUARTERLY', 'YEARLY'].includes(type) && Number.isInteger(Number(selection.year)) && selection.year >= 1900 && selection.year <= 9998) {
@@ -25,9 +25,9 @@ export function resolveDashboardPeriod(selection = {}) {
     if (type === 'QUARTERLY' && (!Number.isInteger(quarter) || quarter < 1 || quarter > 4)) return null
     start = `${selection.year}-${pad(type === 'YEARLY' ? 1 : (quarter - 1) * 3 + 1)}-01`
     end = addMonths(start, type === 'YEARLY' ? 12 : 3)
-  } else if (type === 'CUSTOM' && day(selection.startDate) && day(selection.endDate) && selection.startDate <= selection.endDate) {
-    start = selection.startDate
-    end = addDays(selection.endDate, 1)
+  } else if (type === 'CUSTOM' && monthValue(selection.startMonth) && monthValue(selection.endMonth) && selection.startMonth <= selection.endMonth) {
+    start = `${selection.startMonth}-01`
+    end = addMonths(`${selection.endMonth}-01`, 1)
   } else return null
   // Only an exact stored calendar-period result can currently represent an interval.
   let granularity = type === 'CUSTOM' ? null : type
@@ -43,9 +43,11 @@ export function resolveDashboardPeriod(selection = {}) {
 export function dashboardPeriodLabel(period) {
   if (!period?.periodStart || !period?.periodEnd) return ''
   const start = period.periodStart.slice(0, 10), end = period.periodEnd.slice(0, 10)
+  if (period.selectionType === 'CUSTOM' && start.endsWith('-01') && end.endsWith('-01')) return `${start.slice(0, 7)} ~ ${addMonths(end, -1).slice(0, 7)}`
   if (start.endsWith('-01') && end === addMonths(start, 1)) return `${start.slice(0, 4)}年${Number(start.slice(5, 7))}月`
   if (start.endsWith('-01') && (Number(start.slice(5, 7)) - 1) % 3 === 0 && end === addMonths(start, 3)) return `${start.slice(0, 4)}年第${Math.ceil(Number(start.slice(5, 7)) / 3)}季度`
   if (start.endsWith('-01-01') && end === addMonths(start, 12)) return `${start.slice(0, 4)}年`
+  if (start.endsWith('-01') && end.endsWith('-01')) return `${start.slice(0, 7)} ~ ${addMonths(end, -1).slice(0, 7)}`
   return `${start} ~ ${addDays(end, -1)}`
 }
 

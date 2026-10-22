@@ -19,16 +19,30 @@ test('month, quarter and year resolve to exact half-open calendar periods', () =
   assert.equal(monthly('2024-02').periodEnd, '2024-03-01')
   assert.deepEqual(resolveDashboardPeriod({ type: 'QUARTERLY', year: 2026, quarter: 2 }), { periodStart: '2026-04-01', periodEnd: '2026-07-01', granularity: 'QUARTERLY', selectionType: 'QUARTERLY' })
   assert.equal(resolveDashboardPeriod({ type: 'YEARLY', year: 2026 }).periodEnd, '2027-01-01')
-  for (const selection of [{ type: 'MONTHLY', month: '2026-13' }, { type: 'QUARTERLY', year: 2026, quarter: 5 }, { type: 'CUSTOM', startDate: '2026-02-30', endDate: '2026-03-01' }, { type: 'CUSTOM', startDate: '2026-05-01', endDate: '2026-04-01' }]) assert.equal(resolveDashboardPeriod(selection), null)
+  for (const selection of [{ type: 'MONTHLY', month: '2026-13' }, { type: 'QUARTERLY', year: 2026, quarter: 5 }, { type: 'CUSTOM', startMonth: '2026-13', endMonth: '2027-01' }, { type: 'CUSTOM', startMonth: '2026-03-01', endMonth: '2026-05' }, { type: 'CUSTOM', startMonth: '2026-05', endMonth: '2026-04' }]) assert.equal(resolveDashboardPeriod(selection), null)
 })
 
 test('custom ranges are never rounded to a calendar quarter or assigned monthly aggregation', () => {
-  const period = resolveDashboardPeriod({ type: 'CUSTOM', startDate: '2026-03-01', endDate: '2026-05-31' })
+  const period = resolveDashboardPeriod({ type: 'CUSTOM', startMonth: '2026-03', endMonth: '2026-05' })
   assert.equal(period.granularity, null)
-  assert.equal(dashboardPeriodLabel(period), '2026-03-01 ~ 2026-05-31')
-  const exact = resolveDashboardPeriod({ type: 'CUSTOM', startDate: '2026-04-01', endDate: '2026-06-30' })
+  assert.equal(dashboardPeriodLabel(period), '2026-03 ~ 2026-05')
+  assert.equal(dashboardPeriodLabel({ ...period, selectionType: undefined }), '2026-03 ~ 2026-05')
+  const exact = resolveDashboardPeriod({ type: 'CUSTOM', startMonth: '2026-04', endMonth: '2026-06' })
   assert.equal(exact.granularity, 'QUARTERLY')
   assert.equal(dashboardComparisonPeriods(exact).showMom, false)
+  assert.equal(dashboardPeriodLabel(exact), '2026-04 ~ 2026-06')
+})
+
+test('custom month ranges include both months, including leap February and year boundaries', () => {
+  for (const [startMonth, endMonth, periodEnd, granularity] of [
+    ['2024-02', '2024-02', '2024-03-01', 'MONTHLY'],
+    ['2026-12', '2027-01', '2027-02-01', null],
+    ['2026-01', '2026-12', '2027-01-01', 'YEARLY']
+  ]) {
+    const period = resolveDashboardPeriod({ type: 'CUSTOM', startMonth, endMonth })
+    assert.deepEqual(period, { periodStart: `${startMonth}-01`, periodEnd, granularity, selectionType: 'CUSTOM' })
+    assert.equal(dashboardPeriodLabel(period), `${startMonth} ~ ${endMonth}`)
+  }
 })
 
 test('quarterly comparisons use the previous quarter across years; annual comparison is not duplicated', () => {
@@ -61,7 +75,7 @@ test('last month returned for a requested quarter is rejected along with its res
 })
 
 test('arbitrary multi-month totals never average or sum the monthly result rows', () => {
-  const range = resolveDashboardPeriod({ type: 'CUSTOM', startDate: '2026-03-01', endDate: '2026-05-31' })
+  const range = resolveDashboardPeriod({ type: 'CUSTOM', startMonth: '2026-03', endMonth: '2026-05' })
   const result = enforceDashboardResultPeriod({ status: 'READY', rows: [row(monthly('2026-03'), .1), row(monthly('2026-04'), .3), row(monthly('2026-05'), .9)] }, range)
   assert.deepEqual(result.rows, [])
   assert.equal(result.periodContext.showMom, false)

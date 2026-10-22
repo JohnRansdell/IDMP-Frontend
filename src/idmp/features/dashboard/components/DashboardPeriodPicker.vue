@@ -12,9 +12,9 @@
       </el-select>
     </template>
     <template v-else>
-      <span class="period-date" data-testid="dashboard-period-start"><el-date-picker v-model="draft.startDate" type="date" value-format="YYYY-MM-DD" aria-label="开始日期" size="small" :clearable="false" /></span>
+      <span class="period-date" data-testid="dashboard-period-start"><el-date-picker v-model="draft.startMonth" type="month" value-format="YYYY-MM" format="YYYY 年 MM 月" aria-label="开始月份" size="small" :clearable="false" /></span>
       <span>至</span>
-      <span class="period-date" data-testid="dashboard-period-end"><el-date-picker v-model="draft.endDate" type="date" value-format="YYYY-MM-DD" aria-label="结束日期" size="small" :clearable="false" /></span>
+      <span class="period-date" data-testid="dashboard-period-end"><el-date-picker v-model="draft.endMonth" type="month" value-format="YYYY-MM" format="YYYY 年 MM 月" aria-label="结束月份" size="small" :clearable="false" /></span>
     </template>
     <el-button type="primary" size="small" :loading="loading" :disabled="!canApply" data-testid="dashboard-period-apply" @click="$emit('apply', { ...draft })">确定</el-button>
     <span class="period-current" data-testid="dashboard-period-current">{{ currentLabel }}</span>
@@ -34,7 +34,7 @@ watch(() => draft.value.type, (_, previousType) => {
   if (!previous) return
   const start = previous.periodStart
   const end = new Date(new Date(`${previous.periodEnd}T00:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10)
-  Object.assign(draft.value, { month: start.slice(0, 7), year: Number(start.slice(0, 4)), quarter: Math.ceil(Number(start.slice(5, 7)) / 3), startDate: start, endDate: end })
+  Object.assign(draft.value, { month: start.slice(0, 7), year: Number(start.slice(0, 4)), quarter: Math.ceil(Number(start.slice(5, 7)) / 3), startMonth: start.slice(0, 7), endMonth: end.slice(0, 7) })
 })
 const canApply = computed(() => Boolean(resolveDashboardPeriod(draft.value)) && JSON.stringify(resolveDashboardPeriod(draft.value)) !== JSON.stringify(resolveDashboardPeriod(props.selection)))
 const currentLabel = computed(() => dashboardPeriodLabel(resolveDashboardPeriod(props.selection)))

@@ -75,7 +75,7 @@ test('quarterly KPI visibly identifies its current and comparison periods', () =
 })
 
 test('annual and custom KPI cards do not show a duplicate or ambiguous period-on-period comparison', () => {
-  for (const periodLabel of ['2026年', '2026-03-01 ~ 2026-05-31']) {
+  for (const periodLabel of ['2026年', '2026-03 ~ 2026-05']) {
     const wrapper = mount(KpiPresentationComponent, { props: { model: { title: '出院人数', value: '120', periodLabel, yoy: null, showMom: false, yoyPeriod: '2025年' } } })
     assert.match(wrapper.text(), /同比 暂无可比数据/)
     assert.doesNotMatch(wrapper.text(), /环比/)

@@ -26,9 +26,11 @@ async function chooseType(label) {
 async function dateInput(testId, value) {
   const target = page.getByTestId(testId)
   const input = await target.evaluate(element => element.tagName === 'INPUT') ? target : target.locator('input')
-  await input.fill(value)
+  const displayed = /^\d{4}-\d{2}$/.test(value) ? `${value.slice(0, 4)} 年 ${value.slice(5)} 月` : value
+  await input.fill(displayed)
   await input.press('Enter')
   await input.press('Tab')
+  if (/^\d{4}-\d{2}$/.test(value)) assert.equal(await input.inputValue(), displayed)
 }
 async function apply() {
   calls.length = 0
@@ -68,10 +70,17 @@ try {
   console.log('Yearly period verified')
 
   await chooseType('自定义区间')
-  await dateInput('dashboard-period-start', '2026-03-01')
-  await dateInput('dashboard-period-end', '2026-05-31')
+  await page.getByTestId('dashboard-period-start').locator('input').click()
+  await page.locator('.el-month-table:visible').waitFor()
+  assert.equal(await page.locator('.el-date-table:visible').count(), 0)
+  await dateInput('dashboard-period-start', '2026-03')
+  await dateInput('dashboard-period-end', '2026-05')
   await apply()
-  assert.match(await page.getByTestId('dashboard-period-current').innerText(), /2026-03-01 ~ 2026-05-31/)
+  assert.match(await page.getByTestId('dashboard-period-current').innerText(), /2026-03 ~ 2026-05/)
+  assert.ok(calls.length > 0)
+  assert.ok(calls.every(call => call.periodStart >= '2026-03-01' && call.periodEnd <= '2026-06-01'))
+  assert.ok(calls.some(call => call.periodStart === '2026-03-01'))
+  assert.ok(calls.some(call => call.periodEnd === '2026-06-01'))
   assert.equal(await page.locator('.kpi-presentation__period').count(), 0)
   assert.ok(await page.getByText('该区间暂不支持整体结果查询', { exact: true }).count() > 0)
   checks.push({ selection: 'custom', requests: [...calls], missingExactPeriod: await page.getByText('该区间暂不支持整体结果查询', { exact: true }).count() })
