@@ -50,7 +50,7 @@ try {
   await noAnalysis()
   assert.ok(requests.some(request => /dashboard-data-sources\/[^/]+\/fields/.test(request.url)))
   assert.ok(requests.some(request => /\/meta\/departments/.test(request.url)))
-  assert.equal(requests.filter(request => isQuery(request.url)).length, 11)
+  assert.equal(requests.filter(request => isQuery(request.url)).length, 10)
   const catalogRows = await page.evaluate(() => {
     let component = document.querySelector('.dashboard-period-picker').__vueParentComponent
     while (component && !component.setupState.catalogIndicatorSources) component = component.parent
@@ -60,7 +60,7 @@ try {
   const longTasks = await page.evaluate(() => window.__dashboardLongTasks)
   assert.ok(Math.max(0, ...longTasks.map(task => task.duration)) < 1500, 'dashboard initialization must not block the main thread for seconds')
   await Promise.all(bodyReads)
-  checks.push({ phase: 'initial', pickerVisibleMs, pickerClickMs, queryCount: 11,
+  checks.push({ phase: 'initial', pickerVisibleMs, pickerClickMs, queryCount: 10,
     queryBytes: responses.filter(response => isQuery(response.url)).reduce((total, response) => total + response.bytes, 0), catalogRows, longTasks })
   await page.screenshot({ path: `${evidence}/initial-desktop.png`, fullPage: true })
 

@@ -8,6 +8,10 @@ const organizationFields = {
 
 const hasValue = value => value !== null && value !== undefined && value !== '' && (!Array.isArray(value) || value.length > 0)
 
+export function isDashboardIndicatorQueryWidget(widget) {
+  return !['text', 'warnings'].includes(widget?.type)
+}
+
 export function resolveDashboardQueryState(result, expectedWidgetCount = 0) {
   const widgets = Object.values(result?.widgets || {})
   if (widgets.some(widget => widget?.status === 'READY')) return { status: 'ready', message: '' }

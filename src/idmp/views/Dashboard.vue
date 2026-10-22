@@ -480,7 +480,7 @@ import { fetchDepartmentDictionary, fetchDepartmentNames } from '@/idmp/api/modu
 import { singleIndicatorTemplatePlan } from '@/idmp/features/dashboard/templateBinding.js'
 import { createDefaultBinding } from '@/idmp/features/dashboard/smartDefaultBinding.js'
 import { createMultiIndicatorDataset, multiIndicatorMeasureField, normalizeIndicatorBindings, singleIndicatorProjectionBinding } from '@/idmp/features/dashboard/multiIndicator.js'
-import { buildRemoteFilterOptionQuery, buildRemoteWidgetQuery, resolveDashboardQueryState } from '@/idmp/features/dashboard/remoteQuery.js'
+import { buildRemoteFilterOptionQuery, buildRemoteWidgetQuery, isDashboardIndicatorQueryWidget, resolveDashboardQueryState } from '@/idmp/features/dashboard/remoteQuery.js'
 import { buildIndicatorAnalysisPeriodContext, buildIndicatorAnalysisRouteQuery } from '@/idmp/features/dashboard/analysisNavigation.js'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
 import {
@@ -2745,7 +2745,7 @@ async function loadRemoteFilterOptions() {
 }
 
 async function previewRemoteWidget(widget, { templateAutoConfigure = false } = {}) {
-  if (!widget?.sourceCode) return
+  if (!isDashboardIndicatorQueryWidget(widget) || !widget?.sourceCode) return
   const widgetId = String(widget.id)
   const generation = (remoteWidgetPreviewGenerations.get(widgetId) || 0) + 1
   remoteWidgetPreviewGenerations.set(widgetId, generation)
@@ -3026,7 +3026,7 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
     const widgetDatasets = await buildDashboardWidgetDatasets(schema, result)
     if (!isCurrentLoad()) return
     remoteWidgetDatasets.value = widgetDatasets
-    const queryState = resolveDashboardQueryState(result, schema.widgets.length)
+    const queryState = resolveDashboardQueryState(result, schema.widgets.filter(isDashboardIndicatorQueryWidget).length)
     dashboardStatus.value = queryState.status === 'empty' ? 'ready' : queryState.status
     dashboardLoadMessage.value = queryState.message
     if (isEditing.value) {
@@ -3190,7 +3190,7 @@ async function queryDashboardTrendMonths(dashboardId, baseQuery, widgets, months
 }
 
 async function buildDashboardWidgetDatasets(schema, result) {
-  const entries = await mapWithConcurrency(schema.widgets, 3, async widget => {
+  const entries = await mapWithConcurrency(schema.widgets.filter(isDashboardIndicatorQueryWidget), 3, async widget => {
     const dataset = widgetResultToDataset(dashboardWidgetResult(result, schema.widgets, widget), remoteFieldCatalog.value[widget.sourceCode], 'backend')
     const query = remoteSelectedPeriod(widget)
     const planned = buildRemoteWidgetQuery(widget, remoteWidgetQueryContext(query, widget.sourceCode, schema))
@@ -3221,7 +3221,7 @@ async function refreshRemoteDashboardData() {
     const widgetDatasets = await buildDashboardWidgetDatasets(schema, result)
     if (controller.signal.aborted || !isCurrentLoad()) return
     remoteWidgetDatasets.value = widgetDatasets
-    const queryState = resolveDashboardQueryState(result, schema.widgets.length)
+    const queryState = resolveDashboardQueryState(result, schema.widgets.filter(isDashboardIndicatorQueryWidget).length)
     dashboardStatus.value = queryState.status === 'empty' ? 'ready' : queryState.status
     dashboardLoadMessage.value = queryState.message
   } catch (error) {
@@ -3247,7 +3247,7 @@ function dashboardWidgetQuerySignature(widget = {}) {
 
 function uniqueDashboardQueryWidgets(schema = {}) {
   const signatures = new Set()
-  return (schema?.widgets || []).filter(widget => {
+  return (schema?.widgets || []).filter(isDashboardIndicatorQueryWidget).filter(widget => {
     if (normalizeIndicatorBindings(widget.config?.indicatorBindings, widget).length > 1) return true
     const signature = dashboardWidgetQuerySignature(widget)
     if (signatures.has(signature)) return false
