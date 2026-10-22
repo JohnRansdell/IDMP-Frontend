@@ -18,7 +18,9 @@ try {
   await page.getByRole('option').filter({ hasText: '血管外科门诊' }).first().click()
   await fields.nth(1).locator('.el-select__wrapper').click()
   await page.getByRole('option', { name: 'R10.402', exact: true }).click({ timeout: 60000 })
-  assert.match(await fields.nth(1).innerText(), /入院诊断编码/)
+  assert.match(await fields.nth(0).innerText(), /OUT_DEPT_CODE/)
+  assert.match(await fields.nth(1).innerText(), /IN_ICD10/)
+  assert.ok(await fields.nth(0).locator('label').evaluate(label => label.scrollWidth <= label.clientWidth + 1), 'Field codes must not be clipped')
   async function apply() {
     const responsePromise = page.waitForResponse(response => {
       const query = new URL(response.url()).searchParams

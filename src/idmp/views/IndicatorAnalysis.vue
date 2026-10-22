@@ -508,7 +508,7 @@ const trendAnalysisGranularity = computed(() => {
 })
 const trendGrainFields = computed(() => Array.isArray(backendIndicatorVersion.value?.dimensionGrain)
   ? backendIndicatorVersion.value.dimensionGrain.map(String).filter(Boolean) : [])
-const trendGrainMetadata = computed(() => trendGrainFields.value.map((code, index) => trendGrainField(code, index, backendIndicatorVersion.value?.drillConfig?.drillPaths || [])))
+const trendGrainMetadata = computed(() => trendGrainFields.value.map(code => trendGrainField(code, backendIndicatorVersion.value?.drillConfig?.drillPaths || [])))
 const trendGrainNameMaps = computed(() => {
   const maps = trendGrainNames(trendGrainMetadata.value, [backendAnalysis.value, trendBackendAnalysis.value]
     .filter(analysis => String(analysis?.indicatorVersionId || '') === String(currentIndicatorVersionId.value)))
@@ -2316,8 +2316,8 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
 .trend-advanced-filters :deep(.el-collapse-item__content) { padding-bottom: 8px; }
 .trend-advanced-help { margin-left: 8px; color: var(--idmp-text-helper); font-size: 12px; font-weight: 400; cursor: help; }
 .trend-advanced-fields { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
-.trend-advanced-fields .trend-grain-field { flex: 0 1 220px; flex-direction: row; align-items: center; min-width: min(180px, 100%); max-width: 260px; }
-.trend-advanced-fields .trend-grain-field label { flex: 0 0 auto; max-width: 84px; }
+.trend-advanced-fields .trend-grain-field { flex: 0 1 300px; flex-direction: row; align-items: center; min-width: min(180px, 100%); max-width: min(320px, 100%); }
+.trend-advanced-fields .trend-grain-field label { flex: 0 1 auto; max-width: 160px; overflow: visible; white-space: normal; overflow-wrap: anywhere; }
 .trend-advanced-fields .trend-grain-field :deep(.el-select) { width: auto; min-width: 0; flex: 1 1 120px; }
 .trend-advanced-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 .trend-advanced-actions .el-button + .el-button { margin-left: 0; }

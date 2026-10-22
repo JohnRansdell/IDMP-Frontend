@@ -42,9 +42,28 @@ test('opening the select does not overwrite remote searches with an empty query'
   assert.doesNotMatch(descriptor.template.content, /@visible-change="visible => visible && loadTrendGrainOptions/)
 })
 
-test('diagnosis code dimensions have concrete labels without inventing diagnosis names', () => {
-  const field = trendGrainField('IN_ICD10', 1)
-  assert.equal(field.label, '入院诊断编码')
+test('unconfigured dimensions display their original codes without inferred names', () => {
+  for (const code of ['IN_ICD10', 'OUT_ICD10', 'OUT_DEPT_CODE', 'DOCTOR_CODE', 'customField', '科室编码']) {
+    assert.equal(trendGrainField(code).label, code)
+  }
+  const field = trendGrainField('IN_ICD10')
   assert.deepEqual(namedTrendGrainOptions([{ value: 'R10.402', label: 'R10.402' }], field),
     [{ value: 'R10.402', label: 'R10.402', nameMissing: false }])
+})
+
+test('matching configured names take precedence regardless of language', () => {
+  for (const name of ['自定义出院科室', 'Discharge Department']) {
+    const paths = [{ levels: [{ dimensionFieldCode: 'out_dept_code', levelName: name }] }]
+    assert.equal(trendGrainField('OUT_DEPT_CODE', paths).label, name)
+    assert.equal(trendGrainField('IN_ICD10', paths).label, 'IN_ICD10')
+  }
+  assert.equal(trendGrainField('IN_ICD10', [{ levels: [{ memberKeyFieldCode: 'IN_ICD10', levelName: '  ' }] }]).label, 'IN_ICD10')
+  assert.equal(trendGrainField('IN_ICD10', [{ levels: [{ memberKeyFieldCode: 'IN_ICD10', levelName: '入院病种' }] }]).label, '入院病种')
+})
+
+test('department member names still come from the dictionary independently of the field label', () => {
+  const field = trendGrainField('OUT_DEPT_CODE')
+  assert.equal(field.label, 'OUT_DEPT_CODE')
+  assert.deepEqual(namedTrendGrainOptions([{ value: '823', label: '823' }], field, new Map([['823', '肝胆及肝脏移植外科']])),
+    [{ value: '823', label: '肝胆及肝脏移植外科', nameMissing: false }])
 })
