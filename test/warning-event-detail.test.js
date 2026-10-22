@@ -32,30 +32,37 @@ test('period uses the frozen bounds, not the much later warning trigger date', (
   assert.equal(warningEventPeriod({ ...event(), periodEnd: null }), '未记录统计周期')
 })
 
-test('nested threshold conditions include the current value and preserve AND, OR and NOT', () => {
+test('nested threshold conditions omit the current value and preserve AND, OR and NOT', () => {
   const data = event()
   data.comparisonContext.condition = { logic: 'OR', children: [
     { logic: 'AND', children: [{ operator: 'GT', threshold: '0.4' }, { logic: 'NOT', children: [{ operator: 'GTE', threshold: '1' }] }] },
     { operator: 'EQ', threshold: '0.25' }
   ] }
-  assert.equal(warningEventCondition(data), '（（指标值 0.41924399 > 0.4 且 非（指标值 0.41924399 ≥ 1）） 或 指标值 0.41924399 = 0.25）')
-  assert.equal(warningEventCondition({ ...data, actualValue: 0 }).includes('指标值 0 > 0.4'), true)
+  assert.equal(warningEventCondition(data), '（（指标值 > 0.4 且 非（指标值 ≥ 1）） 或 指标值 = 0.25）')
+  assert.equal(warningEventCondition({ ...data, actualValue: 0 }), warningEventCondition(data))
 })
 
-test('trend and volatility use per-leaf evaluated values and never pretend unevaluated branches were evaluated', () => {
+test('trend and volatility describe only the rule, not evaluated or deviation values', () => {
   const delta = { operator: 'GT', threshold: '0.1', measure: 'DELTA' }
   const rate = { operator: 'GT', threshold: '0.1', measure: 'CHANGE_RATE' }
   const data = event()
   data.warningType = 'TREND'
   data.comparisonContext.condition = { logic: 'OR', children: [delta, rate] }
   data.comparisonContext.evaluatedConditions = [{ condition: delta, actualValue: 0.41924399, deviationValue: 0 }]
-  assert.equal(warningEventCondition(data), '（变化值 0 > 0.1 或 变化率 > 0.1）')
+  assert.equal(warningEventCondition(data), '（变化值 > 0.1 或 变化率 > 0.1）')
   data.warningType = 'VOLATILITY'
   data.comparisonContext.condition = { operator: 'GTE', threshold: '2', windowSize: 4 }
   data.comparisonContext.evaluatedConditions = [{ condition: data.comparisonContext.condition, actualValue: 10, deviationValue: 2.5 }]
-  assert.equal(warningEventCondition(data), '最近 4 个周期的标准差 2.5 ≥ 2')
+  assert.equal(warningEventCondition(data), '最近 4 个周期的标准差 ≥ 2')
   data.comparisonContext.evaluatedConditions = []
   data.comparisonContext.deviationValue = 3
-  assert.equal(warningEventCondition(data), '最近 4 个周期的标准差 3 ≥ 2')
+  assert.equal(warningEventCondition(data), '最近 4 个周期的标准差 ≥ 2')
   assert.equal(warningEventCondition(event()), '未记录触发条件')
+})
+
+test('legacy scalar conditions retain their operator and zero threshold without the actual value', () => {
+  const data = event()
+  data.thresholdValue = 0
+  data.comparisonContext.operator = 'GTE'
+  assert.equal(warningEventCondition(data), '指标值 ≥ 0')
 })

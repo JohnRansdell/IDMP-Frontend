@@ -44,24 +44,8 @@ export function warningEventPeriod(event) {
 
 export function warningEventCondition(event) {
   const context = event.comparisonContext || {}
-  const type = event.warningType
   const condition = context.condition || (event.thresholdValue != null && context.operator
     ? { operator: context.operator, threshold: event.thresholdValue } : null)
   if (!condition) return '未记录触发条件'
-  const leaves = context.evaluatedConditions || []
-  function describe(node) {
-    if (node.logic === 'NOT') return `非（${describe(node.children?.[0] || {})}）`
-    if (node.logic) return `（${(node.children || []).map(describe).join(node.logic === 'AND' ? ' 且 ' : ' 或 ')}）`
-    const evaluated = leaves.find(leaf => leaf.condition?.operator === node.operator
-      && String(leaf.condition?.threshold) === String(node.threshold)
-      && (leaf.condition?.measure || 'DELTA') === (node.measure || 'DELTA')
-      && (leaf.condition?.windowSize || 3) === (node.windowSize || 3))
-    // The worker's actualValue is the raw indicator value; derived comparisons use deviationValue.
-    const actual = type === 'THRESHOLD' ? evaluated?.actualValue ?? event.actualValue
-      : evaluated?.deviationValue ?? (!condition.logic ? context.deviationValue : null)
-    const text = describeWarningCondition(node, type)
-    const boundary = text.search(/ [>≥<≤=≠] /)
-    return actual != null && boundary >= 0 ? `${text.slice(0, boundary)} ${actual}${text.slice(boundary)}` : text
-  }
-  return describe(condition)
+  return describeWarningCondition(condition, event.warningType)
 }

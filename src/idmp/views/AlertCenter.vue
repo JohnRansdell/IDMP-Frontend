@@ -9,7 +9,30 @@
     <el-tabs v-model="activeTab" @tab-change="refreshCurrent">
       <el-tab-pane label="预警事件" name="events">
         <section class="surface-card filter-card"><el-form :model="eventFilters" inline @submit.prevent="loadEvents"><el-form-item label="规则 ID"><el-input v-model.trim="eventFilters.ruleId" /></el-form-item><el-form-item label="指标版本"><el-select v-model="eventFilters.indicatorVersionId" clearable filterable allow-create><el-option v-for="item in indicatorVersions" :key="item.id" :label="indicatorLabel(item)" :value="item.id" /></el-select></el-form-item><el-form-item label="状态"><el-select v-model="eventFilters.status" clearable><el-option v-for="item in WARNING_EVENT_STATUSES" :key="item" :label="warningLabel(item)" :value="item" /></el-select></el-form-item><el-form-item label="级别"><el-select v-model="eventFilters.severity" clearable><el-option v-for="item in WARNING_SEVERITIES" :key="item" :label="warningLabel(item)" :value="item" /></el-select></el-form-item><el-form-item><el-button type="primary" native-type="submit">查询</el-button><el-button @click="resetEventFilters">重置</el-button></el-form-item></el-form></section>
-        <section class="surface-card table-card"><div class="table-heading"><div><h2>预警事件</h2><p>事件由正式结果激活后的后端 Worker 自动评估生成；查询不会触发计算。</p></div></div><StatePanel v-if="eventError" type="error" title="预警事件读取失败" :description="eventError" /><StatePanel v-else-if="!eventLoading && !events.length" type="empty" title="暂无匹配的预警事件" /><el-table v-else v-loading="eventLoading" :data="events" table-layout="fixed"><el-table-column label="级别" width="100"><template #default="{ row }"><StatusBadge :label="warningLabel(row.severity)" :tone="severityTone(row.severity)" /></template></el-table-column><el-table-column label="类型" min-width="130"><template #default="{ row }">{{ warningLabel(row.warningType) }}</template></el-table-column><el-table-column label="当前值 / 阈值" width="150"><template #default="{ row }"><strong>{{ displayValue(row.actualValue) }}</strong><small> / {{ displayValue(row.thresholdValue) }}</small></template></el-table-column><el-table-column label="比较上下文" min-width="220"><template #default="{ row }"><span>{{ comparisonSummary(row.comparisonContext) }}</span></template></el-table-column><el-table-column label="状态" width="110"><template #default="{ row }"><StatusBadge :status="row.status" :label="warningLabel(row.status)" /></template></el-table-column><el-table-column label="触发时间" min-width="170"><template #default="{ row }"><span class="mono-data">{{ row.triggerTime || '-' }}</span></template></el-table-column><el-table-column label="操作" width="220" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="navigateToEvent(row.id)">详情</el-button><el-button v-if="row.status === 'OPEN'" link type="primary" @click="acknowledgeEvent(row)">确认</el-button><el-button v-if="row.status !== 'CLOSED'" link type="danger" @click="closeEvent(row)">关闭</el-button></template></el-table-column></el-table><div class="table-footer"><span>共 {{ eventTotal }} 条</span><el-pagination v-model:current-page="eventPage" v-model:page-size="eventSize" layout="prev, pager, next, sizes" :page-sizes="[6,9,12]" :total="eventTotal" @current-change="loadEvents" @size-change="loadEvents" /></div></section>
+        <section class="surface-card table-card">
+          <div class="table-heading"><h2>预警事件</h2></div>
+          <StatePanel v-if="eventError" type="error" title="预警事件读取失败" :description="eventError" />
+          <StatePanel v-else-if="!eventLoading && !events.length" type="empty" title="暂无匹配的预警事件" />
+          <el-table v-else v-loading="eventLoading" :data="eventRows" table-layout="fixed" data-testid="warning-events-table">
+            <el-table-column label="级别" width="80"><template #default="{ row }"><StatusBadge :label="warningLabel(row.severity)" :tone="severityTone(row.severity)" /></template></el-table-column>
+            <el-table-column label="类型" width="110"><template #default="{ row }">{{ warningLabel(row.warningType) }}</template></el-table-column>
+            <el-table-column label="当前值" width="130"><template #default="{ row }"><strong class="event-current-value">{{ displayValue(row.actualValue) }}</strong></template></el-table-column>
+            <el-table-column label="触发结果" min-width="340"><template #default="{ row }">
+              <div class="event-result-summary">
+                <div><span>规则结果范围：</span>{{ row.summary.scope.rule }}</div>
+                <div><span>本次触发结果：</span>{{ row.summary.scope.result }}</div>
+                <div v-for="item in row.summary.dimensions" :key="item.field"><span>{{ item.label }}：</span>{{ item.value }}</div>
+                <div><span>结果统计周期：</span>{{ row.summary.period }}</div>
+              </div>
+            </template></el-table-column>
+            <el-table-column label="触发条件" min-width="260"><template #default="{ row }"><span class="event-condition">{{ row.summary.condition }}</span></template></el-table-column>
+            <el-table-column label="状态" width="100"><template #default="{ row }"><StatusBadge :status="row.status" :label="warningLabel(row.status)" /></template></el-table-column>
+            <el-table-column label="触发时间" min-width="180"><template #default="{ row }"><span class="mono-data">{{ row.triggerTime?.replace('T', ' ') || '-' }}</span></template></el-table-column>
+            <el-table-column label="操作" width="180" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="navigateToEvent(row.id)">详情</el-button><el-button v-if="row.status === 'OPEN'" link type="primary" @click="acknowledgeEvent(row)">确认</el-button><el-button v-if="row.status !== 'CLOSED'" link type="danger" @click="closeEvent(row)">关闭</el-button></template></el-table-column>
+          </el-table>
+          <p v-if="eventDictionaryError" class="event-dictionary-note" role="status">{{ eventDictionaryError }}</p>
+          <div class="table-footer"><span>共 {{ eventTotal }} 条</span><el-pagination v-model:current-page="eventPage" v-model:page-size="eventSize" layout="prev, pager, next, sizes" :page-sizes="[6,9,12]" :total="eventTotal" @current-change="loadEvents" @size-change="loadEvents" /></div>
+        </section>
       </el-tab-pane>
 
       <el-tab-pane label="预警规则" name="rules">
@@ -53,11 +76,14 @@ import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
 import WarningRuleConditions from '@/idmp/components/WarningRuleConditions.vue'
 import WarningEventSummary from '@/idmp/components/WarningEventSummary.vue'
+import { fetchDepartmentNames } from '@/idmp/api/modules/departments.js'
+import { isDepartmentCodeField } from '@/idmp/features/shared/departmentDictionary.js'
+import { warningEventCondition, warningEventDimensions, warningEventPeriod, warningEventScope } from '@/idmp/features/warnings/eventDetail.js'
 import { notifyNotificationsRead } from '@/idmp/layout/shellState.js'
 import { fetchAllIndicatorVersions as fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
 import { fetchSystemUsers } from '@/idmp/api/modules/system'
 import { acknowledgeWarningEvent, closeWarningEvent, createWarningRule, disableWarningRule, enableWarningRule, fetchNotifications, fetchWarningDeliveries, fetchWarningEvent, fetchWarningRule, fetchWarningRules, fetchWarnings, markAllNotificationsRead, markNotificationRead, publishWarningRuleVersion, updateWarningRuleVersion } from '@/idmp/api/modules/warnings'
-import { WARNING_EVENT_STATUSES, WARNING_OPERATORS, WARNING_PERIOD_TYPES, WARNING_SEVERITIES, WARNING_TYPES, buildWarningRulePayload, describeWarningCondition, normalizePage, normalizeWarningRule, validateWarningRuleForm, warningLabel, warningRuleCapabilities } from '@/idmp/api/adapters/warning'
+import { WARNING_EVENT_STATUSES, WARNING_PERIOD_TYPES, WARNING_SEVERITIES, WARNING_TYPES, buildWarningRulePayload, normalizePage, normalizeWarningRule, validateWarningRuleForm, warningLabel, warningRuleCapabilities } from '@/idmp/api/adapters/warning'
 
 const router = useRouter()
 const route = useRoute()
@@ -67,6 +93,24 @@ const mutating = ref(false)
 const eventLoading = ref(false); const ruleLoading = ref(false); const notificationLoading = ref(false)
 const eventError = ref(''); const ruleError = ref(''); const notificationError = ref('')
 const events = ref([]); const rules = ref([]); const notifications = ref([])
+const departmentNames = ref(new Map())
+const eventDictionaryError = ref('')
+const eventRows = computed(() => events.value.map(event => ({ ...event, summary: {
+  scope: warningEventScope(event), dimensions: warningEventDimensions(event, departmentNames.value),
+  period: warningEventPeriod(event), condition: warningEventCondition(event)
+} })))
+let dictionaryGeneration = 0
+watch(events, async records => {
+  const generation = ++dictionaryGeneration
+  eventDictionaryError.value = ''
+  if (!records.some(event => warningEventDimensions(event).some(item => isDepartmentCodeField(item.field)))) return
+  try {
+    const names = await fetchDepartmentNames()
+    if (generation === dictionaryGeneration) departmentNames.value = names
+  } catch {
+    if (generation === dictionaryGeneration) eventDictionaryError.value = '科室字典暂不可用，已保留事件中的原始维度取值。'
+  }
+})
 const eventTotal = ref(0); const ruleTotal = ref(0)
 const eventPage = ref(1); const eventSize = ref(9); const rulePage = ref(1); const ruleSize = ref(20)
 const indicatorVersions = ref([]); const users = ref([]); const usersLoading = ref(false)
@@ -85,7 +129,6 @@ function indicatorLabel(item) { return `${item.indicatorName || item.name || ite
 function userLabel(user) { return `${user.nickname || user.name || user.username || `用户 ${user.id}`} · ${user.id}` }
 function displayValue(value) { return value === undefined || value === null || value === '' ? '-' : String(value) }
 function severityTone(value) { return ({ CRITICAL: 'danger', HIGH: 'danger', MEDIUM: 'warning', LOW: 'info', INFO: 'neutral' })[String(value).toUpperCase()] || 'neutral' }
-function comparisonSummary(context = {}) { const bits = []; Object.entries(context.dimensionSnapshot || {}).forEach(([key, value]) => bits.push(`${key}: ${value ?? '空'}`)); if (context.condition?.logic) bits.push(describeWarningCondition(context.condition)); if (context.periodType) bits.push(warningLabel(context.periodType)); if (context.baselineValue !== undefined && context.baselineValue !== null) bits.push(`基线 ${context.baselineValue}`); if (context.deviationValue !== undefined && context.deviationValue !== null) bits.push(`偏差 ${context.deviationValue}`); if (context.baselineScenarioVersionId) bits.push(`基准场景 ${context.baselineScenarioVersionId}`); return bits.join(' · ') || '无比较上下文' }
 function ruleCapabilities(rule) { return warningRuleCapabilities(rule) }
 function ruleWorkflowText(rule) { const capabilities = ruleCapabilities(rule); if (capabilities.canPublish) return '① 草稿已保存 → ② 发布规则 → ③ 启用规则'; if (capabilities.canEnable) return '① 草稿已保存 → ② 已发布 → ③ 启用规则'; if (capabilities.canDisable) return '① 草稿已保存 → ② 已发布 → ③ 已启用'; return `当前状态：${warningLabel(rule.version?.publicationStatus)} / ${warningLabel(rule.enableStatus)}` }
 function ruleWorkflowHint(rule) { const capabilities = ruleCapabilities(rule); if (capabilities.canPublish) return '发布用于冻结并校验当前规则定义；发布成功后仍不会触发预警，还需要继续启用。'; if (capabilities.canEnable) return '规则定义已经发布。点击“启用规则”后，后续新激活且范围匹配的正式结果才会参与评估。'; if (capabilities.canDisable) return '规则正在运行，只评估启用之后新激活且周期、有效期匹配的正式结果。'; return '请根据当前状态完成下一步操作。' }
@@ -205,6 +248,11 @@ onMounted(bootstrap)
 </script>
 
 <style scoped lang="scss">
+.event-result-summary { font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.event-result-summary span { color: var(--idmp-text-helper); }
+.event-current-value { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.event-condition { line-height: 1.7; overflow-wrap: anywhere; }
+.event-dictionary-note { margin: 12px 16px; color: var(--idmp-text-helper); font-size: 12px; }
 :global(.warning-event-dialog) { max-height: calc(100dvh - 48px); margin: 24px auto; display: flex; flex-direction: column; }
 :global(.warning-event-dialog .el-dialog__body) { min-height: 0; overflow-y: auto; }
 :global(.warning-event-dialog .el-dialog__header), :global(.warning-event-dialog .el-dialog__footer) { flex-shrink: 0; }
