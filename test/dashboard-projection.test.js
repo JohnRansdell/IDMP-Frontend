@@ -7,6 +7,7 @@ import { effectiveDrill } from '../src/idmp/features/dashboard/drillDown.js'
 import { buildRemoteWidgetQuery } from '../src/idmp/features/dashboard/remoteQuery.js'
 import { createMultiIndicatorDataset, singleIndicatorProjectionBinding } from '../src/idmp/features/dashboard/multiIndicator.js'
 import { loadBackendChartRoot, loadBackendChartLevel, initialBackendChartNavigation, projectedDrillNavigation, resolveChartDrillPath } from '../src/idmp/features/dashboard/backendChartDrill.js'
+import { normalizeDepartmentDataset } from '../src/idmp/features/dashboard/dimensionNames.js'
 
 const fields = [
   { code: 'dept', name: 'Department', dataType: 'STRING', role: 'DIMENSION', filterable: true, groupable: true, aggregations: [] },
@@ -31,6 +32,44 @@ test('duplicate server tuples fail rather than summing numerator/denominator or 
   assert.equal(model.status, 'invalid')
   assert.match(model.message, /唯一粒度/)
   assert.equal(compileWidgetData('pie', { ...binding, measures: [{ field: 'value', aggregation: 'sum' }] }, data).status, 'invalid')
+})
+
+test('normalized identical labels retain server member identities and click tuples', () => {
+  const data = widgetResultToDataset({ status: 'READY', rowMode: 'PROJECTED', rows: [
+    { OUT_DEPT_NAME: '内科(东院)', out_dept_code: '1', value: 0.2, dimensionIdentityFields: { OUT_DEPT_NAME: 'out_dept_code' } },
+    { OUT_DEPT_NAME: '内科（东院）', out_dept_code: '2', value: 0.4, dimensionIdentityFields: { OUT_DEPT_NAME: 'out_dept_code' } }
+  ] }, [{ ...fields[0], code: 'OUT_DEPT_NAME' }, fields[2]])
+  const normalized = normalizeDepartmentDataset(data, { names: new Map([['1', '内科（东院）'], ['2', '内科（东院）']]) })
+  const model = compileWidgetData('pie', { ...binding, dimensions: [{ field: 'OUT_DEPT_NAME' }] }, normalized)
+  assert.equal(model.status, 'ready')
+  assert.deepEqual(model.series[0].values, [0.2, 0.4])
+  assert.deepEqual(model.dimensionTuples, [
+    { OUT_DEPT_NAME: '内科(东院)', out_dept_code: '1' }, { OUT_DEPT_NAME: '内科（东院）', out_dept_code: '2' }
+  ])
+  assert.equal(new Set(model.categories).size, 2)
+  const duplicate = { ...normalized, rows: [normalized.rows[0], { ...normalized.rows[0], value: 0.9 }] }
+  assert.equal(compileWidgetData('pie', { ...binding, dimensions: [{ field: 'OUT_DEPT_NAME' }] }, duplicate).status, 'invalid')
+})
+
+test('historical department aliases retain separate exact results after dictionary display normalization', () => {
+  const sourceRows = [
+    { OUT_DEPT_NAME: '骨科(东院)', out_dept_code: '9012', value: 0, resultId: 'old-a', dimensionIdentityFields: { OUT_DEPT_NAME: 'out_dept_code' } },
+    { OUT_DEPT_NAME: '骨科（东院）', out_dept_code: '9012', value: 0.01242236, resultId: 'old-b', dimensionIdentityFields: { OUT_DEPT_NAME: 'out_dept_code' } }
+  ]
+  const data = normalizeDepartmentDataset(widgetResultToDataset({ status: 'READY', rowMode: 'PROJECTED', rows: sourceRows },
+    [{ ...fields[0], code: 'OUT_DEPT_NAME' }, fields[2]]), { names: new Map([['9012', '骨科（东院）']]) })
+  assert.equal(data.rows[0].OUT_DEPT_NAME, sourceRows[0].OUT_DEPT_NAME)
+  assert.equal(data.rows[1].resultId, 'old-b')
+  const model = compileWidgetData('pie', { ...binding, dimensions: [{ field: 'OUT_DEPT_NAME' }] }, data)
+  assert.equal(model.status, 'ready')
+  assert.deepEqual(model.series[0].values, [0, 0.01242236])
+  assert.equal(new Set(model.categories).size, 2)
+})
+
+test('server identity metadata must include the actual member code', () => {
+  const model = compileWidgetData('pie', binding, dataset([{ dept: 'A', value: 0.2, dimensionIdentityFields: { dept: 'code' } }]))
+  assert.equal(model.status, 'invalid')
+  assert.match(model.message, /缺少成员编码/)
 })
 
 test('series pivot preserves sparse cells and unassigned dimensions without aggregation', () => {

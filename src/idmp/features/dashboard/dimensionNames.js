@@ -85,6 +85,7 @@ export function normalizeDepartmentDataset(dataset, { paths = [], names = new Ma
       if (candidate === dimensionFieldValue(row, displayField)) return row
       const resolved = isMemberName(candidate, code) ? candidate : ''
       if (!resolved) return row
+      if (dataset.rowMode === 'PROJECTED') return row
       const field = Object.keys(row).find(key => key.toLowerCase() === String(displayField).toLowerCase()) || displayField || 'departmentName'
       return { ...row, [field]: resolved }
     })
@@ -99,6 +100,7 @@ export function normalizeDepartmentDataset(dataset, { paths = [], names = new Ma
   const identifiers = new Set([...Object.keys(displayFields), ...Object.values(displayFields)].map(field => String(field).toLowerCase()))
   return {
     ...dataset, rows,
+    departmentNames: Object.fromEntries(names),
     fields: dataset.fields?.map(field => identifiers.has(String(field.id).toLowerCase()) ? { ...field, semanticType: 'dimension' } : field),
     dimensionDisplayFields: displayFields,
     departmentFields: [...new Set([...departmentMappings(paths).map(([field]) => field), ...(dataset.departmentFields || [])])],
@@ -109,6 +111,11 @@ export function normalizeDepartmentDataset(dataset, { paths = [], names = new Ma
 export function visibleDimensionName(row, dimension, dataset = {}) {
   const field = dimension.field
   const raw = dimensionFieldValue(row, field)
+  const identity = departmentIdentity(row)
+  if ([identity.field, identity.displayField].some(key => key && key.toLowerCase() === String(field).toLowerCase())) {
+    const dictionaryName = dataset.departmentNames?.[identity.code]
+    if (isMemberName(dictionaryName, identity.code)) return dictionaryName
+  }
   const mapping = { ...dimensionDisplayFields(), ...dataset.dimensionDisplayFields }
   const displayField = dimension.displayField || Object.entries(mapping).find(([key]) => key.toLowerCase() === String(field).toLowerCase())?.[1]
     || (/_CODE$|_ID$/i.test(field) ? field.replace(/_(?:CODE|ID)$/i, '_NAME') : /(?:Code|Id)$/.test(field) ? field.replace(/(?:Code|Id)$/, 'Name') : '')
@@ -118,7 +125,6 @@ export function visibleDimensionName(row, dimension, dataset = {}) {
     const label = [row.dimensionName, row.dimensionLabel].find(value => isMemberName(value, raw))
     if (label) return label
   }
-  const identity = departmentIdentity(row)
   if (identity.code === text(raw) && identity.name) return identity.name
   const isDepartment = (dataset.departmentFields || []).some(key => key.toLowerCase() === String(field).toLowerCase())
   if ((identity.code === text(raw) && !identity.name || isDepartment) && /^\d+$/.test(text(raw))) return `科室编码：${raw}`
