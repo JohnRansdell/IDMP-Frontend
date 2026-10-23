@@ -81,9 +81,9 @@ try {
   assert.ok(calls.every(call => call.periodStart >= '2026-03-01' && call.periodEnd <= '2026-06-01'))
   assert.ok(calls.some(call => call.periodStart === '2026-03-01'))
   assert.ok(calls.some(call => call.periodEnd === '2026-06-01'))
-  assert.equal(await page.locator('.kpi-presentation__period').count(), 0)
-  assert.ok(await page.getByText('该区间暂不支持整体结果查询', { exact: true }).count() > 0)
-  checks.push({ selection: 'custom', requests: [...calls], missingExactPeriod: await page.getByText('该区间暂不支持整体结果查询', { exact: true }).count() })
+  assert.ok(calls.some(call => call.granularity === 'CUSTOM' && call.periodStart === '2026-03-01' && call.periodEnd === '2026-06-01'))
+  assert.equal(await page.getByText('该区间暂不支持整体结果查询', { exact: true }).count(), 0)
+  checks.push({ selection: 'custom', requests: [...calls], intervalQuery: true })
   console.log('Custom period verified')
   await page.screenshot({ path: `${evidence}/custom-desktop.png` })
 

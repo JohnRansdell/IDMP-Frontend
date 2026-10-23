@@ -24,20 +24,20 @@ test('month, quarter and year resolve to exact half-open calendar periods', () =
 
 test('custom ranges are never rounded to a calendar quarter or assigned monthly aggregation', () => {
   const period = resolveDashboardPeriod({ type: 'CUSTOM', startMonth: '2026-03', endMonth: '2026-05' })
-  assert.equal(period.granularity, null)
+  assert.equal(period.granularity, 'CUSTOM')
   assert.equal(dashboardPeriodLabel(period), '2026-03 ~ 2026-05')
   assert.equal(dashboardPeriodLabel({ ...period, selectionType: undefined }), '2026-03 ~ 2026-05')
   const exact = resolveDashboardPeriod({ type: 'CUSTOM', startMonth: '2026-04', endMonth: '2026-06' })
-  assert.equal(exact.granularity, 'QUARTERLY')
+  assert.equal(exact.granularity, 'CUSTOM')
   assert.equal(dashboardComparisonPeriods(exact).showMom, false)
   assert.equal(dashboardPeriodLabel(exact), '2026-04 ~ 2026-06')
 })
 
 test('custom month ranges include both months, including leap February and year boundaries', () => {
   for (const [startMonth, endMonth, periodEnd, granularity] of [
-    ['2024-02', '2024-02', '2024-03-01', 'MONTHLY'],
-    ['2026-12', '2027-01', '2027-02-01', null],
-    ['2026-01', '2026-12', '2027-01-01', 'YEARLY']
+    ['2024-02', '2024-02', '2024-03-01', 'CUSTOM'],
+    ['2026-12', '2027-01', '2027-02-01', 'CUSTOM'],
+    ['2026-01', '2026-12', '2027-01-01', 'CUSTOM']
   ]) {
     const period = resolveDashboardPeriod({ type: 'CUSTOM', startMonth, endMonth })
     assert.deepEqual(period, { periodStart: `${startMonth}-01`, periodEnd, granularity, selectionType: 'CUSTOM' })
@@ -79,6 +79,23 @@ test('arbitrary multi-month totals never average or sum the monthly result rows'
   const result = enforceDashboardResultPeriod({ status: 'READY', rows: [row(monthly('2026-03'), .1), row(monthly('2026-04'), .3), row(monthly('2026-05'), .9)] }, range)
   assert.deepEqual(result.rows, [])
   assert.equal(result.periodContext.showMom, false)
+})
+
+test('custom department totals query the full interval and accept only backend interval rows', () => {
+  const range = resolveDashboardPeriod({ type: 'CUSTOM', startMonth: '2026-02', endMonth: '2026-04' })
+  const query = buildRemoteWidgetQuery({ id: 'departments' }, range).query
+  assert.equal(query.granularity, 'CUSTOM')
+  assert.equal(query.periodStart, '2026-02-01')
+  assert.equal(query.periodEnd, '2026-05-01')
+  const interval = { ...row(range, 4 / 52), OUT_DEPT_CODE: '9012', numeratorValue: 4, denominatorValue: 52,
+    sourceResultIds: ['1', '2', '3'], aggregationMethod: 'CUSTOM_RANGE_FACTOR_ROLLUP' }
+  const result = enforceDashboardResultPeriod({ status: 'READY', rows: [interval, row(monthly('2026-04'))] }, query, { selectionType: 'CUSTOM' })
+  assert.equal(result.status, 'READY')
+  assert.deepEqual(result.rows, [interval])
+  assert.equal(result.timeComparison, null)
+  assert.equal(result.periodContext.showMom, false)
+  assert.equal(result.periodContext.yoyPeriod, '')
+  assert.equal(result.periodContext.label, '2026-02 ~ 2026-04')
 })
 
 test('exact period dimensional rows remain unchanged without averaging', () => {

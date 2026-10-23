@@ -29,15 +29,7 @@ export function resolveDashboardPeriod(selection = {}) {
     start = `${selection.startMonth}-01`
     end = addMonths(`${selection.endMonth}-01`, 1)
   } else return null
-  // Only an exact stored calendar-period result can currently represent an interval.
-  let granularity = type === 'CUSTOM' ? null : type
-  if (type === 'CUSTOM' && start.endsWith('-01')) {
-    const month = Number(start.slice(5, 7))
-    if (end === addMonths(start, 1)) granularity = 'MONTHLY'
-    else if ((month - 1) % 3 === 0 && end === addMonths(start, 3)) granularity = 'QUARTERLY'
-    else if (month === 1 && end === addMonths(start, 12)) granularity = 'YEARLY'
-  }
-  return { periodStart: start, periodEnd: end, granularity, selectionType: type }
+  return { periodStart: start, periodEnd: end, granularity: type, selectionType: type }
 }
 
 export function dashboardPeriodLabel(period) {
