@@ -3,6 +3,10 @@ import dagre from '@dagrejs/dagre'
 export const NODE_LABELS = { FACTOR: '原子因子', DERIVED_FACTOR: '复合因子', FORMULA: '指标公式', INDICATOR: '指标公式', QUALITY_CHECK: '质量校验' }
 const PERIOD_LABELS = { YEAR: '年度', YEARLY: '年度', QUARTER: '季度', QUARTERLY: '季度', MONTH: '月度', MONTHLY: '月度', DAY: '日度', DAILY: '日度', STATIC: '静态' }
 
+export function canRetryCalculationNode(node, batchStatus) {
+  return batchStatus !== 'CANCELLING' && ['FAILED', 'SKIPPED', 'CANCELLED'].includes(node?.status)
+}
+
 export function targetTitle(target, index = 0) {
   if (target.targetCode === 'BASE') return '基础汇总'
   if (target.drillPathName || target.drillLevelName) return [target.drillPathName, target.drillLevelName].filter(Boolean).join(' · ')

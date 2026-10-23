@@ -69,7 +69,7 @@
       <section v-if="selectedNode.errorMessage" class="node-section"><h4>错误信息</h4><p class="node-error">{{ selectedNode.errorMessage }}</p></section>
     </template>
     <template #footer>
-      <el-button v-if="selectedNode?.status === 'FAILED'" type="danger" :loading="String(retryingNodeId) === String(selectedNode.nodeId)" @click="$emit('retry', selectedNode)">重试失败节点</el-button>
+      <el-button v-if="canRetryCalculationNode(selectedNode, batchStatus)" type="danger" :disabled="Boolean(retryingNodeId)" :loading="String(retryingNodeId) === String(selectedNode.nodeId)" @click="$emit('retry', selectedNode)">{{ batchStatus === 'CANCELLED' ? '重试已取消批次' : selectedNode.status === 'FAILED' ? '重试失败节点' : '重试节点' }}</el-button>
       <el-button @click="drawerOpen = false">关闭</el-button>
     </template>
   </el-drawer>
@@ -82,8 +82,8 @@ import StatePanel from '@/idmp/components/StatePanel.vue'
 import CalculationTargetDag from '@/idmp/components/CalculationTargetDag.vue'
 import { fetchCalcNodeResults } from '@/idmp/api/modules/calculation'
 import { calculationDimensionValue, calculationResultFields, calculationResultValue, nodeResultLabel } from '@/idmp/utils/calculationResults'
-import { NODE_LABELS, targetPeriod, targetTitle } from '@/idmp/utils/calculationGraph'
-const props = defineProps({ targets: { type: Array, default: () => [] }, retryingNodeId: { type: String, default: '' } })
+import { canRetryCalculationNode, NODE_LABELS, targetPeriod, targetTitle } from '@/idmp/utils/calculationGraph'
+const props = defineProps({ targets: { type: Array, default: () => [] }, batchStatus: { type: String, default: '' }, retryingNodeId: { type: String, default: '' } })
 defineEmits(['retry'])
 const expanded = ref(''), drawerOpen = ref(false), selection = reactive({ targetId: '', nodeId: '' })
 const drawerSize = 'min(520px, 100vw)'

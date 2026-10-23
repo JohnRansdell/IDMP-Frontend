@@ -100,6 +100,12 @@ try {
           window.__calcBatch.targets[1].nodes[0].attemptNo = 3;
           window.__calcBatch.targets[1].nodes[0].errorMessage = null;
           data = {};
+        } else if (path === '/api/v1/calc/nodes/6/retry' && init.method === 'POST') {
+          window.__calcBatch.status = 'QUEUED';
+          for (const target of window.__calcBatch.targets) for (const node of target.nodes) {
+            if (node.status === 'CANCELLED') { node.status = 'PENDING'; node.attemptNo = (node.attemptNo || 1) + 1; }
+          }
+          data = {};
         } else if (path === '/api/v1/indicators' || path === '/api/v1/factors') {
           const rows = path.endsWith('/indicators') ? window.__owners : [window.__factor];
           data = { records: rows.filter(row => (!parsed.searchParams.get('name') || row.name.includes(parsed.searchParams.get('name'))) && (!parsed.searchParams.get('code') || row.code.includes(parsed.searchParams.get('code')))) };
@@ -226,8 +232,7 @@ try {
   await evaluate(`document.querySelector('[data-node-id="4"]').click()`)
   await until(() => evaluate(`!!document.querySelector('.node-details')`), 'retry detail')
   await evaluate(`Array.from(document.querySelectorAll('.el-drawer button')).find(b => b.textContent.trim() === '重试失败节点').click()`)
-  await until(() => evaluate(`!!document.querySelector('.el-message-box')`), 'retry confirmation')
-  assert.ok((await evaluate(`document.querySelector('.el-message-box').innerText`)).includes('中药费用合计'))
+  await until(() => evaluate(`Array.from(document.querySelectorAll('.el-message-box')).some(box => box.innerText.includes('中药费用合计'))`), 'retry confirmation')
   await evaluate(`Array.from(document.querySelectorAll('.el-message-box button')).find(b => b.textContent.trim() === '确认重试').click()`)
   await until(() => evaluate(`window.__calcCalls.some(call => call.url.endsWith('/calc/nodes/4/retry') && call.method === 'POST') && !window.__calcState().retryingNodeId`), 'retry submitted')
   assert.equal(await evaluate(`document.querySelectorAll('.dag-node').length`), 3)
@@ -235,6 +240,22 @@ try {
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('.el-drawer button')).some(b => b.textContent.trim() === '重试失败节点')`), false)
   await evaluate(`Array.from(document.querySelectorAll('.el-drawer button')).find(b => b.textContent.trim() === '关闭').click()`)
   await until(() => evaluate(`!document.querySelector('.node-details')`), 'retry drawer closed')
+  await evaluate(`window.__calcBatch.status = 'CANCELLED'; window.__calcBatch.targets[1].nodes.forEach(node => { node.status = 'CANCELLED'; node.attemptNo = 3; }); window.__calcState().loadBatch()`)
+  await until(() => evaluate(`window.__calcState().batchDetail.status === 'CANCELLED' && !window.__calcState().batchLoading`), 'cancelled batch loaded')
+  await evaluate(`document.querySelector('[data-node-id="6"]').click()`)
+  await until(() => evaluate(`Array.from(document.querySelectorAll('.el-drawer button')).some(b => b.textContent.trim() === '重试已取消批次')`), 'cancelled node retry entry')
+  await evaluate(`Array.from(document.querySelectorAll('.el-drawer button')).find(b => b.textContent.trim() === '重试已取消批次').click()`)
+  await until(() => evaluate(`Array.from(document.querySelectorAll('.el-message-box')).some(box => /所有取消节点.*已成功节点保留/.test(box.innerText))`), 'cancelled batch confirmation')
+  await evaluate(`Array.from(document.querySelectorAll('.el-message-box button')).find(b => b.textContent.trim() === '确认重试').click()`)
+  await until(() => evaluate(`window.__calcCalls.some(call => call.url.endsWith('/calc/nodes/6/retry') && call.method === 'POST') && !window.__calcState().retryingNodeId`), 'cancelled batch retry submitted')
+  assert.equal(await evaluate(`window.__calcState().batchDetail.targets[1].nodes[1].attemptNo`), 4)
+  assert.equal(await evaluate(`window.__calcState().batchDetail.targets[0].nodes[0].status`), 'SUCCEEDED')
+  assert.equal(await evaluate(`Array.from(document.querySelectorAll('.el-drawer button')).some(b => b.textContent.includes('重试'))`), false)
+  await evaluate(`window.__calcBatch.status = 'CANCELLING'; window.__calcBatch.targets[1].nodes[1].status = 'CANCELLED'; window.__calcState().loadBatch()`)
+  await until(() => evaluate(`window.__calcState().batchDetail.status === 'CANCELLING' && !window.__calcState().batchLoading`), 'cancelling batch loaded')
+  assert.equal(await evaluate(`Array.from(document.querySelectorAll('.el-drawer button')).some(b => b.textContent.includes('重试'))`), false)
+  await evaluate(`Array.from(document.querySelectorAll('.el-drawer button')).find(b => b.textContent.trim() === '关闭').click()`)
+  await until(() => evaluate(`!document.querySelector('.node-details')`), 'cancelled node drawer closed')
   await until(() => evaluate(`document.querySelectorAll('.el-message').length === 0`), 'notification dismissal')
   await mkdir('.tmp/calculation-task-center-browser', { recursive: true })
   for (const viewport of [{ width: 1440, height: 1000, mobile: false }, { width: 390, height: 844, mobile: true }]) {
@@ -245,7 +266,7 @@ try {
     await writeFile('.tmp/calculation-task-center-browser/' + (viewport.mobile ? 'mobile' : 'desktop') + '.png', Buffer.from((await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true })).data, 'base64'))
   }
   assert.deepEqual(errors, [])
-  console.log('PASS: lazy target DAG, actual dependency edges, node detail/version, dependency navigation, failed-only retry, refresh persistence; task selection and batch creation regressions; desktop/mobile. APIs mocked; no server writes.')
+  console.log('PASS: lazy target DAG, node details, failed/cancelled retry, cancellation-in-progress guard, preserved successful nodes, refresh persistence; batch creation; desktop/mobile. APIs mocked; no server writes.')
 } finally {
   socket?.close()
   chrome.kill()

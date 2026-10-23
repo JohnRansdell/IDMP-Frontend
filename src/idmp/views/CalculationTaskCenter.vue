@@ -314,7 +314,7 @@
           <el-button @click="loadBatch">重新读取批次</el-button>
         </template>
       </StatePanel>
-      <CalculationTargetsPanel v-else :key="displayId(batchDetail.batchId)" :targets="batchDetail.targets || []" :retrying-node-id="retryingNodeId" @retry="retryNode" />
+      <CalculationTargetsPanel v-else :key="displayId(batchDetail.batchId)" :targets="batchDetail.targets || []" :batch-status="batchDetail.status" :retrying-node-id="retryingNodeId" @retry="retryNode" />
     </section>
   </div>
 </template>
@@ -339,6 +339,7 @@ import {
 import { fetchIndicator, fetchIndicators, fetchIndicatorScenarios, fetchIndicatorVersion, fetchIndicatorVersions } from '@/idmp/api/modules/indicators'
 import { fetchFactor, fetchFactors, fetchFactorVersion, fetchFactorVersionsByFactor } from '@/idmp/api/modules/factors'
 import { getStatusLabel } from '@/idmp/design/status'
+import { canRetryCalculationNode } from '@/idmp/utils/calculationGraph'
 
 const route = useRoute()
 const router = useRouter()
@@ -860,10 +861,12 @@ async function cancelBatch() {
 
 async function retryNode(row) {
   const nodeId = toOpaqueId(row.nodeId)
-  if (!nodeId || String(row.status).toUpperCase() !== 'FAILED' || retryingNodeId.value) return
+  if (!nodeId || !canRetryCalculationNode(row, batchDetail.value?.status) || retryingNodeId.value) return
   try {
     await ElMessageBox.confirm(
-      `确认重试失败节点“${row.nodeName || row.nodeCode || nodeId}”？`,
+      batchDetail.value?.status === 'CANCELLED'
+        ? '确认重试已取消批次？该批次内所有取消节点将重新执行，已成功节点保留。'
+        : `确认重试节点“${row.nodeName || row.nodeCode || nodeId}”及其受影响的下游节点？`,
       '确认重试计算节点',
       {
         confirmButtonText: '确认重试',

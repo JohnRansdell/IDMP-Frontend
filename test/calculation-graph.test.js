@@ -1,6 +1,18 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { layoutCalculationGraph, relatedGraphCodes, roundedEdgePath, targetTitle, targetPeriod } from '../src/idmp/utils/calculationGraph.js'
+import { canRetryCalculationNode, layoutCalculationGraph, relatedGraphCodes, roundedEdgePath, targetTitle, targetPeriod } from '../src/idmp/utils/calculationGraph.js'
+
+test('failed, skipped and cancelled nodes can retry, but not during cancellation', () => {
+  for (const status of ['FAILED', 'SKIPPED', 'CANCELLED']) {
+    assert.equal(canRetryCalculationNode({ status }, 'CANCELLED'), true)
+    assert.equal(canRetryCalculationNode({ status }, 'FAILED'), true)
+    assert.equal(canRetryCalculationNode({ status }, 'CANCELLING'), false)
+  }
+  for (const status of ['PENDING', 'LEASED', 'RUNNING', 'SUCCEEDED', undefined]) {
+    assert.equal(canRetryCalculationNode({ status }, 'CANCELLED'), false)
+  }
+  assert.equal(canRetryCalculationNode(null, 'CANCELLED'), false)
+})
 
 test('actual dependency codes define edges, not node order or owner', () => {
   const nodes = [
