@@ -487,7 +487,7 @@ const currentProfile = computed(() => {
   return createGenericAnalysisProfile({
     ...backendIndicator,
     unit: backendIndicator.unit || backendIndicator.displayUnit || ''
-  })
+  }, resolveAnalysisPerformanceTarget(currentIndicatorVersionId.value, trendBackendAnalysis.value, backendAnalysis.value))
 })
 const backendAnalysisGranularity = computed(() => reportGranularity.value)
 const indicatorRuntimeParameters = computed(() => collectSqlRuntimeParameters(
@@ -852,10 +852,12 @@ const trendSeries = computed(() => {
       : { show: false },
     data: actualValues
   }
-  if (Number.isFinite(Number(currentProfile.value.markLineValue))) {
+  if (isChartNumber(currentProfile.value.markLineValue)) {
     actualSeries.markLine = {
       silent: true,
       symbol: 'none',
+      // ECharts otherwise rounds small raw-ratio targets (e.g. 0.003) to zero.
+      precision: -1,
       label: { formatter: currentProfile.value.targetLabel, color: '#b4232c', position: 'insideEndTop' },
       lineStyle: { color: '#b4232c', type: 'dashed', width: 1 },
       data: [{ yAxis: Number(currentProfile.value.markLineValue) }]
@@ -1390,15 +1392,28 @@ function emptyTrend() {
   return { labels: [], actual: [], peer: [] }
 }
 
-function createGenericAnalysisProfile(indicator) {
+function resolveAnalysisPerformanceTarget(versionId, ...analyses) {
+  const response = analyses.find(analysis => analysis?.indicatorVersionId != null
+    && String(analysis.indicatorVersionId) === String(versionId)
+    && Object.hasOwn(analysis, 'performanceTarget'))
+  const target = response?.performanceTarget
+  return target && String(target.indicatorVersionId) === String(versionId) ? target : null
+}
+
+function createGenericAnalysisProfile(indicator, performanceTarget) {
   const name = indicator?.name || indicator?.code || '未命名指标'
   const unit = indicator?.unit || indicator?.displayUnit || ''
+  const targetValue = isUsableRawValue(performanceTarget?.targetValue)
+    && String(performanceTarget.targetValue).trim() !== ''
+    ? normalizeTrendValue({ value: performanceTarget.targetValue }, unit) : null
   return {
     code: getBackendIndicatorKey(indicator),
     name,
     unit,
-    targetLabel: '目标值未配置',
-    markLineValue: null,
+    targetLabel: targetValue === null ? '目标值未配置'
+      : `目标值：${isUsableDisplayValue(performanceTarget.targetDisplayValue)
+        ? performanceTarget.targetDisplayValue : formatMetricValue(performanceTarget.targetValue, unit)}`,
+    markLineValue: targetValue,
     yAxisMax: null,
     summary: [{ label: '当前指标值', value: '-', tone: 'neutral' }],
     trends: { 月度: emptyTrend(), 季度: emptyTrend(), 年度: emptyTrend() },
