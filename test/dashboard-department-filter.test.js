@@ -60,29 +60,23 @@ test('dependent option requests map upstream departments to the receiving indica
   assert.equal(dashboardFieldsToFrontend(fieldsFor('科室')).find(field => field.id === '科室名称').departmentCodeField, '科室')
 })
 
-test('name options are resolved inside each code instead of pairing independently ordered lists', async () => {
-  const requests = []
-  const names = { '5': '产科', '22': '泌尿外科' }
+test('department candidates come only from the full master dictionary, independent of result filters', async () => {
   const options = await loadDepartmentCodeOptions({ fields: fieldsFor('科室'), query: { filters: { 病种: ['A'] } },
-    fetchNameRows: async () => [],
-    fetchOptions: async query => {
-      requests.push(query)
-      return query.fieldCode === '科室' ? [{ value: '22', label: '22' }, { value: '5', label: '5' }] : [{ value: names[query.filters.科室[0]] }]
-    }
+    fetchDictionary: async () => [{ code: '22', name: '泌尿外科' }, { code: '5', name: '产科' }, { code: '0101', name: '测试门诊' }],
+    fetchNameRows: async () => { throw new Error('Must not query drill results') },
+    fetchOptions: async () => { throw new Error('Must not query result-based candidates') }
   })
-  assert.deepEqual(options, [{ value: '22', label: '泌尿外科' }, { value: '5', label: '产科' }])
-  assert.ok(requests.every(request => request.filters.病种[0] === 'A'))
+  assert.deepEqual(options, [{ value: '22', label: '泌尿外科' }, { value: '5', label: '产科' }, { value: '0101', label: '测试门诊' }])
   assert.deepEqual(departmentSelectionCodes(['产科'], options), ['5'])
   assert.deepEqual(departmentCodeOptions([{ value: '5' }, { value: '22' }], new Map([['5', '同名科室'], ['22', '同名科室']])).map(option => option.label), ['同名科室（5）', '同名科室（22）'])
 })
 
-test('comparison rows can resolve names without one request per department; option failures reject', async () => {
+test('dictionary loads once per option call and failures reject without result-based fallback', async () => {
   let calls = 0
   const options = await loadDepartmentCodeOptions({ fields: fieldsFor('OUT_DEPT_CODE'), query: {},
-    fetchOptions: async () => { calls++; return [{ value: '5', label: '5' }] },
-    fetchNameRows: async () => [{ out_dept_code: '5', out_dept_name: '产科' }]
+    fetchDictionary: async () => { calls++; return [{ code: '5', name: '产科' }] }
   })
   assert.deepEqual(options, [{ value: '5', label: '产科' }])
   assert.equal(calls, 1)
-  await assert.rejects(loadDepartmentCodeOptions({ fields: fieldsFor('科室'), query: {}, fetchOptions: async () => { throw new Error('接口失败') } }), /接口失败/)
+  await assert.rejects(loadDepartmentCodeOptions({ fields: fieldsFor('科室'), fetchDictionary: async () => { throw new Error('接口失败') } }), /接口失败/)
 })

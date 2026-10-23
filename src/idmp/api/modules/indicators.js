@@ -2,7 +2,7 @@ import { requestJson, requestPdf } from '@/idmp/api/request'
 import { normalizeIndicatorAnalysisParams, normalizeIndicatorRangeSummaryParams } from '@/idmp/api/adapters/indicator'
 import { fetchAllPages } from '../pagination.js'
 
-export const fetchAllIndicators = (params = {}) => fetchAllPages(fetchIndicators, params)
+export const fetchAllIndicators = (params = {}, options = {}) => fetchAllPages(page => fetchIndicators(page, options), params)
 export const fetchAllIndicatorVersions = (params = {}) => fetchAllPages(fetchIndicatorVersionList, params)
 export const fetchAllIndicatorScenarios = (id, params = {}) => fetchAllPages(page => fetchIndicatorScenarios(id, page), params)
 

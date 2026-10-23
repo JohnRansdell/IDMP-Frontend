@@ -1,27 +1,15 @@
 import { dimensionDisplayFields, dimensionFieldValue, isMemberName } from '../dashboard/dimensionNames.js'
 import { deriveDrillPathResultIds } from '../../api/adapters/drill.js'
 
-const labels = {
-  OUT_DEPT_CODE: '出院科室', OUT_DEPT_ID: '出院科室', OUT_DEPT_NAME: '出院科室',
-  DEPT_CODE: '科室', DEPT_ID: '科室', DEPARTMENT_CODE: '科室', DEPARTMENT_ID: '科室',
-  IN_DEPT_CODE: '入院科室', ADMISSION_DEPT_CODE: '入院科室',
-  ATTENDING_DOCTOR: '主治医生', ATTENDING_DOCTOR_CODE: '主治医生', ATTENDING_DOCTOR_ID: '主治医生',
-  DOCTOR_CODE: '医生', DOCTOR_ID: '医生', DOCTOR: '医生',
-  MAIN_DIAGNOSTIC: '主诊断', MAIN_DIAGNOSTIC_CODE: '主诊断', MAIN_DIAGNOSIS_CODE: '主诊断',
-  DIAGNOSIS_CODE: '诊断', DISEASE_CODE: '病种',
-  HOSPITAL_CODE: '医院', HOSPITAL_ID: '医院', MEDICAL_GROUP_CODE: '医疗组',
-  WARD_CODE: '病区', WARD_ID: '病区', SEX_CODE: '性别', GENDER_CODE: '性别'
-}
-
-export function trendGrainField(code, index = 0, paths = []) {
+export function trendGrainField(code, paths = []) {
   const level = paths.flatMap(path => path.levels || []).find(level =>
     [level.memberKeyFieldCode, level.dimensionFieldCode].some(field => String(field || '').toLowerCase() === code.toLowerCase()))
-  const normalized = code.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase()
   const displayFields = dimensionDisplayFields(paths)
-  const displayField = level?.displayFieldCode || Object.entries(displayFields).find(([field]) => field.toLowerCase() === code.toLowerCase())?.[1]
+  const knownDisplayField = Object.entries(displayFields).find(([field]) => field.toLowerCase() === code.toLowerCase())?.[1]
+  const displayField = level?.displayFieldCode || knownDisplayField
     || (/_CODE$|_ID$/i.test(code) ? code.replace(/_(CODE|ID)$/i, '_NAME') : /(?:Code|Id)$/.test(code) ? code.replace(/(?:Code|Id)$/, 'Name') : `${code}_NAME`)
-  const label = (/[\u3400-\u9fff]/.test(level?.levelName || '') ? level.levelName : '') || labels[normalized] || (/[\u3400-\u9fff]/.test(code) ? code.replace(/编码$/, '') : `自定义维度 ${index + 1}`)
-  return { code, label, displayField, valueIsName: /_NAME$|名称$|Name$/i.test(code), named: Boolean(level?.displayFieldCode || labels[normalized] || /科室|医生|医师|病种|病区|医院|医疗组/.test(code)) }
+  const label = String(level?.levelName || '').trim() || code
+  return { code, label, displayField, valueIsName: /_NAME$|名称$|Name$/i.test(code), named: Boolean(level?.displayFieldCode || knownDisplayField || /科室|医生|医师|病种|病区|医院|医疗组/.test(code)) }
 }
 
 export function trendGrainNames(fields, analyses = []) {

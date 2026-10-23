@@ -1,21 +1,30 @@
 <template>
   <section class="surface-card runtime-query" aria-label="运行参数与即时查询">
-    <div class="runtime-heading"><h2>运行参数与即时查询</h2><el-button size="small" :disabled="schemaLoading" @click="load">刷新</el-button></div>
+    <div class="query-header">
+      <h2>查询条件</h2>
+      <div class="query-context">
+        <span v-if="calculationMode === 'TEMPORAL'">结束时间不包含在查询范围内</span>
+        <el-button :icon="Refresh" size="small" circle title="刷新查询条件" aria-label="刷新查询条件" :disabled="schemaLoading" @click="load" />
+      </div>
+    </div>
     <el-alert v-if="!artifactId" title="当前版本尚未取得编译产物，暂不能即时查询。可进入编辑页完成编译。" type="info" :closable="false" />
     <template v-else>
       <StatePanel v-if="schemaLoading" type="loading" title="正在读取运行参数" />
       <el-alert v-if="schemaError" :title="schemaError" type="error" :closable="false"><el-button @click="load">重试</el-button></el-alert>
       <template v-if="!schemaLoading && !schemaError">
-        <RuntimeParameterFields v-if="declarations.length" v-model="values" :declarations="declarations" :show-metadata="false" />
-        <div v-if="calculationMode === 'TEMPORAL'" class="query-period">
-          <label>查询周期 <span class="required">*</span></label>
-          <el-date-picker v-model="period" type="datetimerange" value-format="YYYY-MM-DDTHH:mm:ss" start-placeholder="开始时间" end-placeholder="结束时间（不含）" :disabled="recommendationLoading" />
-          <small>结束时间不包含在查询范围内。</small>
-          <span v-if="recommendationLoading">正在读取推荐周期</span>
-          <el-alert v-if="recommendationError" :title="recommendationError" type="info" :closable="false" />
+        <div class="query-controls">
+          <div v-if="calculationMode === 'TEMPORAL'" class="query-period">
+            <label>查询周期</label>
+            <el-date-picker v-model="period" type="datetimerange" value-format="YYYY-MM-DDTHH:mm:ss" range-separator="至" start-placeholder="开始时间" end-placeholder="结束时间（不含）" aria-label="因子查询周期" :disabled="recommendationLoading" />
+          </div>
+          <RuntimeParameterFields v-if="declarations.length" v-model="values" :declarations="declarations" :show-metadata="false" />
+          <span v-else-if="calculationMode !== 'TEMPORAL'" class="query-empty-parameters">无需填写运行参数</span>
+          <div class="query-actions">
+            <el-button type="primary" :loading="queryLoading" :disabled="recommendationLoading" @click="runQuery">查询</el-button>
+          </div>
         </div>
-        <p v-else>静态因子按当前参数查询，无需选择时间周期。</p>
-        <el-button type="primary" :loading="queryLoading" :disabled="recommendationLoading" @click="runQuery">即时查询</el-button>
+        <span v-if="recommendationLoading" class="query-status">正在读取推荐周期</span>
+        <el-alert v-if="recommendationError" :title="recommendationError" type="info" :closable="false" />
       </template>
       <el-alert v-if="queryError" :title="queryError" type="error" :closable="false" />
       <div v-if="result" class="query-result">
@@ -31,6 +40,7 @@
 </template>
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { Refresh } from '@element-plus/icons-vue'
 import { fetchCompileArtifact, fetchFactorVersion, fetchFactorTrialPeriodRecommendation, queryFactorVersion } from '@/idmp/api/modules/factors'
 import { inheritedFactorParameters } from '@/idmp/utils/factorRuntimeParameters'
 import { buildSqlRuntimeParameterValues, validateSqlRuntimeParameterValues } from '@/idmp/api/adapters/sqlImport'
@@ -99,19 +109,43 @@ watch(() => [props.versionId, props.artifactId, props.calculationMode], load, { 
 onBeforeUnmount(() => { generation++; queryRevision++ })
 </script>
 <style scoped>
-.runtime-query { min-width: 0; padding: 18px; margin-bottom: 16px; }
+.runtime-query { display: grid; gap: 14px; min-width: 0; padding: 16px 20px; margin-bottom: 16px; }
+.query-header { display: flex; align-items: center; justify-content: space-between; gap: 12px 20px; padding-bottom: 12px; border-bottom: 1px solid var(--idmp-border-subtle); }
+.query-header h2 { flex: 0 0 auto; }
+.query-context { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px 12px; min-width: 0; color: var(--idmp-text-helper); font-size: 12px; }
+.query-controls { display: flex; align-items: flex-end; gap: 12px 16px; min-width: 0; }
+.query-actions { display: flex; align-items: center; margin-left: auto; }
+.query-status, .query-empty-parameters { color: var(--idmp-text-helper); font-size: 12px; }
+.query-empty-parameters { align-self: center; }
 .runtime-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 h2 { margin: 0; font-size: 16px; }
 h3 { margin: 0; font-size: 14px; }
-p, small { color: var(--idmp-text-helper); }
-.query-period { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 12px 0; font-size: 13px; }
-.query-period label { white-space: nowrap; }
-.query-period :deep(.el-date-editor) { width: 480px; min-width: 0; max-width: 100%; }
-.query-period > .el-alert { flex-basis: 100%; }
-.query-period small { font-size: 12px; }
-.query-result { margin-top: 16px; }
-.runtime-parameter-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); max-height: 180px; overflow: auto; }
-.required { color: var(--el-color-danger); }
-@media (max-width: 900px) { .runtime-parameter-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 640px) { .runtime-query { padding: 14px; } .query-period { display: grid; } .query-period :deep(.el-date-editor) { width: 100%; } .runtime-parameter-fields { grid-template-columns: minmax(0, 1fr); } }
+.query-period { display: flex; flex: 0 0 auto; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0; }
+.query-period label { flex: 0 0 auto; min-height: 19px; color: var(--idmp-text-primary); font-size: 13px; font-weight: 600; }
+.query-period :deep(.el-date-editor) { width: 400px; min-width: 0; max-width: 100%; }
+.query-controls :deep(.runtime-parameter-fields) { display: flex; flex: 1 1 auto; align-items: flex-end; flex-wrap: wrap; gap: 12px; min-width: 0; }
+.query-controls :deep(.runtime-parameter-field) { flex: 1 1 170px; max-width: 280px; gap: 6px; }
+.query-controls :deep(.runtime-parameter-field label) { min-height: 19px; font-size: 13px; }
+.query-result { min-width: 0; padding-top: 14px; border-top: 1px solid var(--idmp-border-subtle); }
+@media (max-width: 1180px) {
+  .query-controls { flex-wrap: wrap; }
+  .query-controls :deep(.runtime-parameter-fields) { flex: 1 1 240px; }
+}
+@media (max-width: 640px) {
+  .runtime-query { padding: 16px; }
+  .query-header { align-items: flex-start; }
+  .query-context { max-width: 65%; }
+  .query-controls { align-items: stretch; }
+  .query-period { flex: 1 1 100%; flex-wrap: wrap; }
+  .query-period :deep(.el-date-editor) { width: 100%; }
+  .query-period :deep(.el-range-editor) { display: grid; grid-template-columns: 18px minmax(0, 1fr) 18px; height: auto; gap: 4px; padding: 8px 10px; }
+  .query-period :deep(.el-range-input) { grid-column: 2; width: 100%; min-width: 0; }
+  .query-period :deep(.el-range-separator) { grid-column: 2; width: 100%; padding: 0; line-height: 20px; }
+  .query-period :deep(.el-range__icon) { grid-column: 1; grid-row: 1 / 4; align-self: center; margin: 0; }
+  .query-period :deep(.el-range__close-icon) { grid-column: 3; grid-row: 1 / 4; align-self: center; }
+  .query-controls :deep(.runtime-parameter-fields) { flex: 1 1 100%; }
+  .query-controls :deep(.runtime-parameter-field) { max-width: none; }
+  .query-actions { width: 100%; margin-left: 0; }
+  .query-actions .el-button { width: 100%; }
+}
 </style>

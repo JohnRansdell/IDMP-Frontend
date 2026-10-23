@@ -22,13 +22,7 @@ export function fetchFactorVersions(params = {}) {
 }
 
 export async function fetchPublishedFactorVersions() {
-  const rows = []
-  for (let page = 1; ; page += 1) {
-    const result = await fetchFactorVersions({ publicationStatus: 'PUBLISHED', page, size: 100 })
-    const items = Array.isArray(result) ? result : result.records || result.list || result.items || []
-    rows.push(...items)
-    if (Array.isArray(result) || items.length < 100 || rows.length >= Number(result.total ?? Infinity)) break
-  }
+  const rows = await fetchAllPages(fetchFactorVersions, { publicationStatus: 'PUBLISHED', size: 100 })
   return rows.filter(item => (item.status || item.publicationStatus) === 'PUBLISHED')
 }
 

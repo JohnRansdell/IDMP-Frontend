@@ -21,7 +21,7 @@ export function normalizeDepartmentComparisons(rows, dimensionRows = [], namesBy
       || legacyField(row.dimensions, 'out_dept_code')
       || legacyField(row.dimensions, 'out_dept_id')
     if (!departmentCode) return []
-    const departmentName = fieldText(row.departmentName)
+    const departmentName = fieldText(namesByCode[departmentCode]) || fieldText(row.departmentName)
       || legacyField(row.dimensions, 'out_dept_name')
       || fieldText(namesByCode[departmentCode]) || departmentCode
     return [{ ...row, departmentCode, departmentName }]

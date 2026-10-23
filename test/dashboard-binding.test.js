@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { reactive } from 'vue'
 import { createFieldCatalog, createWidgetBindingDatasets, numericValue } from './fixtures/frontend/fieldCatalog.js'
-import { aggregateValues, compileWidgetData, validateWidgetBinding, hasDataBinding, bindingChartOption, formatDashboardKpiMetric, formatDashboardMetric } from '../src/idmp/features/dashboard/bindingEngine.js'
+import { aggregateValues, compileWidgetData, validateWidgetBinding, hasDataBinding, bindingChartOption, formatDashboardKpiMetric, formatDashboardMetric, formatDashboardTableMetric } from '../src/idmp/features/dashboard/bindingEngine.js'
 import { normalizeDashboardSchema, createPersistableDashboardSnapshot, updateDashboardWidget } from '../src/idmp/features/dashboard/schema.js'
 import { persistDashboardSchema, recoverDashboardSchema } from '../src/idmp/features/dashboard/persistence.js'
 import { createDashboardChartOption } from '../src/idmp/features/dashboard/visualization.js'
@@ -19,6 +19,22 @@ const rows = [
 ]
 const dataset = { id: 'trend', rows, fields: createFieldCatalog(rows, { month: { dataType: 'date', semanticType: 'time', granularities: ['raw'] } }) }
 const binding = () => ({ dataset: 'trend', dimensions: [{ field: 'month' }], measures: [{ field: 'value', aggregation: 'avg' }], series: [], sort: [] })
+
+test('table formats each measure by its own unit without changing raw ratios or counts', () => {
+  const ratio = 1 / 429
+  assert.equal(formatDashboardTableMetric(ratio, { unit: 'PERCENT' }), '0.23%')
+  assert.equal(formatDashboardTableMetric(ratio * 100, { unit: '%' }), '0.23%')
+  assert.equal(formatDashboardTableMetric(0, { unit: 'PERCENT' }), '0.00%')
+  assert.equal(formatDashboardTableMetric(null, { unit: 'PERCENT' }), '—')
+  assert.equal(formatDashboardTableMetric(undefined, { unit: 'PERCENT' }), '—')
+  assert.equal(formatDashboardTableMetric('', { unit: 'PERCENT' }), '')
+  assert.equal(formatDashboardTableMetric('0.23%', { unit: 'PERCENT' }), '0.23%')
+  assert.equal(formatDashboardTableMetric(429, { unit: 'PERSON_TIME' }), '429')
+  assert.equal(formatDashboardTableMetric(1, { unit: 'PERCENT', aggregation: 'count' }), '1')
+  assert.equal(formatDashboardTableMetric('0016', { semanticType: 'dimension' }), '0016')
+  assert.equal(formatDashboardTableMetric(-0.002331, { unit: 'PERCENT' }), '-0.23%')
+  assert.equal(ratio, 1 / 429)
+})
 test('field catalog classifies scalar fields and omits runtime objects', () => {
   const fields = createFieldCatalog([{ name: '内科', value: 0, date: '2026-01-01', enabled: true, runtime: {} }])
   assert.deepEqual(fields.map(field => [field.id, field.dataType, field.semanticType]), [['name','string','dimension'], ['value','number','measure'], ['date','date','time'], ['enabled','boolean','dimension']])

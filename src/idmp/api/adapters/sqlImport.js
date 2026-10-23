@@ -1,5 +1,6 @@
 import { normalizeDimensionGrain, serializeDrillPaths } from '../../features/indicator/grouping.js'
 import { toUserMessage } from '../../utils/userMessage.js'
+import { newResourceCode } from '../../utils/resourceCode.js'
 
 function toOpaqueId(value) {
   return value === undefined || value === null || value === '' ? '' : String(value)
@@ -231,7 +232,7 @@ export function mergeSqlFactorMetadata(current = [], drafts = []) {
   return drafts.map((draft) => {
     const saved = existing.get(String(draft.key || '').toUpperCase())
     return {
-      key: draft.key, code: saved?.code || draft.suggestedCode, name: saved?.name || draft.suggestedName,
+      key: draft.key, code: saved?.code || newResourceCode('FACTOR'), name: saved?.name || draft.suggestedName,
       description: saved?.description || '', missingRowPolicy: saved?.missingRowPolicy || 'KEEP_NULL',
       calculationMode: saved?.calculationMode || (saved?.timeField ? 'TEMPORAL' : 'STATIC'),
       timeField: saved?.timeField || draft.timeFieldOptions?.find(item => item.recommended)?.fieldReference || '',

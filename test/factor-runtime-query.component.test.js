@@ -23,7 +23,7 @@ function create(overrides = {}, props = {}) {
   const calls = []
   const deps = {
     inheritedFactorParameters, buildSqlRuntimeParameterValues, validateSqlRuntimeParameterValues, normalizeTrialPeriodRecommendation, recommendationPeriod, factorQueryRows, getStatusLabel: value => value || '-',
-    RuntimeParameterFields: Pass, StatePanel: Pass,
+    RuntimeParameterFields: Pass, StatePanel: Pass, Refresh: Pass,
     fetchCompileArtifact: async id => ({ id, parameterSchema: { parameters: [] } }),
     fetchFactorVersion: async () => ({ currentArtifactId: 'upstream-artifact' }),
     fetchFactorTrialPeriodRecommendation: async () => ({ availabilityStatus: 'AVAILABLE', recommendedPeriodStart: '2026-01-01T00:00:00', recommendedPeriodEnd: '2026-02-01T00:00:00' }),
@@ -39,6 +39,17 @@ test('static queries omit periods, preserve zero values and use a fresh backend 
   await wrapper.vm.runQuery()
   assert.deepEqual(calls, [{ id: 'version', payload: { parameters: {} }, options: { cache: 'no-store' } }])
   assert.equal(wrapper.vm.result.rows[0].value, 0)
+  wrapper.unmount()
+})
+
+test('query conditions keep the period, parameters and command in one control group', async () => {
+  const { wrapper } = create({}, { calculationMode: 'TEMPORAL' })
+  await flushPromises()
+  assert.equal(wrapper.find('.query-header h2').text(), '查询条件')
+  assert.equal(wrapper.find('.query-controls .query-period').exists(), true)
+  assert.equal(wrapper.find('.query-controls .query-actions').text(), '查询')
+  assert.match(wrapper.find('.query-context').text(), /结束时间不包含/)
+  assert.equal(wrapper.find('[aria-label="刷新查询条件"]').exists(), true)
   wrapper.unmount()
 })
 test('temporal queries use the recommended period and accept manual input after recommendation failure', async () => {

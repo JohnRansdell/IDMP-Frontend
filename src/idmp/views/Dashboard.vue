@@ -73,18 +73,7 @@
       <section class="dashboard-canvas-frame">
         <div class="dashboard-toolbar" aria-label="看板查询条件">
           <div class="dashboard-query-controls">
-            <label v-if="viewerPeriodOptions.length" class="dashboard-query-control"><span>期间</span>
-              <span class="dashboard-period-selects" aria-label="统计期间">
-                <el-select v-model="remotePeriodStart" class="dashboard-filter dashboard-filter--period" size="small" aria-label="开始月份" data-testid="dashboard-period-start">
-                  <el-option v-for="option in viewerPeriodOptions" :key="`start-${option.value}`" :label="option.label" :value="option.value" />
-                </el-select>
-                <span aria-hidden="true">至</span>
-                <el-select v-model="remotePeriodEnd" class="dashboard-filter dashboard-filter--period" size="small" aria-label="结束月份" data-testid="dashboard-period-end">
-                  <el-option v-for="option in viewerPeriodOptions" :key="`end-${option.value}`" :label="option.label" :value="option.value" />
-                </el-select>
-                <el-button type="primary" size="small" :loading="remoteQueryLoading" :disabled="!canApplyRemotePeriod" data-testid="dashboard-period-apply" @click="applyRemotePeriodRange">确定</el-button>
-              </span>
-            </label>
+            <DashboardPeriodPicker :selection="remotePeriodSelection" :loading="remoteQueryLoading" @apply="applyRemotePeriodSelection" />
             <label v-if="departmentOptions.length > 1" class="dashboard-query-control"><span>范围</span>
               <el-select v-model="department" class="dashboard-filter dashboard-filter--compact" size="small" aria-label="统计范围">
               <el-option v-for="option in departmentOptions" :key="option.value" :label="option.label" :value="option.value" />
@@ -222,18 +211,7 @@
         <div class="studio-canvas-heading"><span>画布</span><span>{{ drawPlacementMode ? '点击空白处放置 · Esc 取消' : `${editingDashboardSchema?.layout?.columns || 24} 列 · Clinical Light` }}</span></div>
         <div class="studio-canvas-scroll">
         <div class="dashboard-designer-period" aria-label="画布统计周期">
-          <label class="dashboard-query-control"><span>统计周期</span>
-            <span class="dashboard-period-selects">
-              <el-select v-model="remotePeriodStart" class="dashboard-filter dashboard-filter--period" size="small" aria-label="画布开始月份" data-testid="dashboard-designer-period-start">
-                <el-option v-for="option in designerPeriodOptions" :key="`designer-start-${option.value}`" :label="option.label" :value="option.value" />
-              </el-select>
-              <span aria-hidden="true">至</span>
-              <el-select v-model="remotePeriodEnd" class="dashboard-filter dashboard-filter--period" size="small" aria-label="画布结束月份" data-testid="dashboard-designer-period-end">
-                <el-option v-for="option in designerPeriodOptions" :key="`designer-end-${option.value}`" :label="option.label" :value="option.value" />
-              </el-select>
-              <el-button type="primary" size="small" :disabled="!canApplyRemotePeriod" data-testid="dashboard-designer-period-apply" @click="applyRemotePeriodRange">查询</el-button>
-            </span>
-          </label>
+          <DashboardPeriodPicker :selection="remotePeriodSelection" :loading="remoteQueryLoading" @apply="applyRemotePeriodSelection" />
           <span class="dashboard-designer-period__hint">组件默认继承此周期；独立周期可在组件“数据”中调整。</span>
         </div>
         <DashboardFilterBar :definitions="globalFilterDefinitions" :values="filterRuntimeValues" :catalog="filterCatalog" :options-by-id="filterOptionsById" :errors-by-id="remoteFilterOptionErrors" :loading-by-id="remoteFilterOptionsLoading" @retry="loadRemoteFilterOptions" @change="filterRuntimeValues = $event" />
@@ -498,10 +476,11 @@ import { createWidgetBindingDatasets, numericValue } from '@/idmp/features/dashb
 import { bindingKind, emptyBinding } from '@/idmp/features/dashboard/bindingEngine.js'
 import { resolveDrillHierarchy } from '@/idmp/features/dashboard/drillDown.js'
 import { annotateDepartmentFilterFields, departmentSelectionCodes, isDepartmentFilterField, loadDepartmentCodeOptions, resolveGlobalFilterField } from '@/idmp/features/dashboard/departmentFilters.js'
+import { fetchDepartmentDictionary, fetchDepartmentNames } from '@/idmp/api/modules/departments'
 import { singleIndicatorTemplatePlan } from '@/idmp/features/dashboard/templateBinding.js'
 import { createDefaultBinding } from '@/idmp/features/dashboard/smartDefaultBinding.js'
 import { createMultiIndicatorDataset, multiIndicatorMeasureField, normalizeIndicatorBindings, singleIndicatorProjectionBinding } from '@/idmp/features/dashboard/multiIndicator.js'
-import { buildRemoteFilterOptionQuery, buildRemoteWidgetQuery, resolveDashboardQueryState } from '@/idmp/features/dashboard/remoteQuery.js'
+import { buildRemoteFilterOptionQuery, buildRemoteWidgetQuery, isDashboardIndicatorQueryWidget, resolveDashboardQueryState } from '@/idmp/features/dashboard/remoteQuery.js'
 import { buildIndicatorAnalysisPeriodContext, buildIndicatorAnalysisRouteQuery } from '@/idmp/features/dashboard/analysisNavigation.js'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
 import {
@@ -516,12 +495,14 @@ import {
   currentPublishedDashboardDataSources, selectDashboardVersion, sortDashboardDataSourcesByIndicatorCreatedAt, widgetResultToDataset
 } from '@/idmp/api/adapters/dashboard'
 import { fetchWarnings } from '@/idmp/api/modules/warnings'
-import { fetchIndicatorAnalysis, fetchIndicatorVersion, fetchAllIndicators as fetchIndicators } from '@/idmp/api/modules/indicators'
+import { fetchIndicatorAnalysis, fetchIndicatorVersion, fetchAllIndicators } from '@/idmp/api/modules/indicators'
 import { deriveDrillPathResultIds } from '@/idmp/api/adapters/drill'
 import { searchResultDrill } from '@/idmp/api/modules/drill'
 import { initialBackendChartNavigation, loadBackendChartLevel, loadBackendChartRoot, resolveChartDrillPath } from '@/idmp/features/dashboard/backendChartDrill.js'
-import { collectDepartmentNames, departmentIdentity, normalizeDepartmentDataset } from '@/idmp/features/dashboard/dimensionNames.js'
+import { normalizeDepartmentDataset } from '@/idmp/features/dashboard/dimensionNames.js'
 import { explainComparisonAvailability } from '@/idmp/features/dashboard/comparisonAvailability.js'
+import DashboardPeriodPicker from '@/idmp/features/dashboard/components/DashboardPeriodPicker.vue'
+import { dashboardPeriodLabel, defaultDashboardPeriod, enforceDashboardResultPeriod, resolveDashboardPeriod } from '@/idmp/features/dashboard/statisticalPeriod.js'
 import { normalizePage } from '@/idmp/api/adapters/warning'
 import {
   DASHBOARD_DESIGN_WIDTH,
@@ -530,7 +511,7 @@ import {
 import { shouldConfirmDashboardSceneSwitch } from '@/idmp/features/dashboard/sceneSwitch.js'
 import { canApplyDashboardLoad, canRefreshRemoteDashboard } from '@/idmp/features/dashboard/dashboardIdentity.js'
 import { createDashboardEditingSnapshot } from '@/idmp/features/dashboard/editSession.js'
-import { buildPublishedIndicatorAnalysisQuery, buildPublishedIndicatorTrendPreviewQuery, createPublishedDashboardPeriodOptions, dateRangeForMonths, defaultPublishedDashboardPeriodRange, resolvePublishedDashboardPeriod, resolvePublishedDashboardPeriodRange, schemaPublishedIndicatorSourceCodes, suggestIndependentWidgetPeriod } from '@/idmp/features/dashboard/publishedIndicatorRuntime.js'
+import { buildPublishedIndicatorAnalysisQuery, buildPublishedIndicatorTrendPreviewQuery, createPublishedDashboardPeriodOptions, dateRangeForMonths, schemaPublishedIndicatorSourceCodes, suggestIndependentWidgetPeriod } from '@/idmp/features/dashboard/publishedIndicatorRuntime.js'
 import { dashboardWidgetResultShape, isPeriodField } from '@/idmp/features/dashboard/periodFields.js'
  import { dashboardActiveId, dashboardRequestedId, dashboardSceneCode, designerImmersive, notifyDashboardCatalogChanged } from '@/idmp/layout/shellState.js'
 import { createMetricGroupConfig, duplicateMetricGroupItem, METRIC_GROUP_ADD_SELECTION, metricGroupItemWidget, metricGroupSourceCodes, removeMetricGroupItem, reorderMetricGroupItem } from '@/idmp/features/dashboard/metricGroup.js'
@@ -688,32 +669,26 @@ const periodOptions = ref([])
 const departmentOptions = [{ label: '全院', value: '' }]
 const period = ref('')
 const remotePeriodRange = ref([])
-const remotePeriodDraft = ref([])
+const remotePeriodSelection = ref(defaultDashboardPeriod())
 const remoteQueryLoading = ref(false)
-function setRemotePeriodBoundary(index, value) {
-  const next = [...remotePeriodDraft.value]
-  next[index] = value
-  if (!next[index === 0 ? 1 : 0]) next[index === 0 ? 1 : 0] = value
-  if (next[0] > next[1]) next[index === 0 ? 1 : 0] = value
-  remotePeriodDraft.value = next
+function applyRemotePeriodSelection(selection) {
+  const resolved = resolveDashboardPeriod(selection)
+  if (!resolved) return
+  remotePeriodSelection.value = selection
+  const lastDay = new Date(new Date(`${resolved.periodEnd}T00:00:00Z`).getTime() - 86400000).toISOString().slice(0, 7)
+  remotePeriodRange.value = [resolved.periodStart.slice(0, 7), lastDay]
+  if (!isFormalRemoteDashboard.value) period.value = lastDay
 }
-const remotePeriodStart = computed({
-  get: () => remotePeriodDraft.value[0] || '',
-  set: value => setRemotePeriodBoundary(0, value)
-})
-const remotePeriodEnd = computed({
-  get: () => remotePeriodDraft.value[1] || '',
-  set: value => setRemotePeriodBoundary(1, value)
-})
-const canApplyRemotePeriod = computed(() => {
-  const draft = resolvePublishedDashboardPeriodRange(remotePeriodDraft.value, isEditing.value ? designerPeriodOptions.value : viewerPeriodOptions.value)
-  return draft.every(Boolean) && JSON.stringify(draft) !== JSON.stringify(remotePeriodRange.value)
-})
-function applyRemotePeriodRange() {
-  if (!canApplyRemotePeriod.value) return
-  const next = resolvePublishedDashboardPeriodRange(remotePeriodDraft.value, isEditing.value ? designerPeriodOptions.value : viewerPeriodOptions.value)
-  remotePeriodRange.value = next
-  if (!isFormalRemoteDashboard.value) period.value = next[1]
+function remoteSelectedPeriod(widget) {
+  const selected = resolveDashboardPeriod(remotePeriodSelection.value)
+  // A trend is a monthly series inside the selection, not an interval total.
+  return dashboardWidgetResultShape(widget || {}) === 'TREND' ? { ...selected, granularity: 'MONTHLY' } : selected
+}
+function periodSafeWidgetResult(widget, result, query) {
+  return enforceDashboardResultPeriod(result, query, {
+    timeSeries: dashboardWidgetResultShape(widget || {}) === 'TREND',
+    selectionType: ['FIXED', 'INDEPENDENT'].includes(widget?.config?.backendQuery?.periodMode) ? query.granularity : remotePeriodSelection.value.type
+  })
 }
 const department = ref('')
 const designerCanvasRef = ref()
@@ -741,8 +716,8 @@ const selectionHasLockedWidget = computed(() => designerWidgets.value.some(widge
 const selectedDataCode = ref('')
 let selectedDataSourceManuallySelected = false
 const addWidgetType = ref('kpi')
-const indicatorDataSources = ref([])
-const catalogIndicatorSources = ref([])
+const indicatorDataSources = shallowRef([])
+const catalogIndicatorSources = shallowRef([])
 const remoteWidgetDatasets = shallowRef({})
 const remoteMultiIndicatorDatasets = shallowRef({})
 const remoteWidgetPreviewGenerations = new Map()
@@ -754,7 +729,6 @@ const designerPeriodOptions = computed(() => {
   const options = [...periodOptions.value, ...Object.values(remoteSourcePeriodOptions.value).flat()].filter(option => /^\d{4}-\d{2}$/.test(String(option?.value || '')))
   return [...new Map(options.map(option => [option.value, option])).values()].sort((a, b) => b.value.localeCompare(a.value))
 })
-const viewerPeriodOptions = computed(() => isFormalRemoteDashboard.value ? periodOptions.value : designerPeriodOptions.value)
 const remoteFilterOptions = ref({})
 const remoteFilterOptionErrors = ref({})
 const remoteFilterOptionsLoading = ref({})
@@ -855,9 +829,12 @@ const viewerWidgets = computed(() => deriveResponsiveLayout((dashboardSchema.val
 const previewWidgets = computed(() => designerWidgets.value)
 const useSchemaViewer = computed(() => Boolean(dashboardSchema.value))
 const dashboardDefinition = ref(null)
-const dashboardQueryResult = ref(null)
+const dashboardQueryResult = shallowRef(null)
 // Only data dependencies invalidate this catalog; selection/hover does not aggregate rows.
-const bindingDatasets = computed(() => new Map(availableIndicatorSources.value.map(source => [source.code, createWidgetBindingDatasets(source, { result: dashboardQueryResult.value })])))
+// Formal sources use component queries, never the full indicator-analysis row universe.
+const bindingDatasets = computed(() => new Map(availableIndicatorSources.value
+  .filter(source => source.origin !== 'dashboard-data-source')
+  .map(source => [source.code, createWidgetBindingDatasets(source, { result: dashboardQueryResult.value })])))
 function getBindingDatasets(widget) {
   const remote = remoteWidgetDatasets.value[String(widget?.id)]
   const indicatorBindings = normalizeIndicatorBindings(widget?.config?.indicatorBindings, widget)
@@ -910,11 +887,11 @@ provide('dashboardResolveWidgetDrill', async (widget, params) => {
     const path = resolveChartDrillPath(configuredPaths, widget.config?.dataBinding?.dimensions?.[0]?.field)
     return { resultId: row.drillContext.resultId, drillContext: row.drillContext, selectedRow: row, path, configuredPaths,
       indicatorVersionId: String(widget.config?.analysisIndicatorVersionId || source.analysisIndicatorVersionId || source.indicatorVersionId || ''),
-      departmentNames: Object.fromEntries(collectDepartmentNames(projected.rows, configuredPaths)) }
+      departmentNames: Object.fromEntries(await fetchDepartmentNames()) }
   }
   const scope = widget?.config?.backendQuery || {}
-  const selectedMonth = remotePeriodRange.value.at(-1)
-  const query = buildPublishedIndicatorAnalysisQuery(source, selectedMonth ? [selectedMonth, selectedMonth] : remotePeriodRange.value)
+  const query = { ...buildPublishedIndicatorAnalysisQuery(source), ...remoteSelectedPeriod(widget) }
+  if (!query.granularity) throw new Error('所选统计区间暂无完整结果')
   query.indicatorVersionId = widget.config?.analysisIndicatorVersionId || query.indicatorVersionId
   if (scope.periodMode === 'INDEPENDENT' && scope.periodStart && scope.periodEnd) {
     query.periodStart = scope.periodStart
@@ -944,7 +921,7 @@ provide('dashboardResolveWidgetDrill', async (widget, params) => {
     path, pathCode,
     pathResultIds: { [pathCode]: resultId },
     indicatorName: source.name,
-    departmentNames: Object.fromEntries(collectDepartmentNames([...(analysis.departmentComparison || []), ...(analysis.dimensionComparison || [])], configuredPaths)),
+    departmentNames: Object.fromEntries(await fetchDepartmentNames()),
     period: query.periodStart && query.periodEnd ? `${query.periodStart} ～ ${query.periodEnd}` : '',
     maxLevels: Object.fromEntries(configuredPaths.filter(path => path?.pathCode && path?.maxLevel).map(path => [path.pathCode, path.maxLevel])),
     configuredPaths
@@ -998,7 +975,8 @@ watch([globalFilterDefinitions, filterRuntimeValues, currentDependentFilterOptio
   const normalized = normalizeDependentFilterValues(readyDefinitions, filterRuntimeValues.value, currentDependentFilterOptions.value)
   if (JSON.stringify(normalized) !== JSON.stringify(filterRuntimeValues.value)) filterRuntimeValues.value = normalized
 }, { deep: true })
-watch([globalFilterDefinitions, period, remotePeriodRange, filterRuntimeValues, () => JSON.stringify(remoteFieldCatalog.value), () => JSON.stringify(availableIndicatorSources.value)], () => { void loadRemoteFilterOptions() }, { deep: true })
+const filterSourceCatalogKey = computed(() => JSON.stringify(availableIndicatorSources.value.map(source => [source.code, source.indicatorVersionId, source.analysisIndicatorVersionId])))
+watch([globalFilterDefinitions, period, remotePeriodRange, remotePeriodSelection, filterRuntimeValues, remoteFieldCatalog, filterSourceCatalogKey], () => { void loadRemoteFilterOptions() }, { deep: true })
 watch(requestedDashboardId, nextDashboardId => { if (nextDashboardId !== activeDashboardId.value) void requestDashboardSwitch(nextDashboardId) })
 watch(() => route.query.id, async nextDashboardId => {
   const id = typeof nextDashboardId === 'string' ? nextDashboardId.trim() : ''
@@ -1366,8 +1344,7 @@ function syncViewerViewport() { viewerViewportWidth.value = window.innerWidth }
 
 const dashboardLoading = computed(() => dashboardStatus.value === 'loading')
 const dashboardQueryLabel = computed(() => {
-  const [start, end] = resolvePublishedDashboardPeriodRange(remotePeriodRange.value, viewerPeriodOptions.value)
-  return `查询条件：${start === end ? start : `${start} 至 ${end}`} · ${department.value ? department.value : '全院'}`
+  return `查询条件：${dashboardPeriodLabel(remoteSelectedPeriod())} · ${department.value ? department.value : '全院'}`
 })
 
 const warningWidgetRuntime = ref({})
@@ -2249,10 +2226,7 @@ function redoDashboardEdit() { if (canRedo.value) void applyDashboardHistory(das
 function finishDashboardEdit() {
   const refreshPublishedViewer = isFormalRemoteDashboard.value && canRefreshCurrentRemoteDashboard.value
   if (refreshPublishedViewer) {
-    const viewerRange = resolvePublishedDashboardPeriodRange(remotePeriodRange.value, periodOptions.value)
     reconcilingRemotePeriod = true
-    remotePeriodRange.value = viewerRange
-    remotePeriodDraft.value = [...viewerRange]
   }
   editingDashboardSchema.value = null
   dashboardHistory.value = []
@@ -2618,8 +2592,7 @@ async function loadLocalDashboard(targetDashboardId, isCurrentLoad = () => true)
     await Promise.all(sourceCodes.map(code => ensureRemoteDataSourceFields(code, { required: true })))
     if (!isCurrentLoad()) return
     periodOptions.value = [...new Map(sourceCodes.flatMap(code => remoteSourcePeriodOptions.value[code] || []).map(option => [option.value, option])).values()].sort((a, b) => b.value.localeCompare(a.value))
-    remotePeriodRange.value = defaultPublishedDashboardPeriodRange(periodOptions.value)
-    remotePeriodDraft.value = [...remotePeriodRange.value]
+    applyRemotePeriodSelection(defaultDashboardPeriod(periodOptions.value))
     dashboardSchema.value = applyDefaultDashboardBindings(recovered.schema, remoteFieldCatalog.value)
     await Promise.all(dashboardSchema.value.widgets.filter(widget => widget.sourceCode).map(widget => previewRemoteWidget(widget)))
     if (isCurrentLoad()) dashboardStatus.value = 'ready'
@@ -2644,20 +2617,6 @@ function normalizeList(payload) {
   return payload?.records || payload?.rows || payload?.list || payload?.data?.records || payload?.data?.rows || payload?.data?.list || []
 }
 
-async function fetchCompleteIndicatorCatalog() {
-  const indicators = []
-  let page = 1
-  while (true) {
-    const response = await fetchIndicators({ page, size: 100 }, { cache: 'no-store' })
-    const records = normalizeList(response)
-    indicators.push(...records)
-    const total = Number(response?.total ?? response?.data?.total)
-    if (!records.length || (Number.isFinite(total) ? indicators.length >= total : records.length < 100)) break
-    page += 1
-  }
-  return indicators
-}
-
 async function loadPublishedIndicatorCatalog() {
   if (indicatorCatalogRequest) return indicatorCatalogRequest
   indicatorCatalogLoading.value = true
@@ -2666,7 +2625,7 @@ async function loadPublishedIndicatorCatalog() {
     try {
       const [sources, indicators] = await Promise.all([
         fetchDashboardDataSources({ cache: 'no-store' }),
-        fetchCompleteIndicatorCatalog()
+        fetchAllIndicators({ size: 100 }, { cache: 'no-store' })
       ])
       const currentSources = currentPublishedDashboardDataSources(sources, indicators)
       const orderedSources = sortDashboardDataSourcesByIndicatorCreatedAt(currentSources, indicators)
@@ -2681,7 +2640,6 @@ async function loadPublishedIndicatorCatalog() {
       }
       catalogIndicatorSources.value = nextSources
       if (!nextSources.some(source => source.code === selectedDataCode.value)) selectedDataCode.value = nextSources[0]?.code || ''
-      await refreshSchemaPublishedIndicatorSources()
       return true
     } catch (error) {
       indicatorCatalogError.value = error?.message || '指标目录刷新失败，请重试。'
@@ -2729,7 +2687,6 @@ async function handleSelectedDataSourceChange(code) {
 }
 
 let remoteFilterOptionGeneration = 0
-const departmentOptionRequests = new Map()
 async function loadRemoteFilterOptions() {
   const generation = ++remoteFilterOptionGeneration
   const definitions = globalFilterDefinitions.value || []
@@ -2743,32 +2700,13 @@ async function loadRemoteFilterOptions() {
     try {
       const fields = await ensureRemoteDataSourceFields(sourceCode)
       if (!resolveGlobalFilterField(definition, fields)?.filterable) return
-      const range = dateRangeForMonths(resolvePublishedDashboardPeriodRange(remotePeriodRange.value, isEditing.value ? designerPeriodOptions.value : viewerPeriodOptions.value))
+      const range = remoteSelectedPeriod()
       const query = buildRemoteFilterOptionQuery(definition, definitions, filterRuntimeValues.value, fields, {
         periodStart: range.periodStart || null,
         periodEnd: range.periodEnd ? new Date(new Date(`${range.periodEnd}T00:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10) : null
       })
       if (isDepartmentFilterField(definition.field, fields)) {
-        const sample = widgets.find(widget => widget.sourceCode === sourceCode)
-        const key = JSON.stringify({ sourceCode, versionId: sample?.config?.analysisIndicatorVersionId, query })
-        if (!departmentOptionRequests.has(key)) {
-          const request = loadDepartmentCodeOptions({
-            fields, query,
-            fetchOptions: payload => fetchDashboardFilterOptions(sourceCode, payload),
-            fetchNameRows: async binding => {
-              if (!sample) return []
-              const widget = schemaToDashboardPayload({ ...(editingDashboardSchema.value || dashboardSchema.value), widgets: [sample] }, { dataSources: availableIndicatorSources.value }).widgets[0]
-              const result = await previewDashboardWidget({
-                widget: { ...widget, type: 'BAR_CHART', query: { ...widget.query, resultShape: 'COMPARISON' }, fieldBindings: { dataset: 'backend', dimensions: [{ field: binding.codeField }], measures: [{ field: 'value', aggregation: 'direct' }], series: [], sort: [] } },
-                ...range, granularity: 'MONTHLY', filters: query.filters
-              })
-              return result.rows || []
-            }
-          }).catch(error => { departmentOptionRequests.delete(key); throw error })
-          departmentOptionRequests.set(key, request)
-          if (departmentOptionRequests.size > 24) departmentOptionRequests.delete(departmentOptionRequests.keys().next().value)
-        }
-        next[definition.id] = await departmentOptionRequests.get(key)
+        next[definition.id] = await loadDepartmentCodeOptions({ fields, fetchDictionary: fetchDepartmentDictionary })
       } else {
         const rows = await fetchDashboardFilterOptions(sourceCode, query)
         next[definition.id] = (Array.isArray(rows) ? rows : []).map(item => ({ value: item.value, label: item.label || String(item.value) }))
@@ -2793,7 +2731,7 @@ async function loadRemoteFilterOptions() {
 }
 
 async function previewRemoteWidget(widget, { templateAutoConfigure = false } = {}) {
-  if (!widget?.sourceCode) return
+  if (!isDashboardIndicatorQueryWidget(widget) || !widget?.sourceCode) return
   const widgetId = String(widget.id)
   const generation = (remoteWidgetPreviewGenerations.get(widgetId) || 0) + 1
   remoteWidgetPreviewGenerations.set(widgetId, generation)
@@ -2807,7 +2745,7 @@ async function previewRemoteWidget(widget, { templateAutoConfigure = false } = {
       ...((isEditing.value ? editingDashboardSchema.value : dashboardSchema.value) || {}),
       widgets: [widget]
     }, { dataSources: availableIndicatorSources.value }).widgets[0]
-    const range = dateRangeForMonths(resolvePublishedDashboardPeriodRange(remotePeriodRange.value, isEditing.value ? designerPeriodOptions.value : viewerPeriodOptions.value))
+    const range = remoteSelectedPeriod(widget)
     if (normalizeIndicatorBindings(widget.config?.indicatorBindings, widget).length > 1) {
       const datasets = await queryRemoteMultiIndicatorSources(widget, range)
       if (remoteWidgetPreviewGenerations.get(widgetId) !== generation) return
@@ -2820,8 +2758,10 @@ async function previewRemoteWidget(widget, { templateAutoConfigure = false } = {
     if (planned.empty) throw new Error('组件范围与看板周期没有交集')
     const { widgetCodes, ...baseQuery } = planned.query
     const query = buildPublishedIndicatorTrendPreviewQuery(widget, baseQuery)
-    const result = await previewDashboardWidget({ widget: payload, ...query })
-    let dataset = await normalizeDashboardWidgetDataset(widget, widgetResultToDataset({ ...result, appliedGlobalFilterFields: Object.keys(query.filters) }, fields, 'backend'), query)
+    const result = query.granularity
+      ? await previewDashboardWidget({ widget: payload, ...query })
+      : { status: 'NO_ACTIVE_RESULT', rows: [] }
+    let dataset = await normalizeDashboardWidgetDataset(widget, widgetResultToDataset({ ...periodSafeWidgetResult(widget, result, query), appliedGlobalFilterFields: Object.keys(query.filters) }, fields, 'backend'), query)
     // Auto setup is limited to an explicit source choice in a built-in slot.
     // Viewer refresh and manually configured charts never change their type.
     if (templateAutoConfigure && widget.type === 'chart' && widget.config?.templateSlot?.binding === 'period' && dataset.status !== 'ERROR') {
@@ -2833,7 +2773,7 @@ async function previewRemoteWidget(widget, { templateAutoConfigure = false } = {
           try {
             const overview = await previewDashboardWidget({ widget: { ...payload, type: 'KPI', fieldBindings: overviewBinding, query: { resultShape: 'OVERVIEW' }, chart: { chartKind: 'kpi' } }, ...query })
             if (remoteWidgetPreviewGenerations.get(widgetId) !== generation) return
-            const overviewDataset = widgetResultToDataset({ ...overview, appliedGlobalFilterFields: Object.keys(query.filters) }, fields, 'backend')
+            const overviewDataset = widgetResultToDataset({ ...enforceDashboardResultPeriod(overview, query), appliedGlobalFilterFields: Object.keys(query.filters) }, fields, 'backend')
             if (overviewDataset.status !== 'ERROR' && overviewDataset.rows?.some(row => numericValue(row[overviewBinding.measures[0].field]) !== null)) {
               editingDashboardSchema.value = updateDashboardWidget(editingDashboardSchema.value, widgetId, current => {
                 const next = { ...current, type: 'kpi', visualType: 'kpi', config: { ...current.config, dataBinding: overviewBinding } }
@@ -2890,7 +2830,8 @@ async function previewMetricGroupItem(group, item) {
 async function hydrateIndicatorSource(source) {
   if (!['indicator-catalog', 'dashboard-data-source'].includes(source?.origin) || !source.analysisIndicatorId) return source
   const periodSelection = remotePeriodRange.value
-  const query = buildPublishedIndicatorAnalysisQuery(source, periodSelection)
+  const query = { ...buildPublishedIndicatorAnalysisQuery(source), ...remoteSelectedPeriod() }
+  if (!query.granularity) return { ...source, currentValue: null, yoy: null, mom: null, trendData: [], departmentData: [], pieData: [], analysisLoaded: false }
   const queryKey = JSON.stringify(query)
   if (source.analysisLoaded && source.analysisQueryKey === queryKey) return source
   const requestKey = `${source.code}:${queryKey}`
@@ -2931,55 +2872,23 @@ async function dashboardIndicatorVersion(source, widget) {
   return dashboardIndicatorVersionRequests.get(String(versionId))
 }
 
-async function loadDashboardDepartmentNames(analysis, paths = [], requiredCodes = [], field = '') {
-  const rows = [...(analysis?.departmentComparison || []), ...(analysis?.dimensionComparison || [])]
-  const names = collectDepartmentNames(rows, paths)
-  const codes = requiredCodes.length ? requiredCodes : rows.map(row => departmentIdentity(row, paths).code).filter(Boolean)
-  if (!codes.length || codes.every(code => names.has(code))) return { names, diagnostics: [] }
-  const path = resolveChartDrillPath(paths, field)
-  const pathCode = path?.pathCode || 'ORGANIZATION'
-  const resultId = deriveDrillPathResultIds(analysis, paths)[pathCode]
-    || (pathCode === 'ORGANIZATION' ? analysis?.departmentComparison?.find(row => row?.resultId)?.resultId : '')
-  if (!resultId) return { names, diagnostics: ['当前正式结果没有可用于读取科室名称的下钻结果。'] }
+async function loadDashboardDepartmentNames() {
   try {
-    const root = await loadBackendChartRoot(searchResultDrill, { resultId, path, configuredPaths: paths })
-    const level = await loadBackendChartLevel(searchResultDrill, root, initialBackendChartNavigation(root))
-    for (const row of level.records) {
-      if (row.dimensionLabel && !row.dimensionLabel.includes('编码：')) names.set(String(row.dimensionKey), row.dimensionLabel)
-    }
-    return { names, diagnostics: [] }
+    return { names: await fetchDepartmentNames(), diagnostics: [] }
   } catch (error) {
-    return { names, diagnostics: [`科室名称读取失败：${error?.message || '下钻结果不可用'}`] }
+    return { names: new Map(), diagnostics: [`科室字典读取失败：${error?.message || '请稍后重试'}`] }
   }
 }
 
 async function normalizeDashboardWidgetDataset(widget, dataset, query) {
+  if (dataset.periodContext && !dataset.rows?.length) return dataset
   const source = getWidgetSource(widget)
-  if (!source?.analysisIndicatorId) return normalizeDepartmentDataset(dataset)
   try {
-    const version = await dashboardIndicatorVersion(source, widget)
+    const version = source?.analysisIndicatorId ? await dashboardIndicatorVersion(source, widget) : null
     const paths = version?.drillConfig?.drillPaths || version?.drillPaths || []
-    const normalized = normalizeDepartmentDataset(dataset, { paths })
-    const names = collectDepartmentNames(normalized.rows, paths)
-    const codes = normalized.rows.map(row => departmentIdentity(row, paths).code).filter(code => code && !names.has(code))
-    if (!codes.length) return dataset.rowMode === 'PROJECTED' ? normalized : explainDashboardComparison(widget, normalized, query)
-    if (dataset.rowMode === 'PROJECTED') {
-      const context = dataset.rows.find(row => row.drillContext)?.drillContext
-      if (!context) return normalized
-      const path = resolveChartDrillPath(paths, widget.config?.dataBinding?.dimensions?.[0]?.field)
-      const root = await loadBackendChartRoot(searchResultDrill, { resultId: context.resultId,
-        drillContext: { ...context, filters: {} }, path, departmentNames: Object.fromEntries(names),
-        indicatorVersionId: String(widget.config?.analysisIndicatorVersionId || source.analysisIndicatorVersionId || source.indicatorVersionId || '') })
-      const members = await loadBackendChartLevel(searchResultDrill, root, initialBackendChartNavigation(root))
-      for (const row of members.records) if (row.dimensionLabel && !row.dimensionLabel.includes('编码：')) names.set(String(row.dimensionKey), row.dimensionLabel)
-      return normalizeDepartmentDataset(dataset, { paths, names })
-    }
-    const analysis = await fetchIndicatorAnalysis(source.analysisIndicatorId, {
-      periodStart: query?.periodStart, periodEnd: query?.periodEnd, granularity: query?.granularity || 'MONTHLY',
-      indicatorVersionId: widget.config?.analysisIndicatorVersionId || source.analysisIndicatorVersionId || source.indicatorVersionId
-    })
-    const resolved = await loadDashboardDepartmentNames(analysis, paths, codes, widget.config?.dataBinding?.dimensions?.[0]?.field)
-    return explainDashboardComparison(widget, normalizeDepartmentDataset(dataset, { paths, ...resolved }), query)
+    const resolved = await loadDashboardDepartmentNames()
+    const normalized = normalizeDepartmentDataset(dataset, { paths, ...resolved })
+    return dataset.rowMode === 'PROJECTED' || !source?.analysisIndicatorId ? normalized : explainDashboardComparison(widget, normalized, query)
   } catch (error) {
     return explainDashboardComparison(widget, normalizeDepartmentDataset(dataset, { diagnostics: [`科室名称读取失败：${error?.message || '指标配置不可用'}`] }), query)
   }
@@ -2994,7 +2903,7 @@ async function explainDashboardComparison(widget, dataset, query) {
     const overview = await previewDashboardWidget({
       widget: { ...payload, type: 'KPI', fieldBindings, query: { ...payload.query, resultShape: 'OVERVIEW' }, chart: { chartKind: 'kpi' } }, ...scope
     })
-    return { ...widgetResultToDataset(overview, remoteFieldCatalog.value[widget.sourceCode], 'backend'), kpiMeasureField: fieldBindings.measures[0].field }
+    return { ...widgetResultToDataset(enforceDashboardResultPeriod(overview, scope), remoteFieldCatalog.value[widget.sourceCode], 'backend'), kpiMeasureField: fieldBindings.measures[0].field }
   })
 }
 
@@ -3006,7 +2915,7 @@ async function refreshSchemaPublishedIndicatorSources() {
   ])]
   const sources = sourceCodes
     .map(code => catalogIndicatorSources.value.find(source => source.code === code))
-    .filter(Boolean)
+    .filter(source => source?.origin === 'indicator-catalog')
   await Promise.allSettled(sources.map(source => hydrateIndicatorSource(source)))
 }
 
@@ -3072,21 +2981,12 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
     remoteSourcePeriodOptions.value = Object.fromEntries(metadataEntries.map(item => [item.code, createPublishedDashboardPeriodOptions([item.periods])]))
     const availablePeriods = createPublishedDashboardPeriodOptions(metadataEntries.map(item => item.periods))
     periodOptions.value = availablePeriods
-    if (availablePeriods.length) {
-      const initialRange = remotePeriodRange.value.length ? remotePeriodRange.value : defaultPublishedDashboardPeriodRange(availablePeriods)
-      const nextPeriodRange = resolvePublishedDashboardPeriodRange(initialRange, availablePeriods)
-      if (JSON.stringify(remotePeriodRange.value) !== JSON.stringify(nextPeriodRange)) {
-        reconcilingRemotePeriod = true
-        try {
-          remotePeriodRange.value = nextPeriodRange
-          remotePeriodDraft.value = [...nextPeriodRange]
-          await nextTick()
-        } finally {
-          reconcilingRemotePeriod = false
-        }
-      } else if (!remotePeriodDraft.value.length) {
-        remotePeriodDraft.value = [...nextPeriodRange]
-      }
+    if (!remotePeriodRange.value.length) {
+      reconcilingRemotePeriod = true
+      try {
+        applyRemotePeriodSelection(defaultDashboardPeriod(availablePeriods))
+        await nextTick()
+      } finally { reconcilingRemotePeriod = false }
     }
     const result = remoteDashboardMeta.value.currentPublishedVersionId
       ? await queryRemoteDashboardByPeriod(rawSchema, signal, targetDashboardId)
@@ -3112,8 +3012,8 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
     const widgetDatasets = await buildDashboardWidgetDatasets(schema, result)
     if (!isCurrentLoad()) return
     remoteWidgetDatasets.value = widgetDatasets
-    const queryState = resolveDashboardQueryState(result, schema.widgets.length)
-    dashboardStatus.value = queryState.status
+    const queryState = resolveDashboardQueryState(result, schema.widgets.filter(isDashboardIndicatorQueryWidget).length)
+    dashboardStatus.value = queryState.status === 'empty' ? 'ready' : queryState.status
     dashboardLoadMessage.value = queryState.message
     if (isEditing.value) {
       for (const widget of schema.widgets.filter(widget => bindingKind(widget) === 'line' && widget.sourceCode)) void previewRemoteWidget(widget)
@@ -3152,19 +3052,17 @@ async function queryRemoteMultiIndicatorSources(widget, range, signal, schema = 
     }
     const payload = schemaToDashboardPayload({ ...(editingDashboardSchema.value || dashboardSchema.value || {}), widgets: [sourceWidget] }, { dataSources: availableIndicatorSources.value }).widgets[0]
     const { widgetCodes, ...query } = planned.query
-    const result = await previewDashboardWidget({ widget: payload, ...query }, { signal })
-    datasets.set(binding.sourceCode, [await normalizeDashboardWidgetDataset(sourceWidget, widgetResultToDataset(result, fields, 'backend'), query)])
+    const result = query.granularity ? await previewDashboardWidget({ widget: payload, ...query }, { signal }) : { status: 'NO_ACTIVE_RESULT', rows: [] }
+    datasets.set(binding.sourceCode, [await normalizeDashboardWidgetDataset(sourceWidget, widgetResultToDataset(periodSafeWidgetResult(sourceWidget, result, query), fields, 'backend'), query)])
   }))
   return datasets
 }
 
 async function queryRemoteDashboardByPeriod(schema, signal, dashboardId) {
-  const [startMonth, endMonth] = resolvePublishedDashboardPeriodRange(remotePeriodRange.value, periodOptions.value)
   const widgets = uniqueDashboardQueryWidgets(schema)
-  const fullRange = dateRangeForMonths([startMonth, endMonth])
   const parts = await mapWithConcurrency(widgets, 3, async widget => {
     const trend = dashboardWidgetResultShape(widget) === 'TREND'
-    const range = trend ? fullRange : dateRangeForMonths([endMonth, endMonth])
+    const range = remoteSelectedPeriod(widget)
     if (normalizeIndicatorBindings(widget.config?.indicatorBindings, widget).length > 1) {
       try {
         const datasets = await queryRemoteMultiIndicatorSources(widget, range, signal, schema)
@@ -3179,6 +3077,7 @@ async function queryRemoteDashboardByPeriod(schema, signal, dashboardId) {
     if (planned.error || planned.empty) return { widgets: { [widget.id]: { status: planned.error ? 'ERROR' : 'EMPTY', message: planned.error || '组件范围与看板周期没有交集', rows: [] } } }
     const query = planned.query
     const appliedGlobalFilterFields = Object.keys(query.filters || {})
+    if (!query.granularity) return { widgets: { [widget.id]: enforceDashboardResultPeriod({ rows: [] }, query, { selectionType: range.selectionType }) } }
     if (trend && query.granularity === 'MONTHLY') {
       const months = monthsBetween(query.periodStart.slice(0, 7), new Date(new Date(`${query.periodEnd}T00:00:00Z`).getTime() - 1).toISOString().slice(0, 7))
       const result = await queryDashboardTrendMonths(dashboardId, query, [widget], months, signal)
@@ -3198,14 +3097,20 @@ async function queryRemoteDashboardByPeriod(schema, signal, dashboardId) {
 const remoteDashboardQueryCache = new Map()
 const REMOTE_DASHBOARD_QUERY_CACHE_TTL_MS = 30_000
 function remoteDashboardQueryCacheKey(dashboardId, query) {
-  return `${dashboardId}:${remoteDashboardMeta.value.currentPublishedVersionId || ''}:${JSON.stringify(query)}`
+  return `${dashboardId}:${remoteDashboardMeta.value.currentPublishedVersionId || ''}:${remotePeriodSelection.value.type}:${JSON.stringify(query)}`
 }
 async function queryRemoteDashboardCached(dashboardId, query, signal) {
   const key = remoteDashboardQueryCacheKey(dashboardId, query)
   const cached = remoteDashboardQueryCache.get(key)
   if (cached && cached.expiresAt > Date.now()) return cached.result
   remoteDashboardQueryCache.delete(key)
-  const result = await queryDashboard(dashboardId, query, { signal, cache: 'no-store' })
+  const selectionType = remotePeriodSelection.value.type
+  const response = await queryDashboard(dashboardId, query, { signal, cache: 'no-store' })
+  const schema = dashboardSchema.value
+  const result = { ...response, widgets: Object.fromEntries(Object.entries(response.widgets || {}).map(([id, item]) => {
+    const widget = schema?.widgets?.find(widget => String(widget.id) === id)
+    return [id, enforceDashboardResultPeriod(item, query, { timeSeries: dashboardWidgetResultShape(widget || {}) === 'TREND', selectionType: ['FIXED', 'INDEPENDENT'].includes(widget?.config?.backendQuery?.periodMode) ? query.granularity : selectionType })]
+  })) }
   const widgets = Object.values(result?.widgets || {})
   if (!signal?.aborted && widgets.length && widgets.every(widget => widget?.status === 'READY')) {
     remoteDashboardQueryCache.set(key, { result, expiresAt: Date.now() + REMOTE_DASHBOARD_QUERY_CACHE_TTL_MS })
@@ -3246,6 +3151,7 @@ function mergeMonthlyDashboardResults(parts) {
   for (const result of Object.values(widgets)) {
     const unique = new Map(result.rows.map(row => [JSON.stringify([row.periodStart, row.periodEnd, row.dimensionHash, row.resultId, row.value]), row]))
     result.rows = [...unique.values()].sort((left, right) => String(left.periodStart || '').localeCompare(String(right.periodStart || '')))
+    if (result.rows.length) { result.status = 'READY'; result.message = '' }
   }
   return {
     ...parts[0],
@@ -3264,15 +3170,15 @@ async function queryDashboardTrendMonths(dashboardId, baseQuery, widgets, months
       widgetCodes
     }, signal)
   })
-  return mergeMonthlyDashboardResults(parts)
+  const merged = mergeMonthlyDashboardResults(parts)
+  for (const result of Object.values(merged.widgets)) result.periodContext = { ...result.periodContext, label: dashboardPeriodLabel(baseQuery) }
+  return merged
 }
 
 async function buildDashboardWidgetDatasets(schema, result) {
-  const entries = await mapWithConcurrency(schema.widgets, 3, async widget => {
+  const entries = await mapWithConcurrency(schema.widgets.filter(isDashboardIndicatorQueryWidget), 3, async widget => {
     const dataset = widgetResultToDataset(dashboardWidgetResult(result, schema.widgets, widget), remoteFieldCatalog.value[widget.sourceCode], 'backend')
-    const source = getWidgetSource(widget)
-    const selectedMonth = remotePeriodRange.value.at(-1)
-    const query = buildPublishedIndicatorAnalysisQuery(source, dashboardWidgetResultShape(widget) === 'TREND' ? remotePeriodRange.value : selectedMonth ? [selectedMonth, selectedMonth] : remotePeriodRange.value)
+    const query = remoteSelectedPeriod(widget)
     const planned = buildRemoteWidgetQuery(widget, remoteWidgetQueryContext(query, widget.sourceCode, schema))
     return [String(widget.id), await normalizeDashboardWidgetDataset(widget, dataset, planned.query || query)]
   })
@@ -3301,8 +3207,8 @@ async function refreshRemoteDashboardData() {
     const widgetDatasets = await buildDashboardWidgetDatasets(schema, result)
     if (controller.signal.aborted || !isCurrentLoad()) return
     remoteWidgetDatasets.value = widgetDatasets
-    const queryState = resolveDashboardQueryState(result, schema.widgets.length)
-    dashboardStatus.value = queryState.status
+    const queryState = resolveDashboardQueryState(result, schema.widgets.filter(isDashboardIndicatorQueryWidget).length)
+    dashboardStatus.value = queryState.status === 'empty' ? 'ready' : queryState.status
     dashboardLoadMessage.value = queryState.message
   } catch (error) {
     if (controller.signal.aborted || !isCurrentLoad()) return
@@ -3327,7 +3233,7 @@ function dashboardWidgetQuerySignature(widget = {}) {
 
 function uniqueDashboardQueryWidgets(schema = {}) {
   const signatures = new Set()
-  return (schema?.widgets || []).filter(widget => {
+  return (schema?.widgets || []).filter(isDashboardIndicatorQueryWidget).filter(widget => {
     if (normalizeIndicatorBindings(widget.config?.indicatorBindings, widget).length > 1) return true
     const signature = dashboardWidgetQuerySignature(widget)
     if (signatures.has(signature)) return false
@@ -3360,7 +3266,7 @@ async function performDashboardSwitch(nextDashboardId, previousDashboardId) {
   remoteDashboardMeta.value = null
   remoteDashboardIsMock.value = false
   remotePeriodRange.value = []
-  remotePeriodDraft.value = []
+  remotePeriodSelection.value = defaultDashboardPeriod()
   filterRuntimeValues.value = {}
   interactionFilterState.value = {}
   drillRuntimeState.value = {}
@@ -3426,7 +3332,9 @@ const goIndicatorAnalysis = (indicator, backendQuery = {}, drillContext = null) 
   if (isEditing.value) return
   const source = typeof indicator === 'object' && indicator ? indicator : getDashboardIndicatorSource(indicator)
   if (!source?.analysisIndicatorId || !['indicator-catalog', 'dashboard-data-source', 'backend'].includes(source.origin) || (source.origin === 'backend' && dashboardStatus.value !== 'ready')) return
-  const context = buildIndicatorAnalysisPeriodContext(remotePeriodRange.value, backendQuery)
+  const context = ['FIXED', 'INDEPENDENT'].includes(backendQuery?.periodMode)
+    ? buildIndicatorAnalysisPeriodContext(remotePeriodRange.value, backendQuery)
+    : remoteSelectedPeriod()
   const query = buildIndicatorAnalysisRouteQuery(source || { code: indicator }, context)
   if (!query || source?.analysisEnabled === false) return
   router.push({
@@ -3451,7 +3359,7 @@ watch(period, () => {
   loadDashboard()
   void refreshSchemaPublishedIndicatorSources()
 })
-watch([remotePeriodRange, department], () => {
+watch([remotePeriodRange, remotePeriodSelection, department], () => {
   if (reconcilingRemotePeriod) return
   if (isEditing.value) { refreshDesignerPeriodData(); return }
   if (isFormalRemoteDashboard.value) void refreshRemoteDashboardData()
@@ -3461,6 +3369,7 @@ watch(activeWidgetId, () => { selectedMetricItemId.value = '' })
 const metricGroupPreviewKey = computed(() => JSON.stringify({
   editing: isEditing.value,
   period: remotePeriodRange.value,
+  statisticalPeriod: remotePeriodSelection.value,
   department: department.value,
   filters: filterRuntimeValues.value,
   sources: availableIndicatorSources.value.filter(source => source.origin === 'dashboard-data-source').map(source => [source.code, source.indicatorVersionId]),

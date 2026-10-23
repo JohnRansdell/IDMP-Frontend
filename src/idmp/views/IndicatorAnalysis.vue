@@ -130,7 +130,7 @@
               <p>{{ hasPeerTrend ? '展示本院实际值与同级医院均值的周期变化' : '展示本院实际值的周期变化；同级医院基准数据暂未接入' }}</p>
             </div>
             <div class="trend-controls">
-              <div class="date-range-fields trend-period-picker" aria-label="趋势时间范围"><el-date-picker v-model="trendPeriodDraft" type="daterange" unlink-panels format="YYYY-MM-DD" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" size="small" /></div>
+              <div class="date-range-fields trend-period-picker" aria-label="趋势时间范围"><el-date-picker v-model="trendMonthRange" type="monthrange" unlink-panels format="YYYY-MM" value-format="YYYY-MM" range-separator="至" start-placeholder="开始月份" end-placeholder="结束月份" size="small" /></div>
               <el-tag v-if="isSourceDefaultTrendRange" size="small" type="info" effect="plain">源数据可用范围</el-tag>
               <el-button size="small" type="primary" @click="applyTrendConditions">应用</el-button>
               <el-button size="small" :disabled="!trendPeriodDraft.some(Boolean) && !analysisPeriodRange.some(Boolean)" @click="clearTrendPeriod">全部时间</el-button>
@@ -158,8 +158,6 @@
                     :loading="trendGrainLoading[field.code]"
                     placeholder="全部"
                     size="small"
-                    @visible-change="visible => visible && loadTrendGrainOptions(field.code, '')"
-                    @change="clearFollowingTrendGrain(field.code)"
                   >
                     <el-option v-for="item in trendGrainOptions(field.code)" :key="item.value" :label="item.label" :value="item.value">
                       <span>{{ item.label }}</span>
@@ -387,6 +385,8 @@ import { fetchFactorVersion } from '@/idmp/api/modules/factors'
 import { collectFormulaFactorVersionIds, createIndicatorDataExplanation, extractIndicatorFormula, normalizeIndicatorInstantSummary } from '@/idmp/api/adapters/indicator'
 import { deriveDrillPathResultIds } from '@/idmp/api/adapters/drill'
 import { searchResultDrill } from '@/idmp/api/modules/drill'
+import { fetchDepartmentNames } from '@/idmp/api/modules/departments'
+import { isDepartmentCodeField } from '@/idmp/features/shared/departmentDictionary.js'
 import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
 import { resolveIndicatorCalculationMode } from '@/idmp/features/analysis/calculationMode'
 import { departmentAchievement, departmentDrillContext, loadDepartmentComparisons, normalizeDepartmentComparisons } from '@/idmp/features/analysis/departmentRanking'
@@ -431,6 +431,10 @@ const isSourceDefaultTrendRange = ref(false)
 let sourceTrendRangePending = !isCompleteDateRange(analysisPeriodRange.value)
 const reportPeriodRange = ref(initialReportPeriodRange())
 const trendPeriodDraft = ref([...analysisPeriodRange.value])
+const trendMonthRange = computed({
+  get: () => trendPeriodDraft.value.map(value => String(value).slice(0, 7)),
+  set: range => { trendPeriodDraft.value = normalizeTrendMonthRange(range) }
+})
 const trendGrainDraft = ref({})
 const trendAdvancedExpanded = ref([])
 const trendGrainCandidates = ref({})
@@ -483,7 +487,7 @@ const currentProfile = computed(() => {
   return createGenericAnalysisProfile({
     ...backendIndicator,
     unit: backendIndicator.unit || backendIndicator.displayUnit || ''
-  })
+  }, resolveAnalysisPerformanceTarget(currentIndicatorVersionId.value, trendBackendAnalysis.value, backendAnalysis.value))
 })
 const backendAnalysisGranularity = computed(() => reportGranularity.value)
 const indicatorRuntimeParameters = computed(() => collectSqlRuntimeParameters(
@@ -504,7 +508,7 @@ const trendAnalysisGranularity = computed(() => {
 })
 const trendGrainFields = computed(() => Array.isArray(backendIndicatorVersion.value?.dimensionGrain)
   ? backendIndicatorVersion.value.dimensionGrain.map(String).filter(Boolean) : [])
-const trendGrainMetadata = computed(() => trendGrainFields.value.map((code, index) => trendGrainField(code, index, backendIndicatorVersion.value?.drillConfig?.drillPaths || [])))
+const trendGrainMetadata = computed(() => trendGrainFields.value.map(code => trendGrainField(code, backendIndicatorVersion.value?.drillConfig?.drillPaths || [])))
 const trendGrainNameMaps = computed(() => {
   const maps = trendGrainNames(trendGrainMetadata.value, [backendAnalysis.value, trendBackendAnalysis.value]
     .filter(analysis => String(analysis?.indicatorVersionId || '') === String(currentIndicatorVersionId.value)))
@@ -530,10 +534,6 @@ async function loadTrendGrainOptions(code, search = '') {
     params.periodStart = trendPeriodDraft.value[0]
     params.periodEnd = trendPeriodDraft.value[1]
   }
-  trendGrainFields.value.slice(0, index).forEach(field => {
-    const value = String(trendGrainDraft.value[field] ?? '').trim()
-    if (value) params[`filter.${field}`] = value
-  })
   const generation = (trendGrainRequestGenerations.get(code) || 0) + 1
   trendGrainRequestGenerations.set(code, generation)
   trendGrainLoading.value[code] = true
@@ -542,8 +542,11 @@ async function loadTrendGrainOptions(code, search = '') {
     if (trendGrainRequestGenerations.get(code) !== generation || currentIndicatorVersionId.value !== versionId) return
     const definition = trendGrainMetadata.value.find(field => field.code === code)
     if (!definition) return
+    const departmentNames = isDepartmentCodeField(code) ? await fetchDepartmentNames() : null
+    if (trendGrainRequestGenerations.get(code) !== generation || currentIndicatorVersionId.value !== versionId) return
+    if (departmentNames) trendGrainResolvedNames.value[code] = departmentNames
     const missing = namedTrendGrainOptions(options, definition, trendGrainNameMaps.value[code]).filter(item => item.nameMissing).map(item => item.value)
-    if (missing.length || (search && !options?.length && definition.named && !trendGrainNameMaps.value[code]?.size)) {
+    if (!departmentNames && (missing.length || (search && !options?.length && definition.named && !trendGrainNameMaps.value[code]?.size))) {
       let analysis = [backendAnalysis.value, trendBackendAnalysis.value].find(analysis => String(analysis?.indicatorVersionId || '') === String(versionId) && analysis.dimensionComparison?.some(row => row.resultId))
       if (!analysis) analysis = await fetchIndicatorAnalysis(String(indicator.id || indicator.indicatorId), { ...buildTrendAnalysisParams(trendPeriodDraft.value, versionId, trendAnalysisGranularity.value) })
       const names = await loadTrendGrainMemberNames({ analysis, paths: backendIndicatorVersion.value?.drillConfig?.drillPaths || [],
@@ -554,7 +557,7 @@ async function loadTrendGrainOptions(code, search = '') {
     }
     // Some catalogs only search codes. Resolve a typed member name through
     // the current formal rows, then verify the codes against the same filters.
-    if (search && !options?.length) {
+    if (!departmentNames && search && !options?.length) {
       const matches = [...(trendGrainNameMaps.value[code] || new Map())].filter(([value, name]) => name.includes(search) || value.includes(search)).slice(0, 10)
       const responses = await Promise.all(matches.map(([value]) => fetchIndicatorGrainOptions(String(indicator.id || indicator.indicatorId), { ...params, search: value })))
       options = responses.flat().filter(item => matches.some(([value]) => value === String(item.value)))
@@ -562,6 +565,7 @@ async function loadTrendGrainOptions(code, search = '') {
     if (trendGrainRequestGenerations.get(code) !== generation || currentIndicatorVersionId.value !== versionId) return
     // Keep selected options available so the select never falls back to its code.
     const selected = (trendGrainCandidates.value[code] || []).filter(item => String(item.value) === String(trendGrainDraft.value[code]))
+      .map(item => departmentNames?.has(String(item.value)) ? { ...item, label: departmentNames.get(String(item.value)), nameMissing: false } : item)
     const names = new Map(trendGrainNameMaps.value[code] || [])
     selected.filter(item => !item.nameMissing && item.label !== item.value).forEach(item => names.set(String(item.value), item.label))
     const field = trendGrainMetadata.value.find(field => field.code === code)
@@ -573,16 +577,6 @@ async function loadTrendGrainOptions(code, search = '') {
   } finally {
     if (trendGrainRequestGenerations.get(code) === generation) trendGrainLoading.value[code] = false
   }
-}
-
-function clearFollowingTrendGrain(code) {
-  const index = trendGrainFields.value.indexOf(code)
-  trendGrainFields.value.slice(index + 1).forEach(field => {
-    trendGrainDraft.value[field] = ''
-    trendGrainCandidates.value[field] = []
-    trendGrainRequestGenerations.set(field, (trendGrainRequestGenerations.get(field) || 0) + 1)
-    trendGrainLoading.value[field] = false
-  })
 }
 
 function clearTrendGrainFilters() {
@@ -632,7 +626,7 @@ const backendDepartmentComparisons = computed(() =>
   normalizeDepartmentComparisons(
     (rankInitialized.value ? rankAnalysis.value : backendAnalysis.value)?.departmentComparison,
     rankInitialized.value ? [] : backendAnalysis.value?.dimensionComparison,
-    rankInitialized.value ? {} : departmentNamesByCode.value
+    departmentNamesByCode.value
   )
 )
 const backendDimensionResults = computed(() =>
@@ -858,10 +852,12 @@ const trendSeries = computed(() => {
       : { show: false },
     data: actualValues
   }
-  if (Number.isFinite(Number(currentProfile.value.markLineValue))) {
+  if (isChartNumber(currentProfile.value.markLineValue)) {
     actualSeries.markLine = {
       silent: true,
       symbol: 'none',
+      // ECharts otherwise rounds small raw-ratio targets (e.g. 0.003) to zero.
+      precision: -1,
       label: { formatter: currentProfile.value.targetLabel, color: '#b4232c', position: 'insideEndTop' },
       lineStyle: { color: '#b4232c', type: 'dashed', width: 1 },
       data: [{ yAxis: Number(currentProfile.value.markLineValue) }]
@@ -1384,7 +1380,7 @@ function buildAnalysisParams(range = [], versionId = currentIndicatorVersionId.v
 }
 
 function buildTrendAnalysisParams(range, versionId, granularity) {
-  const params = buildAnalysisParams(range, versionId, granularity)
+  const params = { ...buildAnalysisParams(range, versionId, granularity), sections: 'TREND' }
   if (trendGrainFields.value.length && Object.keys(trendGrainApplied.value).length && granularity !== 'STATIC') {
     params.grainSelection = 'EXACT'
     Object.entries(trendGrainApplied.value).forEach(([code, value]) => { params[`filter.${code}`] = value })
@@ -1396,15 +1392,28 @@ function emptyTrend() {
   return { labels: [], actual: [], peer: [] }
 }
 
-function createGenericAnalysisProfile(indicator) {
+function resolveAnalysisPerformanceTarget(versionId, ...analyses) {
+  const response = analyses.find(analysis => analysis?.indicatorVersionId != null
+    && String(analysis.indicatorVersionId) === String(versionId)
+    && Object.hasOwn(analysis, 'performanceTarget'))
+  const target = response?.performanceTarget
+  return target && String(target.indicatorVersionId) === String(versionId) ? target : null
+}
+
+function createGenericAnalysisProfile(indicator, performanceTarget) {
   const name = indicator?.name || indicator?.code || '未命名指标'
   const unit = indicator?.unit || indicator?.displayUnit || ''
+  const targetValue = isUsableRawValue(performanceTarget?.targetValue)
+    && String(performanceTarget.targetValue).trim() !== ''
+    ? normalizeTrendValue({ value: performanceTarget.targetValue }, unit) : null
   return {
     code: getBackendIndicatorKey(indicator),
     name,
     unit,
-    targetLabel: '目标值未配置',
-    markLineValue: null,
+    targetLabel: targetValue === null ? '目标值未配置'
+      : `目标值：${isUsableDisplayValue(performanceTarget.targetDisplayValue)
+        ? performanceTarget.targetDisplayValue : formatMetricValue(performanceTarget.targetValue, unit)}`,
+    markLineValue: targetValue,
     yAxisMax: null,
     summary: [{ label: '当前指标值', value: '-', tone: 'neutral' }],
     trends: { 月度: emptyTrend(), 季度: emptyTrend(), 年度: emptyTrend() },
@@ -1473,7 +1482,7 @@ async function refreshIndicatorAnalysis({ preserveRangeSummary = false } = {}) {
 
     const analysisParams = buildAnalysisParams(analysisPeriodRange.value)
     const trendParams = backendAnalysisGranularity.value === 'STATIC'
-      ? buildAnalysisParams([], currentIndicatorVersionId.value, 'STATIC')
+      ? buildTrendAnalysisParams([], currentIndicatorVersionId.value, 'STATIC')
       : buildTrendAnalysisParams(analysisPeriodRange.value, currentIndicatorVersionId.value, trendAnalysisGranularity.value)
     const [analysisData, trendResult] = await Promise.allSettled([
       granularity ? fetchIndicatorAnalysis(backendIndicatorId, analysisParams) : Promise.resolve(null),
@@ -1515,7 +1524,7 @@ async function refreshIndicatorAnalysis({ preserveRangeSummary = false } = {}) {
     }
     if (resolvedAnalysisData?.status === 'fulfilled' && resolvedAnalysisData?.value) {
       backendAnalysis.value = resolvedAnalysisData.value
-      if (resolvedAnalysisData.value?.granularity === 'STATIC') void loadDepartmentNames(resolvedAnalysisData.value, refreshSequence)
+      void loadDepartmentNames(resolvedAnalysisData.value, refreshSequence)
       if (!trendBackendAnalysis.value) trendBackendAnalysis.value = resolvedAnalysisData.value
       if (resolvedAnalysisData.value?.granularity) reportGranularity.value = String(resolvedAnalysisData.value.granularity)
       if (!reportPeriodRange.value.length && resolvedAnalysisData.value?.overview?.periodStart && resolvedAnalysisData.value?.overview?.periodEnd) {
@@ -1576,34 +1585,8 @@ async function loadAnalysisFormulaFactorVersions(version, refreshSequence) {
 }
 
 async function loadDepartmentNames(analysis, refreshSequence) {
-  const paths = backendIndicatorVersion.value?.drillConfig?.drillPaths || []
-  const path = paths.find(item => item?.levels?.some(level =>
-    String(level.dimensionFieldCode || '').toUpperCase() === 'OUT_DEPT_CODE'
-  ))
-  const level = path?.levels?.find(item => String(item.dimensionFieldCode || '').toUpperCase() === 'OUT_DEPT_CODE')
-  const anchor = path && deriveDrillPathResultIds(analysis, paths)[path.pathCode]
-  if (!anchor || !level) return
-
-  const names = {}
   try {
-    for (let pageNum = 1; pageNum <= 10; pageNum += 1) {
-      const response = await searchResultDrill(anchor, {
-        pathCode: path.pathCode,
-        currentLevel: level.levelCode,
-        parentKeys: {},
-        filters: {},
-        pageNum,
-        pageSize: 100,
-        sort: [{ field: 'indicatorValue', direction: 'DESC' }]
-      })
-      if (refreshSequence !== analysisRefreshSequence) return
-      response.records.forEach(record => {
-        const code = String(record.dimensions?.out_dept_code || record.dimensions?.OUT_DEPT_CODE || record.dimensionKey || '')
-        const name = String(record.dimensions?.out_dept_name || record.dimensions?.OUT_DEPT_NAME || record.dimensionName || '')
-        if (code && name) names[code] = name
-      })
-      if (pageNum >= response.pageInfo.totalPages || !response.records.length) break
-    }
+    const names = Object.fromEntries(await fetchDepartmentNames())
     if (refreshSequence === analysisRefreshSequence) departmentNamesByCode.value = names
   } catch {
     // 下钻名称不可用时，排名仍可显示正式结果中的科室编码和值。
@@ -1658,9 +1641,20 @@ watch(indicatorCode, () => {
 })
 
 function initialAnalysisPeriodRange() {
-  return route.query.trendStart && route.query.trendEnd
+  const range = route.query.trendStart && route.query.trendEnd
     ? [normalizeDateValue(route.query.trendStart), normalizeDateValue(route.query.trendEnd)]
     : readRememberedAnalysisPeriod(route.query.indicator, route.query.indicatorVersionId)
+  return normalizeTrendMonthRange(range)
+}
+
+function normalizeTrendMonthRange(range) {
+  if (!Array.isArray(range) || range.length !== 2) return []
+  const months = range.map(value => String(value || '').slice(0, 7))
+  if (months.some(value => !/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(value)) || months[0] > months[1]) return []
+  const end = new Date(`${months[1]}-01T00:00:00Z`)
+  end.setUTCMonth(end.getUTCMonth() + 1)
+  end.setUTCDate(0)
+  return [`${months[0]}-01`, end.toISOString().slice(0, 10)]
 }
 
 function initialReportPeriodRange() {
@@ -1676,7 +1670,7 @@ function normalizeDateValue(value) {
 function sourceAvailableTrendRange(availability) {
   const start = normalizeDateValue(availability?.earliestDataDate)
   const end = normalizeDateValue(availability?.latestDataDate)
-  return start && end && start <= end ? [start, end] : []
+  return start && end && start <= end ? normalizeTrendMonthRange([start, end]) : []
 }
 
 function isCompleteDateRange(range) {
@@ -1774,8 +1768,8 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
 .instant-query-panel__context strong { color: var(--idmp-text-secondary); font-weight: 500; }
 .instant-query-panel__controls { display: flex; align-items: flex-end; gap: 12px 16px; min-width: 0; }
 .runtime-query-result__summary span { margin: 0; color: var(--idmp-text-helper); font-size: 12px; }
-.instant-query-panel__period { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; min-width: 0; }
-.instant-query-panel__period label { flex: 0 0 auto; color: var(--idmp-text-primary); font-size: 13px; font-weight: 600; }
+.instant-query-panel__period { display: flex; flex: 0 0 auto; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0; }
+.instant-query-panel__period label { flex: 0 0 auto; min-height: 19px; color: var(--idmp-text-primary); font-size: 13px; font-weight: 600; }
 .instant-query-panel__controls :deep(.runtime-parameter-fields) { display: flex; flex: 1 1 auto; align-items: flex-end; flex-wrap: wrap; gap: 12px; min-width: 0; }
 .instant-query-panel__controls :deep(.runtime-parameter-field) { flex: 1 1 170px; max-width: 280px; gap: 6px; }
 .instant-query-panel__controls :deep(.runtime-parameter-field label) { min-height: 19px; font-size: 13px; }
@@ -2337,8 +2331,8 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
 .trend-advanced-filters :deep(.el-collapse-item__content) { padding-bottom: 8px; }
 .trend-advanced-help { margin-left: 8px; color: var(--idmp-text-helper); font-size: 12px; font-weight: 400; cursor: help; }
 .trend-advanced-fields { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
-.trend-advanced-fields .trend-grain-field { flex: 0 1 220px; flex-direction: row; align-items: center; min-width: min(180px, 100%); max-width: 260px; }
-.trend-advanced-fields .trend-grain-field label { flex: 0 0 auto; max-width: 84px; }
+.trend-advanced-fields .trend-grain-field { flex: 0 1 300px; flex-direction: row; align-items: center; min-width: min(180px, 100%); max-width: min(320px, 100%); }
+.trend-advanced-fields .trend-grain-field label { flex: 0 1 auto; max-width: 160px; overflow: visible; white-space: normal; overflow-wrap: anywhere; }
 .trend-advanced-fields .trend-grain-field :deep(.el-select) { width: auto; min-width: 0; flex: 1 1 120px; }
 .trend-advanced-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 .trend-advanced-actions .el-button + .el-button { margin-left: 0; }
@@ -2630,7 +2624,7 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
   .instant-query-panel__context { justify-content: flex-start; }
   .instant-query-panel__controls { align-items: stretch; }
   .instant-query-panel__period, .instant-query-panel__controls :deep(.runtime-parameter-fields) { flex: 1 1 100%; }
-  .report-period-picker { flex: 1 1 0; width: auto; min-width: 0; }
+  .report-period-picker { flex: 0 0 auto; width: 100%; min-width: 0; }
   .instant-query-panel__actions { width: 100%; margin-left: 0; }
   .instant-query-panel__actions .el-button { width: 100%; }
 

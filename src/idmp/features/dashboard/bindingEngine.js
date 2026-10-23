@@ -96,8 +96,7 @@ function aggregateMeasureRows(rows, measure, fields) {
   return unit === '%' ? ratio * 100 : ratio
 }
 
-// Keep aggregation values numeric for charts and filters. Formatting belongs only
-// to the visible KPI surface so binary floating-point tails never consume a card.
+// Keep chart and filter values numeric; apply formatting only at presentation.
 export function formatDashboardMetric(value, { maximumFractionDigits = 2 } = {}) {
   if (value === null || value === undefined || value === '') return ''
   const numeric = Number(value)
@@ -122,6 +121,15 @@ export function formatDashboardKpiMetric(value, { unit = '', displayValue } = {}
     return { value: percent.toFixed(2), unit: '%' }
   }
   return { value: formatDashboardMetric(value), unit: visibleUnit }
+}
+export function formatDashboardTableMetric(value, { unit = '', aggregation, semanticType = 'measure' } = {}) {
+  if (value === null || value === undefined) return '—'
+  if (semanticType !== 'measure') return String(value)
+  if (aggregation !== 'count' && normalizeDashboardMetricUnit(unit) === '%' && value !== '' && Number.isFinite(Number(value))) {
+    const display = formatDashboardKpiMetric(value, { unit })
+    return `${display.value}${display.unit}`
+  }
+  return formatDashboardMetric(value)
 }
 const dimensionValue = value => ['string', 'boolean'].includes(typeof value) || (typeof value === 'number' && Number.isFinite(value)) ? value : null
 const groupedRows = new WeakMap()
@@ -170,13 +178,32 @@ function projectedWidgetRows(rows, binding, dataset) {
     }
     const tuple = binding.dimensions.map(item => dimensionValue(row[item.field]))
     const split = binding.series.length ? dimensionValue(row[binding.series[0].field]) : ''
-    const categoryKey = JSON.stringify(tuple), splitKey = JSON.stringify(split)
+    const identities = row.dimensionIdentityFields || {}
+    const identityValue = item => {
+      const identity = identities[item.field]
+      if (identity && !Object.hasOwn(row, identity)) throw new Error(`后端结果缺少成员编码字段：${identity}`)
+      return dimensionValue(row[identity || item.field])
+    }
+    const identityValues = Object.fromEntries(binding.dimensions
+      .filter(item => identities[item.field]).map(item => [identities[item.field], identityValue(item)]))
+    const categoryKey = JSON.stringify([tuple, binding.dimensions.map(identityValue)])
+    const splitKey = JSON.stringify([split, binding.series.length ? identityValue(binding.series[0]) : ''])
     const key = JSON.stringify([categoryKey, splitKey])
     if (groups.has(key)) throw new Error('后端未返回当前组件的唯一粒度结果，请计算对应粒度或检查组件维度配置')
-    categories.set(categoryKey, { raw: tuple, visible: binding.dimensions.map(item =>
+    categories.set(categoryKey, { raw: tuple, identityValues, visible: binding.dimensions.map(item =>
       row[item.field] === null || row[item.field] === undefined || row[item.field] === '' ? '未分配' : visibleDimensionName(row, item, dataset)) })
     splits.set(splitKey, split ?? '未分配')
     groups.set(key, row)
+  }
+  const labelCounts = new Map()
+  for (const item of categories.values()) {
+    const key = JSON.stringify(item.visible)
+    labelCounts.set(key, (labelCounts.get(key) || 0) + 1)
+  }
+  for (const item of categories.values()) if (labelCounts.get(JSON.stringify(item.visible)) > 1) {
+    const original = item.raw.join(' / ')
+    const codes = Object.values(item.identityValues).join(' / ')
+    item.visible = [`${original}${codes ? ` [${codes}]` : ''}`]
   }
   return { categories, groups, splits }
 }
@@ -231,7 +258,7 @@ export function compileWidgetData(kind, binding, dataset) {
     const sortedCategories = order.map(index => Array.isArray(categoryValues[index].visible) ? categoryValues[index].visible.join(' / ') : String(categoryValues[index].visible))
     const sortedSeries = series.map(item => ({ ...item, values: order.map(index => item.values[index]) }))
     if (kind === 'kpi') return { status: 'ready', value: sortedSeries[0].values[0], label: sortedSeries[0].name, unit: binding.measures[0].aggregation === 'count' ? '' : dataset.fields.find(field => field.id === binding.measures[0].field)?.unit || '' }
-    return { status: 'ready', categories: sortedCategories, dimensionTuples: order.map(index => Object.fromEntries(binding.dimensions.map((dimension, dimensionIndex) => [dimension.field, categoryValues[index].raw[dimensionIndex]]))), series: sortedSeries.map(seriesItem => ({ ...seriesItem, axis: binding.measures.find(measure => measure.field === seriesItem.field)?.axis || 'left' })), items: sortedCategories.map((name, index) => ({ name, value: sortedSeries[0].values[index] })).filter(item => item.value !== null) }
+    return { status: 'ready', categories: sortedCategories, dimensionTuples: order.map(index => ({ ...Object.fromEntries(binding.dimensions.map((dimension, dimensionIndex) => [dimension.field, categoryValues[index].raw[dimensionIndex]])), ...categoryValues[index].identityValues })), series: sortedSeries.map(seriesItem => ({ ...seriesItem, axis: binding.measures.find(measure => measure.field === seriesItem.field)?.axis || 'left' })), items: sortedCategories.map((name, index) => ({ name, value: sortedSeries[0].values[index] })).filter(item => item.value !== null) }
   } catch (error) { return { status: 'invalid', message: toUserMessage(error, '组件字段绑定无效，请检查字段与聚合方式。') } }
 }
 

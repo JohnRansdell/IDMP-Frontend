@@ -1,5 +1,6 @@
 import { limitDrillNextLevels, normalizeOrganizationDrillLevel } from '../../api/adapters/drill.js'
 import { isDepartmentLevel, namedDrillRecord } from './dimensionNames.js'
+import { numericValue } from './fieldCatalog.js'
 
 const PAGE_SIZE = 200
 const MAX_CHART_ROWS = 500
@@ -42,10 +43,8 @@ export function projectedDrillNavigation(row, path, context) {
     const value = row[keys.get(String(identity).toLowerCase())] ?? parents[identity]
     if (value === null || value === undefined || value === '') break
     parents[identity] = String(value)
-    for (const field of [level.dimensionFieldCode, level.displayFieldCode].filter(Boolean)) {
-      const companion = row[keys.get(field.toLowerCase())]
-      if (companion !== null && companion !== undefined && companion !== '') parents[field] = String(companion)
-    }
+    // Display names can change independently of the frozen result snapshot.
+    // Only the configured member identity is a navigation key.
     index += 1
   }
   const filters = Object.fromEntries(Object.entries(context.filters || {}).filter(([field, values]) => {
@@ -183,10 +182,29 @@ export function findBackendChartRow(result, params = {}) {
   return (result?.records || []).find(row => candidates.some(value => [row.dimensionKey, row.dimensionName, row.dimensionLabel].map(String).includes(value))) || null
 }
 
-export function backendChartValue(row, kind, unit = '') {
+const CHART_MEASURE_FIELDS = {
+  value: { rowField: 'indicatorValue', label: '指标值' },
+  indicatorvalue: { rowField: 'indicatorValue', label: '指标值' },
+  numeratorvalue: { rowField: 'numerator', label: '分子值' },
+  numerator: { rowField: 'numerator', label: '分子值' },
+  denominatorvalue: { rowField: 'denominator', label: '分母值' },
+  denominator: { rowField: 'denominator', label: '分母值' }
+}
+
+export function backendChartMeasure(widget = {}) {
+  const binding = widget.config?.dataBinding?.measures?.[0]
+  const field = binding?.field || 'value'
+  const key = String(field).toLowerCase()
+  const definition = Object.hasOwn(CHART_MEASURE_FIELDS, key) ? CHART_MEASURE_FIELDS[key] : null
+  return { field, label: binding?.label || definition?.label || field,
+    error: definition ? '' : `当前下钻结果不支持顶层绑定的度量 ${binding?.label || field}，请调整组件字段配置。` }
+}
+
+export function backendChartValue(row, kind, unit = '', field = 'value') {
   if (kind === 'pie') {
-    const value = Number(row?.numerator)
-    return row?.numerator !== null && row?.numerator !== undefined && Number.isFinite(value) && value >= 0 ? value : null
+    const rowField = CHART_MEASURE_FIELDS[String(field).toLowerCase()]?.rowField
+    const value = rowField ? numericValue(row?.[rowField]) : null
+    return value !== null && value >= 0 ? value : null
   }
   const displayed = String(row?.displayValue ?? '').trim()
   if (/^[+-]?(?:\d+\.?\d*|\.\d+)\s*%$/.test(displayed)) return Number(displayed.replace('%', '').trim())

@@ -1,6 +1,8 @@
 // Widget visual appearance has one canonical home: widget.config.style.
 // This module deliberately translates that safe, small contract to ECharts
 // options instead of exposing arbitrary option JSON to Dashboard users.
+import { numericValue } from './fieldCatalog.js'
+
 export const VISUAL_PALETTES = Object.freeze({
   default: ['#1261a6', '#4c82b1', '#758aa3', '#a47735', '#8f9a80', '#ab8686'],
   medicalBlue: ['#1261a6', '#2b77bd', '#619bd0', '#91bde0', '#345f8c', '#7a9fbd'],
@@ -287,7 +289,13 @@ export function applyWidgetVisualStyle(widget, rawOption = {}) {
     }
     const seriesKey = chartColorKey('series', series.id || series.name || index)
     const seriesColor = style.colorOverrides[seriesKey] || color
-    if (series.type === 'line') return { ...series, showSymbol: style.line.showSymbol !== false, symbol: style.line.symbol, symbolSize: style.line.symbolSize, lineStyle: { ...series.lineStyle, color: seriesColor, width: style.line.width, type: style.line.type }, itemStyle: { ...series.itemStyle, color: seriesColor }, smooth: style.line.smooth === true, ...(style.line.area ? { areaStyle: { ...series.areaStyle, color: seriesColor, opacity: style.line.areaOpacity } } : { areaStyle: undefined }) }
+    if (series.type === 'line') {
+      const singlePoint = Array.isArray(series.data) && series.data.filter(item => {
+        const value = item && typeof item === 'object' && !Array.isArray(item) ? item.value : item
+        return numericValue(Array.isArray(value) ? value[1] : value) !== null
+      }).length === 1
+      return { ...series, showSymbol: singlePoint || style.line.showSymbol !== false, ...(singlePoint ? { showAllSymbol: true } : {}), symbol: style.line.symbol, symbolSize: style.line.symbolSize, lineStyle: { ...series.lineStyle, color: seriesColor, width: style.line.width, type: style.line.type }, itemStyle: { ...series.itemStyle, color: seriesColor }, smooth: style.line.smooth === true, ...(style.line.area ? { areaStyle: { ...series.areaStyle, color: seriesColor, opacity: style.line.areaOpacity } } : { areaStyle: undefined }) }
+    }
     if (series.type === 'pie') {
       const innerRadius = Math.min(82, Math.max(0, Number(style.pie.innerRadius) || 0))
       // A donut must retain a visible band. The minimal preset uses a large

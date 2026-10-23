@@ -26,6 +26,17 @@ import {
 import { resourceConflictEditorPath, resolveResourceConflict } from '../src/idmp/api/adapters/resourceConflict.js'
 import { sqlImportGroupingFields, sqlImportGroupingFieldLabels, normalizeDimensionGrain, validateSqlDimensionBindings, selectSqlDimensionBindings } from '../src/idmp/features/indicator/grouping.js'
 
+test('SQL import creates independent automatic codes and retains edited or resumed codes', () => {
+  const drafts = [{ key: 'total', suggestedCode: 'TOTAL', suggestedName: '入院总人次' }]
+  const first = mergeSqlFactorMetadata([], drafts)
+  const second = mergeSqlFactorMetadata([], drafts)
+  assert.match(first[0].code, /^FACTOR_[A-F0-9]{32}$/)
+  assert.notEqual(first[0].code, second[0].code)
+  assert.equal(mergeSqlFactorMetadata(first, drafts)[0].code, first[0].code)
+  first[0].code = 'MANUAL_ADMISSIONS'
+  assert.equal(mergeSqlFactorMetadata(first, drafts)[0].code, 'MANUAL_ADMISSIONS')
+})
+
 test('SQL import preserves physical field choices and submits per-factor grouping bindings', () => {
   const preview = normalizeSqlImportPreview({ factors: [{ key: 'total', groupingSupported: true, dimensionFieldOptions: [{ physicalTable: 'visit', sqlAlias: 'b', columnName: 'dept_code', fieldReference: 'b.dept_code', columnType: 'varchar', comment: '科室' }] }] })
   assert.equal(preview.factors[0].groupingSupported, true)

@@ -6,6 +6,7 @@ import { collectDepartmentNames, normalizeDepartmentDataset } from '../src/idmp/
 import { effectiveDrill, resolveDrillClickValue } from '../src/idmp/features/dashboard/drillDown.js'
 import { applyIndicatorAnalysisToSource } from '../src/idmp/features/dashboard/visualization.js'
 import { adaptDrillResult } from '../src/idmp/api/adapters/drill.js'
+import { immutableResultRows } from '../src/idmp/features/dashboard/resultRows.js'
 import { initialBackendChartNavigation, loadBackendChartLevel, loadBackendChartRoot, nextBackendChartNavigation, resolveChartDrillPath } from '../src/idmp/features/dashboard/backendChartDrill.js'
 
 const path = { pathCode: 'CUSTOM_TCM_DEPT_DOCTOR', maxLevel: 'DOCTOR', levels: [
@@ -62,6 +63,45 @@ test('viewer and preview normalization preserve codes and expose missing-name di
   assert.equal(compileWidgetData('pie', binding('科室'), missing).categories[0], '科室编码：791')
   assert.ok(missing.nameDiagnostics.includes('名称查询失败'))
   assert.equal(raw.rows[0].科室名称, undefined)
+})
+
+test('projected diagnostics count only unresolved dictionary members without changing cached rows', () => {
+  const codes = [...Array.from({ length: 52 }, (_, index) => String(index + 1)), '833']
+  const raw = { ...dataset(immutableResultRows(codes.map(code => ({ 科室: code, value: 1 })))), rowMode: 'PROJECTED' }
+  const names = new Map(codes.slice(0, 52).map(code => [code, `科室${code}`]))
+  const direct = { ...binding('科室'), measures: [{ field: 'value', aggregation: 'direct' }] }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const named = normalizeDepartmentDataset(raw, { paths: [path], names })
+    assert.strictEqual(named.rows, raw.rows)
+    assert.deepEqual(named.nameDiagnostics, ['1 个科室未返回名称，暂显示科室编码。'])
+    const categories = compileWidgetData('pie', direct, named).categories
+    assert.equal(categories.filter(name => name.startsWith('科室编码：')).length, 1)
+    assert.equal(categories.at(-1), '科室编码：833')
+    assert.deepEqual(raw.rows.map(row => row.科室), codes)
+    assert.ok(raw.rows.every(row => !Object.hasOwn(row, '科室名称') && row.value === 1))
+  }
+  names.set('833', '历史科室名称')
+  const updated = normalizeDepartmentDataset(raw, { paths: [path], names })
+  assert.strictEqual(updated.rows, raw.rows)
+  assert.deepEqual(updated.nameDiagnostics, [])
+  assert.equal(compileWidgetData('pie', direct, updated).categories.at(-1), '历史科室名称')
+})
+
+test('missing-name diagnostics deduplicate codes and retain unrelated loader diagnostics', () => {
+  const raw = { ...dataset([{ OUT_DEPT_CODE: '833', value: 1 }, { OUT_DEPT_CODE: '833', value: 2 }, { OUT_DEPT_CODE: '22', value: 3 }]), rowMode: 'PROJECTED' }
+  const named = normalizeDepartmentDataset(raw, { names: new Map([['22', '泌尿外科']]), diagnostics: ['名称查询失败'] })
+  assert.deepEqual(named.nameDiagnostics, ['名称查询失败', '1 个科室未返回名称，暂显示科室编码。'])
+  assert.strictEqual(named.rows, raw.rows)
+})
+
+test('placeholder dictionary values do not suppress missing names and row names remain usable', () => {
+  for (const placeholder of ['', '-', '833', '999']) {
+    const raw = { ...dataset([{ OUT_DEPT_CODE: '833', value: 1 }, { OUT_DEPT_CODE: '22', OUT_DEPT_NAME: '泌尿外科', value: 2 }]), rowMode: 'PROJECTED' }
+    const named = normalizeDepartmentDataset(raw, { names: new Map([['833', placeholder], ['22', '-']]) })
+    assert.deepEqual(named.nameDiagnostics, ['1 个科室未返回名称，暂显示科室编码。'])
+    const direct = { ...binding('OUT_DEPT_CODE'), measures: [{ field: 'value', aggregation: 'direct' }] }
+    assert.deepEqual(compileWidgetData('pie', direct, named).categories, ['科室编码：833', '泌尿外科'])
+  }
 })
 
 test('department names can be collected from Chinese, English and configured logical fields', () => {

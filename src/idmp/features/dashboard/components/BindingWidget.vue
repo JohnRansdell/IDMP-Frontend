@@ -1,30 +1,26 @@
 <template>
   <KpiPresentation v-if="kind === 'kpi' && model.status === 'ready'" :model="boundKpiModel" :variant="widget.config?.style?.kpiVariant" :colors="visualStyle.kpi" :clickable="interactive" data-testid="binding-widget" :data-binding-status="model.status" @click="openAnalysis" />
   <article v-else class="dashboard-renderer-card" :class="[kind === 'kpi' ? 'db-kpi-card' : 'db-chart-card', { 'is-dark-surface': surfaceTone === 'dark', 'is-clickable': interactive && kind === 'kpi' }]" data-testid="binding-widget" :data-binding-status="model.status" :role="interactive && kind === 'kpi' ? 'button' : undefined" :tabindex="interactive && kind === 'kpi' ? 0 : undefined" @click="openAnalysis" @keydown.enter="openAnalysis" @keydown.space.prevent="openAnalysis">
-    <div class="db-section-title"><h2 :style="{ color: visualStyle.kpi.titleColor || undefined }">{{ title }}</h2><nav v-if="drill.active" class="drill-breadcrumb" aria-label="组件下钻路径"><button v-for="(part, index) in drill.breadcrumb" :key="`${part}-${index}`" type="button" @click="drill.back(widget.id, index)">{{ part }}</button><button type="button" @click="drill.reset(widget.id)">返回顶层</button></nav></div>
+    <div class="db-section-title"><h2 :title="title" :style="{ color: visualStyle.kpi.titleColor || undefined }">{{ title }}</h2><nav v-if="drill.active" class="drill-breadcrumb" aria-label="组件下钻路径"><button v-for="(part, index) in drill.breadcrumb" :key="`${part}-${index}`" type="button" @click="drill.back(widget.id, index)">{{ part }}</button><button type="button" @click="drill.reset(widget.id)">返回顶层</button></nav></div>
+    <small v-if="dataset?.periodContext?.label" class="binding-period">{{ dataset.periodContext.label }}{{ kind === 'line' ? ' · 月度趋势' : '' }}</small>
     <p v-if="dataset?.filterDiagnostics?.length" role="status" class="filter-diagnostic">{{ dataset.filterDiagnostics.join('；') }}</p>
     <p v-if="dataset?.nameDiagnostics?.length" role="status" class="filter-diagnostic">{{ dataset.nameDiagnostics.join('；') }}</p>
     <p v-if="allZeroComparison" role="status" class="binding-zero-notice">当前分类的指标值均为 0，已保留分类与实际结果。</p>
     <div v-if="model.status !== 'ready' || mapError" class="binding-state" role="status" :data-testid="`binding-${model.status}`"><strong>{{ mapError || emptyGuidance.title }}</strong><p>{{ mapError ? '当前数据未提供地图区域边界，请切换图表类型或联系管理员接入。' : emptyGuidance.description }}</p><button v-if="designer && (mapError || emptyGuidance.action)" type="button" class="binding-state__action" @pointerdown.stop @click.stop="emit('action', mapError ? 'configure' : emptyGuidance.action)">{{ mapError ? '配置组件' : emptyGuidance.action === 'time-axis' ? '按统计时间展示' : emptyGuidance.action === 'kpi' ? '改为指标卡' : emptyGuidance.action === 'retry' ? '重试预览' : emptyGuidance.action === 'scope' ? '调整组件周期' : emptyGuidance.action === 'filters' ? '调整查询条件' : '配置数据字段' }}</button><button v-if="designer && emptyGuidance.action === 'kpi'" type="button" class="binding-state__action" @pointerdown.stop @click.stop="emit('action', 'scope')">调整组件周期</button></div>
     <strong v-else-if="kind === 'kpi'" data-testid="binding-kpi-value" :style="{ color: visualStyle.kpi.valueColor || undefined }">{{ displayKpiValue }}{{ model.unit }}</strong>
     <ol v-else-if="kind === 'ranking'" class="binding-ranking"><li v-for="(item, index) in model.items" :key="item.name"><span>{{ index + 1 }}</span><span>{{ item.name }}</span><strong>{{ formatVisibleValue(item.value) }}</strong></li></ol>
-    <div v-else-if="kind === 'table'" class="binding-table-wrap" :class="{ 'is-zebra': visualStyle.table.zebra, 'is-compact': visualStyle.table.compact }" :style="{ '--table-header-background': visualStyle.table.headerBackground }"><table data-testid="binding-table"><thead><tr><template v-if="rawTableColumns.length"><th v-for="column in rawTableColumns" :key="column.id">{{ column.label }}</th></template><template v-else><th>维度</th><th v-for="series in model.series" :key="series.name">{{ series.name }}</th></template></tr></thead><tbody><template v-if="rawTableColumns.length"><tr v-for="(row, index) in rawTableRows" :key="index"><td v-for="column in rawTableColumns" :key="column.id">{{ formatVisibleValue(row[column.id]) }}</td></tr></template><template v-else><tr v-for="(category, index) in model.categories" :key="category"><td>{{ category }}</td><td v-for="series in model.series" :key="series.name">{{ formatVisibleValue(series.values[index]) }}</td></tr></template></tbody></table></div>
+    <div v-else-if="kind === 'table'" class="binding-table-wrap" :class="{ 'is-zebra': visualStyle.table.zebra, 'is-compact': visualStyle.table.compact }" :style="{ '--table-header-background': visualStyle.table.headerBackground }"><table data-testid="binding-table"><thead><tr><template v-if="rawTableColumns.length"><th v-for="column in rawTableColumns" :key="column.id">{{ column.label }}</th></template><template v-else><th>维度</th><th v-for="series in model.series" :key="series.name">{{ series.name }}</th></template></tr></thead><tbody><template v-if="rawTableColumns.length"><tr v-for="(row, index) in rawTableRows" :key="index"><td v-for="column in rawTableColumns" :key="column.id">{{ formatDashboardTableMetric(row[column.id], column) }}</td></tr></template><template v-else><tr v-for="(category, index) in model.categories" :key="category"><td>{{ category }}</td><td v-for="series in model.series" :key="series.name">{{ formatVisibleValue(series.values[index], series.field) }}</td></tr></template></tbody></table></div>
     <BackendChartDrill v-else-if="backendDrillParams" :widget="widget" :kind="kind" :title="title" :unit="model.unit || ''" :selected-params="backendDrillParams" @reset="backendDrillParams = null" />
     <IdmpChart v-else :option="option" :error="mapError" height="100%" fit-container :aria-label="`${title}，${model.series?.length || 1} 个系列`" @chart-click="onChartClick">
-      <template #table><table><thead><tr><th>维度</th><th v-for="series in model.series" :key="series.name">{{ series.name }}</th></tr></thead><tbody><tr v-for="(category, index) in model.categories" :key="category"><td>{{ category }}</td><td v-for="series in model.series" :key="series.name">{{ formatVisibleValue(series.values[index]) }}</td></tr></tbody></table></template>
+      <template #table><table><thead><tr><th>维度</th><th v-for="series in model.series" :key="series.name">{{ series.name }}</th></tr></thead><tbody><tr v-for="(category, index) in model.categories" :key="category"><td>{{ category }}</td><td v-for="series in model.series" :key="series.name">{{ formatVisibleValue(series.values[index], series.field) }}</td></tr></tbody></table></template>
     </IdmpChart>
-    <div v-if="kind === 'kpi'" class="db-kpi-comparisons binding-kpi-comparisons" :style="{ color: visualStyle.kpi.trendColor || undefined }">
-      <span>同比 {{ formatKpiComparison(kpiComparison.yoy, kpiComparison.unit) }}</span>
-      <span>环比 {{ formatKpiComparison(kpiComparison.mom, kpiComparison.unit) }}</span>
-    </div>
   </article>
 </template>
 <script setup>
 import { computed, inject, ref, watch } from 'vue'
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
 import BackendChartDrill from './BackendChartDrill.vue'
-import { bindingKind, compileWidgetData, bindingChartOption, formatDashboardKpiMetric, formatDashboardMetric, normalizeDashboardMetricUnit } from '../bindingEngine.js'
-import { formatKpiComparison } from '../visualization.js'
+import { bindingKind, compileWidgetData, bindingChartOption, formatDashboardKpiMetric, formatDashboardTableMetric, normalizeDashboardMetricUnit } from '../bindingEngine.js'
 import { createDashboardChartTheme } from '../chartTheme.js'
 import { applyWidgetVisualStyle, resolveWidgetVisualStyle } from '../visualStyle.js'
 import { resolveWidgetSurfaceTone } from '../backgroundAssets.js'
@@ -43,6 +39,7 @@ const kind = computed(() => bindingKind(props.widget))
 const sourceDataset = computed(() => queryWidgetDatasetWithRuntime(getDatasets(props.widget).find(item => item.id === props.widget.config.dataBinding?.dataset), props.widget, { definitions: filters.definitions.value, values: filters.values.value, interactions: filters.interactions?.value || {} }))
 const effective = computed(() => effectiveDrill(props.widget, sourceDataset.value, drillContext.states.value[String(props.widget.id)]))
 const dataset = computed(() => effective.value.dataset)
+const fieldMetadata = computed(() => new Map((dataset.value?.fields || []).map(field => [field.id, field])))
 const model = computed(() => compileWidgetData(kind.value, effective.value.binding, dataset.value))
 const allZeroComparison = computed(() => kind.value === 'bar' && model.value.status === 'ready' && model.value.series?.every(series => series.values.every(value => value === null || value === 0)))
 const emptyGuidance = computed(() => {
@@ -52,8 +49,7 @@ const emptyGuidance = computed(() => {
 })
 const rawTableColumns = computed(() => {
   if (kind.value !== 'table' || !Array.isArray(props.widget.config?.tableColumns)) return []
-  const fields = new Map((dataset.value?.fields || []).map(field => [field.id, field]))
-  return props.widget.config.tableColumns.map(id => fields.get(id)).filter(Boolean).map(field => ({ id: field.id, label: field.label }))
+  return props.widget.config.tableColumns.map(id => fieldMetadata.value.get(id)).filter(Boolean)
 })
 const rawTableRows = computed(() => rawTableColumns.value.length ? (dataset.value?.rows || []) : [])
 const kpiDisplay = computed(() => {
@@ -67,19 +63,23 @@ const kpiComparison = computed(() => {
   const result = dataset.value?.comparison || {}
   const row = model.value?.status === 'ready' ? dataset.value?.rows?.[0] : null
   return {
-    yoy: result.yoy ?? row?.yoy ?? null,
-    mom: result.mom ?? row?.mom ?? null,
+    ...result,
+    yoy: dataset.value?.periodContext ? result.yoy : result.yoy ?? row?.yoy ?? null,
+    mom: dataset.value?.periodContext ? result.mom : result.mom ?? row?.mom ?? null,
     unit: normalizeDashboardMetricUnit(result.unit || row?.comparisonUnit || model.value?.unit || '')
   }
 })
-const boundKpiModel = computed(() => ({ title: props.title, value: displayKpiValue.value, unit: kpiDisplay.value.unit, yoy: kpiComparison.value.yoy, mom: kpiComparison.value.mom, comparisonUnit: kpiComparison.value.unit }))
+const boundKpiModel = computed(() => ({ ...kpiComparison.value, title: props.title, value: displayKpiValue.value, unit: kpiDisplay.value.unit, periodLabel: dataset.value?.periodContext?.label, comparisonUnit: kpiComparison.value.unit }))
 const surfaceTone = computed(() => resolveWidgetSurfaceTone(props.widget))
 const mapError = computed(() => kind.value === 'map' && model.value.status === 'ready' && !dataset.value?.mapDefinition?.geoJSON ? '缺少地图区域边界数据' : '')
 const option = computed(() => createDashboardChartTheme(applyWidgetVisualStyle(props.widget, bindingChartOption(kind.value, model.value, { mapDefinition: dataset.value?.mapDefinition })), surfaceTone.value))
 const visualStyle = computed(() => resolveWidgetVisualStyle(props.widget))
 const backendDrillEnabled = computed(() => props.interactive && ['bar', 'pie'].includes(kind.value) && props.widget.config?.interaction?.clickAction === 'drill' && supportsBackendDrill(props.widget))
 const drill = computed(() => ({ active: !backendDrillEnabled.value && props.widget.config?.interaction?.clickAction === 'drill' && DRILLABLE_KINDS.has(kind.value) && effective.value.hierarchy.length > 1, breadcrumb: ['全院', ...effective.value.path], back: drillContext.back, reset: drillContext.reset }))
-function formatVisibleValue(value) { return value === null || value === undefined ? '—' : formatDashboardMetric(value) }
+function formatVisibleValue(value, field = effective.value.binding.measures[0]?.field) {
+  const measure = effective.value.binding.measures.find(item => item.field === field)
+  return formatDashboardTableMetric(value, { ...fieldMetadata.value.get(field), aggregation: measure?.aggregation })
+}
 function onChartClick(params) {
   if (backendDrillEnabled.value) backendDrillParams.value = params
   else if (drill.value.active) drillContext.advance(props.widget, sourceDataset.value, resolveDrillClickValue(params, effective.value, model.value))
@@ -99,6 +99,12 @@ function openAnalysis() { if (props.interactive && kind.value === 'kpi') emit('a
 .binding-state__action { margin-top:8px; padding:5px 10px; border:1px solid var(--db-accent,#1261a6); border-radius:4px; background:transparent; color:var(--db-accent,#1261a6); cursor:pointer; }
 .filter-diagnostic { margin:0 0 6px; font-size:11px; color:var(--db-warning,#a47735); }
 .binding-zero-notice { margin:0 0 6px; font-size:11px; color:var(--db-muted,#78878e); }
+.binding-period { flex-shrink:0; margin:0 0 6px; color:var(--db-muted,#667085); font-size:11px; }
+.db-kpi-card .db-section-title { flex:0 0 20px; min-height:20px; margin-bottom:4px; }
+.db-kpi-card .db-section-title h2 { display:block; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; line-height:20px; }
+.db-kpi-card .binding-state { flex:1 1 auto; min-height:0; overflow:auto; padding:4px; margin:0; }
+.db-kpi-card .binding-state strong { margin:0; font-size:12px; line-height:1.4; }
+.db-kpi-card .binding-state p { margin:4px 0; }
 .binding-state__action + .binding-state__action { margin-left:8px; }
 table { width:100%; font-size:12px; border-collapse:collapse; } td,th { padding:6px; text-align:left; }
 .binding-table-wrap { max-width:100%; overflow:auto; overscroll-behavior-inline:contain; max-height:100%; }.binding-table-wrap table { width:max-content; min-width:100%; }.binding-table-wrap th { position:sticky; top:0; background:var(--table-header-background,var(--db-surface,#fff)); }.binding-table-wrap td,.binding-table-wrap th { border-bottom:1px solid var(--db-border,#e3e9eb); white-space:nowrap; }.binding-table-wrap.is-zebra tbody tr:nth-child(even) { background:color-mix(in srgb, var(--table-header-background,#f3f7f8) 35%, transparent); }.binding-table-wrap.is-compact td,.binding-table-wrap.is-compact th { padding:4px 6px; }

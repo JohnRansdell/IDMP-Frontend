@@ -66,6 +66,7 @@ export function deriveDependentFilterOptions(datasets = [], definitions = [], ru
   for (const definition of definitions) {
     const upstream = ancestorsOf(definition)
     const options = []
+    const seen = new Set()
     for (const dataset of datasets) {
       if (definition.optionSourceCode && dataset.sourceCode !== definition.optionSourceCode) continue
       const target = resolveGlobalFilterField(definition, dataset.fields)
@@ -85,7 +86,10 @@ export function deriveDependentFilterOptions(datasets = [], definitions = [], ru
       if (!canApplyAllParents) continue
       for (const row of applyFilters(dataset.rows, conditions, dataset.fields).rows) {
         const value = row?.[target.id]
-        if ((typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') && value !== '' && !(typeof value === 'number' && !Number.isFinite(value)) && !options.some(item => item === value)) options.push(value)
+        if ((typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') && value !== '' && !(typeof value === 'number' && !Number.isFinite(value)) && !seen.has(value)) {
+          seen.add(value)
+          options.push(value)
+        }
       }
     }
     output.set(definition.id, options)
@@ -110,15 +114,23 @@ export function normalizeDependentFilterValues(definitions = [], values = {}, op
 
 export function dashboardFilterCatalog(datasets) {
   const fields = new Map()
+  const optionValues = new Map()
   for (const dataset of datasets) for (const field of dataset.fields) {
     if (!field.filterable) continue
     const previous = fields.get(field.id)
     if (previous && filterValueType(previous) !== filterValueType(field)) { previous.conflict = true; continue }
-    if (!previous) fields.set(field.id, { ...field, options: [] })
+    if (!previous) {
+      fields.set(field.id, { ...field, options: [] })
+      optionValues.set(field.id, new Set())
+    }
     const entry = fields.get(field.id)
+    const seen = optionValues.get(field.id)
     for (const row of dataset.rows) {
       const value = row?.[field.id]
-      if (['string', 'number', 'boolean'].includes(typeof value) && value !== '' && !(typeof value === 'number' && !Number.isFinite(value)) && !entry.options.some(item => item === value)) entry.options.push(value)
+      if (['string', 'number', 'boolean'].includes(typeof value) && value !== '' && !(typeof value === 'number' && !Number.isFinite(value)) && !seen.has(value)) {
+        seen.add(value)
+        entry.options.push(value)
+      }
     }
   }
   return [...fields.values()].filter(field => !field.conflict)

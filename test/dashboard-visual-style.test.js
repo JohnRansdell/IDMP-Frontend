@@ -45,6 +45,38 @@ test('line visual style maps safe schema controls to chart option and preserves 
   assert.equal(option.series[0].data, data)
 })
 
+test('single valid line values remain visible even when symbols are disabled', () => {
+  for (const data of [[42], [0], ['0'], [null, 42, null], [undefined, '', '-', NaN, Infinity, 0],
+    [{ value: 0 }], [{ value: null }, { value: '42' }], [['2026-01', 0]], [{ value: ['2026-01', 42] }]]) {
+    const source = widget('line', { line: { showSymbol: false, symbol: 'diamond', symbolSize: 8 } })
+    const before = structuredClone(source)
+    const option = applyWidgetVisualStyle(source, { series: [{ type: 'line', data }] })
+    assert.equal(option.series[0].showSymbol, true)
+    assert.equal(option.series[0].showAllSymbol, true)
+    assert.equal(option.series[0].symbol, 'diamond')
+    assert.equal(option.series[0].symbolSize, 8)
+    assert.equal(option.series[0].data, data)
+    assert.deepEqual(source, before)
+  }
+})
+
+test('line symbol fallback applies per series and restores multi-point and empty styles', () => {
+  const line = widget('line', { line: { showSymbol: false } })
+  const option = applyWidgetVisualStyle(line, { series: [
+    { type: 'line', data: [null, 0] },
+    { type: 'line', data: [0, 42] },
+    { type: 'line', data: [null, '', '-', NaN, Infinity] },
+    { type: 'line', data: [] }
+  ] })
+  assert.deepEqual(option.series.map(series => series.showSymbol), [true, false, false, false])
+  const refreshed = applyWidgetVisualStyle(line, { series: [{ type: 'line', data: [0, 42] }] })
+  assert.equal(refreshed.series[0].showSymbol, false)
+  assert.equal(refreshed.series[0].showAllSymbol, undefined)
+  assert.equal(applyWidgetVisualStyle(widget('line', { line: { showSymbol: true } }), {
+    series: [{ type: 'line', data: [0, 42] }]
+  }).series[0].showSymbol, true)
+})
+
 test('bar, pie and map visual styles only alter presentation options', () => {
   const bar = applyWidgetVisualStyle(widget('bar', { palettePreset: 'warm', bar: { opacity: 0.6, borderRadius: 12, width: 'wide' } }), { series: [{ type: 'bar', data: [56, 49, 46] }] })
   assert.equal(bar.series[0].itemStyle.opacity, 0.6)

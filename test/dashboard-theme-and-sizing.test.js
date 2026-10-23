@@ -7,8 +7,7 @@ test('Clinical Light uses the system blue as its primary chart color and preserv
   assert.equal(DASHBOARD_PALETTE[0], '#1261a6')
   assert.notEqual(DASHBOARD_PALETTE[0], '#247a4d')
   const option = createDashboardChartTheme({ xAxis: { type: 'category' }, yAxis: { type: 'value' }, series: [] })
-  assert.equal(option.media.at(-1).query.maxWidth, 420)
-  assert.equal(option.media.at(-1).option.legend.type, 'scroll')
+  assert.equal(option.media.find(item => item.query?.maxWidth === 420).option.legend.type, 'scroll')
 })
 
 test('dark chart surfaces use readable defaults without overriding explicit colors', () => {
@@ -36,7 +35,37 @@ test('chart theme reserves independent space for legends, axes and bottom scales
   assert.ok(bottomLegend.grid.bottom >= 52)
   const heatmap = createDashboardChartTheme({ grid: { bottom: 20 }, visualMap: { bottom: 0 }, xAxis: { type: 'category' }, yAxis: { type: 'category' }, series: [{ type: 'heatmap', data: [] }] })
   assert.ok(heatmap.grid.bottom >= 54)
-  assert.equal(heatmap.media.find(item => item.query.maxHeight === 220).option.visualMap.show, false)
+  assert.equal(heatmap.media.find(item => item.query?.maxHeight === 220).option.visualMap.show, false)
+})
+
+test('responsive chart tiers restore labels and legends after table expansion shrinks the chart', () => {
+  const option = createDashboardChartTheme({ legend: { top: 0 }, series: [{ type: 'pie', label: { show: true } }] })
+  const desktop = option.media.find(item => !item.query).option
+  const mobile = option.media.find(item => item.query?.maxWidth === 420).option
+  const compact = option.media.find(item => item.query?.maxHeight === 220).option
+  for (const restored of [desktop, mobile]) {
+    assert.equal(restored.legend.show, true)
+    assert.equal(restored.series[0].label.show, true)
+    assert.equal(restored.series[0].labelLine.show, true)
+  }
+  assert.equal(compact.legend.show, false)
+  assert.equal(compact.series[0].label.show, false)
+  assert.equal(option.media.at(-1), option.media.find(item => item.query?.maxHeight === 220))
+})
+
+test('restoring chart size respects intentionally hidden labels, legends and scales', () => {
+  const option = createDashboardChartTheme({ legend: { show: false }, visualMap: { show: false }, series: [
+    { type: 'pie', label: { show: false }, labelLine: { show: false } },
+    { type: 'gauge', title: { show: false }, detail: { fontSize: 28 } }
+  ] })
+  for (const restored of option.media.filter(item => !item.query || item.query.maxWidth === 420)) {
+    assert.equal(restored.option.legend.show, false)
+    assert.equal(restored.option.visualMap.show, false)
+    assert.equal(restored.option.series[0].label.show, false)
+    assert.equal(restored.option.series[0].labelLine.show, false)
+    assert.equal(restored.option.series[1].title.show, false)
+    assert.equal(restored.option.series[1].detail.fontSize, 28)
+  }
 })
 
 test('size tier changes with the measured container dimensions', () => {
