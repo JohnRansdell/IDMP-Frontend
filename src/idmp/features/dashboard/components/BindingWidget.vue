@@ -9,10 +9,10 @@
     <div v-if="model.status !== 'ready' || mapError" class="binding-state" role="status" :data-testid="`binding-${model.status}`"><strong>{{ mapError || emptyGuidance.title }}</strong><p>{{ mapError ? '当前数据未提供地图区域边界，请切换图表类型或联系管理员接入。' : emptyGuidance.description }}</p><button v-if="designer && (mapError || emptyGuidance.action)" type="button" class="binding-state__action" @pointerdown.stop @click.stop="emit('action', mapError ? 'configure' : emptyGuidance.action)">{{ mapError ? '配置组件' : emptyGuidance.action === 'time-axis' ? '按统计时间展示' : emptyGuidance.action === 'kpi' ? '改为指标卡' : emptyGuidance.action === 'retry' ? '重试预览' : emptyGuidance.action === 'scope' ? '调整组件周期' : emptyGuidance.action === 'filters' ? '调整查询条件' : '配置数据字段' }}</button><button v-if="designer && emptyGuidance.action === 'kpi'" type="button" class="binding-state__action" @pointerdown.stop @click.stop="emit('action', 'scope')">调整组件周期</button></div>
     <strong v-else-if="kind === 'kpi'" data-testid="binding-kpi-value" :style="{ color: visualStyle.kpi.valueColor || undefined }">{{ displayKpiValue }}{{ model.unit }}</strong>
     <ol v-else-if="kind === 'ranking'" class="binding-ranking"><li v-for="(item, index) in model.items" :key="item.name"><span>{{ index + 1 }}</span><span>{{ item.name }}</span><strong>{{ formatVisibleValue(item.value) }}</strong></li></ol>
-    <div v-else-if="kind === 'table'" class="binding-table-wrap" :class="{ 'is-zebra': visualStyle.table.zebra, 'is-compact': visualStyle.table.compact }" :style="{ '--table-header-background': visualStyle.table.headerBackground }"><table data-testid="binding-table"><thead><tr><template v-if="rawTableColumns.length"><th v-for="column in rawTableColumns" :key="column.id">{{ column.label }}</th></template><template v-else><th>维度</th><th v-for="series in model.series" :key="series.name">{{ series.name }}</th></template></tr></thead><tbody><template v-if="rawTableColumns.length"><tr v-for="(row, index) in rawTableRows" :key="index"><td v-for="column in rawTableColumns" :key="column.id">{{ formatVisibleValue(row[column.id]) }}</td></tr></template><template v-else><tr v-for="(category, index) in model.categories" :key="category"><td>{{ category }}</td><td v-for="series in model.series" :key="series.name">{{ formatVisibleValue(series.values[index]) }}</td></tr></template></tbody></table></div>
+    <div v-else-if="kind === 'table'" class="binding-table-wrap" :class="{ 'is-zebra': visualStyle.table.zebra, 'is-compact': visualStyle.table.compact }" :style="{ '--table-header-background': visualStyle.table.headerBackground }"><table data-testid="binding-table"><thead><tr><template v-if="rawTableColumns.length"><th v-for="column in rawTableColumns" :key="column.id">{{ column.label }}</th></template><template v-else><th>维度</th><th v-for="series in model.series" :key="series.name">{{ series.name }}</th></template></tr></thead><tbody><template v-if="rawTableColumns.length"><tr v-for="(row, index) in rawTableRows" :key="index"><td v-for="column in rawTableColumns" :key="column.id">{{ formatDashboardTableMetric(row[column.id], column) }}</td></tr></template><template v-else><tr v-for="(category, index) in model.categories" :key="category"><td>{{ category }}</td><td v-for="series in model.series" :key="series.name">{{ formatVisibleValue(series.values[index], series.field) }}</td></tr></template></tbody></table></div>
     <BackendChartDrill v-else-if="backendDrillParams" :widget="widget" :kind="kind" :title="title" :unit="model.unit || ''" :selected-params="backendDrillParams" @reset="backendDrillParams = null" />
     <IdmpChart v-else :option="option" :error="mapError" height="100%" fit-container :aria-label="`${title}，${model.series?.length || 1} 个系列`" @chart-click="onChartClick">
-      <template #table><table><thead><tr><th>维度</th><th v-for="series in model.series" :key="series.name">{{ series.name }}</th></tr></thead><tbody><tr v-for="(category, index) in model.categories" :key="category"><td>{{ category }}</td><td v-for="series in model.series" :key="series.name">{{ formatVisibleValue(series.values[index]) }}</td></tr></tbody></table></template>
+      <template #table><table><thead><tr><th>维度</th><th v-for="series in model.series" :key="series.name">{{ series.name }}</th></tr></thead><tbody><tr v-for="(category, index) in model.categories" :key="category"><td>{{ category }}</td><td v-for="series in model.series" :key="series.name">{{ formatVisibleValue(series.values[index], series.field) }}</td></tr></tbody></table></template>
     </IdmpChart>
   </article>
 </template>
@@ -20,7 +20,7 @@
 import { computed, inject, ref, watch } from 'vue'
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
 import BackendChartDrill from './BackendChartDrill.vue'
-import { bindingKind, compileWidgetData, bindingChartOption, formatDashboardKpiMetric, formatDashboardMetric, normalizeDashboardMetricUnit } from '../bindingEngine.js'
+import { bindingKind, compileWidgetData, bindingChartOption, formatDashboardKpiMetric, formatDashboardTableMetric, normalizeDashboardMetricUnit } from '../bindingEngine.js'
 import { createDashboardChartTheme } from '../chartTheme.js'
 import { applyWidgetVisualStyle, resolveWidgetVisualStyle } from '../visualStyle.js'
 import { resolveWidgetSurfaceTone } from '../backgroundAssets.js'
@@ -39,6 +39,7 @@ const kind = computed(() => bindingKind(props.widget))
 const sourceDataset = computed(() => queryWidgetDatasetWithRuntime(getDatasets(props.widget).find(item => item.id === props.widget.config.dataBinding?.dataset), props.widget, { definitions: filters.definitions.value, values: filters.values.value, interactions: filters.interactions?.value || {} }))
 const effective = computed(() => effectiveDrill(props.widget, sourceDataset.value, drillContext.states.value[String(props.widget.id)]))
 const dataset = computed(() => effective.value.dataset)
+const fieldMetadata = computed(() => new Map((dataset.value?.fields || []).map(field => [field.id, field])))
 const model = computed(() => compileWidgetData(kind.value, effective.value.binding, dataset.value))
 const allZeroComparison = computed(() => kind.value === 'bar' && model.value.status === 'ready' && model.value.series?.every(series => series.values.every(value => value === null || value === 0)))
 const emptyGuidance = computed(() => {
@@ -48,8 +49,7 @@ const emptyGuidance = computed(() => {
 })
 const rawTableColumns = computed(() => {
   if (kind.value !== 'table' || !Array.isArray(props.widget.config?.tableColumns)) return []
-  const fields = new Map((dataset.value?.fields || []).map(field => [field.id, field]))
-  return props.widget.config.tableColumns.map(id => fields.get(id)).filter(Boolean).map(field => ({ id: field.id, label: field.label }))
+  return props.widget.config.tableColumns.map(id => fieldMetadata.value.get(id)).filter(Boolean)
 })
 const rawTableRows = computed(() => rawTableColumns.value.length ? (dataset.value?.rows || []) : [])
 const kpiDisplay = computed(() => {
@@ -76,7 +76,10 @@ const option = computed(() => createDashboardChartTheme(applyWidgetVisualStyle(p
 const visualStyle = computed(() => resolveWidgetVisualStyle(props.widget))
 const backendDrillEnabled = computed(() => props.interactive && ['bar', 'pie'].includes(kind.value) && props.widget.config?.interaction?.clickAction === 'drill' && supportsBackendDrill(props.widget))
 const drill = computed(() => ({ active: !backendDrillEnabled.value && props.widget.config?.interaction?.clickAction === 'drill' && DRILLABLE_KINDS.has(kind.value) && effective.value.hierarchy.length > 1, breadcrumb: ['全院', ...effective.value.path], back: drillContext.back, reset: drillContext.reset }))
-function formatVisibleValue(value) { return value === null || value === undefined ? '—' : formatDashboardMetric(value) }
+function formatVisibleValue(value, field = effective.value.binding.measures[0]?.field) {
+  const measure = effective.value.binding.measures.find(item => item.field === field)
+  return formatDashboardTableMetric(value, { ...fieldMetadata.value.get(field), aggregation: measure?.aggregation })
+}
 function onChartClick(params) {
   if (backendDrillEnabled.value) backendDrillParams.value = params
   else if (drill.value.active) drillContext.advance(props.widget, sourceDataset.value, resolveDrillClickValue(params, effective.value, model.value))

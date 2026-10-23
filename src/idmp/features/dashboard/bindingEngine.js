@@ -96,8 +96,7 @@ function aggregateMeasureRows(rows, measure, fields) {
   return unit === '%' ? ratio * 100 : ratio
 }
 
-// Keep aggregation values numeric for charts and filters. Formatting belongs only
-// to the visible KPI surface so binary floating-point tails never consume a card.
+// Keep chart and filter values numeric; apply formatting only at presentation.
 export function formatDashboardMetric(value, { maximumFractionDigits = 2 } = {}) {
   if (value === null || value === undefined || value === '') return ''
   const numeric = Number(value)
@@ -122,6 +121,15 @@ export function formatDashboardKpiMetric(value, { unit = '', displayValue } = {}
     return { value: percent.toFixed(2), unit: '%' }
   }
   return { value: formatDashboardMetric(value), unit: visibleUnit }
+}
+export function formatDashboardTableMetric(value, { unit = '', aggregation, semanticType = 'measure' } = {}) {
+  if (value === null || value === undefined) return '—'
+  if (semanticType !== 'measure') return String(value)
+  if (aggregation !== 'count' && normalizeDashboardMetricUnit(unit) === '%' && value !== '' && Number.isFinite(Number(value))) {
+    const display = formatDashboardKpiMetric(value, { unit })
+    return `${display.value}${display.unit}`
+  }
+  return formatDashboardMetric(value)
 }
 const dimensionValue = value => ['string', 'boolean'].includes(typeof value) || (typeof value === 'number' && Number.isFinite(value)) ? value : null
 const groupedRows = new WeakMap()
