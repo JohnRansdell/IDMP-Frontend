@@ -152,6 +152,20 @@ try {
     else await catalog.goto(`${base}/indicator`)
     await catalog.waitForURL('**/indicator')
     await catalog.locator('.idmp-shell').waitFor()
+    const signedEntry = await page.evaluate(async ({ user, baseUrl }) => {
+      const response = await fetch('/test/launch', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user, mode: 'signed', baseUrl }) })
+      return response.json()
+    }, { user: config.users.at(-1).id, baseUrl: integrationBaseUrl })
+    const signedTarget = new URL(signedEntry.url).searchParams.get('redirect')
+    const signedParams = Object.fromEntries(new URL(signedTarget, base).searchParams)
+    assert.equal((await request('/medical/dashboard-access/exchange', platformToken, signedParams)).status, 200,
+      'Token-only platform login must also support opening the signed dashboard without granting management roles')
+    await catalog.goto(`${base}${signedTarget}`)
+    await catalog.waitForURL(`**/medical-dashboard?id=${config.dashboardId}`)
+    await catalog.locator('.medical-grid').waitFor()
+    assert.equal((await request('/system/users', platformToken)).status, 403)
+    pass(`${width}px: an existing platform SSO session opens the actual signed department dashboard without a second login or elevated roles`)
     await catalog.getByRole('button', { name: '退出登录', exact: true }).click()
     await catalog.waitForURL('**/login')
     assert.equal((await request('/auth/me', platformToken)).status, 401)
