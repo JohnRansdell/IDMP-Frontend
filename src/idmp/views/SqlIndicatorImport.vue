@@ -112,6 +112,7 @@ import { SQL_RUNTIME_PARAMETER_TYPES, buildSqlImportCreatePayload, buildSqlImpor
 import { abandonSqlImport, createSqlImport, fetchSqlImport, finalizeSqlImport, retrySqlImport, trialSqlImport, updateSqlImportMetadata } from '@/idmp/api/modules/sqlImports'
 import { fetchCalcBatch } from '@/idmp/api/modules/calculation'
 import { fetchSourceTableFields, fetchDrillPaths, fetchDrillPathVersion } from '@/idmp/api/modules/meta'
+import { fetchAllPages } from '@/idmp/api/pagination.js'
 import { queryFactorVersion } from '@/idmp/api/modules/factors'
 import { queryIndicatorVersion } from '@/idmp/api/modules/indicators'
 import { newResourceCode } from '@/idmp/utils/resourceCode'
@@ -123,13 +124,7 @@ const drillPathCatalog = ref([]); const drillPathLoading = ref(false); const dri
 async function loadDrillPathCatalog() {
   drillPathLoading.value = true; drillPathError.value = ''
   try {
-    const paths = []
-    for (let page = 1; ; page++) {
-      const result = await fetchDrillPaths({ subjectType: 'INDICATOR_RESULT', page, size: 100 })
-      const rows = result.records || []
-      paths.push(...rows)
-      if (!rows.length || paths.length >= Number(result.total || rows.length)) break
-    }
+    const paths = await fetchAllPages(fetchDrillPaths, { subjectType: 'INDICATOR_RESULT', size: 100 })
     const ids = [...new Set(paths.filter(path => ['ORGANIZATION', 'DISEASE'].includes(path.pathCode)).map(path => path.currentPublishedVersionId).filter(Boolean))]
     const details = await Promise.all(ids.map(fetchDrillPathVersion))
     drillPathCatalog.value = details.filter(detail => detail.version?.publicationStatus === 'PUBLISHED' && detail.levels?.length)

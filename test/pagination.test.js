@@ -33,3 +33,23 @@ test('does not report a partial or failed list as complete', async () => {
     return { records: [1], total: '2', pageSize: 1 }
   }), /network failure/)
 })
+
+test('repeated pages fail promptly rather than growing the collected list forever', async () => {
+  for (const total of [undefined, 10000]) {
+    let calls = 0
+    await assert.rejects(fetchAllPages(async () => {
+      assert.ok(++calls <= 2, 'a repeated page must not be requested indefinitely')
+      return { records: [{ id: '1' }, { id: '2' }], pageSize: 2, ...(total == null ? {} : { total }) }
+    }), /分页未推进/)
+    assert.equal(calls, 2)
+  }
+})
+
+test('the server returning the wrong page number is rejected before accumulating data', async () => {
+  let calls = 0
+  await assert.rejects(fetchAllPages(async () => {
+    calls++
+    return { records: [{ id: '1' }], pageNum: 1, pageSize: 1, total: 3 }
+  }), /分页信息异常/)
+  assert.equal(calls, 2)
+})

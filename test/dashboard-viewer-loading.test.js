@@ -15,7 +15,7 @@ test('refreshing the published source catalog loads metadata without hydrating i
   const sources = [{ code: 'same', indicatorVersionId: 'v1' }, { code: 'updated', indicatorVersionId: 'new' }]
   let catalogCalls = 0
   const dependencies = { catalogIndicatorSources, remoteFieldCatalog, remoteSourcePeriodOptions, selectedDataCode, indicatorCatalogLoading, indicatorCatalogError,
-    fetchDashboardDataSources: async () => { catalogCalls++; return sources }, fetchCompleteIndicatorCatalog: async () => [],
+    fetchDashboardDataSources: async () => { catalogCalls++; return sources }, fetchAllIndicators: async () => [],
     currentPublishedDashboardDataSources: value => value, sortDashboardDataSourcesByIndicatorCreatedAt: value => value, dashboardDataSourceToFrontend: value => value }
   const load = Function(...Object.keys(dependencies), `let indicatorCatalogRequest = null; ${between('async function loadPublishedIndicatorCatalog()', 'async function ensureRemoteDataSourceFields(')}; return loadPublishedIndicatorCatalog`)(...Object.values(dependencies))
   assert.deepEqual(await Promise.all([load(), load()]), [true, true])

@@ -4,6 +4,7 @@ export async function fetchAllPages(fetchPage, params = {}) {
   delete filters.page
   delete filters.size
   const rows = []
+  let previousPageSignature
   for (let page = 1; ; page += 1) {
     const result = await fetchPage({ ...filters, page, size })
     if (Array.isArray(result)) return [...rows, ...result]
@@ -18,6 +19,11 @@ export async function fetchAllPages(fetchPage, params = {}) {
     if (!items.length && total != null && rows.length < total) {
       throw new Error('列表数据尚未加载完整，请重试')
     }
+    const signature = JSON.stringify(items)
+    if (items.length && signature === previousPageSignature) {
+      throw new Error('列表分页未推进，已停止加载，请重试')
+    }
+    previousPageSignature = signature
     rows.push(...items)
     if (total != null ? rows.length >= total : items.length < actualSize) return rows
   }

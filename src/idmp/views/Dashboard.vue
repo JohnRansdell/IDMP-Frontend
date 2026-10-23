@@ -495,7 +495,7 @@ import {
   currentPublishedDashboardDataSources, selectDashboardVersion, sortDashboardDataSourcesByIndicatorCreatedAt, widgetResultToDataset
 } from '@/idmp/api/adapters/dashboard'
 import { fetchWarnings } from '@/idmp/api/modules/warnings'
-import { fetchIndicatorAnalysis, fetchIndicatorVersion, fetchAllIndicators as fetchIndicators } from '@/idmp/api/modules/indicators'
+import { fetchIndicatorAnalysis, fetchIndicatorVersion, fetchAllIndicators } from '@/idmp/api/modules/indicators'
 import { deriveDrillPathResultIds } from '@/idmp/api/adapters/drill'
 import { searchResultDrill } from '@/idmp/api/modules/drill'
 import { initialBackendChartNavigation, loadBackendChartLevel, loadBackendChartRoot, resolveChartDrillPath } from '@/idmp/features/dashboard/backendChartDrill.js'
@@ -2617,20 +2617,6 @@ function normalizeList(payload) {
   return payload?.records || payload?.rows || payload?.list || payload?.data?.records || payload?.data?.rows || payload?.data?.list || []
 }
 
-async function fetchCompleteIndicatorCatalog() {
-  const indicators = []
-  let page = 1
-  while (true) {
-    const response = await fetchIndicators({ page, size: 100 }, { cache: 'no-store' })
-    const records = normalizeList(response)
-    indicators.push(...records)
-    const total = Number(response?.total ?? response?.data?.total)
-    if (!records.length || (Number.isFinite(total) ? indicators.length >= total : records.length < 100)) break
-    page += 1
-  }
-  return indicators
-}
-
 async function loadPublishedIndicatorCatalog() {
   if (indicatorCatalogRequest) return indicatorCatalogRequest
   indicatorCatalogLoading.value = true
@@ -2639,7 +2625,7 @@ async function loadPublishedIndicatorCatalog() {
     try {
       const [sources, indicators] = await Promise.all([
         fetchDashboardDataSources({ cache: 'no-store' }),
-        fetchCompleteIndicatorCatalog()
+        fetchAllIndicators({ size: 100 }, { cache: 'no-store' })
       ])
       const currentSources = currentPublishedDashboardDataSources(sources, indicators)
       const orderedSources = sortDashboardDataSourcesByIndicatorCreatedAt(currentSources, indicators)
