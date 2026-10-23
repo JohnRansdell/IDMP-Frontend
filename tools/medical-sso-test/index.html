@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>医务管理系统 · 单点登录联调</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header><strong>医务管理系统</strong><span class="environment">联调环境</span></header>
+  <main>
+    <h1>指标平台接入</h1>
+    <section aria-labelledby="identity-heading">
+      <h2 id="identity-heading">当前测试身份</h2>
+      <div id="users" class="users"></div>
+      <dl><div><dt>医师工号</dt><dd id="doctor">—</dd></div><div><dt>科室编码</dt><dd id="department">—</dd></div></dl>
+    </section>
+    <section aria-labelledby="application-heading">
+      <h2 id="application-heading">接入应用</h2>
+      <div class="application"><div><strong>IDMP 医疗质量指标平台</strong><p id="dashboard">正在连接</p></div><span class="state">单点登录</span></div>
+      <div class="actions"><button data-mode="signed" class="primary">进入科室看板</button><button data-mode="catalog">进入指标平台</button></div>
+      <p id="status" role="status" aria-live="polite">正在加载测试身份</p>
+    </section>
+    <section aria-labelledby="rejection-heading" class="negative">
+      <h2 id="rejection-heading">异常凭证验收</h2>
+      <div class="actions"><button data-mode="invalid-token">无效 token</button><button data-mode="invalid-sign">错误签名</button></div>
+    </section>
+  </main>
+  <footer>模拟医务系统 · 非正式业务入口</footer>
+</body>
+</html>
