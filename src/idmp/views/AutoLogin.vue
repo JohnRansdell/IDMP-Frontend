@@ -17,7 +17,7 @@ onMounted(async () => {
   const query = { ...route.query }
   // Remove the credential before making requests or rendering another page.
   const clean = new URL(window.location.href)
-  for (const key of ['token', 'sign', 'doctorNo', 'deptCode']) clean.searchParams.delete(key)
+  for (const key of ['token', 'sign', 'doctorNo', 'deptCode', 'redirect']) clean.searchParams.delete(key)
   window.history.replaceState(window.history.state, '', `${clean.pathname}${clean.search}${clean.hash}`)
   try {
     const token = scalarParameter(query, 'token')

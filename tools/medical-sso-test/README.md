@@ -20,8 +20,13 @@ origin and `frontendOrigin` to match the running frontend. Test credentials expi
 after ten minutes. Restarting the simulator revokes its outstanding external
 tokens. Existing platform sessions still expire independently.
 
-Use a dedicated published dashboard and allowlist its code in the backend. Each
-data source must have an explicit department field mapping. The two demo identities
+Use the actual published dashboard and allowlist its code in the backend. Copy its
+base URL from Dashboard Management and paste it into the integration base address
+field. The simulator accepts only that configured dashboard and frontend origin;
+it rejects extra identity parameters, duplicate IDs and other destinations. Each
+data source must have an explicit department field mapping. Unsupported sources
+and warning widgets fail closed, never fall back to hospital-wide results.
+The two demo identities
 are synthetic; their departments use real calculated results. Token-only entry
 opens the ordinary platform homepage using that user's configured platform roles.
 Accounts without permissions see an authorization notice; SSO never assigns an
@@ -29,6 +34,14 @@ administrator role. Signed entry explicitly requests `entry: "DASHBOARD"` from
 `/auth/sso/exchange` and remains restricted to department-isolated dashboards.
 The exchange API defaults to `entry: "PLATFORM"` when omitted. Neither entry issues
 refresh cookies, and both expire with the external token.
+
+The base URL contains only `dashboardID`, not the administrator's identity. The
+external backend fills `doctorNo` and `deptCode` from its authenticated visitor and
+computes HMAC-SHA256 server-side. The simulator performs token login followed by a
+redirect to that signed `/dashboard` URL. It does not create or replace calculated
+results. Real hospital chart data does not mean real external identity verification:
+this portal still simulates the medical platform until its verification endpoint
+is supplied. Loopback URLs are for local acceptance, not cross-system deployment.
 
 Test platform entry, signed entry, invalid token, incorrect signature, department
 isolation, and denied management API access. Remove the simulator and disable its integration

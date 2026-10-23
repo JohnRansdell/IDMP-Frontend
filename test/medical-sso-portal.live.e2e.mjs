@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { parseJsonPreservingLargeIntegers as parse } from '../src/idmp/api/request.js'
 
@@ -28,12 +28,36 @@ async function popupFrom(page, mode) {
   return popup
 }
 try {
+  assert.equal(config.dashboardId, '1189225114584501123', 'Acceptance must use the original quality dashboard, not a cloned test dashboard')
+  const credentials = JSON.parse(await readFile(process.env.IDMP_AUTH_TEST_CREDENTIALS || new URL('../.tmp/forced-login-admin-20261024.json', import.meta.url), 'utf8'))
+  const adminContext = await browser.newContext({ viewport: { width: 1440, height: 950 }, permissions: ['clipboard-read', 'clipboard-write'] })
+  const adminPage = await adminContext.newPage()
+  await adminPage.goto(`${base}/dashboard/manage`)
+  await adminPage.getByLabel('用户名', { exact: true }).fill(credentials.username)
+  await adminPage.getByLabel('密码', { exact: true }).fill(credentials.password)
+  await adminPage.getByRole('button', { name: '登录', exact: true }).click()
+  const card = adminPage.locator('.dashboard-card').filter({ has: adminPage.getByRole('heading', { name: config.dashboardName, exact: true }) })
+  await card.getByRole('button', { name: '更多看板操作' }).click()
+  await adminPage.getByRole('menuitem', { name: '复制集成基础地址', exact: true }).click()
+  const integrationBaseUrl = await adminPage.evaluate(() => navigator.clipboard.readText())
+  assert.equal(integrationBaseUrl, config.integrationBaseUrl)
+  assert.deepEqual([...new URL(integrationBaseUrl).searchParams.keys()], ['dashboardID'])
+  const adminToken = await adminPage.evaluate(() => localStorage.getItem('idmp_access_token'))
+  const definition = (await request(`/analysis/dashboards/${config.dashboardId}`, adminToken)).payload.data
+  assert.equal(definition.version.widgets.length, 12)
+  const scopeFields = {
+    DASHBOARD_INPATIENT_MORTALITY_20260928: 'OUT_DEPT_CODE',
+    TRANSFER_48H_GRAIN_DRILL_20261001: 'OUT_DEPT_CODE',
+    SQL_DAG_TCM_1791270897300: '科室'
+  }
+  pass('administrator copies the original published dashboard base URL without administrator identity or signature')
   for (const width of [1440, 390]) {
     const context = await browser.newContext({ viewport: { width, height: 950 } })
     const page = await context.newPage()
     page.on('pageerror', error => errors.push(error.message))
     await page.goto(portal)
     await page.getByText('联调服务已就绪').waitFor()
+    await page.getByLabel('看板集成基础地址', { exact: true }).fill(integrationBaseUrl)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
     await page.screenshot({ path: fileURLToPath(new URL(`portal-${width}.png`, output)), fullPage: true })
     for (const user of config.users) {
@@ -53,10 +77,25 @@ try {
       const result = await request(`/medical/dashboards/${config.dashboardId}/query`, token, query)
       assert.equal(result.status, 200)
       const widgets = result.payload.data.data.widgets
-      assert.equal(Object.keys(widgets).length, 4)
+      assert.equal(Object.keys(widgets).length, definition.version.widgets.length)
       const expected = user.deptCode === '16' ? { value: .002331, numerator: 1, denominator: 429, display: '0.23%' } : { value: 0, numerator: 0, denominator: 679, display: '0.00%' }
-      for (const widget of Object.values(widgets)) {
+      for (const configured of definition.version.widgets) {
+        const widget = widgets[configured.code]
+        const field = scopeFields[configured.dataSourceCode]
+        if (!field) {
+          assert.equal(widget.status, 'FORBIDDEN')
+          assert.equal(widget.rows.length, 0)
+          continue
+        }
         assert.equal(widget.status, 'READY', widget.message)
+        const reference = await request(`/analysis/dashboards/${config.dashboardId}/query`, adminToken,
+          { ...query, widgetCodes: [configured.code], filters: { [field]: [user.deptCode] } })
+        assert.equal(reference.status, 200)
+        const referenceWidget = reference.payload.data.widgets[configured.code]
+        assert.equal(referenceWidget.status, 'READY', referenceWidget.message)
+        const values = rows => rows.map(row => Object.fromEntries(Object.entries(row).filter(([key]) => ['value', 'displayValue', 'numeratorValue', 'denominatorValue', field].includes(key))))
+        assert.deepEqual(values(widget.rows), values(referenceWidget.rows), `Medical and real published results differ: ${configured.title}`)
+        if (configured.dataSourceCode !== 'DASHBOARD_INPATIENT_MORTALITY_20260928') continue
         assert.equal(widget.rows.length, 1)
         const row = widget.rows[0]
         assert.equal(row.numeratorValue, expected.numerator)
@@ -79,12 +118,15 @@ try {
       // Let the chart's initial animation finish before visual inspection.
       await popup.waitForTimeout(1200)
       await popup.screenshot({ path: fileURLToPath(new URL(`dashboard-${user.id}-${width}.png`, output)), fullPage: true })
-      const forbidden = await request(`/medical/dashboards/${config.dashboardId}/query`, token,
-        { ...query, filters: { OUT_DEPT_CODE: [user.deptCode === '16' ? '15' : '16'] } })
-      assert.ok(Object.values(forbidden.payload.data.data.widgets).every(widget => widget.status === 'FORBIDDEN' && widget.rows.length === 0))
+      for (const field of ['OUT_DEPT_CODE', '科室']) {
+        const codes = definition.version.widgets.filter(w => scopeFields[w.dataSourceCode] === field).map(w => w.code)
+        const forbidden = await request(`/medical/dashboards/${config.dashboardId}/query`, token,
+          { ...query, widgetCodes: codes, filters: { [field]: [user.deptCode === '16' ? '15' : '16'] } })
+        assert.ok(Object.values(forbidden.payload.data.data.widgets).every(widget => widget.status === 'FORBIDDEN' && widget.rows.length === 0))
+      }
       assert.equal((await request('/system/users', token)).status, 403)
       assert.equal((await request('/analysis/dashboards/1189225114584501123', token)).status, 403)
-      pass(`${width}px ${user.id}: real SSO, four scoped widgets, arithmetic, rendering and denied cross-department/management access`)
+      pass(`${width}px ${user.id}: original 12-widget dashboard, real scoped results match administrator queries, verified death-rate arithmetic, unsupported widgets fail closed`)
       await popup.getByRole('button', { name: '退出登录', exact: true }).click()
       await popup.waitForURL('**/login')
       assert.equal((await request('/medical/session', token)).status, 401)
@@ -125,6 +167,8 @@ try {
     }
     await context.close()
   }
+  await adminPage.getByRole('button', { name: '退出登录', exact: true }).click()
+  await adminContext.close()
   assert.deepEqual(errors, [])
   await writeFile(new URL('verification.json', output), JSON.stringify({ passed, errors }, null, 2))
 } finally { await browser.close() }
