@@ -91,10 +91,10 @@ export function normalizeDepartmentDataset(dataset, { paths = [], names = new Ma
     })
     return normalized.every((row, index) => row === sourceRows[index]) ? sourceRows : normalized
   })
-  // 诊断也从共享行计算，避免缓存命中时丢失缺失名称提示。
+  // PROJECTED 行保留原始身份；诊断同时检查绘图时使用的字典名称。
   for (const row of rows) {
     const { code, name } = resolveDepartmentIdentity(row, mappings)
-    if (code && !name) missing.add(code)
+    if (code && !name && !isMemberName(names.get(code), code)) missing.add(code)
   }
   const displayFields = { ...dimensionDisplayFields(paths), ...dataset.dimensionDisplayFields }
   const identifiers = new Set([...Object.keys(displayFields), ...Object.values(displayFields)].map(field => String(field).toLowerCase()))
