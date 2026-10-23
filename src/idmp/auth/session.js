@@ -4,6 +4,8 @@ import {
   getAccessToken,
   requestJson,
   setAccessToken,
+  isMedicalSession,
+  setMedicalAccessToken,
   setSessionRecoveryHandler
 } from '@/idmp/api/request'
 
@@ -40,6 +42,21 @@ export async function loginWithPassword(payload) {
   return result
 }
 
+export async function loginWithMedicalToken(token) {
+  setMedicalAccessToken('')
+  clearSession()
+  const { exchangeMedicalToken } = await import('@/idmp/api/modules/medical')
+  const result = await exchangeMedicalToken(token)
+  setMedicalAccessToken(result.session.accessToken)
+  state.user = result.session.user
+  state.roles = asArray(result.session.user?.roles)
+  state.permissions = asArray(result.session.permissions)
+  state.expiresInSeconds = Number(result.session.expiresInSeconds || 0)
+  state.csrfToken = ''
+  state.status = 'authenticated'
+  return result
+}
+
 export async function hydrateCurrentUser() {
   const result = await requestJson('/auth/me', { skipSessionRecovery: true })
   applyCurrentUser(result)
@@ -47,6 +64,7 @@ export async function hydrateCurrentUser() {
 }
 
 export function refreshSession() {
+  if (isMedicalSession()) { clearSession(); return Promise.resolve(false) }
   if (refreshPromise) return refreshPromise
   refreshPromise = (async () => {
     try {
@@ -91,10 +109,12 @@ export function restoreSession() {
 }
 
 export async function logoutSession(allSessions = false) {
-  const csrfToken = readCsrfToken() || state.csrfToken
+  const medical = isMedicalSession()
+  const csrfToken = medical ? '' : readCsrfToken() || state.csrfToken
   try {
-    return await requestJson(allSessions ? '/auth/logout-all' : '/auth/logout', {
+    return await requestJson(medical ? '/medical/logout' : allSessions ? '/auth/logout-all' : '/auth/logout', {
       method: 'POST',
+      credentials: medical ? 'omit' : 'include',
       headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {},
       body: JSON.stringify({}),
       skipSessionRecovery: true

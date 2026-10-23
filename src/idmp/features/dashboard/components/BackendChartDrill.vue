@@ -50,6 +50,7 @@ import {
 const props = defineProps({ widget: { type: Object, required: true }, kind: { type: String, required: true }, title: String, selectedParams: { type: Object, default: () => ({}) }, unit: { type: String, default: '' } })
 const emit = defineEmits(['reset'])
 const resolveTarget = inject('dashboardResolveWidgetDrill', async () => null)
+const searchDrill = inject('dashboardSearchDrill', searchResultDrill)
 const root = ref(null)
 const history = ref([])
 const loading = ref(false)
@@ -102,9 +103,9 @@ async function initialize() {
     const target = await resolveTarget(props.widget, props.selectedParams)
     if (request.id !== requestId) return
     if (!target) throw new Error('当前指标没有可用的组织下钻结果')
-    const nextRoot = await loadBackendChartRoot(searchResultDrill, target, { signal: request.signal })
+    const nextRoot = await loadBackendChartRoot(searchDrill, target, { signal: request.signal })
     const departmentNavigation = initialBackendChartNavigation(nextRoot)
-    const departments = await loadBackendChartLevel(searchResultDrill, nextRoot, departmentNavigation, { signal: request.signal })
+    const departments = await loadBackendChartLevel(searchDrill, nextRoot, departmentNavigation, { signal: request.signal })
     if (request.id !== requestId) return
     root.value = nextRoot
     const namedDepartments = departments
@@ -141,7 +142,7 @@ async function openNavigation(navigation) {
   const request = beginRequest()
   failedNavigation.value = navigation
   try {
-    const result = await loadBackendChartLevel(searchResultDrill, root.value, navigation, { signal: request.signal })
+    const result = await loadBackendChartLevel(searchDrill, root.value, navigation, { signal: request.signal })
     if (request.id === requestId) {
       history.value = [...history.value, { navigation, result }]
       failedNavigation.value = null

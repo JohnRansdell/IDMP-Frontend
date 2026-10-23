@@ -31,7 +31,7 @@
           <el-button type="primary" @click="edit(item.id)">编辑</el-button>
           <el-dropdown @command="command => menu(command, item)">
             <el-button aria-label="更多看板操作">···</el-button>
-            <template #dropdown><el-dropdown-menu><el-dropdown-item command="copy">复制</el-dropdown-item><el-dropdown-item command="rename">重命名</el-dropdown-item><el-dropdown-item command="delete" :disabled="item.origin !== 'remote' && protectedIds.has(item.id)">删除</el-dropdown-item></el-dropdown-menu></template>
+            <template #dropdown><el-dropdown-menu><el-dropdown-item v-if="item.origin === 'remote' && item.currentPublishedVersionId" command="integration">复制集成地址</el-dropdown-item><el-dropdown-item command="copy">复制</el-dropdown-item><el-dropdown-item command="rename">重命名</el-dropdown-item><el-dropdown-item command="delete" :disabled="item.origin !== 'remote' && protectedIds.has(item.id)">删除</el-dropdown-item></el-dropdown-menu></template>
           </el-dropdown>
         </footer>
       </article>
@@ -97,6 +97,7 @@ import { BUILT_IN_DASHBOARD_IDS, createLocalDashboard, duplicateLocalDashboard, 
 import { fetchDashboardCatalog, fetchDashboardDefinition, copyDashboard, deleteDashboard, saveDashboard } from '@/idmp/api/modules/analysisDashboard'
 import { dashboardSummaryToCatalogEntry, dashboardDetailToSchema, dashboardDetailMeta, schemaToDashboardPayload } from '@/idmp/api/adapters/dashboard'
 import { notifyDashboardCatalogChanged } from '@/idmp/layout/shellState.js'
+import { dashboardIntegrationUrl } from '@/idmp/auth/medicalSso.js'
 const router = useRouter(), search = ref(''), creating = ref(false), catalog = ref([]), protectedIds = BUILT_IN_DASHBOARD_IDS
 const loading = ref(false), loadError = ref('')
 let refreshRevision = 0
@@ -140,7 +141,11 @@ function create() { try { const template = form.value.mode === 'template' ? temp
 function copy(id) { try { const schema = duplicateLocalDashboard(id, localStorage); refresh(); notifyDashboardCatalogChanged(); ElMessage.success('已创建副本'); edit(schema.id) } catch (error) { ElMessage.error(error.message || '复制失败') } }
 async function menu(command, item) {
   try {
-    if (command === 'copy') {
+    if (command === 'integration') {
+      const url = dashboardIntegrationUrl(window.location.origin, import.meta.env.BASE_URL, item.id)
+      if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(url); ElMessage.success('集成地址已复制') }
+      else await ElMessageBox.prompt('集成地址', '看板集成', { inputValue: url, inputType: 'textarea', showCancelButton: false })
+    } else if (command === 'copy') {
       if (item.origin !== 'remote') return copy(item.id)
       const detail = await copyDashboard(item.id, { name: `${item.name} - 副本` })
       const id = detail?.dashboard?.id || detail?.id

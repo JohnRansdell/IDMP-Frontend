@@ -5,6 +5,22 @@ import {
   loadBackendChartRoot, nextBackendChartNavigation
 } from '../src/idmp/features/dashboard/backendChartDrill.js'
 
+test('scoped medical drill uses supplied levels without switching to a generic path', async () => {
+  const levels = [{ levelCode: 'OUT_DEPT', dimensionFieldCode: 'OUT_DEPT_CODE' }, { levelCode: 'DOCTOR', dimensionFieldCode: 'DOCTOR_NO' }]
+  const root = await loadBackendChartRoot(() => assert.fail('must not fetch an unscoped root'), {
+    resultId: '55', indicatorVersionId: '10',
+    drillContext: { resultId: '55', snapshotId: '66', currentLevel: 'DOCTOR', parentKeys: { OUT_DEPT_CODE: '4101' }, filters: {} },
+    path: { levels, maxLevel: 'DOCTOR' }
+  })
+  assert.deepEqual(root.levels, levels)
+  assert.equal(root.pathCode, undefined)
+  await loadBackendChartLevel(async (id, payload) => {
+    assert.equal(id, '55'); assert.equal(payload.pathCode, undefined)
+    return { context: { resultId: '55', snapshotId: '66', indicatorVersionId: '10', currentLevel: 'DOCTOR', pathCode: 'ORGANIZATION' },
+      records: [], pageInfo: { hasTotal: true, hasPageNum: true, hasPageSize: true, total: 0, pageNum: 1, pageSize: 200 } }
+  }, root, { currentLevel: 'DOCTOR', parentKeys: { OUT_DEPT_CODE: '4101' } })
+})
+
 test('formal chart drill resolves the canonical root and skips an absent medical group level', async () => {
   const calls = []
   const search = async (resultId, payload) => {

@@ -70,11 +70,26 @@ export function setSessionRecoveryHandler(handler) {
 }
 
 export function getAccessToken() {
+  if (isMedicalSession()) return sessionStorage.getItem('idmp_medical_access_token') || ''
   return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) || ''
+}
+
+export function isMedicalSession() {
+  return typeof sessionStorage !== 'undefined' && sessionStorage.getItem('idmp_medical_session') === '1'
+}
+
+export function setMedicalAccessToken(token) {
+  clearQueryCache()
+  sessionStorage.setItem('idmp_medical_session', '1')
+  sessionStorage.setItem('idmp_medical_access_token', token || '')
 }
 
 export function setAccessToken(token) {
   clearQueryCache()
+  if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.removeItem('idmp_medical_session')
+    sessionStorage.removeItem('idmp_medical_access_token')
+  }
   if (token) {
     localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token)
   } else {
@@ -84,6 +99,10 @@ export function setAccessToken(token) {
 
 export function clearAccessToken() {
   clearQueryCache()
+  if (isMedicalSession()) {
+    sessionStorage.removeItem('idmp_medical_access_token')
+    return
+  }
   localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
 }
 
@@ -105,7 +124,7 @@ export async function requestJson(path, options = {}) {
   const ttl = cacheTtl(path, method)
   const cacheable = ttl > 0 && !['no-store', 'reload'].includes(fetchOptions.cache)
     && !Object.keys(optionHeaders || {}).length
-  const cacheKey = cacheable ? `${method}:${path}:${fetchOptions.body || ''}` : ''
+  const cacheKey = cacheable ? `${token}:${method}:${path}:${fetchOptions.body || ''}` : ''
   if (cacheable && !externalSignal?.aborted) {
     const cached = readQueryCache(cacheKey)
     if (cached !== undefined) return cached

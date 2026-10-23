@@ -64,7 +64,7 @@ export async function loadBackendChartRoot(search, target, { signal } = {}) {
     const levels = path?.levels || []
     const maxIndex = levels.findIndex(level => level.levelCode === path.maxLevel)
     return { resultId: context.resultId, snapshotId: context.snapshotId, indicatorVersionId: target.indicatorVersionId,
-      ...(path?.pathCode && levels.length ? { pathCode: path.pathCode, levels: maxIndex >= 0 ? levels.slice(0, maxIndex + 1) : levels } : {}),
+      ...(levels.length ? { ...(path?.pathCode ? { pathCode: path.pathCode } : {}), levels: maxIndex >= 0 ? levels.slice(0, maxIndex + 1) : levels } : {}),
       parentKeys: context.parentKeys, hospitalCode: context.parentKeys?.HOSPITAL_CODE,
       filters: context.filters || {}, departmentNames: target.departmentNames, maxLevel: path?.maxLevel || '',
       ...(target.selectedRow ? projectedDrillNavigation(target.selectedRow, path, context) : {}) }

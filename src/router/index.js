@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import IdmpLayout from '@/idmp/layout/IdmpLayout.vue'
 import { scrollBehavior } from './scrollBehavior'
 import { breadcrumbLinks as B } from './breadcrumbs'
+import { isMedicalSession } from '@/idmp/api/request'
 
 const routes = [
   {
@@ -273,13 +274,22 @@ if (import.meta.env.DEV) {
     meta: { title: 'GridStack Dashboard PoC', breadcrumb: [B.home, 'GridStack Dashboard PoC'] }
   })
 }
-// 当前部署不启用统一登录入口；兼容旧书签并直接返回工作台。
-routes.splice(1, 0, { path: '/login', redirect: '/dashboard' })
+// Password login and medical SSO share session handling but have separate entry pages.
+routes.splice(1, 0,
+  { path: '/login', component: () => import('@/idmp/views/Login.vue') },
+  { path: '/auto-login', component: () => import('@/idmp/views/AutoLogin.vue') },
+  { path: '/medical-dashboard', component: () => import('@/idmp/views/MedicalDashboard.vue') })
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
   scrollBehavior
+})
+
+router.beforeEach(to => {
+  if (to.path === '/auto-login' || to.path === '/login' || to.path === '/medical-dashboard') return true
+  if (to.query.dashboardID !== undefined || isMedicalSession()) return { path: '/medical-dashboard', query: to.query }
+  return true
 })
 
 export default router
