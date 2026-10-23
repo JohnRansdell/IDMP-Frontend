@@ -2,15 +2,13 @@
   <main class="login-page">
     <section class="login-card">
       <p class="eyebrow">IDMP · 医疗质量指标数据管理平台</p>
-      <h1>登录并恢复工作会话</h1>
-      <p class="description">登录后会保存短期访问令牌；刷新页面时将通过安全 Refresh Cookie 自动恢复身份和权限上下文。</p>
+      <h1>登录指标平台</h1>
       <el-alert v-if="sessionState.status === 'restoring'" title="正在尝试恢复已有会话…" type="info" :closable="false" show-icon />
       <el-form :model="form" label-position="top" @submit.prevent="submit">
         <el-form-item label="用户名"><el-input v-model.trim="form.username" autocomplete="username" @keyup.enter="submit" /></el-form-item>
         <el-form-item label="密码"><el-input v-model="form.password" type="password" show-password autocomplete="current-password" @keyup.enter="submit" /></el-form-item>
         <el-button type="primary" class="submit" :loading="loading" @click="submit">登录</el-button>
       </el-form>
-      <p class="hint">后端需允许跨域凭据并设置 `IDMP_REFRESH_TOKEN`、`IDMP_REFRESH_CSRF` Cookie，才能启用无感恢复。</p>
     </section>
   </main>
 </template>
@@ -21,6 +19,7 @@ import { ElMessage } from '@/idmp/utils/message'
 import { useRoute, useRouter } from 'vue-router'
 import { login } from '@/idmp/api/modules/system'
 import { sessionState } from '@/idmp/auth/session'
+import { safeLoginRedirect } from '@/idmp/auth/navigation.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -38,7 +37,7 @@ async function submit() {
     await login(form)
     form.password = ''
     ElMessage.success('登录成功，已恢复权限上下文')
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
+    const redirect = safeLoginRedirect(route.query.redirect, path => router.resolve(path))
     await router.replace(redirect)
   } catch (error) {
     ElMessage.error(error?.message || '登录失败')

@@ -3,6 +3,8 @@ import IdmpLayout from '@/idmp/layout/IdmpLayout.vue'
 import { scrollBehavior } from './scrollBehavior'
 import { breadcrumbLinks as B } from './breadcrumbs'
 import { isMedicalSession } from '@/idmp/api/request'
+import { ensureAuthenticatedSession, invalidateSession } from '@/idmp/auth/session'
+import { createAuthenticationGuard, safeLoginRedirect } from '@/idmp/auth/navigation.js'
 
 const routes = [
   {
@@ -286,10 +288,31 @@ const router = createRouter({
   scrollBehavior
 })
 
-router.beforeEach(to => {
-  if (to.path === '/auto-login' || to.path === '/login' || to.path === '/medical-dashboard') return true
-  if (to.query.dashboardID !== undefined || isMedicalSession()) return { path: '/medical-dashboard', query: to.query }
-  return true
+router.beforeEach(createAuthenticationGuard({
+  ensureSession: ensureAuthenticatedSession,
+  isMedical: isMedicalSession,
+  resolve: path => router.resolve(path)
+}))
+
+function returnToLogin(event) {
+  invalidateSession()
+  const current = router.currentRoute.value
+  if (['/login', '/auto-login', '/medical-dashboard'].includes(current.path)) return
+  const redirect = safeLoginRedirect(current.fullPath, path => router.resolve(path))
+  void router.replace(event.type === 'idmp:logout' ? '/login' : { path: '/login', query: { redirect } })
+}
+function synchronizeLogout(event) {
+  if (event.key !== 'idmp_access_token' || isMedicalSession()) return
+  if (!event.newValue) returnToLogin({ type: 'idmp:logout' })
+  else window.location.reload()
+}
+window.addEventListener('idmp:unauthorized', returnToLogin)
+window.addEventListener('idmp:logout', returnToLogin)
+window.addEventListener('storage', synchronizeLogout)
+if (import.meta.hot) import.meta.hot.dispose(() => {
+  window.removeEventListener('idmp:unauthorized', returnToLogin)
+  window.removeEventListener('idmp:logout', returnToLogin)
+  window.removeEventListener('storage', synchronizeLogout)
 })
 
 export default router

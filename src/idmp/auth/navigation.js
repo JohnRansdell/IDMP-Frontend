@@ -1,0 +1,23 @@
+export function safeLoginRedirect(value, resolve) {
+  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//')
+    || /[\\\u0000-\u0020\u007f]/.test(value)) return '/dashboard'
+  const target = new URL(value, 'https://idmp.invalid')
+  if (target.origin !== 'https://idmp.invalid'
+    || /^\/(?:login|auto-login|medical-dashboard)\/?$/i.test(target.pathname)
+    || ['token', 'sign', 'dashboardID'].some(key => target.searchParams.has(key))) return '/dashboard'
+  if (resolve && !resolve(value).matched.some(record => !record.redirect)) return '/dashboard'
+  return `${target.pathname}${target.search}${target.hash}`
+}
+
+export function createAuthenticationGuard({ ensureSession, isMedical, resolve }) {
+  return async to => {
+    // These isolated entry pages validate external credentials before fetching any data.
+    if (to.path === '/auto-login' || to.path === '/medical-dashboard') return true
+    if (to.query.dashboardID !== undefined || (isMedical() && to.path !== '/login')) {
+      return { path: '/medical-dashboard', query: to.query }
+    }
+    const authenticated = !isMedical() && await ensureSession()
+    if (to.path === '/login') return authenticated ? safeLoginRedirect(to.query.redirect, resolve) : true
+    return authenticated || { path: '/login', query: { redirect: safeLoginRedirect(to.fullPath, resolve) }, replace: true }
+  }
+}

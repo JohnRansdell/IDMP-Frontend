@@ -113,6 +113,7 @@ export async function requestJson(path, options = {}) {
     timeoutMs = 30000,
     signal: externalSignal,
     skipSessionRecovery = false,
+    notifyUnauthorized = !skipSessionRecovery,
     ...fetchOptions
   } = options
   const headers = {
@@ -179,14 +180,17 @@ export async function requestJson(path, options = {}) {
     const error = createApiError(response.status, payload, path)
     if (response.status === 401) {
       const isAuthEndpoint = path.startsWith('/auth/')
+      if (!skipSessionRecovery && !isAuthEndpoint && token !== getAccessToken() && getAccessToken()) {
+        return requestJson(path, { ...options, skipSessionRecovery: true, notifyUnauthorized: true })
+      }
       if (!skipSessionRecovery && !isAuthEndpoint && sessionRecoveryHandler) {
         const recovered = await sessionRecoveryHandler()
         if (recovered && !(typeof FormData !== 'undefined' && options.body instanceof FormData)) {
-          return requestJson(path, { ...options, skipSessionRecovery: true })
+          return requestJson(path, { ...options, skipSessionRecovery: true, notifyUnauthorized: true })
         }
       }
       clearAccessToken()
-      if (!skipSessionRecovery && typeof window !== 'undefined') {
+      if (notifyUnauthorized && !isAuthEndpoint && typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('idmp:unauthorized', { detail: { path } }))
       }
     }
@@ -236,7 +240,7 @@ export function createApiError(status, payload = {}, path = '') {
   return error
 }
 
-export async function requestPdf(path, body, { timeoutMs = 60000, skipSessionRecovery = false } = {}) {
+export async function requestPdf(path, body, { timeoutMs = 60000, skipSessionRecovery = false, notifyUnauthorized = !skipSessionRecovery } = {}) {
   const controller = new AbortController()
   let didTimeout = false
   const timer = setTimeout(() => { didTimeout = true; controller.abort() }, timeoutMs)
@@ -255,10 +259,10 @@ export async function requestPdf(path, body, { timeoutMs = 60000, skipSessionRec
       }
       if (response.status === 401) {
         if (!skipSessionRecovery && sessionRecoveryHandler && await sessionRecoveryHandler()) {
-          return requestPdf(path, body, { timeoutMs, skipSessionRecovery: true })
+          return requestPdf(path, body, { timeoutMs, skipSessionRecovery: true, notifyUnauthorized: true })
         }
         clearAccessToken()
-        if (!skipSessionRecovery && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('idmp:unauthorized', { detail: { path } }))
+        if (notifyUnauthorized && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('idmp:unauthorized', { detail: { path } }))
       }
       throw createApiError(response.ok ? 422 : response.status, payload, path)
     }
@@ -274,7 +278,7 @@ export async function requestPdf(path, body, { timeoutMs = 60000, skipSessionRec
   } finally { clearTimeout(timer) }
 }
 
-export async function requestFile(path, { skipSessionRecovery = false, signal } = {}) {
+export async function requestFile(path, { skipSessionRecovery = false, notifyUnauthorized = !skipSessionRecovery, signal } = {}) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 60000)
   const cancel = () => controller.abort()
@@ -289,7 +293,11 @@ export async function requestFile(path, { skipSessionRecovery = false, signal } 
     if (!response.ok) {
       const payload = parseJsonPreservingLargeIntegers(await response.text()) || {}
       if (response.status === 401 && !skipSessionRecovery && sessionRecoveryHandler && await sessionRecoveryHandler()) {
-        return requestFile(path, { skipSessionRecovery: true, signal })
+        return requestFile(path, { skipSessionRecovery: true, notifyUnauthorized: true, signal })
+      }
+      if (response.status === 401) {
+        clearAccessToken()
+        if (notifyUnauthorized && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('idmp:unauthorized', { detail: { path } }))
       }
       throw createApiError(response.status, payload, path)
     }

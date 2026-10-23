@@ -87,6 +87,9 @@
             <span v-if="currentUserDepartment" class="idmp-user__role">{{ currentUserDepartment }}</span>
           </span>
         </div>
+        <el-tooltip content="退出登录" placement="bottom">
+          <el-button text circle :icon="SwitchButton" aria-label="退出登录" :loading="logoutLoading" @click="handleLogout" />
+        </el-tooltip>
       </div>
     </header>
 
@@ -118,9 +121,11 @@ import {
   List,
   Monitor,
   Setting,
-  TrendCharts
+  TrendCharts,
+  SwitchButton
 } from '@element-plus/icons-vue'
-import { sessionState } from '@/idmp/auth/session'
+import { logoutSession, sessionState } from '@/idmp/auth/session'
+import { ElMessage } from '@/idmp/utils/message'
 import { fetchUnreadNotificationCount } from '@/idmp/api/modules/warnings'
 import { fetchDashboardCatalog } from '@/idmp/api/modules/analysisDashboard'
 import { dashboardSummaryToCatalogEntry } from '@/idmp/api/adapters/dashboard'
@@ -129,6 +134,14 @@ import { buildPageBreadcrumbs } from '@/router/breadcrumbs.js'
 
 const route = useRoute()
 const router = useRouter()
+const logoutLoading = ref(false)
+async function handleLogout() {
+  if (logoutLoading.value) return
+  logoutLoading.value = true
+  try { await logoutSession() }
+  catch { ElMessage.warning('本地已退出，服务端会话注销失败，请稍后重试') }
+  finally { logoutLoading.value = false; await router.replace('/login') }
+}
 const currentUserName = computed(() => sessionState.user?.displayName || sessionState.user?.nickname || sessionState.user?.username || '当前用户')
 const currentUserDepartment = computed(() => sessionState.user?.departmentName || sessionState.user?.deptName || '')
 const isDashboardRoute = computed(() => route.name === 'Dashboard')

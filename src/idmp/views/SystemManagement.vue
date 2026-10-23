@@ -3,7 +3,7 @@
     <PageHeader
       title="系统管理"
       :status="hasAccessToken ? 'ENABLED' : 'INACTIVE'"
-      :status-label="hasAccessToken ? '已保存访问令牌' : '未登录'"
+      :status-label="hasAccessToken ? '已登录' : '未登录'"
     >
       <template #meta>
         <span class="data-source-badge is-live">真实接口</span>
@@ -22,24 +22,9 @@
       <article class="surface-card system-card session-card">
         <div class="section-title">
           <div>
-            <h2>登录认证</h2>
-            <p class="section-title__description">POST /api/v1/auth/login</p>
+            <h2>当前会话</h2>
           </div>
         </div>
-        <el-form :model="loginForm" label-position="top" @submit.prevent="handleLogin">
-          <el-form-item label="用户名">
-            <el-input v-model.trim="loginForm.username" autocomplete="username" />
-          </el-form-item>
-          <el-form-item label="密码">
-            <el-input
-              v-model="loginForm.password"
-              type="password"
-              show-password
-              autocomplete="current-password"
-            />
-          </el-form-item>
-          <el-button type="primary" :loading="loginLoading" @click="handleLogin">登录并建立会话</el-button>
-        </el-form>
         <div v-if="sessionFeedback" class="operation-feedback">
           <StatusBadge
             :status="sessionFeedback.status"
@@ -51,14 +36,8 @@
         <dl v-if="loginState.user" class="detail-list">
           <div><dt>当前用户</dt><dd>{{ loginState.user.displayName || loginState.user.username || '-' }}</dd></div>
           <div><dt>角色</dt><dd>{{ formatRoles(loginState.user.roles) }}</dd></div>
-          <div><dt>有效期</dt><dd class="clinical-metric">{{ loginState.expiresInSeconds || '-' }} 秒</dd></div>
+          <div v-if="loginState.expiresInSeconds"><dt>登录有效期</dt><dd class="clinical-metric">{{ loginState.expiresInSeconds }} 秒</dd></div>
         </dl>
-        <StatePanel
-          v-else-if="hasAccessToken"
-          type="unavailable"
-          title="已检测到访问令牌，身份详情不可恢复"
-          description="当前后端没有 auth/me 接口，刷新页面后无法还原用户资料；可读取用户列表验证授权，或重新登录。"
-        />
         <StatePanel
           v-else
           type="permission"
@@ -242,20 +221,14 @@ import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import { getStatusLabel } from '@/idmp/design/status'
-import { getAccessToken } from '@/idmp/api/request'
+import { isAuthenticated, sessionState } from '@/idmp/auth/session'
 import {
   createSystemRole,
   fetchHealth,
   fetchSystemUsers,
-  login,
   logout,
   logoutAll
 } from '@/idmp/api/modules/system'
-
-const loginForm = reactive({
-  username: 'admin',
-  password: ''
-})
 
 const roleForm = reactive({
   roleCode: '',
@@ -263,11 +236,7 @@ const roleForm = reactive({
   description: '前端系统管理页面创建'
 })
 
-const loginState = reactive({
-  accessToken: getAccessToken(),
-  expiresInSeconds: '',
-  user: null
-})
+const loginState = sessionState
 
 const users = ref([])
 const healthResult = ref(null)
@@ -278,13 +247,12 @@ const healthError = ref('')
 const usersError = ref('')
 const healthRequested = ref(false)
 const usersRequested = ref(false)
-const loginLoading = ref(false)
 const logoutLoading = ref(false)
 const usersLoading = ref(false)
 const roleLoading = ref(false)
 const healthLoading = ref(false)
 
-const hasAccessToken = computed(() => Boolean(loginState.accessToken))
+const hasAccessToken = isAuthenticated
 const healthStatus = computed(() => {
   if (typeof healthResult.value === 'string') return healthResult.value
   return String(healthResult.value?.status || 'UNKNOWN')
@@ -297,43 +265,6 @@ const healthStatusLabel = computed(() => ({
   OUT_OF_SERVICE: '服务不可用'
 }[healthStatus.value.toUpperCase()] || getStatusLabel(healthStatus.value)))
 const isHealthy = computed(() => ['UP', 'OK', 'HEALTHY', 'RUNNING'].includes(healthStatus.value.toUpperCase()))
-
-async function handleLogin() {
-  if (loginLoading.value) return
-  if (!loginForm.username || !loginForm.password) {
-    ElMessage.warning('请输入用户名和密码')
-    return
-  }
-  loginLoading.value = true
-  sessionFeedback.value = {
-    status: 'RUNNING',
-    label: '正在登录',
-    message: '正在向后端提交认证信息。'
-  }
-  try {
-    const result = await login(loginForm)
-    loginState.accessToken = result.accessToken
-    loginState.expiresInSeconds = result.expiresInSeconds
-    loginState.user = result.user
-    loginForm.password = ''
-    sessionFeedback.value = {
-      status: 'SUCCEEDED',
-      label: '登录成功',
-      message: '后续请求会自动携带当前访问令牌。'
-    }
-    ElMessage.success('登录成功')
-    await loadUsers()
-  } catch (error) {
-    sessionFeedback.value = {
-      status: 'FAILED',
-      label: '登录失败',
-      message: error?.message || '登录失败'
-    }
-    ElMessage.error(sessionFeedback.value.message)
-  } finally {
-    loginLoading.value = false
-  }
-}
 
 async function handleLogout() {
   if (!hasAccessToken.value || logoutLoading.value) return
@@ -373,10 +304,7 @@ async function handleLogout() {
     }
     ElMessage.error(sessionFeedback.value.message)
   } finally {
-    loginState.accessToken = getAccessToken()
-    if (!loginState.accessToken) {
-      loginState.expiresInSeconds = ''
-      loginState.user = null
+    if (!hasAccessToken.value) {
       users.value = []
       usersRequested.value = false
       usersError.value = ''
@@ -398,7 +326,7 @@ async function handleLogoutAll() {
   } catch (error) {
     ElMessage.error(error?.message || '退出全部会话失败，本地会话已清除')
   } finally {
-    loginState.accessToken = getAccessToken(); loginState.user = null; loginState.expiresInSeconds = ''; logoutLoading.value = false
+    logoutLoading.value = false
   }
 }
 
