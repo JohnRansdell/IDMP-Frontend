@@ -43,6 +43,8 @@ try {
   assert.equal(integrationBaseUrl, config.integrationBaseUrl)
   assert.deepEqual([...new URL(integrationBaseUrl).searchParams.keys()], ['dashboardID'])
   const adminToken = await adminPage.evaluate(() => localStorage.getItem('idmp_access_token'))
+  assert.equal((await request('/medical/dashboards', adminToken)).status, 401,
+    'A normal administrator token is not a verified external medical identity')
   const definition = (await request(`/analysis/dashboards/${config.dashboardId}`, adminToken)).payload.data
   assert.equal(definition.version.widgets.length, 12)
   const scopeFields = {
