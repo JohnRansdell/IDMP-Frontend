@@ -19,11 +19,13 @@ test('valid sessions bypass login and continue to the requested business page', 
 })
 
 test('restricted dashboard credentials never enter ordinary business routes', async () => {
-  const guard = createAuthenticationGuard({ ensureSession: () => { throw Error('must not recover admin') }, isMedicalDashboard: () => true })
+  const guard = createAuthenticationGuard({ ensureSession: async () => true, isMedicalDashboard: () => true })
   assert.equal(await guard(route('/auto-login')), true)
   assert.equal(await guard(route('/medical-dashboard')), true)
   assert.equal(await guard(route('/login')), true)
-  assert.deepEqual(await guard(route('/factor')), { path: '/medical-dashboard', query: {} })
+  assert.deepEqual(await guard(route('/factor')), { path: '/dashboard', query: { medical: '1' } })
+  assert.equal(await guard({ ...route('/dashboard'), query: { id: '2', medical: '1' } }), true)
+  assert.deepEqual(await guard({ ...route('/dashboard'), query: { id: '2', medical: '1', edit: '1' } }), { path: '/dashboard', query: { id: '2', medical: '1' } })
   assert.deepEqual(await guard({ ...route('/dashboard'), query: { dashboardID: '2' } }), { path: '/medical-dashboard', query: { dashboardID: '2' } })
 })
 

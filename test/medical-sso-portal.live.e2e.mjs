@@ -3,6 +3,7 @@ import { createRequire } from 'node:module'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { parseJsonPreservingLargeIntegers as parse } from '../src/idmp/api/request.js'
+import { adaptDrillResult } from '../src/idmp/api/adapters/drill.js'
 
 const { chromium } = createRequire(import.meta.url)('playwright')
 const portal = process.env.IDMP_MEDICAL_PORTAL_URL || 'http://127.0.0.1:5180'
@@ -12,6 +13,16 @@ await mkdir(output, { recursive: true })
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
 const passed = [], errors = []
 const pass = label => { passed.push(label); console.log('PASS', label) }
+const viewerUrl = `**/dashboard?id=1189225114584501123&medical=1`
+async function selectJanuary(page) {
+  const input = page.getByTestId('dashboard-period-month').locator('input')
+  if (await input.inputValue() !== '2026 年 01 月') {
+    await input.fill('2026 年 01 月')
+    await input.press('Enter')
+    await page.getByTestId('dashboard-period-apply').click()
+  }
+  await page.getByTestId('dashboard-period-current').filter({ hasText: '2026年1月' }).waitFor()
+}
 const config = await (await fetch(`${portal}/test/config`)).json()
 assert.equal(config.signingKeyBase64, undefined)
 assert.equal(config.validationSecret, undefined)
@@ -65,8 +76,12 @@ try {
     for (const user of config.users) {
       await page.locator(`input[value="${user.id}"]`).check()
       const popup = await popupFrom(page, 'signed')
-      await popup.waitForURL(`**/medical-dashboard?id=${config.dashboardId}`, { timeout: 45000 })
-      await popup.locator('.medical-grid').waitFor({ timeout: 45000 })
+      const viewerRequests = []
+      popup.on('request', request => { if (request.url().includes('/api/v1/')) viewerRequests.push(new URL(request.url()).pathname) })
+      await popup.waitForURL(viewerUrl, { timeout: 45000 })
+      await popup.getByTestId('dashboard-canvas').waitFor({ timeout: 45000 })
+      assert.equal(await popup.locator('.dashboard-v2').count(), 1, 'Use the existing Dashboard.vue, not a separate medical rendering page')
+      assert.equal(await popup.locator('.medical-grid').count(), 0)
       const identity = await popup.evaluate(async () => {
         const token = sessionStorage.getItem('idmp_medical_access_token')
         const response = await fetch('/api/v1/medical/session', { headers: { Authorization: `Bearer ${token}` } })
@@ -107,19 +122,58 @@ try {
         assert.equal(row.drillContext.parentKeys.OUT_DEPT_CODE, user.deptCode)
         assert.equal(Math.round(row.numeratorValue / row.denominatorValue * 10000) / 100 + '%', user.deptCode === '16' ? expected.display : '0%')
       }
-      await popup.locator('input[type="month"]').fill('2026-01')
-      const queried = popup.waitForResponse(response => response.url().endsWith(`/medical/dashboards/${config.dashboardId}/query`) && response.request().method() === 'POST')
-      await popup.getByRole('button', { name: '查询', exact: true }).click()
-      assert.equal((await queried).status(), 200)
-      await popup.getByTestId('binding-kpi-value').filter({ hasText: expected.display }).waitFor()
+      await selectJanuary(popup)
+      await popup.getByTestId('medical-data-scope').filter({ hasText: user.deptName }).waitFor()
+      await popup.getByTestId('binding-kpi-value').filter({ hasText: expected.display }).waitFor({ timeout: 45000 })
+      const departmentFilter = popup.getByTestId('dashboard-filter-bar').locator('.filter-control').filter({ has: popup.locator('label', { hasText: '出院科室' }) })
+      await departmentFilter.locator('summary').click()
+      await departmentFilter.locator('input[type="checkbox"]').first().waitFor()
+      assert.deepEqual(await departmentFilter.locator('input[type="checkbox"]').evaluateAll(inputs => inputs.map(input => input.dataset.filterOption)), [user.deptCode])
+      await departmentFilter.getByRole('button', { name: '取消', exact: true }).click()
       await popup.getByTestId('binding-table').getByText(user.deptName, { exact: true }).waitFor()
       assert.equal(await popup.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
       assert.equal(new URL(popup.url()).searchParams.has('token'), false)
       assert.equal(new URL(popup.url()).searchParams.has('sign'), false)
-      await popup.waitForFunction(() => document.querySelectorAll('.medical-grid canvas').length >= 2)
+      await popup.waitForFunction(() => document.querySelectorAll('[data-testid="dashboard-canvas"] canvas').length >= 2)
       // Let the chart's initial animation finish before visual inspection.
       await popup.waitForTimeout(1200)
       await popup.screenshot({ path: fileURLToPath(new URL(`dashboard-${user.id}-${width}.png`, output)), fullPage: true })
+      assert.ok(viewerRequests.every(path => /^\/api\/v1\/(medical\/|auth\/)/.test(path)), `Unscoped viewer requests: ${viewerRequests.filter(path => !/^\/api\/v1\/(medical\/|auth\/)/.test(path))}`)
+      assert.equal(await popup.getByTestId('dashboard-save').count(), 0)
+      const mortalityBar = definition.version.widgets.find(widget => widget.dataSourceCode === 'DASHBOARD_INPATIENT_MORTALITY_20260928' && widget.type === 'BAR')
+      const drillResponses = []
+      popup.on('response', response => {
+        if (new URL(response.url()).pathname.endsWith(`/medical/dashboards/${config.dashboardId}/drill`)) drillResponses.push(response)
+      })
+      const dispatched = await popup.getByTestId(`dashboard-widget-${mortalityBar.code}`).evaluate(element => {
+        const find = node => {
+          const vm = node.__vueParentComponent
+          if (vm?.type?.__name === 'IdmpChart') {
+            const series = vm.props.option.series[0]
+            vm.emit('chart-click', { data: series.data[0] })
+            return true
+          }
+          return [...node.children].some(find)
+        }
+        return find(element)
+      })
+      assert.equal(dispatched, true)
+      await popup.getByTestId('backend-chart-drill').waitFor()
+      await popup.waitForFunction(() => document.querySelector('[data-testid="backend-chart-drill"]')?.getAttribute('aria-busy') === 'false')
+      assert.ok(drillResponses.length > 0, 'Existing chart must use the scoped drill API')
+      for (const response of drillResponses) {
+        assert.equal(response.status(), 200)
+        const drill = adaptDrillResult(parse(await response.text()).data)
+        assert.equal(response.request().postDataJSON().parentKeys.OUT_DEPT_CODE, user.deptCode)
+        assert.ok(drill.records.length > 0)
+        assert.equal(drill.records.reduce((sum, row) => sum + row.numerator, 0), expected.numerator)
+        assert.equal(drill.records.reduce((sum, row) => sum + row.denominator, 0), expected.denominator)
+      }
+      await popup.getByRole('button', { name: '返回原图表', exact: true }).click()
+      await popup.reload()
+      await popup.getByTestId('dashboard-canvas').waitFor({ timeout: 45000 })
+      await selectJanuary(popup)
+      await popup.getByTestId('binding-kpi-value').filter({ hasText: expected.display }).waitFor({ timeout: 45000 })
       for (const field of ['OUT_DEPT_CODE', '科室']) {
         const codes = definition.version.widgets.filter(w => scopeFields[w.dataSourceCode] === field).map(w => w.code)
         const forbidden = await request(`/medical/dashboards/${config.dashboardId}/query`, token,
@@ -164,8 +218,8 @@ try {
     assert.equal((await request('/medical/dashboard-access/exchange', platformToken, signedParams)).status, 200,
       'Token-only platform login must also support opening the signed dashboard without granting management roles')
     await catalog.goto(`${base}${signedTarget}`)
-    await catalog.waitForURL(`**/medical-dashboard?id=${config.dashboardId}`)
-    await catalog.locator('.medical-grid').waitFor()
+    await catalog.waitForURL(viewerUrl)
+    await catalog.getByTestId('dashboard-canvas').waitFor()
     assert.equal((await request('/system/users', platformToken)).status, 403)
     pass(`${width}px: an existing platform SSO session opens the actual signed department dashboard without a second login or elevated roles`)
     await catalog.getByRole('button', { name: '退出登录', exact: true }).click()
@@ -187,4 +241,11 @@ try {
   await adminContext.close()
   assert.deepEqual(errors, [])
   await writeFile(new URL('verification.json', output), JSON.stringify({ passed, errors }, null, 2))
+} catch (error) {
+  for (const [index, page] of browser.contexts().flatMap(context => context.pages()).entries()) {
+    await page.screenshot({ path: fileURLToPath(new URL(`failure-${index}.png`, output)), fullPage: true }).catch(() => {})
+    await writeFile(new URL(`failure-${index}.txt`, output), await page.locator('body').innerText().catch(() => 'Page unavailable'))
+  }
+  console.error('Browser errors:', errors)
+  throw error
 } finally { await browser.close() }

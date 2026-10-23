@@ -13,10 +13,14 @@ export function createAuthenticationGuard({ ensureSession, isMedicalDashboard, r
   return async to => {
     // These isolated entry pages validate external credentials before fetching any data.
     if (to.path === '/auto-login' || to.path === '/medical-dashboard') return true
-    if (to.query.dashboardID !== undefined || (isMedicalDashboard() && to.path !== '/login')) {
+    if (isMedicalDashboard() && to.path === '/login') return true
+    if (to.query.dashboardID !== undefined) {
       return { path: '/medical-dashboard', query: to.query }
     }
-    const authenticated = !isMedicalDashboard() && await ensureSession()
+    if (isMedicalDashboard() && to.path !== '/login' && (to.path !== '/dashboard' || to.query.medical !== '1' || to.query.edit)) {
+      return { path: '/dashboard', query: { ...(to.path === '/dashboard' && to.query.id ? { id: to.query.id } : {}), medical: '1' } }
+    }
+    const authenticated = await ensureSession()
     if (to.path === '/login') return authenticated ? safeLoginRedirect(to.query.redirect, resolve) : true
     return authenticated || { path: '/login', query: { redirect: safeLoginRedirect(to.fullPath, resolve) }, replace: true }
   }
