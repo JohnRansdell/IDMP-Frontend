@@ -5,20 +5,65 @@ import * as vue from 'vue'
 
 const source = (await readFile(new URL('../src/idmp/auth/session.js', import.meta.url), 'utf8'))
   .replace(/import[\s\S]*?from ['"][^'"]+['"]/g, '').replace(/export /g, '')
+  .replace("await import('@/idmp/api/modules/medical')", 'await Promise.resolve({ exchangeMedicalToken: exchangeSso })')
 function createSession(respond, { token = '', cookie = '', medical = false } = {}) {
   const calls = [], events = []
+  let entry = ''
   const deps = {
     computed: vue.computed, reactive: vue.reactive, readonly: vue.readonly,
     requestJson: async (path, options) => { calls.push(path); return respond(path, options) },
     getAccessToken: () => token, setAccessToken: value => { token = value; medical = false }, clearAccessToken: () => { token = '' },
-    isMedicalSession: () => medical, setMedicalAccessToken: value => { medical = true; token = value },
+    isMedicalSession: () => medical, setMedicalAccessToken: (value, mode) => { medical = true; token = value; entry = mode },
+    exchangeSso: (value, mode) => { calls.push('/auth/sso/exchange'); return respond('/auth/sso/exchange', { body: JSON.stringify({ token: value, entry: mode }) }) },
     setSessionRecoveryHandler: () => {}, document: { cookie }, window: { dispatchEvent: event => events.push(event.type) }
   }
-  const session = Function(...Object.keys(deps), `${source}; return { sessionState, isAuthenticated, loginWithPassword, logoutSession, refreshSession, restoreSession, ensureAuthenticatedSession, invalidateSession }`)(...Object.values(deps))
-  return { ...session, calls, events, token: () => token }
+  const session = Function(...Object.keys(deps), `${source}; return { sessionState, isAuthenticated, loginWithPassword, loginWithMedicalToken, logoutSession, refreshSession, restoreSession, ensureAuthenticatedSession, invalidateSession }`)(...Object.values(deps))
+  return { ...session, calls, events, token: () => token, entry: () => entry }
 }
 const login = { accessToken: 'valid', user: { username: 'tester', roles: ['SYSTEM_ADMIN'] }, csrfToken: 'csrf', expiresInSeconds: 1800 }
 const me = { user: login.user, roles: login.user.roles, permissions: ['*'] }
+
+test('platform SSO hydrates assigned permissions and menus without password login or refresh', async () => {
+  const user = { username: 'sso-user', roles: ['ANALYST'] }
+  const session = createSession((path, options) => {
+    if (path === '/medical/logout') return null
+    if (path === '/auth/sso/exchange') {
+      assert.deepEqual(JSON.parse(options.body), { token: 'external', entry: 'PLATFORM' })
+      return { session: { accessToken: 'external-platform', user, permissions: ['indicator:view'], expiresInSeconds: 590 } }
+    }
+    assert.equal(path, '/auth/me')
+    return { user, roles: ['ANALYST'], permissions: ['indicator:view'], menus: [{ path: '/indicator' }], dataScopes: [{ scopeType: 'DEPT' }] }
+  })
+  await session.loginWithMedicalToken('external')
+  assert.equal(session.entry(), 'PLATFORM')
+  assert.equal(session.isAuthenticated.value, true)
+  assert.deepEqual(session.sessionState.roles, ['ANALYST'])
+  assert.deepEqual(session.sessionState.menus, [{ path: '/indicator' }])
+  assert.deepEqual(session.calls, ['/auth/sso/exchange', '/auth/me'])
+  await session.logoutSession()
+  assert.equal(session.calls.at(-1), '/medical/logout')
+})
+
+test('signed entry keeps dashboard-only mode and does not hydrate ordinary platform permissions', async () => {
+  const session = createSession((path, options) => {
+    assert.equal(path, '/auth/sso/exchange')
+    assert.equal(JSON.parse(options.body).entry, 'DASHBOARD')
+    return { session: { accessToken: 'viewer', user: { roles: ['MEDICAL_VIEWER'] }, permissions: ['medical:dashboard:view'] } }
+  })
+  await session.loginWithMedicalToken('external', 'DASHBOARD')
+  assert.equal(session.entry(), 'DASHBOARD')
+  assert.deepEqual(session.calls, ['/auth/sso/exchange'])
+})
+
+test('failed platform identity hydration clears the external credential', async () => {
+  const session = createSession(path => {
+    if (path === '/auth/sso/exchange') return { session: { accessToken: 'bad-session' } }
+    throw Error('identity unavailable')
+  })
+  await assert.rejects(session.loginWithMedicalToken('external'), /identity unavailable/)
+  assert.equal(session.token(), '')
+  assert.equal(session.sessionState.status, 'anonymous')
+})
 
 test('cold anonymous navigation does not send business or pointless refresh requests', async () => {
   const session = createSession(() => { throw Error('must not request') })

@@ -15,7 +15,7 @@ export function signedDashboardParameters(query) {
 }
 
 export function safeMedicalRedirect(value) {
-  if (!value) return '/medical-dashboard'
+  if (!value) return '/dashboard'
   if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') || /[\\\u0000-\u0020\u007f]/.test(value)) throw new Error('登录跳转地址无效')
   const target = new URL(value, 'https://idmp.invalid')
   if (target.origin !== 'https://idmp.invalid' || !['/dashboard', '/medical-dashboard'].includes(target.pathname)

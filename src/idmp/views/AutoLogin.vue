@@ -17,14 +17,16 @@ onMounted(async () => {
   const query = { ...route.query }
   // Remove the credential before making requests or rendering another page.
   const clean = new URL(window.location.href)
-  clean.searchParams.delete('token')
+  for (const key of ['token', 'sign', 'doctorNo', 'deptCode']) clean.searchParams.delete(key)
   window.history.replaceState(window.history.state, '', `${clean.pathname}${clean.search}${clean.hash}`)
   try {
     const token = scalarParameter(query, 'token')
     if (!token || token.length > 8192) throw new Error('缺少有效登录凭证，请从医务系统重新进入')
     const signed = signedDashboardParameters(query)
     const target = safeMedicalRedirect(scalarParameter(query, 'redirect'))
-    await loginWithMedicalToken(token)
+    const dashboardEntry = signed || target.startsWith('/medical-dashboard')
+      || new URL(target, window.location.origin).searchParams.has('dashboardID')
+    await loginWithMedicalToken(token, dashboardEntry ? 'DASHBOARD' : 'PLATFORM')
     await router.replace(signed ? { path: '/medical-dashboard', query: signed } : target)
   } catch (cause) { error.value = cause?.message || '单点登录失败，请从医务系统重新进入' }
 })

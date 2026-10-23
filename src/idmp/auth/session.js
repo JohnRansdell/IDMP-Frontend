@@ -47,18 +47,25 @@ export async function loginWithPassword(payload) {
   return result
 }
 
-export async function loginWithMedicalToken(token) {
-  setMedicalAccessToken('')
+export async function loginWithMedicalToken(token, entry = 'PLATFORM') {
+  setMedicalAccessToken('', entry)
   clearSession()
+  const revision = sessionRevision
   const { exchangeMedicalToken } = await import('@/idmp/api/modules/medical')
-  const result = await exchangeMedicalToken(token)
-  setMedicalAccessToken(result.session.accessToken)
+  const result = await exchangeMedicalToken(token, entry)
+  if (revision !== sessionRevision) throw new Error('登录状态已变更，请重新登录')
+  setMedicalAccessToken(result.session.accessToken, entry)
   state.user = result.session.user
   state.roles = asArray(result.session.user?.roles)
   state.permissions = asArray(result.session.permissions)
   state.expiresInSeconds = Number(result.session.expiresInSeconds || 0)
   state.csrfToken = ''
   state.status = 'authenticated'
+  if (entry === 'PLATFORM') {
+    try { await hydrateCurrentUser() }
+    catch (error) { if (revision === sessionRevision) clearSession(); throw error }
+    if (revision !== sessionRevision) throw new Error('登录状态已变更，请重新登录')
+  }
   return result
 }
 

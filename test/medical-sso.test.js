@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { scalarParameter, signedDashboardParameters, safeMedicalRedirect, dashboardIntegrationUrl } from '../src/idmp/auth/medicalSso.js'
-import { getAccessToken, setAccessToken, setMedicalAccessToken, clearAccessToken, isMedicalSession, requestJson } from '../src/idmp/api/request.js'
+import { getAccessToken, setAccessToken, setMedicalAccessToken, clearAccessToken, isMedicalSession, isMedicalDashboardSession, requestJson } from '../src/idmp/api/request.js'
 
 test('medical link accepts exactly the three identity parameters and signature', () => {
   const values = { dashboardID: '0002', doctorNo: '1001', deptCode: '4101', sign: 'a'.repeat(64) }
@@ -13,7 +13,7 @@ test('medical link accepts exactly the three identity parameters and signature',
 })
 
 test('SSO redirect is limited to local dashboard routes', () => {
-  assert.equal(safeMedicalRedirect(''), '/medical-dashboard')
+  assert.equal(safeMedicalRedirect(''), '/dashboard')
   assert.equal(safeMedicalRedirect('/dashboard?dashboardID=0002'), '/dashboard?dashboardID=0002')
   for (const bad of ['https://evil.example', '//evil.example', '/\\evil.example', '/factor', '/dashboard?token=secret', '/dashboard?id=1&id=2', '/dashboard\n'])
     assert.throws(() => safeMedicalRedirect(bad), bad)
@@ -28,15 +28,26 @@ test('medical login is tab-local, isolated from administrator token and query ca
   const storage = () => { const values = new Map(); return { getItem: key => values.get(key) || null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) } }
   globalThis.localStorage = storage(); globalThis.sessionStorage = storage()
   let requests = 0
-  globalThis.fetch = async (_, options) => ({ ok: true, text: async () => JSON.stringify({ code: 'OK', data: { token: options.headers.Authorization, number: ++requests } }) })
+  globalThis.fetch = async (url, options) => {
+    if (String(url).endsWith('/auth/login')) assert.equal(options.credentials, 'include')
+    else if (isMedicalSession()) assert.equal(options.credentials, 'omit')
+    return { ok: true, text: async () => JSON.stringify({ code: 'OK', data: { token: options.headers.Authorization, number: ++requests } }) }
+  }
   try {
     setAccessToken('admin')
     await requestJson('/test-sso-cache')
     setMedicalAccessToken('doctor')
     assert.equal(isMedicalSession(), true)
+    assert.equal(isMedicalDashboardSession(), true)
     assert.equal(getAccessToken(), 'doctor')
     assert.equal(globalThis.localStorage.getItem('idmp_access_token'), 'admin')
     assert.equal((await requestJson('/test-sso-cache')).token, 'Bearer doctor')
+    setMedicalAccessToken('platform-doctor', 'PLATFORM')
+    assert.equal(isMedicalSession(), true)
+    assert.equal(isMedicalDashboardSession(), false)
+    assert.equal(getAccessToken(), 'platform-doctor')
+    assert.equal((await requestJson('/test-platform-sso')).token, 'Bearer platform-doctor')
+    await requestJson('/auth/login', { method: 'POST', body: '{}' })
     clearAccessToken()
     assert.equal(getAccessToken(), '')
     assert.equal(isMedicalSession(), true)

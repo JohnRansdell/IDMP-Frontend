@@ -94,7 +94,8 @@
     </header>
 
     <main class="idmp-main">
-      <RouterView v-slot="{ Component, route: currentRoute }">
+      <StatePanel v-if="platformPermissionsMissing" type="empty" title="账号尚未配置平台权限" description="已完成单点登录，请联系管理员为当前账号分配平台角色和访问权限。" />
+      <RouterView v-else v-slot="{ Component, route: currentRoute }">
         <KeepAlive :include="['Dashboard', 'AlertCenter']" :max="2">
           <component :is="Component" :key="currentRoute.path" />
         </KeepAlive>
@@ -125,6 +126,8 @@ import {
   SwitchButton
 } from '@element-plus/icons-vue'
 import { logoutSession, sessionState } from '@/idmp/auth/session'
+import { isMedicalSession, isMedicalDashboardSession } from '@/idmp/api/request'
+import StatePanel from '@/idmp/components/StatePanel.vue'
 import { ElMessage } from '@/idmp/utils/message'
 import { fetchUnreadNotificationCount } from '@/idmp/api/modules/warnings'
 import { fetchDashboardCatalog } from '@/idmp/api/modules/analysisDashboard'
@@ -135,6 +138,10 @@ import { buildPageBreadcrumbs } from '@/router/breadcrumbs.js'
 const route = useRoute()
 const router = useRouter()
 const logoutLoading = ref(false)
+const platformPermissionsMissing = computed(() => sessionState.status === 'authenticated'
+  && isMedicalSession() && !isMedicalDashboardSession()
+  && !sessionState.roles.some(role => ['ADMIN', 'SYSTEM_ADMIN'].includes(role))
+  && !sessionState.permissions.length)
 async function handleLogout() {
   if (logoutLoading.value) return
   logoutLoading.value = true
@@ -154,6 +161,7 @@ const currentScene = computed({
 const unreadCount = ref(0)
 const dashboardMenuExpanded = ref(true)
 async function refreshRemoteDashboardOptions() {
+  if (platformPermissionsMissing.value) { remoteDashboardOptions.value = []; return }
   const localOptions = readDashboardCatalog(localStorage).map(item => ({ ...item, origin: 'local' }))
   try {
     const catalog = await fetchDashboardCatalog()
@@ -165,6 +173,7 @@ async function refreshRemoteDashboardOptions() {
 }
 let unreadRequestId = 0
 async function loadUnreadCount() {
+  if (platformPermissionsMissing.value) { unreadCount.value = 0; return }
   const requestId = ++unreadRequestId
   try {
     const count = Number((await fetchUnreadNotificationCount())?.unreadCount || 0)

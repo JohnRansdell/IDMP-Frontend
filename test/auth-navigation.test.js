@@ -4,7 +4,7 @@ import { createAuthenticationGuard, safeLoginRedirect } from '../src/idmp/auth/n
 
 const route = fullPath => ({ path: fullPath.split('?')[0].split('#')[0], fullPath, query: {} })
 test('anonymous navigation is blocked before business components mount and preserves the target', async () => {
-  const guard = createAuthenticationGuard({ ensureSession: async () => false, isMedical: () => false })
+  const guard = createAuthenticationGuard({ ensureSession: async () => false, isMedicalDashboard: () => false })
   assert.deepEqual(await guard(route('/analysis?indicator=123#trend')), {
     path: '/login', query: { redirect: '/analysis?indicator=123#trend' }, replace: true
   })
@@ -12,18 +12,27 @@ test('anonymous navigation is blocked before business components mount and prese
 })
 
 test('valid sessions bypass login and continue to the requested business page', async () => {
-  const guard = createAuthenticationGuard({ ensureSession: async () => true, isMedical: () => false })
+  const guard = createAuthenticationGuard({ ensureSession: async () => true, isMedicalDashboard: () => false })
   assert.equal(await guard(route('/indicator')), true)
   assert.equal(await guard({ ...route('/login'), query: { redirect: '/factor?name=abc' } }), '/factor?name=abc')
   assert.equal(await guard(route('/login')), '/dashboard')
 })
 
-test('medical credentials never enter password restoration or ordinary business routes', async () => {
-  const guard = createAuthenticationGuard({ ensureSession: () => { throw Error('must not recover admin') }, isMedical: () => true })
+test('restricted dashboard credentials never enter ordinary business routes', async () => {
+  const guard = createAuthenticationGuard({ ensureSession: () => { throw Error('must not recover admin') }, isMedicalDashboard: () => true })
   assert.equal(await guard(route('/auto-login')), true)
   assert.equal(await guard(route('/medical-dashboard')), true)
   assert.equal(await guard(route('/login')), true)
   assert.deepEqual(await guard(route('/factor')), { path: '/medical-dashboard', query: {} })
+  assert.deepEqual(await guard({ ...route('/dashboard'), query: { dashboardID: '2' } }), { path: '/medical-dashboard', query: { dashboardID: '2' } })
+})
+
+test('platform SSO sessions enter normal platform pages instead of the medical catalog', async () => {
+  let checks = 0
+  const guard = createAuthenticationGuard({ ensureSession: async () => { checks++; return true }, isMedicalDashboard: () => false })
+  assert.equal(await guard(route('/dashboard')), true)
+  assert.equal(await guard(route('/indicator')), true)
+  assert.equal(checks, 2)
   assert.deepEqual(await guard({ ...route('/dashboard'), query: { dashboardID: '2' } }), { path: '/medical-dashboard', query: { dashboardID: '2' } })
 })
 

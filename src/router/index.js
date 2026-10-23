@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import IdmpLayout from '@/idmp/layout/IdmpLayout.vue'
 import { scrollBehavior } from './scrollBehavior'
 import { breadcrumbLinks as B } from './breadcrumbs'
-import { isMedicalSession } from '@/idmp/api/request'
+import { isMedicalSession, isMedicalDashboardSession } from '@/idmp/api/request'
 import { ensureAuthenticatedSession, invalidateSession } from '@/idmp/auth/session'
 import { createAuthenticationGuard, safeLoginRedirect } from '@/idmp/auth/navigation.js'
 
@@ -290,7 +290,7 @@ const router = createRouter({
 
 router.beforeEach(createAuthenticationGuard({
   ensureSession: ensureAuthenticatedSession,
-  isMedical: isMedicalSession,
+  isMedicalDashboard: isMedicalDashboardSession,
   resolve: path => router.resolve(path)
 }))
 

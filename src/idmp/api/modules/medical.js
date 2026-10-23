@@ -4,7 +4,7 @@ import { adaptDrillResult } from '../adapters/drill'
 const read = { cache: 'no-store', credentials: 'omit', skipSessionRecovery: true }
 const post = (path, body) => requestJson(path, { ...read, method: 'POST', body: JSON.stringify(body) })
 const dashboardPath = id => `/medical/dashboards/${encodeURIComponent(id)}`
-export const exchangeMedicalToken = token => post('/auth/sso/exchange', { token })
+export const exchangeMedicalToken = (token, entry = 'PLATFORM') => post('/auth/sso/exchange', { token, entry })
 export const fetchMedicalSession = () => requestJson('/medical/session', read)
 export const exchangeDashboardAccess = parameters => post('/medical/dashboard-access/exchange', parameters)
 export const openMedicalDashboard = id => post(`${dashboardPath(id)}/open`, {})

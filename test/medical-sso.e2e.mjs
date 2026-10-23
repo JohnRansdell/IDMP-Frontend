@@ -26,6 +26,7 @@ try {
       requests.push({ path, body, authorization: request.headers().authorization, cookie: request.headers().cookie })
       let data
       if (path === '/auth/sso/exchange') {
+        if (body.token === 'temporary-medical-token') assert.equal(body.entry, 'DASHBOARD')
         if (body.token !== 'temporary-medical-token') return route.fulfill({ status: 401, json: { code: 'COMMON-40100', message: '登录凭证无效或已过期' } })
         data = { identity, session: { accessToken: 'medical-session', user: { id: '12', roles: ['MEDICAL_VIEWER'] }, expiresInSeconds: 600, permissions: [] } }
       } else {

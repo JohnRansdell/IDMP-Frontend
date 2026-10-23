@@ -22,7 +22,14 @@ tokens. Existing platform sessions still expire independently.
 
 Use a dedicated published dashboard and allowlist its code in the backend. Each
 data source must have an explicit department field mapping. The two demo identities
-are synthetic; their departments use real calculated results. Test valid catalog
-and signed entry, invalid token, incorrect signature, department isolation, and
-denied management API access. Remove the simulator and disable its integration
+are synthetic; their departments use real calculated results. Token-only entry
+opens the ordinary platform homepage using that user's configured platform roles.
+Accounts without permissions see an authorization notice; SSO never assigns an
+administrator role. Signed entry explicitly requests `entry: "DASHBOARD"` from
+`/auth/sso/exchange` and remains restricted to department-isolated dashboards.
+The exchange API defaults to `entry: "PLATFORM"` when omitted. Neither entry issues
+refresh cookies, and both expire with the external token.
+
+Test platform entry, signed entry, invalid token, incorrect signature, department
+isolation, and denied management API access. Remove the simulator and disable its integration
 when replacing it with the real medical system.

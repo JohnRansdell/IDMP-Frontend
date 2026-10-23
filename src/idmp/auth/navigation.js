@@ -9,14 +9,14 @@ export function safeLoginRedirect(value, resolve) {
   return `${target.pathname}${target.search}${target.hash}`
 }
 
-export function createAuthenticationGuard({ ensureSession, isMedical, resolve }) {
+export function createAuthenticationGuard({ ensureSession, isMedicalDashboard, resolve }) {
   return async to => {
     // These isolated entry pages validate external credentials before fetching any data.
     if (to.path === '/auto-login' || to.path === '/medical-dashboard') return true
-    if (to.query.dashboardID !== undefined || (isMedical() && to.path !== '/login')) {
+    if (to.query.dashboardID !== undefined || (isMedicalDashboard() && to.path !== '/login')) {
       return { path: '/medical-dashboard', query: to.query }
     }
-    const authenticated = !isMedical() && await ensureSession()
+    const authenticated = !isMedicalDashboard() && await ensureSession()
     if (to.path === '/login') return authenticated ? safeLoginRedirect(to.query.redirect, resolve) : true
     return authenticated || { path: '/login', query: { redirect: safeLoginRedirect(to.fullPath, resolve) }, replace: true }
   }

@@ -78,10 +78,15 @@ export function isMedicalSession() {
   return typeof sessionStorage !== 'undefined' && sessionStorage.getItem('idmp_medical_session') === '1'
 }
 
-export function setMedicalAccessToken(token) {
+export function isMedicalDashboardSession() {
+  return isMedicalSession() && sessionStorage.getItem('idmp_medical_entry') !== 'PLATFORM'
+}
+
+export function setMedicalAccessToken(token, entry = 'DASHBOARD') {
   clearQueryCache()
   sessionStorage.setItem('idmp_medical_session', '1')
   sessionStorage.setItem('idmp_medical_access_token', token || '')
+  sessionStorage.setItem('idmp_medical_entry', entry === 'PLATFORM' ? 'PLATFORM' : 'DASHBOARD')
 }
 
 export function setAccessToken(token) {
@@ -89,6 +94,7 @@ export function setAccessToken(token) {
   if (typeof sessionStorage !== 'undefined') {
     sessionStorage.removeItem('idmp_medical_session')
     sessionStorage.removeItem('idmp_medical_access_token')
+    sessionStorage.removeItem('idmp_medical_entry')
   }
   if (token) {
     localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token)
@@ -147,7 +153,7 @@ export async function requestJson(path, options = {}) {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...fetchOptions,
       headers,
-      credentials: fetchOptions.credentials || 'include',
+      credentials: path === '/auth/login' ? 'include' : isMedicalSession() ? 'omit' : fetchOptions.credentials || 'include',
       ...(controller ? { signal: controller.signal } : {})
     })
     // Keep the timeout active until the body has been fully received. Fetch
@@ -247,7 +253,7 @@ export async function requestPdf(path, body, { timeoutMs = 60000, skipSessionRec
   try {
     const token = getAccessToken()
     const response = await fetch(`${API_BASE_URL}${path}`, {
-      method: 'POST', credentials: 'include', signal: controller.signal,
+      method: 'POST', credentials: isMedicalSession() ? 'omit' : 'include', signal: controller.signal,
       headers: { 'Content-Type': 'application/json', Accept: 'application/pdf', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify(body)
     })
@@ -287,7 +293,7 @@ export async function requestFile(path, { skipSessionRecovery = false, notifyUna
   try {
     const token = getAccessToken()
     const response = await fetch(`${API_BASE_URL}${path}`, {
-      credentials: 'include', signal: controller.signal,
+      credentials: isMedicalSession() ? 'omit' : 'include', signal: controller.signal,
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     })
     if (!response.ok) {
