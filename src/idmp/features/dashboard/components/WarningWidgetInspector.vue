@@ -8,7 +8,7 @@
     <label>预警规则 ID（可选）<input :value="config.ruleId" placeholder="留空表示不限制" @input="patch({ ruleId: $event.target.value })" /></label>
     <label>显示条数<input type="number" min="1" max="20" :value="config.pageSize" @change="patch({ pageSize: Number($event.target.value) })" /></label>
     <label><input type="checkbox" :checked="config.showSeverity" @change="patch({ showSeverity: $event.target.checked })" />显示严重程度</label>
-    <label><input type="checkbox" :checked="config.showValue" @change="patch({ showValue: $event.target.checked })" />显示当前值与阈值</label>
+    <label><input type="checkbox" :checked="config.showValue" @change="patch({ showValue: $event.target.checked })" />显示当前值</label>
     <label><input type="checkbox" :checked="config.showTime" @change="patch({ showTime: $event.target.checked })" />显示触发时间</label>
     <small>组件仅使用预警接口已支持的状态、级别、规则和指标版本条件；当前全局筛选不会伪造预警接口未声明的参数。</small>
   </section>
