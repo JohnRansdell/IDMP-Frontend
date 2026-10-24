@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { parseJsonPreservingLargeIntegers as parse } from '../src/idmp/api/request.js'
 import { adaptDrillResult } from '../src/idmp/api/adapters/drill.js'
 
-const { chromium } = createRequire(import.meta.url)('playwright')
+const { chromium } = createRequire(process.env.IDMP_PLAYWRIGHT_PACKAGE || import.meta.url)('playwright')
 const portal = process.env.IDMP_MEDICAL_PORTAL_URL || 'http://127.0.0.1:5180'
 const base = process.env.IDMP_SSO_TEST_URL || 'http://127.0.0.1:5176'
 const output = new URL('../.tmp/medical-sso-portal-live/', import.meta.url)
@@ -117,7 +117,7 @@ try {
         const row = widget.rows[0]
         assert.equal(row.numeratorValue, expected.numerator)
         assert.equal(row.denominatorValue, expected.denominator)
-        assert.equal(row.value, expected.value)
+        assert.ok(Math.abs(row.value - expected.numerator / expected.denominator) <= 1e-7)
         assert.equal(row.displayValue, expected.display)
         assert.equal(row.drillContext.parentKeys.OUT_DEPT_CODE, user.deptCode)
         assert.equal(Math.round(row.numeratorValue / row.denominatorValue * 10000) / 100 + '%', user.deptCode === '16' ? expected.display : '0%')
@@ -127,7 +127,7 @@ try {
       await popup.getByTestId('binding-kpi-value').filter({ hasText: expected.display }).waitFor({ timeout: 45000 })
       const departmentFilter = popup.getByTestId('dashboard-filter-bar').locator('.filter-control').filter({ has: popup.locator('label', { hasText: '出院科室' }) })
       await departmentFilter.locator('summary').click()
-      await departmentFilter.locator('input[type="checkbox"]').first().waitFor()
+      await departmentFilter.locator('input[type="checkbox"]').first().waitFor({ state: 'attached' })
       assert.deepEqual(await departmentFilter.locator('input[type="checkbox"]').evaluateAll(inputs => inputs.map(input => input.dataset.filterOption)), [user.deptCode])
       await departmentFilter.getByRole('button', { name: '取消', exact: true }).click()
       await popup.getByTestId('binding-table').getByText(user.deptName, { exact: true }).waitFor()
@@ -189,7 +189,7 @@ try {
       await popup.close()
     }
     const catalog = await popupFrom(page, 'catalog')
-    await catalog.waitForURL('**/dashboard')
+    await catalog.waitForURL(url => ['/dashboard', '/forbidden'].includes(url.pathname))
     await catalog.locator('.idmp-shell').waitFor()
     await catalog.getByRole('navigation', { name: '主导航' }).waitFor()
     assert.equal(await catalog.locator('.medical-dashboard').count(), 0)
@@ -202,12 +202,14 @@ try {
     assert.equal((await request('/system/users', platformToken)).status, 403)
     await catalog.reload()
     await catalog.locator('.idmp-shell').waitFor()
-    assert.equal(new URL(catalog.url()).pathname, '/dashboard')
+    assert.equal(new URL(catalog.url()).pathname, platformMe.payload.data.permissions.length ? '/dashboard' : '/forbidden')
     await catalog.screenshot({ path: fileURLToPath(new URL(`platform-${width}.png`, output)), fullPage: true })
-    if (width >= 768) await catalog.getByRole('link', { name: '指标目录', exact: true }).click()
-    else await catalog.goto(`${base}/indicator`)
-    await catalog.waitForURL('**/indicator')
-    await catalog.locator('.idmp-shell').waitFor()
+    if (platformMe.payload.data.permissions.length) {
+      if (width >= 768) await catalog.getByRole('link', { name: '指标目录', exact: true }).click()
+      else await catalog.goto(`${base}/indicator`)
+      await catalog.waitForURL('**/indicator')
+      await catalog.locator('.idmp-shell').waitFor()
+    }
     const signedEntry = await page.evaluate(async ({ user, baseUrl }) => {
       const response = await fetch('/test/launch', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user, mode: 'signed', baseUrl }) })

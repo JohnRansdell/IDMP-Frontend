@@ -38,6 +38,18 @@ test('platform SSO sessions enter normal platform pages instead of the medical c
   assert.deepEqual(await guard({ ...route('/dashboard'), query: { dashboardID: '2' } }), { path: '/medical-dashboard', query: { dashboardID: '2' } })
 })
 
+test('platform SSO can open a signed scoped viewer without gaining platform or editing permissions', async () => {
+  let medical = true
+  const guard = createAuthenticationGuard({ ensureSession: async () => true, isMedicalDashboard: () => false,
+    isMedicalSession: () => medical, canNavigate: () => false, accessibleHome: () => '/forbidden' })
+  const viewer = { ...route('/dashboard'), query: { id: '2', medical: '1' } }
+  assert.equal(await guard(viewer), true)
+  for (const target of [route('/dashboard'), route('/factor'), { ...viewer, query: { ...viewer.query, edit: '1' } }])
+    assert.deepEqual(await guard(target), { path: '/forbidden', replace: true })
+  medical = false
+  assert.deepEqual(await guard(viewer), { path: '/forbidden', replace: true })
+})
+
 test('password redirect rejects external, credential-bearing and recursive login destinations', () => {
   for (const target of ['https://evil.test', '//evil.test', '/\\evil', '/login', '/login?redirect=/factor', '/auto-login?token=secret',
     '/medical-dashboard', '/dashboard?sign=secret', '/dashboard?token=secret', '/dashboard?dashboardID=2', '/factor\n', ['/factor']]) {

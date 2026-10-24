@@ -292,6 +292,7 @@ const router = createRouter({
 router.beforeEach(createAuthenticationGuard({
   ensureSession: ensureAuthenticatedSession,
   isMedicalDashboard: isMedicalDashboardSession,
+  isMedicalSession,
   resolve: path => router.resolve(path),
   canNavigate, accessibleHome
 }))

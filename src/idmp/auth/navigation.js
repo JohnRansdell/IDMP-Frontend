@@ -9,7 +9,7 @@ export function safeLoginRedirect(value, resolve) {
   return `${target.pathname}${target.search}${target.hash}`
 }
 
-export function createAuthenticationGuard({ ensureSession, isMedicalDashboard, resolve, canNavigate = () => true, accessibleHome = () => '/dashboard' }) {
+export function createAuthenticationGuard({ ensureSession, isMedicalDashboard, isMedicalSession = () => false, resolve, canNavigate = () => true, accessibleHome = () => '/dashboard' }) {
   return async to => {
     // These isolated entry pages validate external credentials before fetching any data.
     if (to.path === '/auto-login' || to.path === '/medical-dashboard') return true
@@ -28,6 +28,9 @@ export function createAuthenticationGuard({ ensureSession, isMedicalDashboard, r
     }
     if (!authenticated) return { path: '/login', query: { redirect: safeLoginRedirect(to.fullPath, resolve) }, replace: true }
     if (isMedicalDashboard()) return true
+    // Platform SSO can also open a signed, department-scoped viewer. Its data APIs
+    // still require the backend dashboard grant; this does not grant management access.
+    if (isMedicalSession() && to.path === '/dashboard' && to.query.medical === '1' && !to.query.edit) return true
     return canNavigate(to) || { path: accessibleHome(), replace: true }
   }
 }
