@@ -1,4 +1,5 @@
 import { computed, reactive, readonly } from 'vue'
+import { canAccess, canVisit, firstAccessiblePath } from './permissions.js'
 import {
   clearAccessToken,
   getAccessToken,
@@ -16,6 +17,8 @@ const state = reactive({
   permissions: [],
   dataScopes: [],
   menus: [],
+  apiRules: [],
+  deniedPaths: [],
   expiresInSeconds: 0,
   csrfToken: ''
 })
@@ -29,8 +32,12 @@ export const isAuthenticated = computed(() => state.status === 'authenticated' &
 
 export function hasPermission(permissionCode) {
   if (!permissionCode) return true
-  return state.roles.includes('SYSTEM_ADMIN') || state.permissions.includes(permissionCode)
+  return state.roles.some(role => ['ADMIN', 'SYSTEM_ADMIN'].includes(role)) || state.permissions.includes(permissionCode)
 }
+
+export const canRequest = (method, path) => canAccess(state, method, path)
+export const canNavigate = target => canVisit(state, target)
+export const accessibleHome = () => firstAccessiblePath(state)
 
 export async function loginWithPassword(payload) {
   const revision = ++sessionRevision
@@ -167,6 +174,8 @@ function applyCurrentUser(result = {}) {
   state.permissions = asArray(result.permissions)
   state.dataScopes = asArray(result.dataScopes)
   state.menus = asArray(result.menus)
+  state.apiRules = asArray(result.apiRules)
+  state.deniedPaths = asArray(result.deniedPaths)
   state.status = getAccessToken() ? 'authenticated' : 'anonymous'
 }
 
@@ -179,6 +188,8 @@ function clearSession() {
   state.permissions = []
   state.dataScopes = []
   state.menus = []
+  state.apiRules = []
+  state.deniedPaths = []
   state.expiresInSeconds = 0
   state.csrfToken = ''
 }

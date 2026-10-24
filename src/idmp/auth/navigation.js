@@ -9,7 +9,7 @@ export function safeLoginRedirect(value, resolve) {
   return `${target.pathname}${target.search}${target.hash}`
 }
 
-export function createAuthenticationGuard({ ensureSession, isMedicalDashboard, resolve }) {
+export function createAuthenticationGuard({ ensureSession, isMedicalDashboard, resolve, canNavigate = () => true, accessibleHome = () => '/dashboard' }) {
   return async to => {
     // These isolated entry pages validate external credentials before fetching any data.
     if (to.path === '/auto-login' || to.path === '/medical-dashboard') return true
@@ -21,7 +21,13 @@ export function createAuthenticationGuard({ ensureSession, isMedicalDashboard, r
       return { path: '/dashboard', query: { ...(to.path === '/dashboard' && to.query.id ? { id: to.query.id } : {}), medical: '1' } }
     }
     const authenticated = await ensureSession()
-    if (to.path === '/login') return authenticated ? safeLoginRedirect(to.query.redirect, resolve) : true
-    return authenticated || { path: '/login', query: { redirect: safeLoginRedirect(to.fullPath, resolve) }, replace: true }
+    if (to.path === '/login') {
+      if (!authenticated) return true
+      const redirect = safeLoginRedirect(to.query.redirect, resolve)
+      return canNavigate(resolve ? resolve(redirect) : { path: redirect }) ? redirect : accessibleHome()
+    }
+    if (!authenticated) return { path: '/login', query: { redirect: safeLoginRedirect(to.fullPath, resolve) }, replace: true }
+    if (isMedicalDashboard()) return true
+    return canNavigate(to) || { path: accessibleHome(), replace: true }
   }
 }

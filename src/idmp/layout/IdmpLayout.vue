@@ -73,7 +73,7 @@
             <el-option v-for="scene in currentSceneOptions" :key="scene.value" :label="scene.label" :value="scene.value" />
           </el-select>
         </div>
-        <el-tooltip v-if="!medicalViewer" content="查看预警中心" placement="bottom">
+        <el-tooltip v-if="!medicalViewer && canNavigate('/alerts')" content="查看预警中心" placement="bottom">
           <el-badge :value="unreadCount || undefined" :hidden="!unreadCount" class="notification-badge">
             <el-button text circle :aria-label="`查看 ${unreadCount} 条未读站内通知`" @click="router.push('/alerts')">
               <el-icon :size="19"><Bell /></el-icon>
@@ -125,7 +125,7 @@ import {
   TrendCharts,
   SwitchButton
 } from '@element-plus/icons-vue'
-import { logoutSession, sessionState } from '@/idmp/auth/session'
+import { logoutSession, sessionState, canNavigate, canRequest } from '@/idmp/auth/session'
 import { isMedicalDashboardSession } from '@/idmp/api/request'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import { ElMessage } from '@/idmp/utils/message'
@@ -168,7 +168,7 @@ async function refreshRemoteDashboardOptions() {
     catch { remoteDashboardOptions.value = [] }
     return
   }
-  if (platformPermissionsMissing.value) { remoteDashboardOptions.value = []; return }
+  if (platformPermissionsMissing.value || !canNavigate('/dashboard')) { remoteDashboardOptions.value = []; return }
   const localOptions = readDashboardCatalog(localStorage).map(item => ({ ...item, origin: 'local' }))
   try {
     const catalog = await fetchDashboardCatalog()
@@ -181,7 +181,7 @@ async function refreshRemoteDashboardOptions() {
 let unreadRequestId = 0
 async function loadUnreadCount() {
   if (medicalViewer.value) { unreadCount.value = 0; return }
-  if (platformPermissionsMissing.value) { unreadCount.value = 0; return }
+  if (platformPermissionsMissing.value || !canRequest('GET', '/me/notifications/unread-count')) { unreadCount.value = 0; return }
   const requestId = ++unreadRequestId
   try {
     const count = Number((await fetchUnreadNotificationCount())?.unreadCount || 0)
@@ -239,10 +239,10 @@ const navGroups = computed(() => medicalViewer.value ? [{ id: 'nav-overview', la
       { label: '系统管理', path: '/system', icon: markRaw(Setting) }
     ]
   }
-])
+].map(group => ({ ...group, items: group.items.filter(item => canNavigate(item.path)) })).filter(group => group.items.length))
 
 const activePath = computed(() => route.meta.activeMenu || route.path)
-const displayBreadcrumbs = computed(() => buildPageBreadcrumbs(route))
+const displayBreadcrumbs = computed(() => buildPageBreadcrumbs(route).map(item => item.to && !canNavigate(typeof item.to === 'string' ? item.to : router.resolve(item.to)) ? { ...item, to: undefined } : item))
 
 watch(dashboardCatalogRevision, () => { void refreshRemoteDashboardOptions() })
 watch(notificationReadRevision, () => { void loadUnreadCount() })

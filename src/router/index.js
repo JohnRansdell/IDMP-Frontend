@@ -3,7 +3,7 @@ import IdmpLayout from '@/idmp/layout/IdmpLayout.vue'
 import { scrollBehavior } from './scrollBehavior'
 import { breadcrumbLinks as B } from './breadcrumbs'
 import { isMedicalSession, isMedicalDashboardSession } from '@/idmp/api/request'
-import { ensureAuthenticatedSession, invalidateSession } from '@/idmp/auth/session'
+import { ensureAuthenticatedSession, invalidateSession, canNavigate, accessibleHome } from '@/idmp/auth/session'
 import { createAuthenticationGuard, safeLoginRedirect } from '@/idmp/auth/navigation.js'
 
 const routes = [
@@ -12,6 +12,7 @@ const routes = [
     component: IdmpLayout,
     redirect: '/dashboard',
     children: [
+      { path: 'forbidden', component: () => import('@/idmp/views/AccessDenied.vue'), meta: { title: '无访问权限' } },
       {
         path: 'policies', name: 'PolicyFileManagement',
         component: () => import('@/idmp/views/PolicyFileManagement.vue'),
@@ -291,7 +292,8 @@ const router = createRouter({
 router.beforeEach(createAuthenticationGuard({
   ensureSession: ensureAuthenticatedSession,
   isMedicalDashboard: isMedicalDashboardSession,
-  resolve: path => router.resolve(path)
+  resolve: path => router.resolve(path),
+  canNavigate, accessibleHome
 }))
 
 function returnToLogin(event) {
