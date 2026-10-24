@@ -34,7 +34,8 @@
           <span>{{ sessionFeedback.message }}</span>
         </div>
         <dl v-if="loginState.user" class="detail-list">
-          <div><dt>当前用户</dt><dd>{{ loginState.user.displayName || loginState.user.username || '-' }}</dd></div>
+          <div><dt>姓名</dt><dd>{{ loginState.user.displayName || loginState.user.username || '-' }}</dd></div>
+          <div><dt>工号</dt><dd>{{ loginState.user.username || '-' }}</dd></div>
           <div><dt>角色</dt><dd>{{ formatRoles(loginState.user.roles) }}</dd></div>
           <div v-if="loginState.expiresInSeconds"><dt>登录有效期</dt><dd class="clinical-metric">{{ loginState.expiresInSeconds }} 秒</dd></div>
         </dl>
@@ -147,8 +148,8 @@
       </StatePanel>
       <div v-else class="table-scroll">
         <el-table :data="users" row-key="username" table-layout="fixed">
-          <el-table-column prop="username" label="登录名" min-width="140" />
-          <el-table-column prop="displayName" label="显示名称" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="username" label="工号" min-width="140" />
+          <el-table-column prop="displayName" label="姓名" min-width="160" show-overflow-tooltip />
           <el-table-column prop="orgCode" label="机构" width="120" />
           <el-table-column prop="deptCode" label="科室" width="120" />
           <el-table-column label="状态" width="132">

@@ -5,7 +5,7 @@
       <h1>登录指标平台</h1>
       <el-alert v-if="sessionState.status === 'restoring'" title="正在尝试恢复已有会话…" type="info" :closable="false" show-icon />
       <el-form :model="form" label-position="top" @submit.prevent="submit">
-        <el-form-item label="用户名"><el-input v-model.trim="form.username" autocomplete="username" @keyup.enter="submit" /></el-form-item>
+        <el-form-item label="工号"><el-input v-model.trim="form.username" placeholder="请输入工号" autocomplete="username" @keyup.enter="submit" /></el-form-item>
         <el-form-item label="密码"><el-input v-model="form.password" type="password" show-password autocomplete="current-password" @keyup.enter="submit" /></el-form-item>
         <el-button type="primary" class="submit" :loading="loading" @click="submit">登录</el-button>
       </el-form>
@@ -29,7 +29,7 @@ const loading = ref(false)
 async function submit() {
   if (loading.value) return
   if (!form.username || !form.password) {
-    ElMessage.warning('请输入用户名和密码')
+    ElMessage.warning('请输入工号和密码')
     return
   }
   loading.value = true

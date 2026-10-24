@@ -44,7 +44,7 @@ try {
   const adminContext = await browser.newContext({ viewport: { width: 1440, height: 950 }, permissions: ['clipboard-read', 'clipboard-write'] })
   const adminPage = await adminContext.newPage()
   await adminPage.goto(`${base}/dashboard/manage`)
-  await adminPage.getByLabel('用户名', { exact: true }).fill(credentials.username)
+  await adminPage.getByLabel('工号', { exact: true }).fill(credentials.username)
   await adminPage.getByLabel('密码', { exact: true }).fill(credentials.password)
   await adminPage.getByRole('button', { name: '登录', exact: true }).click()
   const card = adminPage.locator('.dashboard-card').filter({ has: adminPage.getByRole('heading', { name: config.dashboardName, exact: true }) })

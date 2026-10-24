@@ -94,7 +94,7 @@
     </header>
 
     <main class="idmp-main">
-      <StatePanel v-if="platformPermissionsMissing" type="empty" title="账号尚未配置平台权限" description="已完成单点登录，请联系管理员为当前账号分配平台角色和访问权限。" />
+      <StatePanel v-if="platformPermissionsMissing" type="empty" title="账号尚未配置平台权限" description="已登录，请联系管理员为当前账号分配平台角色和访问权限。" />
       <RouterView v-else v-slot="{ Component, route: currentRoute }">
         <KeepAlive :include="['Dashboard', 'AlertCenter']" :max="2">
           <component :is="Component" :key="`${currentRoute.path}-${medicalViewer ? 'medical' : 'platform'}`" />
@@ -126,7 +126,7 @@ import {
   SwitchButton
 } from '@element-plus/icons-vue'
 import { logoutSession, sessionState } from '@/idmp/auth/session'
-import { isMedicalSession, isMedicalDashboardSession } from '@/idmp/api/request'
+import { isMedicalDashboardSession } from '@/idmp/api/request'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import { ElMessage } from '@/idmp/utils/message'
 import { fetchUnreadNotificationCount } from '@/idmp/api/modules/warnings'
@@ -141,7 +141,7 @@ const router = useRouter()
 const logoutLoading = ref(false)
 const medicalViewer = computed(() => isMedicalDashboardSession() || (route.path === '/dashboard' && route.query.medical === '1'))
 const platformPermissionsMissing = computed(() => sessionState.status === 'authenticated'
-  && isMedicalSession() && !medicalViewer.value
+  && !medicalViewer.value
   && !sessionState.roles.some(role => ['ADMIN', 'SYSTEM_ADMIN'].includes(role))
   && !sessionState.permissions.length)
 async function handleLogout() {

@@ -12,7 +12,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH 
 const passed = [], errors = [], responses = []
 const pass = label => { passed.push(label); console.log('PASS', label) }
 async function signIn(page) {
-  await page.getByLabel('用户名', { exact: true }).fill(credentials.username)
+  await page.getByLabel('工号', { exact: true }).fill(credentials.username)
   await page.getByLabel('密码', { exact: true }).fill(credentials.password)
   await page.getByRole('button', { name: '登录', exact: true }).click()
 }
@@ -45,7 +45,7 @@ try {
   await page.screenshot({ path: fileURLToPath(new URL('login-desktop.png', output)) })
   pass('anonymous direct entry preserves the return URL without mounting or querying business pages')
 
-  await page.getByLabel('用户名', { exact: true }).fill(credentials.username)
+  await page.getByLabel('工号', { exact: true }).fill(credentials.username)
   await page.getByLabel('密码', { exact: true }).fill('deliberately-wrong-acceptance-password')
   await page.getByRole('button', { name: '登录', exact: true }).click()
   await page.locator('.el-message--error').waitFor()
