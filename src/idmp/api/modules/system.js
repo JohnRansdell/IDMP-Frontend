@@ -8,7 +8,7 @@ import {
 } from '@/idmp/auth/session'
 
 export function fetchHealth() {
-  return requestJson('/health')
+  return requestJson('/health', { cache: 'no-store' })
 }
 
 export const login = loginWithPassword
@@ -20,7 +20,7 @@ export function logout() { return logoutSession(false) }
 export function logoutAll() { return logoutSession(true) }
 
 export function fetchSystemUsers() {
-  return requestJson('/system/users')
+  return requestJson('/system/users', { cache: 'no-store' })
 }
 
 export function createSystemRole(payload) {

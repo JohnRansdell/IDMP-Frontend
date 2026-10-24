@@ -61,16 +61,6 @@
           </template>
         </StatePanel>
         <StatePanel
-          v-else-if="!healthRequested"
-          type="empty"
-          title="尚未执行健康检查"
-          description="健康检查只读取服务状态，不会修改后端数据。"
-        >
-          <template #actions>
-            <el-button @click="checkHealth">检查服务</el-button>
-          </template>
-        </StatePanel>
-        <StatePanel
           v-else-if="!healthResult"
           type="unavailable"
           title="暂无服务健康状态"
@@ -117,16 +107,6 @@
       >
         <template #actions>
           <el-button @click="loadUsers">重试读取</el-button>
-        </template>
-      </StatePanel>
-      <StatePanel
-        v-else-if="!usersRequested"
-        type="empty"
-        title="尚未读取用户"
-        description="点击“读取用户”后从后端获取当前可见用户。"
-      >
-        <template #actions>
-          <el-button @click="loadUsers">读取用户</el-button>
         </template>
       </StatePanel>
       <StatePanel
@@ -203,7 +183,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
 import { Refresh } from '@element-plus/icons-vue'
@@ -235,8 +215,6 @@ const sessionFeedback = ref(null)
 const roleFeedback = ref(null)
 const healthError = ref('')
 const usersError = ref('')
-const healthRequested = ref(false)
-const usersRequested = ref(false)
 const logoutLoading = ref(false)
 const usersLoading = ref(false)
 const roleLoading = ref(false)
@@ -255,6 +233,11 @@ const healthStatusLabel = computed(() => ({
   OUT_OF_SERVICE: '服务不可用'
 }[healthStatus.value.toUpperCase()] || getStatusLabel(healthStatus.value)))
 const isHealthy = computed(() => ['UP', 'OK', 'HEALTHY', 'RUNNING'].includes(healthStatus.value.toUpperCase()))
+
+onMounted(() => {
+  checkHealth({ silent: true })
+  loadUsers({ silent: true })
+})
 
 async function handleLogout() {
   if (!hasAccessToken.value || logoutLoading.value) return
@@ -296,7 +279,6 @@ async function handleLogout() {
   } finally {
     if (!hasAccessToken.value) {
       users.value = []
-      usersRequested.value = false
       usersError.value = ''
       createdRole.value = null
     }
@@ -320,36 +302,34 @@ async function handleLogoutAll() {
   }
 }
 
-async function checkHealth() {
+async function checkHealth({ silent = false } = {}) {
   if (healthLoading.value) return
-  healthRequested.value = true
   healthLoading.value = true
   healthError.value = ''
   try {
     healthResult.value = await fetchHealth()
-    ElMessage.success('服务健康检查完成')
+    if (!silent) ElMessage.success('服务健康检查完成')
   } catch (error) {
     healthResult.value = null
     healthError.value = error?.message || '健康检查失败'
-    ElMessage.error(healthError.value)
+    if (!silent) ElMessage.error(healthError.value)
   } finally {
     healthLoading.value = false
   }
 }
 
-async function loadUsers() {
+async function loadUsers({ silent = false } = {}) {
   if (!hasAccessToken.value || usersLoading.value) return
-  usersRequested.value = true
   usersLoading.value = true
   usersError.value = ''
   try {
     const result = await fetchSystemUsers()
     users.value = normalizeList(result)
-    ElMessage.success('用户列表已更新')
+    if (!silent) ElMessage.success('用户列表已更新')
   } catch (error) {
     users.value = []
     usersError.value = error?.message || '用户列表读取失败'
-    ElMessage.error(usersError.value)
+    if (!silent) ElMessage.error(usersError.value)
   } finally {
     usersLoading.value = false
   }
