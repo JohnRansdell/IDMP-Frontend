@@ -13,7 +13,8 @@ for (const item of rules) {
   check(`${item.name}已停用`, stopped.enableStatus === 'DISABLED')
 }
 const users = rows(await get('/system/users'))
-check('本轮临时会话权限预警用户全部删除', !users.some(item => /^(audit_session_|warn_|rbac_)/.test(item.userName)), users.filter(item => /^(audit_session_|warn_|rbac_)/.test(item.userName)).map(item => ({ id: item.userId, name: item.nickName })))
+const temporary = users.filter(item => /^(audit_session_|audit_warning_|warn_|rbac_)/.test(item.user?.userName || item.userName))
+check('本轮临时会话权限预警用户全部删除', !temporary.length, temporary.map(item => ({ id: item.userId, name: item.user?.nickName || item.nickName })))
 for (const item of state.testBoards || []) await reject('隔离验收看板删除状态保留', 'GET', `/analysis/dashboards/${item.id}`, undefined, [404])
 const analyst = await api('POST', '/auth/login', { username: '300112', password: 'test2026' }, { token: '' })
 const me = await get('/auth/me', { token: analyst.accessToken })
