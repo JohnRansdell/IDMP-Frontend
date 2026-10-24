@@ -173,9 +173,6 @@
           <p class="section-title__description">POST /api/v1/system/roles</p>
         </div>
       </div>
-      <div class="notice-strip is-warning role-warning">
-        角色创建会写入后端；重复的角色编码会由后端返回冲突，不会在前端伪装成功。
-      </div>
       <StatePanel
         v-if="!hasAccessToken"
         type="permission"
@@ -536,10 +533,6 @@ function stateTypeForError(message) {
 
 .users-card,
 .role-card {
-  margin-bottom: var(--idmp-space-4);
-}
-
-.role-warning {
   margin-bottom: var(--idmp-space-4);
 }
 
