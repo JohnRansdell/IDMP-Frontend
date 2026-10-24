@@ -5,10 +5,6 @@
       :status="hasAccessToken ? 'ENABLED' : 'INACTIVE'"
       :status-label="hasAccessToken ? '已登录' : '未登录'"
     >
-      <template #meta>
-        <span class="data-source-badge is-live">真实接口</span>
-        <span class="header-meta">会话支持 auth/me、刷新令牌轮换与全端退出</span>
-      </template>
       <template #actions>
         <div class="page-toolbar">
           <el-button :icon="Refresh" :loading="healthLoading" @click="checkHealth">检查服务</el-button>
@@ -43,7 +39,7 @@
           v-else
           type="permission"
           title="尚未登录"
-          description="登录成功后，请求适配层会为后续受保护接口携带访问令牌。"
+          description="请登录后查看账户信息。"
         />
       </article>
 
@@ -51,7 +47,6 @@
         <div class="section-title">
           <div>
             <h2>服务健康状态</h2>
-            <p class="section-title__description">GET /api/v1/health</p>
           </div>
         </div>
         <StatePanel v-if="healthLoading" type="loading" title="正在检查服务" />
@@ -78,8 +73,8 @@
         <StatePanel
           v-else-if="!healthResult"
           type="unavailable"
-          title="健康接口未返回可用内容"
-          description="接口请求完成，但没有可展示的健康状态。"
+          title="暂无服务健康状态"
+          description="暂时无法获取服务状态，请稍后重试。"
         >
           <template #actions>
             <el-button @click="checkHealth">重新检查</el-button>
@@ -96,7 +91,6 @@
               />
             </dd>
           </div>
-          <div><dt>返回内容</dt><dd class="response-copy">{{ stringifyShort(healthResult) }}</dd></div>
         </dl>
       </article>
     </section>
@@ -105,7 +99,6 @@
       <div class="section-title">
         <div>
           <h2>用户列表</h2>
-          <p class="section-title__description">GET /api/v1/system/users</p>
         </div>
         <el-button :disabled="!hasAccessToken" :loading="usersLoading" @click="loadUsers">读取用户</el-button>
       </div>
@@ -170,7 +163,6 @@
       <div class="section-title">
         <div>
           <h2>创建角色</h2>
-          <p class="section-title__description">POST /api/v1/system/roles</p>
         </div>
       </div>
       <StatePanel
@@ -201,7 +193,7 @@
         <dl v-if="createdRole" class="detail-list role-result">
           <div><dt>角色编码</dt><dd class="mono-data">{{ createdRole.roleCode || '-' }}</dd></div>
           <div class="status-row">
-            <dt>后端状态</dt>
+            <dt>状态</dt>
             <dd><StatusBadge :status="createdRole.status" /></dd>
           </div>
         </dl>
@@ -268,7 +260,7 @@ async function handleLogout() {
   if (!hasAccessToken.value || logoutLoading.value) return
   try {
     await ElMessageBox.confirm(
-      '确认退出当前会话？请求适配层会清除本地保存的访问令牌。',
+      '确认退出当前会话？',
       '确认退出登录',
       {
         confirmButtonText: '确认退出',
@@ -371,7 +363,7 @@ async function handleCreateRole() {
   }
   try {
     await ElMessageBox.confirm(
-      `确认创建角色 ${roleForm.roleCode}（${roleForm.roleName}）？该操作会写入后端，重复编码将由后端返回冲突。`,
+      `确认创建角色 ${roleForm.roleCode}（${roleForm.roleName}）？`,
       '确认创建角色',
       {
         confirmButtonText: '确认创建',
@@ -394,8 +386,8 @@ async function handleCreateRole() {
     createdRole.value = await createSystemRole({ ...roleForm })
     roleFeedback.value = {
       status: 'SUCCEEDED',
-      label: '接口创建成功',
-      message: `后端已返回角色 ${createdRole.value?.roleCode || roleForm.roleCode}。`
+      label: '创建成功',
+      message: `角色 ${createdRole.value?.roleCode || roleForm.roleCode} 已创建。`
     }
     ElMessage.success('角色创建成功')
     roleForm.roleCode = ''
@@ -424,11 +416,6 @@ function formatRoles(roles) {
   return roles || '-'
 }
 
-function stringifyShort(value) {
-  const text = typeof value === 'string' ? value : JSON.stringify(value)
-  return text.length > 180 ? `${text.slice(0, 180)}...` : text
-}
-
 function createCodeSuffix() {
   return new Date().toISOString().replace(/\D/g, '').slice(8, 14)
 }
@@ -444,12 +431,6 @@ function stateTypeForError(message) {
 <style scoped lang="scss">
 .system-page {
   min-width: 0;
-}
-
-.header-meta {
-  color: var(--idmp-text-helper);
-  font-size: 12px;
-  line-height: 20px;
 }
 
 .system-grid {
@@ -522,13 +503,8 @@ function stateTypeForError(message) {
 }
 
 .health-detail {
-  grid-template-columns: 150px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   margin-top: 0;
-}
-
-.response-copy {
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-  font-size: 12px;
 }
 
 .users-card,
