@@ -169,7 +169,7 @@ export function normalizeIndicatorTrialResults(payload = {}) {
 
 export function selectDefaultIndicatorTrialTarget(targets = []) {
   const list = Array.isArray(targets) ? targets : []
-  return list.find((target) => target.pathCode === 'TIME' && target.levelCode === 'MONTH')
+  return list.find((target) => target.targetCode === 'BASE')
     || [...list].sort((left, right) => right.grain.length - left.grain.length)[0]
     || null
 }
@@ -351,7 +351,7 @@ export function normalizeDrillPaths(payload, fallback = []) {
     pathVersionId: String(path?.pathVersionId || ''),
     ...(path?.pathName ? { pathName: path.pathName } : {}),
     ...(path?.levels?.length ? { levels: path.levels } : {})
-  })).filter((path) => path.pathCode && path.maxLevel)
+  })).filter((path) => path.pathCode && path.maxLevel && path.pathCode.trim().toUpperCase() !== 'TIME')
 }
 
 export function normalizeDrillConfig(payload, fallback = defaultDrillConfig) {
@@ -368,10 +368,6 @@ export function buildIndicatorVersionPayload({ copyFromVersionId = '', drillConf
   const normalizedPaths = Array.isArray(drillPaths)
     ? drillPaths
     : drillConfig ? [drillConfig] : []
-  if (new Set(normalizedPaths.map((path) => path.pathCode)).size !== normalizedPaths.length) {
-    throw new Error('同一下钻路径只能选择一次')
-  }
-
   return {
     ...(copyFromVersionId ? { copyFromVersionId: String(copyFromVersionId) } : {}),
     ...(formula ? { formula } : {}),
@@ -404,7 +400,7 @@ export function normalizeDrillCapabilities(payload = {}) {
         maxLevel: String(factor?.maxLevel || ''),
         reason: String(factor?.reason || '')
       })) : []
-    })).filter((dimension) => dimension.pathCode) : []
+    })).filter((dimension) => dimension.pathCode && dimension.pathCode.trim().toUpperCase() !== 'TIME') : []
   }
 }
 

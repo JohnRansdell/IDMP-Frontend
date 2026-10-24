@@ -15,7 +15,9 @@ export function normalizeDimensionGrain(values = []) {
 }
 
 export function serializeDrillPaths(paths = []) {
-  if (!Array.isArray(paths) || paths.length > 5) throw new Error('下钻路径最多选择 5 条')
+  if (!Array.isArray(paths)) throw new Error('下钻路径最多选择 5 条')
+  paths = paths.filter(path => String(path?.pathCode || '').trim().toUpperCase() !== 'TIME')
+  if (paths.length > 5) throw new Error('下钻路径最多选择 5 条')
   const seen = new Set()
   return paths.map(path => {
     const pathCode = String(path?.pathCode || '').trim().toUpperCase()

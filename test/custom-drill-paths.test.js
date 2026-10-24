@@ -10,6 +10,15 @@ const path = { pathCode: 'CUSTOM_DEPT_DOCTOR', pathName: '科室医生下钻', m
   { levelCode: 'DOCTOR', levelName: '医生', dimensionFieldCode: '医生' }
 ] }
 
+test('legacy time paths are omitted before validation in ordinary and SQL authoring', () => {
+  const legacy = Array.from({ length: 6 }, () => ({ pathCode: ' time ' }))
+  assert.deepEqual(serializeDrillPaths([...legacy, path]), [path])
+  assert.deepEqual(buildIndicatorVersionPayload({ drillPaths: legacy }).drillPaths, [])
+  const metadata = buildSqlImportMetadataPayload({ scope: 'FACTORS_AND_INDICATOR', indicator: { drillPaths: [...legacy, path], timeDrillEnabled: true }, factors: [] })
+  assert.deepEqual(metadata.drillPaths, [path])
+  assert.equal(Object.hasOwn(metadata, 'timeDrillEnabled'), false)
+})
+
 test('codes work with crypto available on HTTP pages without randomUUID', () => {
   const code = createCustomDrillCode('CUSTOM', { getRandomValues: bytes => bytes.fill(0xab) })
   assert.equal(code, `CUSTOM_${'AB'.repeat(16)}`)

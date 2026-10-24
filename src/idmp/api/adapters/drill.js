@@ -1,5 +1,4 @@
 export const DRILL_DIMENSIONS = Object.freeze({
-  TIME: 'TIME',
   ORGANIZATION: 'ORGANIZATION',
   DISEASE: 'DISEASE',
   FACTOR: 'FACTOR',

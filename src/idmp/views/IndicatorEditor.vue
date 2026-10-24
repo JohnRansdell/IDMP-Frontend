@@ -367,7 +367,7 @@
               <template v-else-if="['ready', 'stale'].includes(drillCapability.status)">
                 <p class="drill-capability-coverage">本次预检覆盖因子版本：{{ drillCapability.factorVersionIds.join('、') || '-' }}</p>
                 <el-table :data="defaultDrillDimensions" size="small" border class="drill-capability-table">
-                  <el-table-column label="启用" width="76"><template #default="{ row }"><el-checkbox :model-value="isDrillPathSelected(row.pathCode)" :disabled="indicatorWorkflow.published || row.pathCode.startsWith('CUSTOM_') || !row.supported || (isStaticIndicator && row.pathCode === 'TIME')" :aria-label="`启用${drillPathLabel(row.pathCode)}下钻路径`" @change="checked => toggleDrillPath(row, checked)" /></template></el-table-column>
+                  <el-table-column label="启用" width="76"><template #default="{ row }"><el-checkbox :model-value="isDrillPathSelected(row.pathCode)" :disabled="indicatorWorkflow.published || row.pathCode.startsWith('CUSTOM_') || !row.supported" :aria-label="`启用${drillPathLabel(row.pathCode)}下钻路径`" @change="checked => toggleDrillPath(row, checked)" /></template></el-table-column>
                   <el-table-column label="路径" min-width="145"><template #default="{ row }">{{ drillDimensionPathName(row) }}</template></el-table-column>
                   <el-table-column label="能力" min-width="120"><template #default="{ row }"><el-tag :type="row.supported ? 'success' : 'info'" size="small">{{ row.supported ? `最深到${drillDimensionLevelName(row)}` : '不支持' }}</el-tag></template></el-table-column>
                   <el-table-column label="本版本最大层级" min-width="210"><template #default="{ row }"><el-select :model-value="selectedDrillPathLevel(row.pathCode)" :disabled="indicatorWorkflow.published || row.pathCode.startsWith('CUSTOM_') || !row.supported || !isDrillPathSelected(row.pathCode)" placeholder="选择层级" @update:model-value="level => setDrillPathLevel(row.pathCode, level)"><el-option v-for="level in capabilityLevels(row)" :key="level.code" :label="drillLevelOptionLabel(level)" :value="level.code" /></el-select></template></el-table-column>
@@ -1437,10 +1437,6 @@ async function ensureFreshDrillCapability(formula) {
   if (drillCapability.status === 'ready' && drillCapability.formulaSignature === signature) return true
   return runDrillCapabilityPreflight(formula)
 }
-
-watch(isStaticIndicator, (isStatic) => {
-  if (isStatic) selectedDrillPaths.value = selectedDrillPaths.value.filter((path) => path.pathCode !== 'TIME')
-})
 
 watch(indicatorDimensionGrain, () => {
   if (indicatorWorkflow.versionId && !indicatorWorkflow.published) {

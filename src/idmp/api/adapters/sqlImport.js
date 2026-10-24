@@ -261,7 +261,7 @@ export function buildSqlImportMetadataPayload({ scope, category, indicator, fact
   if (normalizedScope === 'FACTORS_AND_INDICATOR') Object.assign(payload, {
     indicatorCode: String(indicator?.code || '').trim(), indicatorName: String(indicator?.name || '').trim(),
     ...(String(indicator?.description || '').trim() ? { indicatorDescription: String(indicator.description).trim() } : {}),
-    timeDrillEnabled: Boolean(indicator?.timeDrillEnabled), formula: indicator?.formula || {},
+    formula: indicator?.formula || {},
     drillPaths: serializeDrillPaths(indicator?.drillPaths || []),
     dimensionGrain: normalizeDimensionGrain(indicator?.dimensionGrain || [])
   })

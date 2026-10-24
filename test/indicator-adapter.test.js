@@ -238,7 +238,7 @@ test('indicator version payload always includes the selected drill path', () => 
   })
 })
 
-test('indicator version payload supports multiple selected drill paths', () => {
+test('indicator version payload omits legacy time paths and validates business duplicates', () => {
   const payload = buildIndicatorVersionPayload({
     drillPaths: [
       { pathCode: 'ORGANIZATION', maxLevel: 'OUT_DEPT' },
@@ -247,13 +247,12 @@ test('indicator version payload supports multiple selected drill paths', () => {
   })
 
   assert.deepEqual(payload.drillPaths, [
-    { pathCode: 'ORGANIZATION', maxLevel: 'OUT_DEPT' },
-    { pathCode: 'TIME', maxLevel: 'MONTH' }
+    { pathCode: 'ORGANIZATION', maxLevel: 'OUT_DEPT' }
   ])
   assert.throws(() => buildIndicatorVersionPayload({
     drillPaths: [
-      { pathCode: 'TIME', maxLevel: 'MONTH' },
-      { pathCode: 'TIME', maxLevel: 'DAY' }
+      { pathCode: 'ORGANIZATION', maxLevel: 'OUT_DEPT' },
+      { pathCode: 'ORGANIZATION', maxLevel: 'ATTENDING_DOCTOR' }
     ]
   }), /只能选择一次/)
 })
@@ -266,7 +265,7 @@ test('indicator versions carry combination grain and preserve specific drill ver
   assert.equal(validateDrillSelection({}, []), '')
   assert.throws(() => buildIndicatorVersionPayload({ dimensionGrain: ['a', 'A'] }), /重复/)
   assert.throws(() => buildIndicatorVersionPayload({ dimensionGrain: ['v.dept_code'] }), /字母/)
-  assert.throws(() => buildIndicatorVersionPayload({ drillPaths: [{ pathCode: 'TIME' }] }), /最大层级/)
+  assert.deepEqual(buildIndicatorVersionPayload({ drillPaths: [{ pathCode: 'TIME' }] }).drillPaths, [])
   assert.deepEqual(normalizeDrillCapabilities({ dimensionGrainOptions: ['DEPT_CODE', 'DIAGNOSIS'] }).dimensionGrainOptions, ['DEPT_CODE', 'DIAGNOSIS'])
 })
 
@@ -289,12 +288,12 @@ test('drill capability adapter preserves bigint ids and validates selected level
   })
 
   assert.equal(capabilities.factorVersionIds[0], '102027642460282572')
+  assert.deepEqual(capabilities.dimensions.map(item => item.pathCode), ['ORGANIZATION'])
   assert.equal(capabilities.dimensions[0].limitingFactors[0].factorVersionId, '102027642460282572')
   assert.equal(validateDrillSelection(capabilities, [{ pathCode: 'ORGANIZATION', maxLevel: 'OUT_DEPT' }]), '')
   assert.match(validateDrillSelection(capabilities, [{ pathCode: 'ORGANIZATION', maxLevel: 'ATTENDING_DOCTOR' }]), /不支持层级/)
   assert.match(validateDrillSelection(capabilities, [{ pathCode: 'TIME', maxLevel: 'MONTH' }]), /不支持下钻/)
   assert.deepEqual(normalizeDrillPaths({ drillConfig: { drillPaths: [{ pathCode: 'TIME', maxLevel: 'MONTH' }, { pathCode: 'ORGANIZATION', maxLevel: 'OUT_DEPT' }] } }), [
-    { pathCode: 'TIME', maxLevel: 'MONTH', pathVersionId: '' },
     { pathCode: 'ORGANIZATION', maxLevel: 'OUT_DEPT', pathVersionId: '' }
   ])
 })
