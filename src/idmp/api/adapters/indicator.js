@@ -364,7 +364,7 @@ export function normalizeDrillConfig(payload, fallback = defaultDrillConfig) {
   }
 }
 
-export function buildIndicatorVersionPayload({ copyFromVersionId = '', drillConfig, drillPaths, formula, calculationMode, dimensionGrain, factorDimensionBindings } = {}) {
+export function buildIndicatorVersionPayload({ copyFromVersionId = '', drillConfig, drillPaths, formula, calculationMode, dimensionGrain, factorDimensionBindings, dataOwnership } = {}) {
   const normalizedPaths = Array.isArray(drillPaths)
     ? drillPaths
     : drillConfig ? [drillConfig] : []
@@ -378,6 +378,7 @@ export function buildIndicatorVersionPayload({ copyFromVersionId = '', drillConf
     ...(calculationMode ? { calculationMode: String(calculationMode).toUpperCase() } : {}),
     drillPaths: serializeDrillPaths(normalizedPaths),
     ...(factorDimensionBindings !== undefined ? { factorDimensionBindings } : {}),
+    ...(dataOwnership != null ? { dataOwnership: { ...dataOwnership } } : {}),
     ...(dimensionGrain !== undefined ? { dimensionGrain: normalizeDimensionGrain(dimensionGrain) } : {})
   }
 }
@@ -386,6 +387,8 @@ export function normalizeDrillCapabilities(payload = {}) {
   const data = payload?.data || payload || {}
   return {
     factorVersionIds: Array.isArray(data.factorVersionIds) ? data.factorVersionIds.map((id) => String(id)) : [],
+    defaultOrganizationPath: data.defaultOrganizationPath ? normalizeDrillPaths({ drillPaths: [data.defaultOrganizationPath] })[0] : null,
+    suggestedDataOwnership: data.suggestedDataOwnership ? { ...data.suggestedDataOwnership } : null,
     dimensionGrainOptions: Array.isArray(data.dimensionGrainOptions) ? data.dimensionGrainOptions.map(String) : [],
     fieldOptions: (data.fieldOptions || []).map(item => ({ ...item, factorVersionId: String(item.factorVersionId || ''), fields: (item.fields || []).map(field => ({ ...field, fieldId: String(field.fieldId || '') })) })),
     dimensions: Array.isArray(data.dimensions) ? data.dimensions.map((dimension) => ({

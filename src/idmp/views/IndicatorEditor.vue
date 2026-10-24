@@ -306,6 +306,23 @@
               </el-tooltip>
             </div>
             <section class="drill-capability-card" aria-label="指标版本下钻能力预检">
+              <section class="grouping-section" aria-label="数据归属">
+                <h4>数据归属</h4>
+                <el-form label-position="top" class="ownership-fields">
+                  <el-form-item label="归属类型">
+                    <el-select :model-value="dataOwnership?.mode || ''" :disabled="indicatorWorkflow.published" placeholder="历史版本未确认" aria-label="数据归属类型" @update:model-value="setDataOwnershipMode">
+                      <el-option label="科室归属" value="DEPARTMENT" />
+                      <el-option label="全院公共" value="GLOBAL_PUBLIC" />
+                      <el-option label="待确认" value="UNCLASSIFIED" />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item v-if="dataOwnership?.mode === 'DEPARTMENT'" label="科室编码字段">
+                    <el-select v-model="dataOwnership.departmentFieldCode" :disabled="indicatorWorkflow.published" filterable placeholder="选择科室编码字段" aria-label="数据归属科室编码字段" @change="markDataOwnershipChanged">
+                      <el-option v-for="field in ownershipFieldOptions" :key="field" :label="field" :value="field" />
+                    </el-select>
+                  </el-form-item>
+                </el-form>
+              </section>
               <section class="grouping-section" aria-label="下钻配置">
               <CustomDrillPathEditor v-model="selectedDrillPaths" :disabled="indicatorWorkflow.published" @update:model-value="invalidateGroupingConfiguration" />
               <FactorDimensionBindingsEditor v-model="factorDimensionBindings" title="下钻字段映射" class="drill-field-bindings" :table-selections="factorFieldTableSelections" :disabled="indicatorWorkflow.published" :fields="drillMappingFields" :factors="dimensionBindingFactors" :field-options="factorFieldState.fieldOptions" :loading="factorFieldState.status === 'loading'" :error="factorFieldState.errorMessage" @retry="loadFactorFieldOptions" @update:model-value="invalidateGroupingConfiguration" />
@@ -342,6 +359,7 @@
               </div>
               <div class="business-action-bar drill-capability-actions">
                 <el-button type="primary" :disabled="!formulaValid" :loading="workflowLoading.capability" @click="runDrillCapabilityPreflight()">预检系统默认下钻能力</el-button>
+                <el-button v-if="drillCapability.defaultOrganizationPath" :disabled="indicatorWorkflow.published || drillCapability.status !== 'ready'" @click="applyOrganizationDefaults">采用组织默认配置</el-button>
               </div>
               <el-alert v-if="drillCapability.status === 'idle'" :title="`请按${activeMode.factorRequirement}选择因子后执行预检；修改因子会使已有预检结果失效。`" type="info" :closable="false" show-icon />
               <StatePanel v-else-if="drillCapability.status === 'loading'" type="loading" title="正在预检下钻能力" />
@@ -734,15 +752,19 @@ const indicatorTrialTargets = ref([])
 const selectedIndicatorTrialTargetKey = ref('')
 const indicatorTrialResultsLoaded = ref(false)
 const selectedDrillPaths = ref([])
+const dataOwnership = ref(null)
+const ownershipFieldOptions = computed(() => [...new Set([dataOwnership.value?.departmentFieldCode, ...drillCapability.dimensionGrainOptions].filter(Boolean))])
+let organizationDefaultsInitialized = false
+let dataOwnershipCustomized = false
 const factorDimensionBindings = ref({})
 const factorFieldTableSelections = reactive(new Map())
 const factorFieldState = reactive({ status: 'idle', factorVersionIds: [], fieldOptions: [], errorMessage: '' })
 const indicatorDimensionGrain = ref([])
-const drillMappingFields = computed(() => sqlImportGroupingFields(selectedDrillPaths.value.filter(path => path.pathCode.startsWith('CUSTOM_'))))
+const drillMappingFields = computed(() => sqlImportGroupingFields(selectedDrillPaths.value))
 const grainMappingFields = computed(() => {
   try { return sqlImportGroupingFields([], indicatorDimensionGrain.value) } catch { return [] }
 })
-const customGroupingFields = computed(() => [...new Set([...drillMappingFields.value, ...grainMappingFields.value])])
+const customGroupingFields = computed(() => [...new Set([...drillMappingFields.value, ...grainMappingFields.value, ...(dataOwnership.value?.mode === 'DEPARTMENT' && dataOwnership.value.departmentFieldCode ? [dataOwnership.value.departmentFieldCode] : [])])])
 const drillCapability = reactive({
   status: 'idle',
   formulaSignature: '',
@@ -750,6 +772,8 @@ const drillCapability = reactive({
   dimensions: [],
   fieldOptions: [],
   dimensionGrainOptions: [],
+  defaultOrganizationPath: null,
+  suggestedDataOwnership: null,
   errorMessage: ''
 })
 const workflowDebug = reactive({
@@ -1249,10 +1273,11 @@ watch(() => dimensionBindingFactors.value.flatMap(factor => customGroupingFields
 })
 
 function formulaSignature(formula) {
-  return JSON.stringify({ formula, drillPaths: selectedDrillPaths.value, factorDimensionBindings: factorDimensionBindings.value, dimensionGrain: indicatorDimensionGrain.value })
+  return JSON.stringify({ formula, drillPaths: selectedDrillPaths.value, factorDimensionBindings: factorDimensionBindings.value, dimensionGrain: indicatorDimensionGrain.value, dataOwnership: dataOwnership.value })
 }
 
 function resetDrillCapability() {
+  if (!indicatorWorkflow.versionId) organizationDefaultsInitialized = false
   drillCapabilityRequestId += 1
   Object.assign(drillCapability, {
     status: 'idle',
@@ -1260,6 +1285,8 @@ function resetDrillCapability() {
     factorVersionIds: [],
     dimensions: [],
     dimensionGrainOptions: [],
+    defaultOrganizationPath: null,
+    suggestedDataOwnership: null,
     fieldOptions: [],
     errorMessage: ''
   })
@@ -1292,6 +1319,25 @@ function isDrillPathSelected(pathCode) {
   return selectedDrillPaths.value.some((path) => path.pathCode === pathCode)
 }
 
+function setDataOwnershipMode(mode) {
+  dataOwnership.value = { mode, departmentFieldCode: mode === 'DEPARTMENT' ? drillCapability.suggestedDataOwnership?.departmentFieldCode || dataOwnership.value?.departmentFieldCode || '' : null }
+  markDataOwnershipChanged()
+}
+
+function markDataOwnershipChanged() {
+  dataOwnershipCustomized = true
+  invalidateGroupingConfiguration()
+}
+
+function applyOrganizationDefaults() {
+  const path = drillCapability.defaultOrganizationPath
+  if (!path || indicatorWorkflow.published) return
+  selectedDrillPaths.value = [...selectedDrillPaths.value.filter(item => item.pathCode !== 'ORGANIZATION'), JSON.parse(JSON.stringify(path))]
+  if (!dataOwnership.value || dataOwnership.value.mode === 'UNCLASSIFIED') dataOwnership.value = { ...drillCapability.suggestedDataOwnership }
+  invalidateGroupingConfiguration()
+  runDrillCapabilityPreflight()
+}
+
 function selectedDrillPathLevel(pathCode) {
   return selectedDrillPaths.value.find((path) => path.pathCode === pathCode)?.maxLevel || ''
 }
@@ -1307,7 +1353,7 @@ function toggleDrillPath(dimension, checked) {
   const levels = capabilityLevels(dimension)
   const maxLevel = levels[levels.length - 1]?.code || dimension.maxLevel
   if (!maxLevel) return
-  selectedDrillPaths.value = [...selectedDrillPaths.value, { pathCode, maxLevel }]
+  selectedDrillPaths.value = [...selectedDrillPaths.value, { ...(pathCode === 'ORGANIZATION' ? drillCapability.defaultOrganizationPath || {} : {}), pathCode, maxLevel }]
   invalidateGroupingConfiguration()
 }
 
@@ -1358,8 +1404,17 @@ async function runDrillCapabilityPreflight(providedFormula) {
       dimensions: capability.dimensions,
       fieldOptions: capability.fieldOptions,
       dimensionGrainOptions: capability.dimensionGrainOptions,
+      defaultOrganizationPath: capability.defaultOrganizationPath,
+      suggestedDataOwnership: capability.suggestedDataOwnership,
       errorMessage: ''
     })
+    if (!indicatorWorkflow.versionId && !organizationDefaultsInitialized) {
+      if (!selectedDrillPaths.value.some(path => path.pathCode === 'ORGANIZATION') && capability.defaultOrganizationPath) {
+        selectedDrillPaths.value = [...selectedDrillPaths.value, capability.defaultOrganizationPath]
+      }
+      if (!dataOwnershipCustomized) dataOwnership.value = capability.suggestedDataOwnership || { mode: 'UNCLASSIFIED', departmentFieldCode: null }
+      organizationDefaultsInitialized = true
+    }
     drillCapability.formulaSignature = formulaSignature(formula)
     return true
   } catch (error) {
@@ -1592,6 +1647,9 @@ function hydrateIndicatorVersion(version) {
   resetDrillCapability()
   hydrateFormulaFactors(formula)
   selectedDrillPaths.value = normalizeDrillPaths(version)
+  dataOwnership.value = version.dataOwnership ? { ...version.dataOwnership } : null
+  dataOwnershipCustomized = true
+  organizationDefaultsInitialized = true
   factorDimensionBindings.value = version.factorDimensionBindings || version.drillConfig?.factorDimensionBindings || {}
   indicatorRuntimeParameterGroups.value = Array.isArray(version.factorRuntimeParameters) ? version.factorRuntimeParameters : []
   indicatorRuntimeParameterValues.value = {}
@@ -1864,7 +1922,7 @@ async function createIndicatorDraftVersion() {
     workflowLoading.version = true
     const copiedPolicySources = policyPanel.value?.copySourcesToDraft() || []
     const copyFromVersionId = indicatorWorkflow.versionId
-    const versionPayload = buildIndicatorVersionPayload({ copyFromVersionId, drillPaths: selectedDrillPaths.value, calculationMode: indicatorCalculationMode.value, dimensionGrain: indicatorDimensionGrain.value, factorDimensionBindings: activeFactorDimensionBindings() })
+    const versionPayload = buildIndicatorVersionPayload({ copyFromVersionId, drillPaths: selectedDrillPaths.value, calculationMode: indicatorCalculationMode.value, dimensionGrain: indicatorDimensionGrain.value, factorDimensionBindings: activeFactorDimensionBindings(), dataOwnership: dataOwnership.value })
     recordWorkflowRequest({
       step: '创建指标版本',
       endpoint: `/api/v1/indicators/${indicatorWorkflow.indicatorId}/versions`,
@@ -1983,7 +2041,8 @@ async function createFirstIndicatorVersionWithFormula(formula) {
     formula,
     calculationMode: indicatorCalculationMode.value,
     dimensionGrain: indicatorDimensionGrain.value,
-    factorDimensionBindings: activeFactorDimensionBindings()
+    factorDimensionBindings: activeFactorDimensionBindings(),
+    dataOwnership: dataOwnership.value
   })
   recordWorkflowRequest({
     step: '创建首个指标版本并保存公式',
@@ -2016,6 +2075,7 @@ async function createFirstIndicatorVersionWithFormula(formula) {
   })
   resetIndicatorTrialResultCollection()
   selectedDrillPaths.value = normalizeDrillPaths(version)
+  dataOwnership.value = version.dataOwnership ? { ...version.dataOwnership } : null
   factorDimensionBindings.value = version.factorDimensionBindings || version.drillConfig?.factorDimensionBindings || {}
   rememberIndicatorEditorForm(indicatorWorkflow.indicatorId)
   recordWorkflowSuccess(`首个指标版本及公式已保存：${versionId}`)
@@ -2396,6 +2456,7 @@ async function persistIndicatorFormula() {
   formulaPayload.dimensionGrain = normalizeDimensionGrain(indicatorDimensionGrain.value)
   formulaPayload.drillPaths = serializeDrillPaths(selectedDrillPaths.value)
   formulaPayload.factorDimensionBindings = activeFactorDimensionBindings()
+  if (dataOwnership.value) formulaPayload.dataOwnership = { ...dataOwnership.value }
   recordWorkflowRequest({
     step: '保存公式',
     endpoint: `/api/v1/indicator-versions/${indicatorWorkflow.versionId}/formula`,
@@ -2409,6 +2470,7 @@ async function persistIndicatorFormula() {
   )
   indicatorWorkflow.resourceVersion = resolveResourceVersion(savedFormula, indicatorWorkflow.resourceVersion)
   selectedDrillPaths.value = normalizeDrillPaths(savedFormula)
+  dataOwnership.value = savedFormula.dataOwnership ? { ...savedFormula.dataOwnership } : null
   factorDimensionBindings.value = savedFormula.factorDimensionBindings || savedFormula.drillConfig?.factorDimensionBindings || {}
   indicatorWorkflow.formulaSaved = true
   indicatorWorkflow.compiled = false
@@ -3108,6 +3170,15 @@ onMounted(async () => {
   border-radius: 8px;
   background: var(--idmp-layer-02);
 }
+
+.ownership-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 0 16px;
+  max-width: 720px;
+}
+
+.ownership-fields :deep(.el-select) { width: 100%; }
 
 .drill-capability-card .drill-config-card__heading p {
   margin: 5px 0 0;
