@@ -7,7 +7,7 @@
       <template #actions>
         <el-button v-if="selectedVersion" @click="relatedDrawerOpen = true">更多关联</el-button>
         <el-button @click="router.push('/indicator')">返回指标目录</el-button>
-        <el-button type="primary" plain :disabled="detailLoading || !!loadError || !detail.id" @click="openIndicatorEditor">编辑指标</el-button>
+        <el-button v-access="['POST', '/indicators']" type="primary" plain :disabled="detailLoading || !!loadError || !detail.id" @click="openIndicatorEditor">编辑指标</el-button>
       </template>
     </PageHeader>
     <StatePanel v-if="detailLoading" type="loading" title="正在加载指标详情" />
@@ -62,13 +62,13 @@
         <StatePanel v-else-if="scenarioError" type="error" title="关联场景加载失败" :description="scenarioError"><template #actions><el-button @click="loadRelatedScenarios">重试</el-button></template></StatePanel>
         <div v-else-if="!scenarioRows.length" class="content-empty">
           <span>暂无关联场景</span>
-          <el-button type="primary" link size="small" @click="router.push({ name: 'ScenarioList' })">前往场景管理</el-button>
+          <el-button v-access="['GET', '/scenarios']" type="primary" link size="small" @click="router.push({ name: 'ScenarioList' })">前往场景管理</el-button>
         </div>
         <el-table v-else :data="scenarioRows" size="small" table-layout="fixed" max-height="280">
           <el-table-column label="场景名称" min-width="240"><template #default="{ row }"><span class="scene-name">{{ row.name || row.scenarioName || '-' }}</span><p v-if="row.description" class="scene-description">{{ row.description }}</p></template></el-table-column>
           <el-table-column label="场景编码" min-width="160" show-overflow-tooltip><template #default="{ row }">{{ row.code || row.scenarioCode || '-' }}</template></el-table-column>
           <el-table-column label="统计周期" width="110"><template #default="{ row }">{{ periodLabel(row.configuredPeriodType || row.defaultPeriodType) }}</template></el-table-column>
-          <el-table-column label="操作" width="80"><template #default="{ row }"><el-button link type="primary" @click="openScenario(row)">查看</el-button></template></el-table-column>
+          <el-table-column label="操作" width="80"><template #default="{ row }"><el-button v-access="['POST', '/scenarios']" link type="primary" @click="openScenario(row)">查看</el-button></template></el-table-column>
         </el-table>
       </article>
     </section>
@@ -80,12 +80,12 @@
           <el-table v-else :data="policyReferences" size="small" table-layout="fixed" empty-text="暂无有效政策引用">
             <el-table-column label="政策文件" min-width="170"><template #default="{ row }">{{ row.policyFileName || row.policyFileCode || row.policyFileVersionId }}</template></el-table-column>
             <el-table-column prop="relationRole" label="角色" width="100" />
-            <el-table-column label="操作" width="120"><template #default="{ row }"><el-button link type="primary" @click="policyViewerId = String(row.policyFileVersionId)">查看</el-button><el-button link type="danger" @click="invalidatePolicy(row)">失效</el-button></template></el-table-column>
+            <el-table-column label="操作" width="120"><template #default="{ row }"><el-button link type="primary" @click="policyViewerId = String(row.policyFileVersionId)">查看</el-button><el-button v-access="['POST', '/mappings/policy-references/1/invalidate']" link type="danger" @click="invalidatePolicy(row)">失效</el-button></template></el-table-column>
           </el-table>
-          <div v-if="isPublishedVersion" class="policy-reference-form"><PolicyVersionPicker v-model="policyReferenceForm.policyFileVersionId" /><el-select v-model="policyReferenceForm.relationRole"><el-option v-for="item in POLICY_REFERENCE_ROLES" :key="item.value" :label="item.label" :value="item.value" /></el-select><el-button type="primary" :loading="policyReferenceSaving" @click="addPolicyReference">添加</el-button></div>
-          <el-input v-if="isPublishedVersion" v-model="policyReferenceForm.citationLocation" class="policy-reference-input" placeholder="政策出处（可选）" />
-          <el-input v-if="isPublishedVersion" v-model="policyReferenceForm.citationText" class="policy-reference-input" type="textarea" :rows="2" placeholder="政策原文（可选）" />
-          <div class="version-mapping-links"><div class="section-title compact"><div><h3>有效指标映射</h3><p class="section-title__description">反查当前指标版本作为源侧或目标侧的已发布有效映射。</p></div></div><StatePanel v-if="mappingReferenceLoading" type="loading" title="正在读取有效映射" /><StatePanel v-else-if="mappingReferenceError" type="error" title="有效映射读取失败" :description="mappingReferenceError"><template #actions><el-button @click="loadMappingReferences(selectedVersionId)">重试</el-button></template></StatePanel><el-table v-else :data="mappingReferences" size="small" empty-text="暂无有效映射"><el-table-column prop="code" label="映射编码" min-width="150" /><el-table-column prop="mappingType" label="关系" width="110" /><el-table-column prop="comparability" label="可比性" width="120" /><el-table-column label="操作" width="68"><template #default="{ row }"><el-button link type="primary" @click="openMapping(row)">查看</el-button></template></el-table-column></el-table></div>
+          <div v-if="isPublishedVersion && $can('POST', '/mappings/indicator-versions/1/policy-references')" class="policy-reference-form"><PolicyVersionPicker v-model="policyReferenceForm.policyFileVersionId" /><el-select v-model="policyReferenceForm.relationRole"><el-option v-for="item in POLICY_REFERENCE_ROLES" :key="item.value" :label="item.label" :value="item.value" /></el-select><el-button v-access="['POST', '/mappings/indicator-versions/1/policy-references']" type="primary" :loading="policyReferenceSaving" @click="addPolicyReference">添加</el-button></div>
+          <el-input v-if="isPublishedVersion && $can('POST', '/mappings/indicator-versions/1/policy-references')" v-model="policyReferenceForm.citationLocation" class="policy-reference-input" placeholder="政策出处（可选）" />
+          <el-input v-if="isPublishedVersion && $can('POST', '/mappings/indicator-versions/1/policy-references')" v-model="policyReferenceForm.citationText" class="policy-reference-input" type="textarea" :rows="2" placeholder="政策原文（可选）" />
+          <div v-if="$can('GET', '/mappings/by-indicator-version/1')" class="version-mapping-links"><div class="section-title compact"><div><h3>有效指标映射</h3><p class="section-title__description">反查当前指标版本作为源侧或目标侧的已发布有效映射。</p></div></div><StatePanel v-if="mappingReferenceLoading" type="loading" title="正在读取有效映射" /><StatePanel v-else-if="mappingReferenceError" type="error" title="有效映射读取失败" :description="mappingReferenceError"><template #actions><el-button @click="loadMappingReferences(selectedVersionId)">重试</el-button></template></StatePanel><el-table v-else :data="mappingReferences" size="small" empty-text="暂无有效映射"><el-table-column prop="code" label="映射编码" min-width="150" /><el-table-column prop="mappingType" label="关系" width="110" /><el-table-column prop="comparability" label="可比性" width="120" /><el-table-column label="操作" width="68"><template #default="{ row }"><el-button v-access="['GET', '/mappings']" link type="primary" @click="openMapping(row)">查看</el-button></template></el-table-column></el-table></div>
         </article>
     </el-drawer>
     <PolicyFileViewer :version-id="policyViewerId" @close="policyViewerId = ''" />
@@ -93,6 +93,7 @@
 </template>
 
 <script setup>
+import { canRequest } from '@/idmp/auth/session'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
@@ -182,6 +183,7 @@ function factorVersionTooltip(versionId) {
   return lines.join('\n')
 }
 function loadFormulaFactorVersion(versionId) {
+  if (!canRequest('GET', '/factor-versions/1')) return Promise.resolve(null)
   const id = String(versionId)
   if (formulaFactorVersions[id]) return Promise.resolve(formulaFactorVersions[id])
   if (formulaFactorVersionRequests.has(id)) return formulaFactorVersionRequests.get(id)
@@ -359,6 +361,7 @@ async function selectVersion(version) {
 }
 
 async function loadPolicyReferences(versionId) {
+  if (!canRequest('GET', '/mappings/indicator-versions/1/policy-references')) return
   if (!versionId) return
   policyReferenceLoading.value = true
   policyReferenceError.value = ''
@@ -387,6 +390,7 @@ async function addPolicyReference() {
 }
 
 async function loadMappingReferences(versionId) {
+  if (!canRequest('GET', '/mappings/by-indicator-version/1')) return
   if (!versionId) return
   mappingReferenceLoading.value = true
   mappingReferenceError.value = ''

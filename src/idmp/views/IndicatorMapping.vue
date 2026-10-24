@@ -4,8 +4,8 @@
       <template #meta><span>维护跨政策指标之间的人工映射关系</span></template>
       <template #actions>
         <el-button :icon="Refresh" :loading="loading" @click="refreshCurrent">刷新</el-button>
-        <el-button v-if="activePane === 'mappings'" type="primary" :icon="Plus" @click="openCreateMapping">创建映射</el-button>
-        <el-button v-else type="primary" :icon="Plus" @click="groupDialogOpen = true">创建语义组</el-button>
+        <el-button v-access="['POST', '/mappings']" v-if="activePane === 'mappings'" type="primary" :icon="Plus" @click="openCreateMapping">创建映射</el-button>
+        <el-button v-access="['POST', '/mappings/groups']" v-else type="primary" :icon="Plus" @click="groupDialogOpen = true">创建语义组</el-button>
       </template>
     </PageHeader>
 
@@ -72,7 +72,7 @@
         <el-form-item label="说明"><el-input v-model="groupForm.description" type="textarea" :rows="3" /></el-form-item>
         <el-form-item label="基准已发布指标版本" required><el-select v-model="groupForm.canonicalIndicatorVersionId" filterable allow-create default-first-option placeholder="选择或输入指标版本 ID" style="width:100%"><el-option v-for="item in publishedIndicators" :key="item.id" :label="indicatorOptionLabel(item)" :value="String(item.id)" /></el-select></el-form-item>
       </el-form>
-      <template #footer><el-button @click="groupDialogOpen = false">取消</el-button><el-button type="primary" :loading="mutating" @click="saveGroup">创建</el-button></template>
+      <template #footer><el-button @click="groupDialogOpen = false">取消</el-button><el-button v-access="['POST', '/mappings/groups']" type="primary" :loading="mutating" @click="saveGroup">创建</el-button></template>
     </el-dialog>
 
     <el-dialog v-model="mappingDialogOpen" :title="editingMappingId ? '编辑映射草稿' : ['选择指标版本', '核对指标口径', '确认映射关系'][creationStep]" width="760px" destroy-on-close @closed="closeMappingDialog">
@@ -82,7 +82,7 @@
         <section v-if="!editingMappingId && creationStep === 1" class="comparison-preview"><div class="section-title compact"><div><h3>口径对比结果</h3><p>{{ comparison?.difference?.hasDifferences ? '发现差异，请在下一步明确映射关系与人工依据。' : '当前返回口径未发现差异，可继续确认映射关系。' }}</p></div></div><el-table :data="differenceRows" size="small" max-height="330"><el-table-column prop="label" label="对比项" min-width="150" /><el-table-column label="结果" width="100"><template #default="{ row }"><StatusBadge :status="row.different ? 'WARNING' : 'PASSED'" :label="row.different ? '存在差异' : '一致'" /></template></el-table-column><el-table-column prop="source" label="源侧" min-width="180" show-overflow-tooltip /><el-table-column prop="target" label="目标侧" min-width="180" show-overflow-tooltip /></el-table></section>
         <template v-if="editingMappingId || creationStep === 2"><div class="form-grid"><el-form-item label="映射编码" required><el-input v-model.trim="mappingForm.code" :disabled="Boolean(editingMappingId)" /></el-form-item><el-form-item label="映射名称" required><el-input v-model.trim="mappingForm.name" /></el-form-item><el-form-item label="可比性" required><el-select v-model="mappingForm.comparability"><el-option v-for="item in COMPARABILITY_TYPES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item></div><section class="mapping-type-picker" aria-label="选择映射类型"><div class="mapping-type-picker__head"><strong>映射类型</strong><small>包含关系始终以源指标为参照。</small></div><button v-for="item in MAPPING_TYPES" :key="item.value" type="button" class="mapping-type-option" :class="{ 'is-selected': mappingForm.mappingType === item.value }" @click="mappingForm.mappingType = item.value"><StatusBadge :label="item.label" /><small>{{ mappingTypeDescription(item.value) }}</small></button></section><el-form-item label="人工核对依据"><el-input v-model="mappingForm.reviewBasis" type="textarea" :rows="2" /></el-form-item><el-form-item label="差异说明"><el-input v-model="mappingForm.differenceNote" type="textarea" :rows="2" /></el-form-item></template>
       </el-form>
-      <template #footer><el-button v-if="!editingMappingId && creationStep === 1" @click="creationStep = 0">上一步</el-button><el-button v-if="!editingMappingId && creationStep === 0" type="primary" :disabled="!canCompare" :loading="comparisonLoading" @click="goToComparisonStep">下一步：核对口径</el-button><el-button v-if="!editingMappingId && creationStep === 1" type="primary" @click="creationStep = 2">下一步：确认映射</el-button><el-button v-if="!editingMappingId && creationStep === 2" @click="creationStep = 1">上一步</el-button><el-button @click="mappingDialogOpen = false">取消</el-button><el-button v-if="editingMappingId || creationStep === 2" type="primary" :loading="mutating" @click="saveMapping">{{ editingMappingId ? '保存草稿' : '创建草稿' }}</el-button></template>
+      <template #footer><el-button v-if="!editingMappingId && creationStep === 1" @click="creationStep = 0">上一步</el-button><el-button v-if="!editingMappingId && creationStep === 0" type="primary" :disabled="!canCompare" :loading="comparisonLoading" @click="goToComparisonStep">下一步：核对口径</el-button><el-button v-if="!editingMappingId && creationStep === 1" type="primary" @click="creationStep = 2">下一步：确认映射</el-button><el-button v-if="!editingMappingId && creationStep === 2" @click="creationStep = 1">上一步</el-button><el-button @click="mappingDialogOpen = false">取消</el-button><el-button v-access="['POST', '/mappings']" v-if="editingMappingId || creationStep === 2" type="primary" :loading="mutating" @click="saveMapping">{{ editingMappingId ? '保存草稿' : '创建草稿' }}</el-button></template>
     </el-dialog>
   </div>
 </template>

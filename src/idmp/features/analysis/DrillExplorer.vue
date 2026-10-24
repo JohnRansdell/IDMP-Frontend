@@ -9,7 +9,7 @@
         </el-select>
         <span class="drill-context-bar__period">统计周期：{{ resolvedPeriod }}</span>
         <span class="drill-context-bar__source">真实接口</span>
-        <el-button v-if="source !== 'mock' && !isFactorTraceMode" size="small" @click="showFactorTrace">
+        <el-button v-access="['GET', '/analysis/results/1/factors']" v-if="source !== 'mock' && !isFactorTraceMode" size="small" @click="showFactorTrace">
           {{ factorTrace ? '刷新因子追溯' : '查看因子追溯' }}
         </el-button>
         <el-button v-if="isFactorTraceMode" size="small" @click="returnToDrill">返回下钻</el-button>
@@ -114,7 +114,7 @@
             <span>所属批次</span>
             <strong class="mono-data">{{ traceBatchId }}</strong>
           </div>
-          <el-button size="small" @click="openTraceBatch">查看计算批次</el-button>
+          <el-button v-access="['GET', '/calc/batches/1']" size="small" @click="openTraceBatch">查看计算批次</el-button>
         </div>
         <FactorTraceTree :key="`${factorTrace.context?.resultId}-${factorTrace.context?.configSnapshotId}`" :result-id="String(factorTrace.context?.resultId || activeResultId)" :factors="factorTrace.factors || []" />
       </template>

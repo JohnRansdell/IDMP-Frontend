@@ -406,11 +406,11 @@
               <el-button :disabled="!indicatorWorkflow.formulaSaved" :loading="workflowLoading.compile" @click="compileIndicatorFormulaOnly">
                 公式校验
               </el-button>
-              <el-button type="primary" :disabled="!indicatorWorkflow.compiled || (!isStaticIndicator && !hasIndicatorTrialPeriod)" :loading="workflowLoading.trial || workflowLoading.result" @click="trialIndicatorAndLoadResult">
+              <el-button type="primary" :disabled="!indicatorWorkflow.compiled || (!isStaticIndicator && !hasIndicatorTrialPeriod)" :loading="workflowLoading.trial || workflowLoading.result" v-access="['POST', '/indicator-versions/1/trial']" @click="trialIndicatorAndLoadResult">
                 {{ indicatorTrialButtonLabel }}
               </el-button>
               <el-button type="success" plain @click="activeTab = 'publish'">前往第 6 页发布检查</el-button>
-              <el-button v-if="indicatorWorkflow.published && !isStaticIndicator && !hasTemporaryIndicatorRuntimeParameters" type="primary" plain :loading="workflowLoading.formal" @click="generateFormalResultAndOpenAnalysis">
+              <el-button v-if="indicatorWorkflow.published && !isStaticIndicator && !hasTemporaryIndicatorRuntimeParameters" type="primary" plain :loading="workflowLoading.formal" v-access="['POST', '/calc/batches']" @click="generateFormalResultAndOpenAnalysis">
                 生成正式结果并去指标分析
               </el-button>
             </div>
@@ -598,7 +598,7 @@
                 发布指标版本
               </el-button>
               <el-button v-if="indicatorWorkflow.published && (form.policyDrafts.length || policySourceState.error)" type="warning" :loading="policySourceState.saving" @click="retryPolicySources">重试保存政策来源</el-button>
-              <el-button v-if="indicatorWorkflow.published && !isStaticIndicator && !hasTemporaryIndicatorRuntimeParameters" plain :loading="workflowLoading.formal" @click="generateFormalResultAndOpenAnalysis">独立正式计算并查看结果</el-button>
+              <el-button v-if="indicatorWorkflow.published && !isStaticIndicator && !hasTemporaryIndicatorRuntimeParameters" plain :loading="workflowLoading.formal" v-access="['POST', '/calc/batches']" @click="generateFormalResultAndOpenAnalysis">独立正式计算并查看结果</el-button>
 
             </div>
           </article>

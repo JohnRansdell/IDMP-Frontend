@@ -47,7 +47,7 @@
     >
       <template #actions>
         <el-button type="primary" @click="retryRemoteDashboardCatalog">重新加载</el-button>
-        <el-button v-if="!medicalMode" @click="router.push('/dashboard/manage')">前往看板管理</el-button>
+        <el-button v-access="['POST', '/analysis/dashboards']" v-if="!medicalMode" @click="router.push('/dashboard/manage')">前往看板管理</el-button>
       </template>
     </StatePanel>
     <StatePanel
@@ -155,7 +155,7 @@
         </el-select>
         <span class="dashboard-save-state" :class="`is-${saveState}`" role="status">{{ saveStateLabel }}</span>
         <div class="studio-command-actions">
-          <el-button @click="router.push('/dashboard/manage')">返回看板管理</el-button>
+          <el-button v-access="['POST', '/analysis/dashboards']" @click="router.push('/dashboard/manage')">返回看板管理</el-button>
           <el-button v-if="isRemoteDashboard()" @click="openDashboardHistory">版本历史</el-button>
           <el-button data-testid="dashboard-preview" @click="studioPreview = true">预览</el-button>
           <el-button data-testid="dashboard-undo" title="撤销上一步编辑" :disabled="!canUndo" @click="undoDashboardEdit">撤销</el-button>
@@ -499,6 +499,7 @@ import {
   currentPublishedDashboardDataSources, selectDashboardVersion, sortDashboardDataSourcesByIndicatorCreatedAt, widgetResultToDataset
 } from '@/idmp/api/adapters/dashboard'
 import { fetchWarnings } from '@/idmp/api/modules/warnings'
+import { canRequest } from '@/idmp/auth/session'
 import { fetchIndicatorAnalysis, fetchIndicatorVersion, fetchAllIndicators } from '@/idmp/api/modules/indicators'
 import { deriveDrillPathResultIds } from '@/idmp/api/adapters/drill'
 import { searchResultDrill } from '@/idmp/api/modules/drill'
@@ -828,7 +829,8 @@ const viewerViewportWidth = ref(typeof window === 'undefined' ? 1440 : window.in
 const viewerBreakpoint = computed(() => dashboardBreakpointForWidth(viewerViewportWidth.value))
 const viewerColumns = computed(() => responsiveColumns(viewerBreakpoint.value))
 const viewerWidgets = computed(() => deriveResponsiveLayout((dashboardSchema.value?.widgets || []).filter(widget =>
-  !isFormalRemoteDashboard.value || (!['primary', 'supporting'].includes(widget.type) && !(widget.kpiIndex !== undefined && !widget.sourceCode))
+  (widget.type !== 'warnings' || (!medicalMode.value && canRequest('GET', '/analysis/warnings')))
+  && (!isFormalRemoteDashboard.value || (!['primary', 'supporting'].includes(widget.type) && !(widget.kpiIndex !== undefined && !widget.sourceCode)))
 ), viewerBreakpoint.value, dashboardSchema.value?.responsivePolicy))
 // The studio preview intentionally renders the same desktop geometry as GridStack.
 // Responsive derivation remains a Viewer concern and no longer creates a second
@@ -1381,7 +1383,7 @@ async function refreshWarningWidgets() {
   const widgets = warningQueryWidgets.value
   const generation = ++warningWidgetLoadGeneration
   warningWidgetAbortController?.abort()
-  if (medicalMode.value) {
+  if (medicalMode.value || !canRequest('GET', '/analysis/warnings')) {
     warningWidgetRuntime.value = Object.fromEntries(widgets.map(widget => [String(widget.id), { status: 'error', records: [], total: 0, error: '预警组件尚不支持科室隔离，未加载全院预警' }]))
     return
   }

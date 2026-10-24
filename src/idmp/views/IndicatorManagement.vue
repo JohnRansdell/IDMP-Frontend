@@ -10,9 +10,9 @@
         <span>共 {{ filteredRows.length }} 条</span>
       </template>
       <template #actions>
-        <el-button type="primary" :icon="Plus" @click="openEditor('new')">新增指标</el-button>
-        <el-button @click="router.push('/indicator/recycle-bin')">回收站</el-button>
-        <el-button :icon="Upload" @click="router.push('/indicator/import/sql')">SQL 导入</el-button>
+        <el-button v-access="['POST', '/indicators']" type="primary" :icon="Plus" @click="openEditor('new')">新增指标</el-button>
+        <el-button v-access="['GET', '/indicators/recycle-bin']" @click="router.push('/indicator/recycle-bin')">回收站</el-button>
+        <el-button v-access="['POST', '/sql-imports']" :icon="Upload" @click="router.push('/indicator/import/sql')">SQL 导入</el-button>
         <el-tooltip content="大导出任务接口尚未接入">
           <span
             class="disabled-tooltip-trigger"
@@ -129,7 +129,7 @@
       >
         <template #actions>
           <el-button @click="resetFilters">清除筛选</el-button>
-          <el-button type="primary" @click="openEditor('new')">新增指标</el-button>
+          <el-button v-access="['POST', '/indicators']" type="primary" @click="openEditor('new')">新增指标</el-button>
         </template>
       </StatePanel>
       <div v-else class="table-scroll">
@@ -158,7 +158,7 @@
           </el-table-column>
           <el-table-column label="分析" width="96" align="center">
             <template #default="{ row }">
-              <button v-if="canOpenAnalysis(row)" type="button" class="action-link" @click="openAnalysis(row)">进入分析</button>
+              <button v-access="['GET', '/analysis/indicators/1/analysis']" v-if="canOpenAnalysis(row)" type="button" class="action-link" @click="openAnalysis(row)">进入分析</button>
               <el-tooltip v-else content="指标分析仅适用于已发布且具备指标版本的指标">
                 <span class="analysis-unavailable" tabindex="0" aria-label="暂不可进入指标分析">—</span>
               </el-tooltip>
@@ -168,8 +168,8 @@
            <el-table-column label="操作" width="210" fixed="right">
             <template #default="{ row }">
               <button type="button" class="action-link" @click="openDetail(row)">查看</button>
-               <button type="button" class="action-link" @click="openEditor(row.code)">编辑</button>
-              <button v-if="row.indicatorId" type="button" class="action-link danger-link" @click="openDelete(row)">删除</button>
+               <button v-access="['POST', '/indicators']" type="button" class="action-link" @click="openEditor(row.code)">编辑</button>
+              <button v-access="['DELETE', '/indicators/1']" v-if="row.indicatorId" type="button" class="action-link danger-link" @click="openDelete(row)">删除</button>
             </template>
           </el-table-column>
         </el-table>
@@ -202,8 +202,8 @@
           </dl>
           <div class="indicator-card__actions">
             <el-button @click="openDetail(row)">查看详情</el-button>
-            <el-button type="primary" plain @click="openEditor(row.code)">编辑</el-button>
-            <el-button v-if="canOpenAnalysis(row)" type="success" plain @click="openAnalysis(row)">指标分析</el-button>
+            <el-button v-access="['POST', '/indicators']" type="primary" plain @click="openEditor(row.code)">编辑</el-button>
+            <el-button v-access="['GET', '/analysis/indicators/1/analysis']" v-if="canOpenAnalysis(row)" type="success" plain @click="openAnalysis(row)">指标分析</el-button>
           </div>
         </article>
       </div>

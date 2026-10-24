@@ -35,8 +35,8 @@
             </el-option>
           </el-select>
           <el-button type="primary" @click="switchIndicatorAnalysis">查看分析</el-button>
-          <el-button :disabled="!selectedBackendIndicator || !currentIndicatorVersionId" @click="showDataDiagnostics = true">计算诊断</el-button>
-          <el-button :icon="Download" :loading="pdfExportLoading" :disabled="!canExportPdf" @click="exportAnalysisPdf">导出PDF</el-button>
+          <el-button v-access="['GET', '/calc/batches/1']" :disabled="!selectedBackendIndicator || !currentIndicatorVersionId" @click="showDataDiagnostics = true">计算诊断</el-button>
+          <el-button v-access="['POST', '/analysis/indicators/1/export/pdf']" :icon="Download" :loading="pdfExportLoading" :disabled="!canExportPdf" @click="exportAnalysisPdf">导出PDF</el-button>
         </div>
       </template>
     </PageHeader>
@@ -49,7 +49,7 @@
       :closable="false"
       :title="analysisErrorMessage || rangeSummaryErrorMessage"
     />
-    <section v-if="selectedBackendIndicator && (backendAnalysisGranularity !== 'STATIC' || indicatorRuntimeParameters.length)" class="surface-card instant-query-panel" aria-label="即时查询条件">
+    <section v-if="$can('POST', '/indicator-versions/1/query') && selectedBackendIndicator && (backendAnalysisGranularity !== 'STATIC' || indicatorRuntimeParameters.length)" class="surface-card instant-query-panel" aria-label="即时查询条件">
       <div class="instant-query-panel__header">
         <h2>查询条件</h2>
         <div v-if="backendAnalysisGranularity !== 'STATIC'" class="instant-query-panel__context">
@@ -367,6 +367,7 @@
 </template>
 
 <script setup>
+import { canRequest } from '@/idmp/auth/session'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from '@/idmp/utils/message'
@@ -1131,6 +1132,7 @@ function reportQueryPayload() {
 }
 
 async function loadRangeSummary() {
+  if (!canRequest('POST', '/indicator-versions/1/query')) return
   const versionId = currentIndicatorVersionId.value
   if (!versionId || (backendAnalysisGranularity.value !== 'STATIC' && !isCompleteDateRange(reportPeriodRange.value))) return
   const requestSequence = ++rangeSummaryRequestSequence
