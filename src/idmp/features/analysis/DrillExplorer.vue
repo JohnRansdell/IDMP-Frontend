@@ -140,6 +140,7 @@ const props = defineProps({
   pathResultIds: { type: Object, default: () => ({}) },
   indicatorName: { type: String, default: '指标' },
   period: { type: String, default: '' },
+  granularity: { type: String, default: '' },
   startLevel: { type: String, default: 'HOSPITAL' },
   startParentKeys: { type: Object, default: () => ({}) },
   startFilters: { type: Object, default: () => ({}) },
@@ -188,6 +189,7 @@ const availableNextLevels = computed(() => {
   return limitDrillNextLevels(result.value.nextLevels, pathCode, props.maxLevels?.[pathCode])
 })
 const resolvedPeriod = computed(() => {
+  if (props.granularity === 'STATIC') return '静态结果'
   const start = result.value.context?.periodStart
   const end = result.value.context?.periodEnd
   return start && end ? `${start} ～ ${end}` : (props.period || '由结果快照确定')

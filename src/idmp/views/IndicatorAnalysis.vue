@@ -8,7 +8,7 @@
       <template #meta>
         <span>报告期 <strong>{{ reportPeriodLabel }}</strong></span>
         <span v-if="rangeSummary">查询方式 <strong>{{ reportResultModeLabel }}</strong></span>
-        <span v-else>统计粒度 <strong>{{ period }}</strong></span>
+        <span v-else>统计粒度 <strong>{{ backendAnalysisGranularity === 'STATIC' ? '静态' : period }}</strong></span>
         <span>更新时间 <strong>{{ analysisUpdatedAt }}</strong></span>
       </template>
       <template #actions>
@@ -133,7 +133,7 @@
               <h2>指标变化趋势</h2>
               <p>{{ hasPeerTrend ? '展示本院实际值与同级医院均值的周期变化' : '展示本院实际值的周期变化；同级医院基准数据暂未接入' }}</p>
             </div>
-            <div class="trend-controls">
+            <div v-if="backendAnalysisGranularity !== 'STATIC'" class="trend-controls">
               <div class="date-range-fields trend-period-picker" aria-label="趋势时间范围"><el-date-picker v-model="trendMonthRange" type="monthrange" unlink-panels format="YYYY-MM" value-format="YYYY-MM" range-separator="至" start-placeholder="开始月份" end-placeholder="结束月份" size="small" /></div>
               <el-tag v-if="isSourceDefaultTrendRange" size="small" type="info" effect="plain">源数据可用范围</el-tag>
               <el-button size="small" type="primary" @click="applyTrendConditions">应用</el-button>
@@ -310,6 +310,7 @@
             :start-filters="reportFilters"
             :indicator-name="currentProfile.name"
             :period="drillPeriod"
+            :granularity="backendAnalysisGranularity"
             :start-level="drillStartLevel"
             :start-parent-keys="drillParentKeys"
             :max-levels="drillMaxLevels"
@@ -810,7 +811,7 @@ const analysisMetadata = computed(() => {
 const analysisUpdatedAt = computed(() => {
   if (rangeSummary.value) return '后端未返回更新时间'
   const context = backendAnalysis.value?.resultContext || {}
-  return hasBackendAnalysisData.value ? firstPresent(context.activatedAt, analysisOverview.value?.periodEnd, '后端未返回更新时间') : '-'
+  return hasBackendAnalysisData.value ? firstPresent(context.activatedAt, '后端未返回更新时间') : '-'
 })
 const drillPathResultIds = computed(() => {
   const derived = deriveDrillPathResultIds(
@@ -827,7 +828,7 @@ const drillResultId = computed(() => String(
   backendAnalysis.value?.overview?.resultId || backendAnalysis.value?.resultContext?.resultId || ''
 ))
 const drillPeriod = computed(() => String(
-  route.query.period || formatAnalysisPeriod(analysisOverview.value) || backendAnalysis.value?.resultContext?.period ||
+  (backendAnalysisGranularity.value === 'STATIC' ? '静态结果' : route.query.period) || formatAnalysisPeriod(analysisOverview.value) || backendAnalysis.value?.resultContext?.period ||
   '-'
 ))
 const drillMaxLevels = computed(() => {
@@ -1093,6 +1094,7 @@ function normalizeTrendValue(item, unit) {
 function formatTrendPeriodLabel(item, granularity) {
   const start = String(item?.periodStart || '').slice(0, 10)
   const normalizedGranularity = String(granularity || '').toUpperCase()
+  if (normalizedGranularity === 'STATIC') return '静态结果'
   if (normalizedGranularity === 'DAILY') return start || '-'
   if (normalizedGranularity === 'MONTHLY') return start.slice(0, 7) || '-'
   if (normalizedGranularity === 'YEARLY') return start.slice(0, 4) || '-'
@@ -1591,7 +1593,7 @@ async function refreshIndicatorAnalysis({ preserveRangeSummary = false } = {}) {
       void loadDepartmentNames(resolvedAnalysisData.value, refreshSequence)
       if (!trendBackendAnalysis.value) trendBackendAnalysis.value = resolvedAnalysisData.value
       if (resolvedAnalysisData.value?.granularity) reportGranularity.value = String(resolvedAnalysisData.value.granularity)
-      if (!reportPeriodRange.value.length && resolvedAnalysisData.value?.overview?.periodStart && resolvedAnalysisData.value?.overview?.periodEnd) {
+      if (backendAnalysisGranularity.value !== 'STATIC' && !reportPeriodRange.value.length && resolvedAnalysisData.value?.overview?.periodStart && resolvedAnalysisData.value?.overview?.periodEnd) {
         reportPeriodRange.value = [
           normalizeDateValue(resolvedAnalysisData.value.overview.periodStart),
           shiftReportDate(resolvedAnalysisData.value.overview.periodEnd, -1)
@@ -1796,11 +1798,13 @@ function rememberAnalysisPeriod(indicatorId, versionId, range) {
 }
 
 function formatAnalysisPeriod(result) {
+  if (backendAnalysisGranularity.value === 'STATIC') return '静态结果'
   if (!result?.periodStart || !result?.periodEnd) return ''
   return `${String(result.periodStart).slice(0, 10)} ～ ${String(result.periodEnd).slice(0, 10)}`
 }
 
 function formatRange(range) {
+  if (backendAnalysisGranularity.value === 'STATIC') return '静态结果'
   return isCompleteDateRange(range) ? formatPeriodLabel(range[0], range[1]) : ''
 }
 

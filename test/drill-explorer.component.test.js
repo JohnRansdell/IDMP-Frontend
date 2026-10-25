@@ -47,6 +47,16 @@ function create(fetchResultFactors = async () => ({ context: {}, factors: [] }),
 }
 function button(wrapper, text) { return wrapper.findAll('button').find(item => item.text() === text) }
 
+test('static drill displays its mode instead of the persisted sentinel period', async () => {
+  const { wrapper } = create(undefined, { granularity: 'STATIC' }, {
+    context: { periodStart: '1000-01-01T00:00:00', periodEnd: '9999-12-31T23:59:59' }
+  })
+  await flushPromises()
+  assert.match(wrapper.text(), /统计周期：静态结果/)
+  assert.doesNotMatch(wrapper.text(), /1000-01-01|9999-12-31/)
+  wrapper.unmount()
+})
+
 test('built-in and custom drill requests always send the selected path explicitly', async () => {
   for (const [pathCode, level] of [['ORGANIZATION', 'OUT_DEPT'], ['DISEASE', 'SINGLE_DISEASE'], ['CUSTOM_DEPT', 'DEPT']]) {
     const { wrapper, requests } = create(undefined, { startPathCode: pathCode, startLevel: level,
