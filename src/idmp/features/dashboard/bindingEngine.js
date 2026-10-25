@@ -227,6 +227,7 @@ export function compileWidgetData(kind, binding, dataset) {
     const categoryKeys = [...categories.keys()]
     const series = [...splits].flatMap(([splitKey, split]) => binding.measures.map(measure => ({
       field: measure.field,
+      unit: measure.aggregation === 'count' ? '' : dataset.fields.find(field => field.id === measure.field)?.unit || '',
       name: [split, measure.label || dataset.fields.find(field => field.id === measure.field)?.label].filter(value => value !== '').join(' · '),
       values: categoryKeys.map(key => {
         const group = groups.get(JSON.stringify([key, splitKey]))
@@ -267,7 +268,7 @@ export function bindingChartOption(kind, model, options = {}) {
   if (model.status !== 'ready') return {}
   if (kind === 'pie') {
     const tuples = model.dimensionTuples?.filter((_, index) => model.series[0].values[index] !== null) || []
-    return { tooltip: { trigger: 'item' }, legend: { bottom: 0 }, series: [{ type: 'pie', data: model.items.map((item, index) => ({ ...item, dimensionValues: tuples[index] || {} })) }] }
+    return { tooltip: { trigger: 'item', valueFormatter: value => formatDashboardTableMetric(value, { unit: model.series[0]?.unit }) }, legend: { bottom: 0 }, series: [{ type: 'pie', data: model.items.map((item, index) => ({ ...item, dimensionValues: tuples[index] || {} })) }] }
   }
   if (kind === 'funnel') return { tooltip: { trigger: 'item' }, series: [{ type: 'funnel', left: '12%', top: 12, bottom: 12, width: '76%', data: model.items }] }
   if (kind === 'gauge') return { series: [{ type: 'gauge', progress: { show: true }, detail: { valueAnimation: true, formatter: '{value}' }, data: [{ value: model.series[0]?.values[0], name: model.series[0]?.name }] }] }
@@ -289,5 +290,11 @@ export function bindingChartOption(kind, model, options = {}) {
   }
   const dualAxis = ['line', 'bar'].includes(kind) && model.series.some(item => item.axis === 'right')
   const categoryColoredBar = kind === 'bar' && model.series.length === 1
-  return { tooltip: { trigger: 'axis' }, legend: { top: 0 }, grid: { top: 38, bottom: 28, left: 12, right: 16, containLabel: true }, xAxis: { type: 'category', data: model.categories }, yAxis: dualAxis ? [{ type: 'value' }, { type: 'value' }] : { type: 'value' }, series: model.series.map(item => ({ name: item.name, type: kind, data: categoryColoredBar ? item.values.map((value, index) => ({ value, id: chartColorKey('category', model.dimensionTuples?.[index] || model.categories[index]), dimensionValues: model.dimensionTuples?.[index] || {} })) : item.values, ...(dualAxis ? { yAxisIndex: item.axis === 'right' ? 1 : 0 } : {}) })) }
+  const valueAxis = side => {
+    const units = new Set(model.series.filter(item => (item.axis || 'left') === side).map(item => item.unit || ''))
+    const unit = units.size === 1 ? [...units][0] : ''
+    // Format ticks, not data: drill filters and mixed-unit series retain their original values.
+    return { type: 'value', ...(normalizeDashboardMetricUnit(unit) === '%' ? { axisLabel: { formatter: value => formatDashboardTableMetric(value, { unit }) } } : {}) }
+  }
+  return { tooltip: { trigger: 'axis' }, legend: { top: 0 }, grid: { top: 38, bottom: 28, left: 12, right: 16, containLabel: true }, xAxis: { type: 'category', data: model.categories }, yAxis: dualAxis ? [valueAxis('left'), valueAxis('right')] : valueAxis('left'), series: model.series.map(item => ({ name: item.name, type: kind, tooltip: { valueFormatter: value => formatDashboardTableMetric(value, { unit: item.unit }) }, label: { formatter: params => formatDashboardTableMetric(params.value, { unit: item.unit }) }, data: categoryColoredBar ? item.values.map((value, index) => ({ value, id: chartColorKey('category', model.dimensionTuples?.[index] || model.categories[index]), dimensionValues: model.dimensionTuples?.[index] || {} })) : item.values, ...(dualAxis ? { yAxisIndex: item.axis === 'right' ? 1 : 0 } : {}) })) }
 }
