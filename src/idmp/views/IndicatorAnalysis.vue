@@ -61,7 +61,7 @@
           <label>查询方式</label>
           <el-radio-group v-model="reportQueryMode" size="small" aria-label="报告期查询方式" @change="clearInstantQueryResult">
             <el-radio-button value="FORMAL" :disabled="!$can('GET', '/analysis/indicators/1/range-summary')">正式结果</el-radio-button>
-            <el-radio-button value="INSTANT" :disabled="!$can('POST', '/indicator-versions/1/query')">即时计算</el-radio-button>
+            <el-radio-button value="INSTANT" :disabled="!$can('POST', '/indicator-versions/1/query') || hasReportFilters">即时计算</el-radio-button>
           </el-radio-group>
         </div>
         <div v-if="backendAnalysisGranularity !== 'STATIC'" class="instant-query-panel__period">
@@ -79,6 +79,10 @@
               @change="clearInstantQueryResult"
             />
           </div>
+        </div>
+        <div v-if="hasReportFilters" class="instant-query-panel__period">
+          <label>筛选范围</label>
+          <span v-for="(values, field) in reportFilters" :key="field">{{ field }}：{{ Array.isArray(values) ? values.join('、') : values }}</span>
         </div>
         <RuntimeParameterFields v-if="reportQueryMode === 'INSTANT' && indicatorRuntimeParameters.length" v-model="indicatorRuntimeParameterValues" :declarations="indicatorRuntimeParameters" :show-metadata="false" @change="clearInstantQueryResult" />
         <div class="instant-query-panel__actions">
@@ -295,6 +299,7 @@
             :indicator-id="selectedBackendIndicator.id || selectedBackendIndicator.indicatorId"
             :indicator-version-id="currentIndicatorVersionId"
             :indicator-name="currentProfile.name"
+            :filters="reportFilters"
             :enabled="activeTab === 'drill'"
             :initial-period="backendAnalysis?.overview || {}"
             :initial-granularity="backendAnalysisGranularity"
@@ -309,6 +314,7 @@
             v-else-if="drillResultId"
             :result-id="drillResultId"
             :path-result-ids="drillPathResultIds"
+            :start-filters="reportFilters"
             :indicator-name="currentProfile.name"
             :period="drillPeriod"
             :start-level="drillStartLevel"
@@ -397,7 +403,8 @@ import { fetchDepartmentNames } from '@/idmp/api/modules/departments'
 import { isDepartmentCodeField } from '@/idmp/features/shared/departmentDictionary.js'
 import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
 import { resolveIndicatorCalculationMode } from '@/idmp/features/analysis/calculationMode'
-import { departmentAchievement, departmentDrillContext, loadDepartmentComparisons, normalizeDepartmentComparisons } from '@/idmp/features/analysis/departmentRanking'
+import { departmentAchievement, departmentDrillContext, loadDepartmentComparisons, normalizeDepartmentComparisons, resolveAnalysisDrillPaths } from '@/idmp/features/analysis/departmentRanking'
+import { fetchDrillPathVersion } from '@/idmp/api/modules/meta'
 import { DRILL_GRANULARITIES } from '@/idmp/features/analysis/drillPeriods'
 import { useAnalysisPeriod } from '@/idmp/features/analysis/useAnalysisPeriod'
 import CalculationDiagnostics from '@/idmp/features/analysis/CalculationDiagnostics.vue'
@@ -408,7 +415,8 @@ import { resolvePrimaryAnalysisOverview } from '@/idmp/features/dashboard/visual
 import { buildSqlRuntimeParameterValues, collectSqlRuntimeParameters, validateSqlRuntimeParameterValues } from '@/idmp/api/adapters/sqlImport'
 import { exportIndicatorAnalysisPdf } from '@/idmp/api/modules/indicators'
 import { analysisPdfFilename, buildAnalysisPdfReport, downloadAnalysisPdf, renderAnalysisChartPng } from '@/idmp/features/analysis/pdfReport'
-import { analysisReportContext, formalReportGranularity, normalizeAnalysisGranularity } from '@/idmp/features/analysis/reportPeriod.js'
+import { analysisReportContext, formalReportGranularity, normalizeAnalysisGranularity, shiftReportDate, analysisFilterParams, analysisFilters, analysisRouteKey } from '@/idmp/features/analysis/reportPeriod.js'
+import { reportOverview, reportProvenance } from '@/idmp/features/analysis/reportResult.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -417,6 +425,11 @@ const period = ref('月度')
 const reportGranularity = ref(analysisReportContext(route.query).granularity)
 const reportQueryMode = ref(analysisReportContext(route.query).mode)
 const reportSummaryGranularity = ref(analysisReportContext(route.query).summaryGranularity)
+const reportDirty = ref(false)
+const reportFilterParams = computed(() => analysisFilterParams(route.query))
+const reportFilters = computed(() => analysisFilters(route.query))
+const hasReportFilters = computed(() => Object.keys(reportFilters.value).length > 0)
+let localReportRouteKey = ''
 const reportResultModeLabel = computed(() => rangeSummary.value?.executionMode === 'FORMAL_RESULTS' ? '正式结果汇总' : '即时计算')
 const backendAnalysis = ref(null)
 const rangeSummary = ref(null)
@@ -463,7 +476,7 @@ const drillExplorerRef = ref()
 const staticDrillExplorerRef = ref()
 const pdfExportLoading = ref(false)
 const canExportPdf = computed(() => Boolean(selectedBackendIndicator.value && currentIndicatorVersionId.value)
-  && !analysisLoading.value && !rangeSummaryLoading.value && !trendLoading.value)
+  && !analysisLoading.value && !rangeSummaryLoading.value && !trendLoading.value && !reportDirty.value && !rangeSummaryErrorMessage.value)
 
 function parseDrillParentKeys(value) {
   const text = Array.isArray(value) ? value[0] : value
@@ -599,9 +612,11 @@ function clearTrendGrainFilters() {
   applyTrendConditions()
 }
 const analysisOverview = computed(() => resolvePrimaryAnalysisOverview(backendAnalysis.value))
+const currentReportOverview = computed(() => reportOverview(rangeSummary.value, analysisOverview.value,
+  reportDirty.value || rangeSummaryLoading.value || Boolean(rangeSummaryErrorMessage.value)))
 const indicatorDataExplanation = computed(() => createIndicatorDataExplanation({
   analysis: backendAnalysis.value || {},
-  overview: analysisOverview.value,
+  overview: currentReportOverview.value,
   version: backendIndicatorVersion.value || {},
   factorVersions: formulaFactorVersions.value
 }))
@@ -615,7 +630,7 @@ const analysisAvailability = computed(() => rangeSummary.value
       message: rangeSummary.value.message || (rangeSummary.value.status === 'READY' ? `已按指定报告期取得${reportResultModeLabel.value}` : '指定报告期未取得可用结果')
     }
   : backendAnalysis.value ? resolveResultAvailability(backendAnalysis.value) : null)
-const reportPeriodLabel = computed(() => (rangeSummaryLoading.value || rangeSummaryErrorMessage.value ? formatRange(reportPeriodRange.value) : '') || rangeSummaryPeriodLabel.value || formatAnalysisPeriod(analysisOverview.value) || formatRange(reportPeriodRange.value) || '由最新正式结果确定')
+const reportPeriodLabel = computed(() => (reportDirty.value || rangeSummaryLoading.value || rangeSummaryErrorMessage.value ? formatRange(reportPeriodRange.value) : '') || rangeSummaryPeriodLabel.value || formatAnalysisPeriod(analysisOverview.value) || formatRange(reportPeriodRange.value) || '由最新正式结果确定')
 const analysisNotice = computed(() => {
   const availability = analysisAvailability.value
   if (!availability || availability.status === 'ACTIVE_RESULT') return null
@@ -660,6 +675,7 @@ const currentTrend = computed(() => backendTrend.value || emptyTrend())
 // 同级医院均值必须来自正式分析接口；后端接入 peerTrend 后再由适配层填充 backendTrend.peer。
 const hasPeerTrend = computed(() => Boolean(backendTrend.value?.peer?.some(isChartNumber)))
 const primaryMetric = computed(() => {
+  if (reportDirty.value) return { label: `${formatRange(reportPeriodRange.value)}指标值`, value: '-', tone: 'neutral', status: 'PENDING_QUERY', statusLabel: '待查询', periodLabel: formatRange(reportPeriodRange.value) }
   if (rangeSummaryLoading.value || rangeSummaryErrorMessage.value) return {
     label: `${formatRange(reportPeriodRange.value)}指标值`, value: '-', tone: 'neutral',
     status: rangeSummaryLoading.value ? 'LOADING' : 'UNKNOWN', statusLabel: rangeSummaryLoading.value ? '查询中' : '查询失败',
@@ -692,6 +708,7 @@ const primaryMetric = computed(() => {
   return { label: '当前指标值', value: '-', tone: 'neutral', status: 'NO_DATA', statusLabel: '暂无正式结果', periodLabel: '尚未读取到已激活结果' }
 })
 const summaryMetrics = computed(() => {
+  if (reportDirty.value) return [{ label: '查询状态', value: '待查询' }]
   if (rangeSummaryLoading.value || rangeSummaryErrorMessage.value) return [{ label: '查询状态', value: rangeSummaryLoading.value ? '查询中' : '查询失败', description: rangeSummaryErrorMessage.value }]
   if (selectedBackendIndicator.value) {
     if (rangeSummary.value) {
@@ -770,7 +787,7 @@ const rankTableData = computed(() => {
   return []
 })
 
-const analysisSourceLabel = computed(() => rangeSummary.value
+const analysisSourceLabel = computed(() => reportDirty.value ? '待查询' : rangeSummary.value
   ? rangeSummary.value.status === 'READY' ? reportResultModeLabel.value : '区间结果不可用'
   : hasBackendAnalysisData.value ? '已发布结果' : '暂无正式结果')
 const availablePeriodText = computed(() => {
@@ -835,6 +852,7 @@ const currentIndicatorVersionId = computed(() => String(
 const rankPeriodProps = computed(() => ({
   indicatorId: selectedBackendIndicator.value?.id || selectedBackendIndicator.value?.indicatorId || '',
   indicatorVersionId: currentIndicatorVersionId.value,
+  filters: reportFilters.value,
   enabled: activeTab.value === 'rank' && backendAnalysisGranularity.value !== 'STATIC'
 }))
 const { granularity: rankGranularity, selectedPeriod: rankSelectedPeriod, periodOptions: rankPeriodOptions,
@@ -844,11 +862,12 @@ const { granularity: rankGranularity, selectedPeriod: rankSelectedPeriod, period
   loadSelectedPeriod: loadSelectedRankPeriod, retryPeriod: retryRankPeriod } = useAnalysisPeriod({
     get indicatorId() { return rankPeriodProps.value.indicatorId },
     get indicatorVersionId() { return rankPeriodProps.value.indicatorVersionId },
+    get filters() { return rankPeriodProps.value.filters },
     get enabled() { return rankPeriodProps.value.enabled }
   }, async (indicatorId, params) => {
     const data = await fetchIndicatorAnalysis(indicatorId, params)
     const paths = backendIndicatorVersion.value?.drillConfig?.drillPaths || []
-    return { ...data, departmentComparison: await loadDepartmentComparisons(data, paths, searchResultDrill) }
+    return { ...data, departmentComparison: await loadDepartmentComparisons(data, paths, searchResultDrill, analysisFilters(params)) }
   })
 const rankPeriodDescription = computed(() => rankInitialized.value
   ? `${rankGranularityLabel.value} · ${rankSelectedPeriodLabel.value || '暂无周期'} · 科室正式结果`
@@ -963,6 +982,7 @@ async function exportAnalysisPdf() {
       versionId, primaryMetric: primaryMetric.value, summaryMetrics: summaryMetrics.value,
       metadata: [
         ['报告期', reportPeriodLabel.value], ['结果来源', analysisSourceLabel.value],
+        ['报告筛选范围', hasReportFilters.value ? JSON.stringify(reportFilters.value) : '当前账号可访问范围'],
         ['运行参数', rangeSummary.value ? JSON.stringify(reportParameterSnapshot.value) : '未执行即时查询'],
         ['趋势时间', formatRange(analysisPeriodRange.value) || '全部已加载正式周期'],
         ['趋势统计粒度', backendAnalysisGranularity.value === 'STATIC' ? '静态' : period.value],
@@ -975,7 +995,7 @@ async function exportAnalysisPdf() {
       provenance: [
         ['计算公式', indicatorDataExplanation.value.formulaText],
         ...indicatorDataExplanation.value.operands.map(item => [item.role === 'NUMERATOR' ? '分子因子版本' : item.role === 'DENOMINATOR' ? '分母因子版本' : '参与因子版本', item.factorVersionIds.join('、')]),
-        ['正式分析结果 ID', overview.resultId], ['正式分析快照 ID', overview.snapshotId],
+        ...reportProvenance(rangeSummary.value, overview),
         ['计算批次', analysisMetadata.value.batch], ['数据更新时间', analysisUpdatedAt.value],
         ['结果说明', analysisErrorMessage.value || rangeSummaryErrorMessage.value || analysisNotice.value?.message || '结果可用']
       ], drillSection: drill?.section
@@ -1128,14 +1148,16 @@ async function applyReportPeriod() {
   if (parameterMessage) return ElMessage.warning(parameterMessage)
   if (temporal && (route.query.periodStart !== reportPeriodRange.value[0] || route.query.periodEnd !== reportPeriodRange.value[1]
     || route.query.summaryMode !== reportQueryMode.value || route.query.granularity !== backendAnalysisGranularity.value)) {
-    await router.replace({ path: '/analysis', query: {
+    const query = {
       ...route.query,
       granularity: backendAnalysisGranularity.value,
       summaryMode: reportQueryMode.value,
       summaryGranularity: reportSummaryGranularity.value,
       periodStart: reportPeriodRange.value[0],
       periodEnd: reportPeriodRange.value[1]
-    } })
+    }
+    localReportRouteKey = analysisRouteKey(query)
+    await router.replace({ path: '/analysis', query })
   }
   void loadRangeSummary()
 }
@@ -1153,6 +1175,11 @@ function reportQueryPayload() {
 }
 
 async function loadRangeSummary() {
+  reportDirty.value = false
+  if (reportQueryMode.value === 'INSTANT' && hasReportFilters.value) {
+    rangeSummaryErrorMessage.value = '带看板筛选的分析仅支持正式结果查询'
+    return
+  }
   if (reportQueryMode.value === 'FORMAL'
     ? !canRequest('GET', '/analysis/indicators/1/range-summary') : !canRequest('POST', '/indicator-versions/1/query')) {
     rangeSummaryErrorMessage.value = '当前账号没有所选查询方式的访问权限'
@@ -1172,6 +1199,7 @@ async function loadRangeSummary() {
     if (reportQueryMode.value === 'FORMAL' && backendAnalysisGranularity.value !== 'STATIC') {
       const result = await fetchIndicatorRangeSummary(String(selectedBackendIndicator.value.id || selectedBackendIndicator.value.indicatorId), {
         indicatorVersionId: versionId, periodStart, periodEnd,
+        ...reportFilterParams.value,
         granularity: formalReportGranularity([periodStart, periodEnd], reportSummaryGranularity.value)
       })
       if (requestSequence === rangeSummaryRequestSequence) {
@@ -1202,6 +1230,7 @@ async function loadRangeSummary() {
 }
 
 function clearInstantQueryResult() {
+  reportDirty.value = true
   ++rangeSummaryRequestSequence
   rangeSummary.value = null
   rangeSummaryErrorMessage.value = ''
@@ -1408,7 +1437,7 @@ function getBackendIndicatorKey(indicator) {
 }
 
 function buildAnalysisParams(range = [], versionId = currentIndicatorVersionId.value, granularity = backendAnalysisGranularity.value) {
-  const params = { granularity }
+  const params = { granularity, ...reportFilterParams.value }
   if (versionId) params.indicatorVersionId = versionId
   if (granularity !== 'STATIC' && isCompleteDateRange(range)
     && !(isSourceDefaultTrendRange.value && range === analysisPeriodRange.value)) {
@@ -1476,6 +1505,7 @@ async function refreshIndicatorAnalysis({ preserveRangeSummary = false } = {}) {
   analysisLoading.value = true
   backendAnalysis.value = null
   if (!preserveRangeSummary) {
+    reportDirty.value = false
     rangeSummary.value = null
     rangeSummaryLoading.value = false
     rangeSummaryErrorMessage.value = ''
@@ -1495,12 +1525,17 @@ async function refreshIndicatorAnalysis({ preserveRangeSummary = false } = {}) {
   try {
     if (initialVersionId) {
       try {
-        backendIndicatorVersion.value = await fetchAnalysisIndicatorVersion(initialVersionId)
+        const version = await fetchAnalysisIndicatorVersion(initialVersionId)
+        if (refreshSequence !== analysisRefreshSequence) return
+        backendIndicatorVersion.value = version
       } catch {
+        if (refreshSequence !== analysisRefreshSequence) return
         backendIndicatorVersion.value = null
       }
     }
     const calculationMode = resolveIndicatorCalculationMode(backendIndicatorVersion.value, backendIndicator, route.query.granularity)
+    if (reportQueryMode.value === 'INSTANT' && (hasReportFilters.value || !canRequest('POST', '/indicator-versions/1/query'))
+      && calculationMode !== 'STATIC') reportQueryMode.value = 'FORMAL'
     if (calculationMode === 'STATIC') {
       reportQueryMode.value = 'INSTANT'
       reportGranularity.value = 'STATIC'
@@ -1570,7 +1605,7 @@ async function refreshIndicatorAnalysis({ preserveRangeSummary = false } = {}) {
       if (!reportPeriodRange.value.length && resolvedAnalysisData.value?.overview?.periodStart && resolvedAnalysisData.value?.overview?.periodEnd) {
         reportPeriodRange.value = [
           normalizeDateValue(resolvedAnalysisData.value.overview.periodStart),
-          normalizeDateValue(resolvedAnalysisData.value.overview.periodEnd)
+          shiftReportDate(resolvedAnalysisData.value.overview.periodEnd, -1)
         ]
       }
       const versionId = String(
@@ -1580,8 +1615,11 @@ async function refreshIndicatorAnalysis({ preserveRangeSummary = false } = {}) {
       if (versionId) {
         if (backendIndicator && versionId !== initialVersionId) {
           try {
-            backendIndicatorVersion.value = await fetchAnalysisIndicatorVersion(versionId)
+            const version = await fetchAnalysisIndicatorVersion(versionId)
+            if (refreshSequence !== analysisRefreshSequence) return
+            backendIndicatorVersion.value = version
           } catch {
+            if (refreshSequence !== analysisRefreshSequence) return
             backendIndicatorVersion.value = null
           }
         }
@@ -1592,6 +1630,7 @@ async function refreshIndicatorAnalysis({ preserveRangeSummary = false } = {}) {
 
     if (backendIndicatorVersion.value) await loadAnalysisFormulaFactorVersions(backendIndicatorVersion.value, refreshSequence)
 
+    if (refreshSequence !== analysisRefreshSequence) return
     analysisLoading.value = false
   } catch (error) {
     if (refreshSequence !== analysisRefreshSequence) return
@@ -1608,7 +1647,9 @@ async function refreshIndicatorAnalysis({ preserveRangeSummary = false } = {}) {
 async function fetchAnalysisIndicatorVersion(versionId) {
   const version = await fetchIndicatorVersion(versionId)
   const formula = extractIndicatorFormula(version)
-  return { ...version, formula: formula || version?.formula || version?.formulaAst }
+  const paths = await resolveAnalysisDrillPaths(version.drillConfig?.drillPaths || [], fetchDrillPathVersion)
+  return { ...version, formula: formula || version?.formula || version?.formulaAst,
+    drillConfig: { ...version.drillConfig, drillPaths: paths } }
 }
 
 async function loadAnalysisFormulaFactorVersions(version, refreshSequence) {
@@ -1659,12 +1700,16 @@ async function loadAvailablePeriod(versionId, refreshSequence) {
 
 onMounted(loadBackendAnalysisIndicators)
 
-watch(indicatorCode, () => {
+watch(() => analysisRouteKey(route.query), key => {
+  if (key === localReportRouteKey) { localReportRouteKey = ''; return }
+  localReportRouteKey = ''
   const reportContext = analysisReportContext(route.query)
   reportGranularity.value = reportContext.granularity
   reportQueryMode.value = reportContext.mode
   reportSummaryGranularity.value = reportContext.summaryGranularity
   selectedIndicatorCode.value = indicatorCode.value
+  drillStartLevel.value = String(route.query.drillStartLevel || 'HOSPITAL').toUpperCase()
+  drillParentKeys.value = parseDrillParentKeys(route.query.drillParentKeys)
   analysisPeriodRange.value = initialAnalysisPeriodRange()
   trendPeriodDraft.value = [...analysisPeriodRange.value]
   isSourceDefaultTrendRange.value = false

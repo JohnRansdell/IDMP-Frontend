@@ -21,7 +21,22 @@ export function analysisReportContext(query = {}) {
   const legacyCustom = String(query.granularity).toUpperCase() === 'CUSTOM'
   const range = query.periodStart && query.periodEnd ? [String(query.periodStart).slice(0, 10),
     legacyCustom ? shiftReportDate(query.periodEnd, -1) : String(query.periodEnd).slice(0, 10)] : []
-  return { range, mode: legacyCustom || query.summaryMode === 'FORMAL' ? 'FORMAL' : 'INSTANT',
+  return { range, mode: !legacyCustom && query.summaryMode === 'INSTANT' ? 'INSTANT' : 'FORMAL',
     granularity: normalizeAnalysisGranularity(query.granularity),
     summaryGranularity: String(query.summaryGranularity || (legacyCustom ? 'CUSTOM' : query.granularity) || 'CUSTOM').toUpperCase() }
+}
+
+export function analysisFilterParams(query = {}) {
+  return Object.fromEntries(Object.entries(query).filter(([key]) => key.startsWith('filter.')))
+}
+
+export function analysisFilters(query = {}) {
+  return Object.fromEntries(Object.entries(analysisFilterParams(query)).map(([key, value]) => [key.slice(7), value]))
+}
+
+export function analysisRouteKey(query = {}) {
+  const fields = ['indicator', 'indicatorVersionId', 'periodStart', 'periodEnd', 'granularity', 'summaryMode', 'summaryGranularity',
+    'trendStart', 'trendEnd', 'drillResultId', 'drillStartLevel', 'drillParentKeys']
+  return JSON.stringify(Object.entries(query).filter(([key]) => fields.includes(key) || key.startsWith('filter.'))
+    .sort(([a], [b]) => a.localeCompare(b)))
 }

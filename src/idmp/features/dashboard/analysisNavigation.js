@@ -49,6 +49,7 @@ export function buildIndicatorAnalysisRouteQuery(source = {}, context = {}) {
     indicator,
     ...(indicatorName ? { indicatorName } : {}),
     ...(indicatorVersionId ? { indicatorVersionId } : {}),
+    ...Object.fromEntries(Object.entries(context.filters || {}).map(([field, value]) => [`filter.${field}`, value])),
     ...(periodStart && periodEnd ? { periodStart, periodEnd, summaryMode: 'FORMAL',
       summaryGranularity: formalReportGranularity([periodStart, periodEnd], granularity),
       trendStart: periodStart, trendEnd: periodEnd } : {}),

@@ -47,6 +47,18 @@ function create(fetchResultFactors = async () => ({ context: {}, factors: [] }),
 }
 function button(wrapper, text) { return wrapper.findAll('button').find(item => item.text() === text) }
 
+test('built-in and custom drill requests always send the selected path explicitly', async () => {
+  for (const [pathCode, level] of [['ORGANIZATION', 'OUT_DEPT'], ['DISEASE', 'SINGLE_DISEASE'], ['CUSTOM_DEPT', 'DEPT']]) {
+    const { wrapper, requests } = create(undefined, { startPathCode: pathCode, startLevel: level,
+      configuredPaths: [{ pathCode, levels: [{ levelCode: level }] }] })
+    await flushPromises()
+    assert.equal(requests[0].payload.pathCode, pathCode)
+    assert.equal(requests[0].payload.currentLevel, level)
+    assert.deepEqual(requests[0].payload.filters, { OUT_DEPT_CODE: '17' })
+    wrapper.unmount()
+  }
+})
+
 test('factor tracing is a separate command, not a drill path option', async () => {
   const { wrapper, requests } = create()
   await flushPromises()

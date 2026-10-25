@@ -1,5 +1,6 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { DRILL_GRANULARITIES, drillPeriodKey, drillPeriodOptions } from './drillPeriods.js'
+import { shiftReportDate } from './reportPeriod.js'
 
 export function useAnalysisPeriod(props, fetchIndicatorAnalysis) {
   const granularity = ref('MONTHLY')
@@ -22,7 +23,8 @@ export function useAnalysisPeriod(props, fetchIndicatorAnalysis) {
     if (cache.has(key)) return cache.get(key)
     const context = contextKey
     const data = await fetchIndicatorAnalysis(props.indicatorId, {
-      ...params, ...(props.indicatorVersionId ? { indicatorVersionId: props.indicatorVersionId } : {})
+      ...params, ...(props.indicatorVersionId ? { indicatorVersionId: props.indicatorVersionId } : {}),
+      ...Object.fromEntries(Object.entries(props.filters || {}).map(([field, value]) => [`filter.${field}`, value]))
     })
     if (context === contextKey) cache.set(key, data)
     return data
@@ -61,7 +63,7 @@ export function useAnalysisPeriod(props, fetchIndicatorAnalysis) {
     if (!selected) return
     // 多周期分析的维度结果只属于最新一期；旧周期必须重新定位正式结果。
     const data = drillPeriodKey(allPeriods?.overview) === selected.value ? allPeriods
-      : await fetchAnalysis({ granularity: granularity.value, periodStart: selected.periodStart, periodEnd: selected.periodEnd })
+      : await fetchAnalysis({ granularity: granularity.value, periodStart: selected.periodStart, periodEnd: shiftReportDate(selected.periodEnd, -1) })
     if (currentRequest === requestId) analysis.value = data
   }
 
@@ -89,8 +91,8 @@ export function useAnalysisPeriod(props, fetchIndicatorAnalysis) {
     return selectedPeriod.value ? loadSelectedPeriod() : loadPeriods()
   }
 
-  watch(() => [props.indicatorId, props.indicatorVersionId, props.enabled], () => {
-    const nextContext = `${props.indicatorId}:${props.indicatorVersionId}`
+  watch(() => [props.indicatorId, props.indicatorVersionId, props.enabled, JSON.stringify(props.filters || {})], () => {
+    const nextContext = `${props.indicatorId}:${props.indicatorVersionId}:${JSON.stringify(props.filters || {})}`
     if (nextContext !== contextKey) {
       requestId += 1
       contextKey = nextContext

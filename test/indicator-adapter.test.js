@@ -359,7 +359,7 @@ test('analysis explanation keeps ratio definitions separate from official result
   })
 
   assert.equal(explanation.type, 'RATIO')
-  assert.equal(explanation.formulaText, '男性出院病案人次 ÷ 全部出院病案人次 × 100%')
+  assert.equal(explanation.formulaText, '(男性出院病案人次 ÷ 全部出院病案人次) × 100%')
   assert.deepEqual(explanation.operands.map((item) => item.factorNames), [['男性出院病案人次'], ['全部出院病案人次']])
   assert.equal(explanation.operands[0].value, 0)
   assert.equal(explanation.operands[0].hasResultValue, true)
@@ -379,6 +379,6 @@ test('analysis explanation lists non-ratio factors and falls back to version ids
   assert.deepEqual(collectFormulaFactorVersionIds(formula), ['left-version', 'right-version'])
   assert.equal(explanation.type, 'FACTORS')
   assert.deepEqual(explanation.operands[0].factorVersionIds, ['left-version', 'right-version'])
-  assert.match(explanation.formulaText, /参与因子/)
+  assert.match(explanation.formulaText, /参与因子（版本 left-version） \+ 参与因子（版本 right-version）/)
   assert.match(explanation.operands[0].factorNames[0], /版本 left-version/)
 })

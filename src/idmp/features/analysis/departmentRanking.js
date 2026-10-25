@@ -1,6 +1,19 @@
 import { deriveDrillPathResultIds } from '../../api/adapters/drill.js'
 import { drillPeriodKey } from './drillPeriods.js'
 
+export async function resolveAnalysisDrillPaths(paths = [], fetchPathVersion) {
+  return Promise.all(paths.map(async path => {
+    if (path.levels?.length || !path.pathVersionId) return path
+    const metadata = await fetchPathVersion(path.pathVersionId)
+    if (!metadata?.levels?.length) throw new Error('指标绑定的下钻路径未返回层级配置')
+    return { ...path, levels: metadata.levels.map(level => ({ ...level,
+      dimensionFieldCode: level.dimensionFieldCode || level.dimensionSemanticFieldCode,
+      memberKeyFieldCode: level.memberKeyFieldCode || level.memberKeySemanticFieldCode,
+      displayFieldCode: level.displayFieldCode || level.displaySemanticFieldCode
+    })) }
+  }))
+}
+
 function fieldText(value) {
   if (value == null) return ''
   const text = String(value).trim()
@@ -53,7 +66,7 @@ export function departmentDrillDefinition(paths = []) {
   return null
 }
 
-export async function loadDepartmentComparisons(analysis, paths, searchDrill) {
+export async function loadDepartmentComparisons(analysis, paths, searchDrill, filters = {}) {
   const period = drillPeriodKey(analysis?.overview)
   const direct = normalizeDepartmentComparisons((analysis?.departmentComparison || []).filter(row => drillPeriodKey(row) === period))
   if (direct.length) return direct
@@ -69,9 +82,9 @@ export async function loadDepartmentComparisons(analysis, paths, searchDrill) {
   let receivedCount = 0
   for (let pageNum = 1; pageNum <= 100; pageNum += 1) {
     const result = await searchDrill(anchor, {
-      ...(definition.path.pathCode.startsWith('CUSTOM_') ? { pathCode: definition.path.pathCode } : {}),
+      pathCode: definition.path.pathCode,
       currentLevel: definition.level.levelCode,
-      parentKeys: {}, filters: {}, pageNum, pageSize: 100,
+      parentKeys: {}, filters, pageNum, pageSize: 100,
       sort: [{ field: 'indicatorValue', direction: 'DESC' }]
     })
     if (drillPeriodKey(result.context) !== period) throw new Error('科室结果的统计周期不一致，请刷新后重试。')

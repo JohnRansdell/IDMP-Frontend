@@ -1,6 +1,18 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { fetchAllPages } from '../src/idmp/api/pagination.js'
+import { readFile } from 'node:fs/promises'
+
+test('warning indicator selection uses the all-pages API beyond 200 versions', async () => {
+  const source = await readFile(new URL('../src/idmp/views/AlertCenter.vue', import.meta.url), 'utf8')
+  assert.match(source, /import \{ fetchAllIndicatorVersions \}/)
+  assert.match(source, /await fetchAllIndicatorVersions\(\{ publicationStatus: 'PUBLISHED', size: 200 \}\)/)
+  for (const total of [201, 401, 601]) {
+    const records = Array.from({ length: total }, (_, index) => ({ id: String(index + 1), name: `中文指标${index + 1}` }))
+    const result = await fetchAllPages(async ({ page, size }) => ({ records: records.slice((page - 1) * size, page * size), total, pageSize: size, pageNum: page }), { publicationStatus: 'PUBLISHED', size: 200 })
+    assert.deepEqual(result, records)
+  }
+})
 
 test('loads every backend page, preserving filters and opaque resource IDs', async () => {
   const requests = []

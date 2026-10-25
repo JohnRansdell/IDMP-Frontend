@@ -1,4 +1,5 @@
 import { normalizeDimensionGrain, serializeDrillPaths } from '../../features/indicator/grouping.js'
+import { formulaChildren, arithmeticFormulaText } from '../../features/indicator/arithmeticFormula.js'
 
 const runtimeEnv = typeof import.meta.env === 'object' && import.meta.env ? import.meta.env : {}
 
@@ -91,13 +92,17 @@ export function createIndicatorDataExplanation({ analysis = {}, overview = null,
   const display = formula?.display || {}
   const isRatio = String(root?.nodeType || '').toUpperCase() === 'BINARY' && String(root?.operator || '').toUpperCase() === 'DIV'
   const multiplier = String(display.multiplier || '')
+  const ids = collectFormulaFactorVersionIds(formula)
+  const factorLabels = ids.map(id => ({ versionId: id, name: resolveFactorVersionName(factorVersions?.[id], id, 'FACTOR') }))
+  const formulaText = root?.nodeType ? arithmeticFormulaText(root, factorLabels) +
+    (multiplier === '100' || String(display.format || '').toUpperCase() === 'PERCENT' ? ' × 100%' : multiplier && multiplier !== '1' ? ` × ${multiplier}` : '') : ''
 
   if (isRatio) {
     const numerator = createExplanationOperand('NUMERATOR', collectFormulaFactorIds(root.left), result, factorVersions)
     const denominator = createExplanationOperand('DENOMINATOR', collectFormulaFactorIds(root.right), result, factorVersions)
     return {
       type: 'RATIO',
-      formulaText: `${operandNames(numerator)} ÷ ${operandNames(denominator)}${multiplier === '100' || String(display.format || '').toUpperCase() === 'PERCENT' ? ' × 100%' : ''}`,
+      formulaText,
       operands: [numerator, denominator]
     }
   }
@@ -105,7 +110,7 @@ export function createIndicatorDataExplanation({ analysis = {}, overview = null,
   const factors = createExplanationOperand('FACTOR', collectFormulaFactorIds(root), result, factorVersions)
   return {
     type: 'FACTORS',
-    formulaText: factors.factorNames.length ? `参与因子：${factors.factorNames.join('、')}` : '当前指标版本未返回可解析的公式因子。',
+    formulaText: formulaText || (factors.factorNames.length ? `参与因子：${factors.factorNames.join('、')}` : '当前指标版本未返回可解析的公式因子。'),
     operands: factors.factorVersionIds.length ? [factors] : []
   }
 }
@@ -122,8 +127,7 @@ function collectFormulaFactorIds(node, ids = []) {
     const id = node.factorVersionId ?? node.versionId ?? node.refVersionId
     if (id !== undefined && id !== null && id !== '') ids.push(id)
   }
-  collectFormulaFactorIds(node.left, ids)
-  collectFormulaFactorIds(node.right, ids)
+  formulaChildren(node).forEach(child => collectFormulaFactorIds(child, ids))
   if (Array.isArray(node.children)) node.children.forEach((child) => collectFormulaFactorIds(child, ids))
   return ids
 }
@@ -140,10 +144,6 @@ function createExplanationOperand(role, ids, result, factorVersions) {
 function resolveFactorVersionName(factorVersion, versionId, role) {
   return factorVersion?.factorName || factorVersion?.name || factorVersion?.factor?.name || factorVersion?.factor?.factorName || factorVersion?.factorCode || factorVersion?.code ||
     `${role === 'NUMERATOR' ? '分子' : role === 'DENOMINATOR' ? '分母' : '参与'}因子（版本 ${versionId}）`
-}
-
-function operandNames(operand) {
-  return operand.factorNames.length ? operand.factorNames.join(' + ') : operand.role === 'NUMERATOR' ? '分子因子' : '分母因子'
 }
 
 export function normalizeIndicatorTrialResults(payload = {}) {
@@ -303,7 +303,8 @@ export function normalizeIndicatorRangeSummaryParams(params = {}) {
     indicatorVersionId: params.indicatorVersionId,
     ...(params.granularity ? { granularity: params.granularity } : {}),
     periodStart: params.periodStart,
-    periodEnd: params.periodEnd
+    periodEnd: params.periodEnd,
+    ...Object.fromEntries(Object.entries(params).filter(([key]) => key.startsWith('filter.')))
   })
 }
 

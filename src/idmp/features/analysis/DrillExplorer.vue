@@ -235,7 +235,7 @@ function formulaRoleLabel(role) {
 
 function buildPayload() {
   const payload = {
-    ...(lastDrillDimension.value.startsWith('CUSTOM_') ? { pathCode: lastDrillDimension.value } : {}),
+    pathCode: lastDrillDimension.value,
     parentKeys: parentKeys.value,
     filters: { ...props.startFilters },
     pageNum: pageNum.value,

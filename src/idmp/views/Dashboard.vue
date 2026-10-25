@@ -1586,7 +1586,7 @@ function canOpenWidgetAnalysis(widget) {
 }
 
 function goWidgetAnalysis(widget) {
-  if (isEditing.value) return
+  if (isEditing.value || remoteQueryLoading.value) return
   const source = getWidgetSource(widget) || {
     code: widget.sourceCode || '',
     indicatorCode: widget.sourceCode || '',
@@ -1595,7 +1595,10 @@ function goWidgetAnalysis(widget) {
   }
   const result = dashboardQueryResult.value?.widgets?.[widget.id]
   const drillContext = result?.drillContext || result?.rows?.find(row => row?.drillContext)?.drillContext || null
-  goIndicatorAnalysis(source, widget.config?.backendQuery, drillContext)
+  const planned = buildRemoteWidgetQuery(widget, remoteWidgetQueryContext(remoteSelectedPeriod(widget), widget.sourceCode))
+  if (!planned.query) return ElMessage.warning(planned.error || '当前组件筛选范围没有交集')
+  if (widget.config?.dataBinding?.filters?.length) return ElMessage.warning('该组件包含独立比较筛选，暂不支持保持此口径跳转分析页')
+  goIndicatorAnalysis(source, widget.config?.backendQuery, drillContext, planned.query)
 }
 
 function goPrimaryMetricAnalysis() {
@@ -3368,13 +3371,13 @@ const goWarningEvent = (eventId) => {
   if (isEditing.value || dashboardStatus.value !== 'ready' || !/^[1-9]\d*$/.test(String(eventId || ''))) return
   router.push({ name: 'AlertCenter', query: { eventId: String(eventId) } })
 }
-const goIndicatorAnalysis = (indicator, backendQuery = {}, drillContext = null) => {
+const goIndicatorAnalysis = (indicator, backendQuery = {}, drillContext = null, queryContext = null) => {
   if (isEditing.value || medicalMode.value) return
   const source = typeof indicator === 'object' && indicator ? indicator : getDashboardIndicatorSource(indicator)
   if (!source?.analysisIndicatorId || !['indicator-catalog', 'dashboard-data-source', 'backend'].includes(source.origin) || (source.origin === 'backend' && dashboardStatus.value !== 'ready')) return
-  const context = ['FIXED', 'INDEPENDENT'].includes(backendQuery?.periodMode)
+  const context = queryContext || (['FIXED', 'INDEPENDENT'].includes(backendQuery?.periodMode)
     ? buildIndicatorAnalysisPeriodContext(remotePeriodRange.value, backendQuery)
-    : remoteSelectedPeriod()
+    : remoteSelectedPeriod())
   const query = buildIndicatorAnalysisRouteQuery(source || { code: indicator }, context)
   if (!query || source?.analysisEnabled === false) return
   router.push({

@@ -97,7 +97,7 @@ import { fetchDepartmentNames } from '@/idmp/api/modules/departments.js'
 import { isDepartmentCodeField } from '@/idmp/features/shared/departmentDictionary.js'
 import { warningEventCondition, warningEventDimensions, warningEventPeriod, warningEventScope } from '@/idmp/features/warnings/eventDetail.js'
 import { notifyNotificationsRead } from '@/idmp/layout/shellState.js'
-import { fetchAllIndicatorVersions as fetchIndicatorVersionList } from '@/idmp/api/modules/indicators'
+import { fetchAllIndicatorVersions } from '@/idmp/api/modules/indicators'
 import { acknowledgeWarningEvent, closeWarningEvent, createWarningRule, disableWarningRule, enableWarningRule, fetchNotifications, fetchWarningDeliveries, fetchWarningEvent, fetchWarningRule, fetchWarningRules, fetchWarnings, fetchWarningRecipients, markAllNotificationsRead, markNotificationRead, publishWarningRuleVersion, updateWarningRuleVersion } from '@/idmp/api/modules/warnings'
 import { WARNING_EVENT_STATUSES, WARNING_PERIOD_TYPES, WARNING_SEVERITIES, WARNING_TYPES, buildWarningRulePayload, normalizePage, normalizeWarningRule, validateWarningRuleForm, warningLabel, warningRuleCapabilities, warningRecipientLabel } from '@/idmp/api/adapters/warning'
 
@@ -151,7 +151,7 @@ function ruleWorkflowHint(rule) { const capabilities = ruleCapabilities(rule); i
 
 async function bootstrap() { await Promise.all([loadEvents(), loadRules(), loadIndicatorVersions(), loadUsers()]) }
 async function loadIndicatorVersions() {
-  try { indicatorVersions.value = normalizeList(await fetchIndicatorVersionList({ publicationStatus: 'PUBLISHED', page: 1, size: 200 })).map(item => ({ ...item, id: opaqueId(item.id || item.versionId || item.indicatorVersionId) })).filter(item => item.id) }
+  try { indicatorVersions.value = normalizeList(await fetchAllIndicatorVersions({ publicationStatus: 'PUBLISHED', size: 200 })).map(item => ({ ...item, id: opaqueId(item.id || item.versionId || item.indicatorVersionId) })).filter(item => item.id) }
   catch (error) { ElMessage.warning(error?.message || '已发布指标版本加载失败；可手工输入版本 ID') }
 }
 async function loadUsers() {
