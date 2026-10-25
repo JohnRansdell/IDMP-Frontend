@@ -142,6 +142,30 @@ try {
   evidence.push({ name: '排名下钻按需加载且已完成结果不重复请求', snapshot: await state() })
   await page.screenshot({ path: `${folder}/请求状态-下钻.png`, fullPage: true })
 
+  await page.getByRole('tab', { name: '科室排名', exact: true }).click()
+  const expectedRow = (await state()).rankRows[0]
+  assert.ok(expectedRow.drillContext?.resultId)
+  const drilled = page.waitForRequest(request => /\/drill\/search/.test(request.url()))
+  await page.locator('.rank-table .action-link').first().click()
+  const drillRequest = await drilled
+  const payload = drillRequest.postDataJSON()
+  assert.ok(drillRequest.url().includes(expectedRow.drillContext.resultId))
+  assert.equal(payload.currentLevel, expectedRow.drillContext.currentLevel)
+  assert.equal(payload.pathCode, expectedRow.drillContext.pathCode)
+  for (const [key, value] of Object.entries(expectedRow.drillContext.parentKeys)) assert.equal(payload.parentKeys[key], value)
+  await page.waitForFunction(() => {
+    const s = document.querySelector('.drill-explorer')?.__vueParentComponent?.setupState
+    return s && !s.loading && !s.errorMessage && s.result.records.length > 0
+  }, null, { timeout: 90000 })
+  const detail = await page.locator('.drill-explorer').evaluate(node => {
+    const s = node.__vueParentComponent.setupState
+    return { context: s.result.context, records: s.result.records }
+  })
+  assert.equal(String(detail.context.resultId), expectedRow.drillContext.resultId)
+  assert.equal(detail.context.periodStart, expectedRow.drillContext.period.periodStart)
+  assert.equal(detail.context.periodEnd, expectedRow.drillContext.period.periodEnd)
+  evidence.push({ name: '排名查看明细保留结果周期科室路径并读取真实医生结果', row: expectedRow, payload, detail })
+
   await page.getByRole('tab', { name: '趋势分析', exact: true }).click()
   const previousIndicator = delayTrend('2026-06')
   await applyMonth('2026-06')

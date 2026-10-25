@@ -1,5 +1,6 @@
 import { deriveDrillPathResultIds, normalizeDrillLevelDefinition } from '../../api/adapters/drill.js'
 import { drillPeriodKey } from './drillPeriods.js'
+import { formatResultNumber, formatResultValue, hasResultDisplay } from '../shared/resultPresentation.js'
 import { assertDrillResponseContext, buildDrillRequest, drillMemberField, drillScope } from './drillContext.js'
 
 export async function resolveAnalysisDrillPaths(paths = [], fetchPathVersion) {
@@ -10,6 +11,30 @@ export async function resolveAnalysisDrillPaths(paths = [], fetchPathVersion) {
     if (!metadata?.levels?.length) throw new Error('指标绑定的下钻路径未返回层级配置')
     return { ...path, levels: metadata.levels.map(normalizeDrillLevelDefinition) }
   }))
+}
+
+export function createDepartmentRankRows({ comparisons, analysis = {}, paths = [], granularity, unit, display }) {
+  if (Array.isArray(comparisons) && comparisons.length > 0) {
+    return [...comparisons].sort((left, right) => {
+      const leftValue = Number(left.value)
+      const rightValue = Number(right.value)
+      if (Number.isFinite(leftValue) && Number.isFinite(rightValue) && leftValue !== rightValue) return rightValue - leftValue
+      return String(left.departmentName).localeCompare(String(right.departmentName), 'zh-CN')
+    }).map((item, index) => ({
+      rank: index + 1,
+      departmentKey: item.departmentCode,
+      department: item.departmentName,
+      hospitalCode: item.dimensions?.hospital_code || item.dimensions?.HOSPITAL_CODE || '',
+      departmentCode: item.departmentCode,
+      rate: hasResultDisplay(item.displayValue) ? item.displayValue : formatResultValue(item.value, { unit, display }),
+      numerator: item.numeratorValue == null ? '-' : formatResultNumber(item.numeratorValue, { maximumFractionDigits: 3 }),
+      denominator: item.denominatorValue == null ? '-' : formatResultNumber(item.denominatorValue, { maximumFractionDigits: 3 }),
+      change: '-',
+      status: departmentAchievement(item, analysis),
+      drillContext: departmentDrillContext(item, paths, granularity)
+    }))
+  }
+  return []
 }
 
 function fieldText(value) {

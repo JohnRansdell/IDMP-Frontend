@@ -32,8 +32,8 @@ try {
     }, null, { timeout: 90000 })
     const state = await page.locator('.indicator-analysis').evaluate(node => {
       const s = node.__vueParentComponent.setupState
-      return { metric: s.primaryMetric, overview: s.currentReportOverview, trend: s.currentTrend,
-        trendRows: s.trendTableRows, series: s.trendSeries, profile: s.currentProfile, display: s.metricDisplay,
+      return { metric: s.primaryMetric, overview: s.currentReportOverview, trend: s.trendPresentation.trend,
+        trendRows: s.trendTableRows, series: s.trendPresentation.option.series, profile: s.currentProfile, display: s.metricDisplay,
         response: s.trendBackendAnalysis, error: s.analysisErrorMessage, summaryError: s.rangeSummaryErrorMessage }
     })
     assert.deepEqual(errors, [])

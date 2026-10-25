@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { compileScript, parse } from '@vue/compiler-sfc'
 
 const source = await readFile(new URL('../src/idmp/views/IndicatorAnalysis.vue', import.meta.url), 'utf8')
+const trendSource = await readFile(new URL('../src/idmp/features/analysis/AnalysisTrend.vue', import.meta.url), 'utf8')
 const { descriptor } = parse(source)
 const { scriptSetupAst } = compileScript(descriptor, { id: 'analysis-trend-month-range' })
 const names = ['normalizeTrendMonthRange', 'initialAnalysisPeriodRange', 'normalizeDateValue', 'sourceAvailableTrendRange']
@@ -21,7 +22,7 @@ function page(query = {}, remembered = []) {
 }
 
 test('trend picker selects months while report period picker remains date-based', () => {
-  const picker = descriptor.template.content.match(/<el-date-picker v-model="trendMonthRange"[^>]*\/>/)[0]
+  const picker = trendSource.match(/<el-date-picker v-model="trendMonthRange"[^>]*\/>/)[0]
   assert.match(picker, /type="monthrange"/)
   assert.match(picker, /value-format="YYYY-MM"/)
   assert.match(descriptor.template.content, /v-model="reportPeriodRange"\s+type="daterange"/)

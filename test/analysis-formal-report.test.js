@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { analysisReportContext, formalReportGranularity, analysisFilterParams, analysisRouteKey, shiftReportDate } from '../src/idmp/features/analysis/reportPeriod.js'
+import { createOverviewPresentation } from '../src/idmp/features/analysis/overviewPresentation.js'
 import { reportOverview, reportProvenance } from '../src/idmp/features/analysis/reportResult.js'
 import { normalizeIndicatorRangeSummaryParams, collectFormulaFactorVersionIds, createIndicatorDataExplanation } from '../src/idmp/api/adapters/indicator.js'
 import { buildIndicatorAnalysisPeriodContext, buildIndicatorAnalysisRouteQuery } from '../src/idmp/features/dashboard/analysisNavigation.js'
@@ -42,7 +43,13 @@ test('formal queries use the range endpoint and do not fall back to a different 
   assert.match(source, /fetchFormal: fetchIndicatorRangeSummary/)
   assert.match(hook, /fetchFormal\(request.id, request.params, \{ signal \}\)/)
   assert.match(hook, /summary: \{ \.\.\.result, executionMode: 'FORMAL_RESULTS' \}/)
-  assert.match(source, /if \(rangeSummaryLoading\.value \|\| rangeSummaryErrorMessage\.value\) return/)
+  for (const report of [{ loading: true }, { error: '查询失败' }]) {
+    const model = createOverviewPresentation({
+      report, formal: { analysis: { dataAvailable: true }, overview: { value: 123 } }, selected: true
+    })
+    assert.equal(model.primary.value, '-')
+    assert.equal(model.summaries[0].value, report.loading ? '查询中' : '查询失败')
+  }
   assert.match(source, /get filters\(\) \{ return rankPeriodProps\.value\.filters \}/)
   assert.match(source, /loadDepartmentComparisons\(data, paths, searchResultDrill, analysisFilters\(params\), options\)/)
 })

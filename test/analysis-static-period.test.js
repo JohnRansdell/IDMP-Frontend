@@ -2,18 +2,22 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { parse, compileScript } from '@vue/compiler-sfc'
+import { formatPeriodLabel } from '../src/idmp/features/analysis/reportPeriod.js'
+import { formatTrendPeriodLabel } from '../src/idmp/features/analysis/trendPresentation.js'
 
 const source = await readFile(new URL('../src/idmp/views/IndicatorAnalysis.vue', import.meta.url), 'utf8')
 const { descriptor } = parse(source)
 const { scriptSetupAst } = compileScript(descriptor, { id: 'static-period-test' })
-const names = ['formatAnalysisPeriod', 'formatRange', 'formatTrendPeriodLabel', 'formatPeriodLabel', 'firstPresent']
+const trendSource = await readFile(new URL('../src/idmp/features/analysis/AnalysisTrend.vue', import.meta.url), 'utf8')
+const overviewSource = await readFile(new URL('../src/idmp/features/analysis/overviewPresentation.js', import.meta.url), 'utf8')
+const names = ['formatAnalysisPeriod', 'formatRange', 'firstPresent']
 const methods = names.map(name => {
   const node = scriptSetupAst.find(node => node.type === 'FunctionDeclaration' && node.id.name === name)
   return descriptor.scriptSetup.content.slice(node.start, node.end)
 }).join('\n')
 function page(granularity) {
-  return Function('backendAnalysisGranularity', 'isCompleteDateRange', `${methods}; return { ${names.join(', ')} }`)(
-    { value: granularity }, range => Array.isArray(range) && range.length === 2 && range.every(Boolean))
+  return Function('backendAnalysisGranularity', 'isCompleteDateRange', 'formatPeriodLabel', 'formatTrendPeriodLabel', `${methods}; return { ${names.join(', ')}, formatTrendPeriodLabel }`)(
+    { value: granularity }, range => Array.isArray(range) && range.length === 2 && range.every(Boolean), formatPeriodLabel, formatTrendPeriodLabel)
 }
 
 test('static report, metric and trend labels never display persisted sentinel dates', () => {
@@ -29,7 +33,8 @@ test('static query with no dates and pending/empty results still has a meaningfu
   assert.equal(view.formatAnalysisPeriod(null), '静态结果')
   assert.equal(view.formatRange([]), '静态结果')
   assert.match(source, /backendAnalysisGranularity\.value !== 'STATIC' && !reportDirty\.value && !reportPeriodRange\.value\.length/)
-  assert.match(source, /v-if="backendAnalysisGranularity !== 'STATIC'" class="trend-controls"/)
+  assert.match(trendSource, /v-if="!staticMode" class="trend-controls"/)
+  assert.match(source, /:static-mode="backendAnalysisGranularity === 'STATIC'"/)
 })
 
 test('temporal periods keep their real dates and missing target remains distinct from missing result', () => {
@@ -38,7 +43,7 @@ test('temporal periods keep their real dates and missing target remains distinct
   assert.equal(view.formatAnalysisPeriod(result), '2026-03-01 ～ 2026-04-01')
   assert.equal(view.formatRange(['2026-03-01', '2026-03-31']), '2026-03-01 至 2026-03-31')
   assert.equal(view.formatTrendPeriodLabel(result, 'MONTHLY'), '2026-03')
-  assert.match(source, /targetLabel: targetValue === null \? '目标值未配置'/)
+  assert.match(overviewSource, /targetLabel: targetValue === null \? '目标值未配置'/)
 })
 
 test('updated time cannot use a statistical period end as an activation timestamp', () => {

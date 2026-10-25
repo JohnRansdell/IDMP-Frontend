@@ -3,40 +3,32 @@ import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import { computed, ref } from 'vue'
-import * as presentation from '../src/idmp/features/shared/resultPresentation.js'
+import { createAnalysisProfile, resolveAnalysisPerformanceTarget } from '../src/idmp/features/analysis/overviewPresentation.js'
+import { createAnalysisTrendPresentation } from '../src/idmp/features/analysis/trendPresentation.js'
 
 const { descriptor } = parse(await readFile(new URL('../src/idmp/views/IndicatorAnalysis.vue', import.meta.url), 'utf8'))
 const { scriptSetupAst } = compileScript(descriptor, { id: 'analysis-performance-target' })
-const names = ['resolveAnalysisPerformanceTarget', 'createGenericAnalysisProfile', 'emptyTrend',
-  'isUsableRawValue', 'isUsableDisplayValue', 'formatMetricValue', 'formatTrendDisplay', 'normalizeTrendValue', 'isChartNumber']
-const functions = names.map(name => {
-  const node = scriptSetupAst.find(node => node.type === 'FunctionDeclaration' && node.id.name === name)
-  assert.ok(node, `Missing page function: ${name}`)
-  return descriptor.scriptSetup.content.slice(node.start, node.end)
-}).join('\n')
-const computedSource = ['currentProfile', 'trendSeries', 'trendOption'].map(name => {
+const computedSource = ['currentProfile', 'trendPresentation'].map(name => {
   const node = scriptSetupAst.find(node => node.type === 'VariableDeclaration' && node.declarations.some(item => item.id.name === name))
   assert.ok(node, `Missing page computed: ${name}`)
   return descriptor.scriptSetup.content.slice(node.start, node.end)
 }).join('\n')
 
 function page(unit = '') {
-  return Function('computed', 'ref', 'presentation', `
-    const { formatResultValue, hasResultDisplay, resultNumber, resultChartNumber, resultUnit } = presentation;
+  return Function('computed', 'ref', 'dependencies', `
+    const { createAnalysisProfile, resolveAnalysisPerformanceTarget, createAnalysisTrendPresentation } = dependencies;
     const metricDisplay = ref(undefined);
-    const IDMP_CHART_COLORS = ['#1261a6', '#4f6b7a'];
-    const selectedBackendIndicator = ref({ id: '10', name: 'Mortality', unit: ${JSON.stringify(unit)} });
+    const selectedBackendIndicator = ref({ id: '10', name: '住院死亡率', unit: ${JSON.stringify(unit)} });
     const currentIndicatorVersionId = ref('11');
     const indicatorCode = ref('10');
     const route = { query: {} };
     const trendBackendAnalysis = ref(null), backendAnalysis = ref(null);
-    const currentTrend = ref({ actual: [0.0038767886], peer: [] });
-    const hasPeerTrend = ref(false);
-    const getBackendIndicatorKey = indicator => indicator.id || indicator.code;
-    ${functions}
+    const trendAnalysisGranularity = ref('MONTHLY'), analysisPeriodRange = ref([]), isSourceDefaultTrendRange = ref(false);
     ${computedSource}
-    return { currentProfile, trendSeries, trendOption, currentIndicatorVersionId, trendBackendAnalysis, backendAnalysis, metricDisplay, normalizeTrendValue, formatMetricValue };
-  `)(computed, ref, presentation)
+    const trendSeries = computed(() => trendPresentation.value.option.series);
+    const trendOption = computed(() => trendPresentation.value.option);
+    return { currentProfile, trendSeries, trendOption, trendPresentation, currentIndicatorVersionId, trendBackendAnalysis, backendAnalysis, metricDisplay };
+  `)(computed, ref, { createAnalysisProfile, resolveAnalysisPerformanceTarget, createAnalysisTrendPresentation })
 }
 const target = (value = 0.003, display = '0.30%', versionId = '11') => ({
   indicatorVersionId: versionId, targetValue: value, targetDisplayValue: display,
@@ -104,9 +96,12 @@ test('analysis uses version display rules for both trend and target coordinates 
   assert.equal(view.currentProfile.value.markLineValue, 0.3125)
   assert.equal(view.currentProfile.value.unit, '%')
   assert.equal(view.currentProfile.value.targetLabel, '目标值：0.312%')
-  assert.equal(view.normalizeTrendValue({ value: 0.003125 }, 'PERCENT'), 0.3125)
-  assert.equal(view.normalizeTrendValue({ value: null }, 'PERCENT'), null)
-  assert.equal(view.formatMetricValue(0, 'PERCENT'), '0.000%')
+  view.trendBackendAnalysis.value = {
+    dataAvailable: true, granularity: 'MONTHLY',
+    trend: [{ periodStart: '2026-01-01', value: 0.003125 }]
+  }
+  assert.deepEqual(view.trendPresentation.value.trend.actual, [0.3125])
+  assert.equal(view.trendPresentation.value.rows[0].actualDisplay, '0.312%')
   assert.equal(view.trendSeries.value[0].label.formatter({ value: 0.3125 }), '0.312%')
   assert.equal(view.trendSeries.value[0].animation, false)
   assert.equal(view.trendOption.value.yAxis.max({ max: 0.23 }), 0.3125)

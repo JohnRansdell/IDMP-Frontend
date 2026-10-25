@@ -1,4 +1,11 @@
 const FORMAL_GRAINS = ['MONTHLY', 'QUARTERLY', 'YEARLY']
+export function formatPeriodLabel(periodStart, periodEnd) {
+  const start = String(periodStart || '').slice(0, 10)
+  const end = String(periodEnd || '').slice(0, 10)
+  if (start && end) return `${start} 至 ${end}`
+  return start || end || '-'
+}
+
 export const normalizeAnalysisGranularity = value => ['DAILY', ...FORMAL_GRAINS, 'STATIC'].includes(String(value).toUpperCase()) ? String(value).toUpperCase() : 'MONTHLY'
 export function shiftReportDate(value, days) {
   const date = new Date(`${String(value).slice(0, 10)}T00:00:00Z`)
