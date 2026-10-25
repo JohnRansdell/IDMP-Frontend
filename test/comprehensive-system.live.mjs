@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { isDeepStrictEqual } from 'node:util'
 import { createHash } from 'node:crypto'
-import { api, get, rows, state, save, checkpoint, check, run, reject, poll, sql, close, remember, finish, admin, base } from './comprehensive-client.mjs'
+import { api, get, rows, state, save, checkpoint, check, run, reject, poll, sql, close, remember, finish, admin, base, fixtureName } from './comprehensive-client.mjs'
 import { buildFactorDsl } from '../src/idmp/utils/dslBuilder.js'
 import { expandDashboardResponse } from '../src/idmp/features/dashboard/compactResponse.js'
 import { parseJsonPreservingLargeIntegers as parse } from '../src/idmp/api/request.js'
@@ -72,7 +72,7 @@ if (mode === '因子') {
   ]
   for (const [index, [name, aggregation, fieldCode, filters, where, aggregate]] of cases.entries()) await run(`因子生命周期：${name}`, async () => {
     const dsl = buildFactorDsl({ tableName: 'vmq_basicinformationba', aggregation, fieldCode, periodColumn: 'out_date', filters })
-    const factor = await remember('factors', await api('POST', '/factors', { code: `${tag}_F${index}`, name: `全量验收${name}`, category: 'QUALITY', dsl }))
+    const factor = await remember('factors', await api('POST', '/factors', { code: `${tag}_F${index}`, name: fixtureName(`全量验收${name}`), category: 'QUALITY', dsl }))
     const id = factor.draftVersionId
     state.factors.push({ ...factor, oracle: { where, aggregate } }); await checkpoint()
     const version = await get(`/factor-versions/${id}`)
@@ -106,7 +106,7 @@ if (mode === '值集') {
   for (const [index, config] of [
     { name: '全量验收性别枚举', matchMode: 'EXACT', valueType: 'STRING', items: [{ code: 'MALE', value: '1', label: '男性', sortOrder: 0 }, { code: 'FEMALE', value: '2', label: '女性', sortOrder: 1 }] },
     { name: '全量验收转科小时范围', matchMode: 'RANGE', valueType: 'DECIMAL', items: [{ code: 'EARLY', valueStart: '0', valueEnd: '48', label: '入院四十八小时内', sortOrder: 0 }, { code: 'LATE', valueStart: '49', valueEnd: '120', label: '入院四十八小时后', sortOrder: 1 }] },
-    { name: '全量验收住院小时连续范围', matchMode: 'CONTINUOUS', valueType: 'DECIMAL', continuousSpec: { unit: 'HOUR', precision: 10, scale: 2, minimumValue: '0', maximumValue: '48', minimumInclusive: true, maximumInclusive: true } }
+    { name: '全量验收住院小时连续范围', matchMode: 'CONTINUOUS', valueType: 'DECIMAL', continuousSpec: { unit: 'HOUR', precision: 12, scale: 6, minimumValue: '0', maximumValue: `48.${tag.replace(/\D/g, '').slice(-6)}`, minimumInclusive: true, maximumInclusive: true } }
   ].entries()) await run(config.name, async () => {
     const { items, ...payload } = config
     let detail = await api('POST', '/meta/value-sets', { ...payload, code: `${tag}_VS${index}` })
@@ -120,7 +120,7 @@ if (mode === '值集') {
     detail = await api('POST', `/meta/value-sets/${detail.valueSet.id}/versions/${id}/publish`, { resourceVersion: validation.resourceVersion })
     check(`${config.name}发布版本指针一致`, detail.valueSet.currentPublishedVersionId === id && detail.version.publicationStatus === 'PUBLISHED')
     const copy = await api('POST', `/meta/value-sets/${detail.valueSet.id}/versions`, { copyFromVersionId: id })
-    check(`${config.name}复制为新草稿且不丢定义`, copy.version.id !== id && copy.version.publicationStatus === 'DRAFT' && (items ? copy.version.items.length === 2 : copy.version.continuousSpec.maximumValue === '48'))
+    check(`${config.name}复制为新草稿且不丢定义`, copy.version.id !== id && copy.version.publicationStatus === 'DRAFT' && (items ? copy.version.items.length === 2 : copy.version.continuousSpec.maximumValue === config.continuousSpec.maximumValue))
     if (items) {
       const bad = structuredClone(items)
       if (config.matchMode === 'EXACT') bad[1].value = '1'
@@ -170,7 +170,7 @@ if (mode === '指标') {
   for (const [key, name, aggregation, fieldCode] of [['total', '出院总费用', 'SUM', 'total_cost'], ['drug', '出院药品费用', 'SUM', 'drug_cost'], ['material', '出院耗材费用', 'SUM', 'material_cost'], ['visits', '出院患者去重人次', 'COUNT_DISTINCT', 'VISIT_ID']]) {
     if (state.costFactors[key]) continue
     const dsl = buildFactorDsl({ tableName: 'vmq_basicinformationba', aggregation, fieldCode, calculationMode: 'STATIC', filters })
-    const factor = await remember('factors', await api('POST', '/factors', { code: `${tag}_COST_${key.toUpperCase()}`, name: `全量验收一月${name}`, dsl }))
+    const factor = await remember('factors', await api('POST', '/factors', { code: `${tag}_COST_${key.toUpperCase()}`, name: fixtureName(`全量验收一月${name}`), dsl }))
     state.costFactors[key] = factor; await checkpoint()
     const compiled = await api('POST', `/factor-versions/${factor.draftVersionId}/compile`, {})
     check(`${name}静态编译通过`, valid(compiled), compiled)

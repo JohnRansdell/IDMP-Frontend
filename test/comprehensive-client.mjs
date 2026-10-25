@@ -9,6 +9,7 @@ export const base = process.env.IDMP_SYSTEM_API || 'http://8.137.157.152/api/v1'
 export const folder = process.env.IDMP_AUDIT_FOLDER || '.tmp/系统全量验收20261025'
 await mkdir(folder, { recursive: true })
 export const state = await readFile(`${folder}/resources.json`, 'utf8').then(parse).catch(() => ({ tag: `ALL_${Date.now()}`, resources: [] }))
+export const fixtureName = name => `${name}（${state.tag.replace(/\D/g, '')}）`
 const credentialsPath = process.env.IDMP_ADMIN_CREDENTIAL_FILE || '.tmp/forced-login-admin-20261024.json'
 const credentials = parse(await readFile(credentialsPath, 'utf8'))
 export const checks = [], calls = []

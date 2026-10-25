@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { isDeepStrictEqual } from 'node:util'
-import { api, get, rows, state, save, checkpoint, check, run, reject, sql, close, finish, poll } from './comprehensive-client.mjs'
+import { api, get, rows, state, save, checkpoint, check, run, reject, sql, close, finish, poll, fixtureName } from './comprehensive-client.mjs'
 
 const mode = process.argv[2], tag = `${state.tag}_EXT`
 if (mode === '映射') for (let index = 0; index < 3; index++) await run(`指标映射完整审核${index + 1}`, async () => {
@@ -21,8 +21,8 @@ if (mode === '映射') for (let index = 0; index < 3; index++) await run(`指标
     await api('POST', `/mappings/indicator-versions/${version.id}/policy-references`, { policyFileVersionId: policy.policyFile.currentPublishedVersionId, relationRole: 'SOURCE', citationText: '全量验收独立口径来源' })
   const compare = await get(`/mappings/compare?sourceIndicatorVersionId=${source.versionId}&targetIndicatorVersionId=${target.versionId}`)
   check(`映射${index + 1}冻结源目标公式不同`, !isDeepStrictEqual(compare.sourceSnapshot, compare.targetSnapshot))
-  const group = rows(await get(`/mappings/groups?code=${tag}_G${index}`)).find(g => g.code === `${tag}_G${index}`)
-  assert.ok(group)
+  const group = rows(await get(`/mappings/groups?size=100`)).find(g => g.code === `${tag}_G${index}`)
+    || await api('POST', '/mappings/groups', { code: `${tag}_G${index}`, name: fixtureName(`全量验收费用口径映射组${index + 1}`), canonicalIndicatorVersionId: source.versionId })
   const existingMapping = rows(await get(`/mappings?size=100`)).find(m => m.code === `${tag}_MR${index}`)
   let detail = existingMapping ? await get(`/mappings/${existingMapping.id}`) : await api('POST', '/mappings', { code: `${tag}_MR${index}`, name: `全量验收指标口径关联复核${index + 1}`, groupId: group.id, targetIndicatorVersionId: target.versionId, mappingType: 'SAME_CONCEPT', comparability: 'NOT_COMPARABLE', evidence: { description: '费用比例、每人次费用和每百人次费用口径不同，不允许直接比较' } })
   const id = detail.mapping.id
@@ -131,7 +131,7 @@ if (['导入', '导入复核'].includes(mode)) {
       const replay = await api('POST', '/sql-imports', { sql: sqlText, tableMappings: tables, definitionType: 'DSL' }, { headers })
       check(`${name}导入幂等`, replay.importId === id)
       task = await get(`/sql-imports/${id}`)
-      const metadata = { scope: 'FACTORS_AND_INDICATOR', category: 'QUALITY', indicatorCode: `${tag}_SI${index}`, indicatorName: `全量验收导入${name}指标`, factors: task.preview.factors.map((f, n) => ({ key: f.key, code: `${tag}_SF${index}_${n}`, name: `全量验收导入${name}因子${n + 1}`, calculationMode: 'STATIC' })) }
+      const metadata = { scope: 'FACTORS_AND_INDICATOR', category: 'QUALITY', indicatorCode: `${tag}_SI${index}`, indicatorName: `全量验收导入${name}指标`, factors: task.preview.factors.map((f, n) => ({ key: f.key, code: `${tag}_SF${index}_${n}`, name: fixtureName(`全量验收导入${name}因子${n + 1}`), calculationMode: 'STATIC' })) }
       check(`${name}解析聚合因子数量正确`, task.preview.factors.length === count, task.preview)
       await api('PUT', `/sql-imports/${id}/metadata`, metadata)
       check(`${name}重新读取保留中文元数据`, (await get(`/sql-imports/${id}`)).metadata.indicatorName === metadata.indicatorName)

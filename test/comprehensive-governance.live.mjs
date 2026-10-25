@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { isDeepStrictEqual } from 'node:util'
-import { api, get, rows, state, save, checkpoint, check, run, reject, sql, close, remember, finish, poll } from './comprehensive-client.mjs'
+import { api, get, rows, state, save, checkpoint, check, run, reject, sql, close, remember, finish, poll, fixtureName } from './comprehensive-client.mjs'
 import { buildFactorDsl } from '../src/idmp/utils/dslBuilder.js'
 const mode = process.argv[2], tag = state.tag
 const valid = result => ['VALID', 'VALID_WITH_WARNINGS'].includes(result.status)
@@ -31,7 +31,7 @@ if (mode === '数据治理') await run('独立数据域字段及标准化', asyn
   check('值集绑定实际已发布版本', linked.bound && linked.valueSet.id === valueSet.id && linked.publishedVersion.id === valueSet.versionId, linked)
   for (const [index, value, name] of [[0, '1', '男性'], [1, '2', '女性'], [2, '不存在的性别', '无匹配']]) {
     const dsl = buildFactorDsl({ domainCode: domain.code, tableName: 'vmq_basicinformationba', aggregation: 'COUNT', periodColumn: 'QA_DATE', filters: { nodeType: 'PREDICATE', fieldCode: 'QA_SEX', operator: 'EQ', value } })
-    const factor = await remember('factors', await api('POST', '/factors', { code: `${tag}_DOMAIN${index}`, name: `全量验收数据域${name}出院人次`, dsl }))
+    const factor = await remember('factors', await api('POST', '/factors', { code: `${tag}_DOMAIN${index}`, name: fixtureName(`全量验收数据域${name}出院人次`), dsl }))
     const compilation = await api('POST', `/factor-versions/${factor.draftVersionId}/compile`, {})
     check(`${name}语义字段因子编译通过`, valid(compilation), compilation)
     const query = await api('POST', `/factor-versions/${factor.draftVersionId}/query`, { periodStart: '2026-01-01T00:00:00', periodEnd: '2026-02-01T00:00:00', parameters: {} })
@@ -73,7 +73,7 @@ if (mode === '模板') await run('模板创建发布实例化', async () => {
   const schema = await get(`/factor-templates/${detail.template.id}/parameter-schema`)
   check('模板参数暴露和默认值正确', schema.parameters.some(p => p.code === 'LEVEL' && p.defaultValue === '3' && p.exposed))
   for (const [index, level, label] of [[0, '3', '三级'], [1, '4', '四级'], [2, '不存在', '无匹配']]) {
-    const instance = await api('POST', `/factor-template-versions/${id}/instantiate`, { factorCode: `${tag}_TPL_F${index}`, factorName: `全量验收模板${label}手术人次`, category: 'QUALITY', parameterValues: { LEVEL: level } })
+    const instance = await api('POST', `/factor-template-versions/${id}/instantiate`, { factorCode: `${tag}_TPL_F${index}`, factorName: fixtureName(`全量验收模板${label}手术人次`), category: 'QUALITY', parameterValues: { LEVEL: level } })
     await remember('factors', instance.factor)
     check(`${label}模板替换参数准确`, instance.generatedDsl.filters.value === level && instance.effectiveParameters.LEVEL === level)
     const compiled = await api('POST', `/factor-versions/${instance.factor.draftVersionId}/compile`, {})
@@ -111,13 +111,13 @@ if (mode === '模板政策复核') {
 if (mode === '连续值集复核') await run('连续值集边界生命周期', async () => {
   const original = state.valueSets.find(item => item.matchMode === 'CONTINUOUS')
   let detail = await get(`/meta/value-set-versions/${original.versionId}`)
-  const continuousSpec = { unit: 'HOUR', precision: 10, scale: 2, minimumValue: '0', maximumValue: '49.75', minimumInclusive: true, maximumInclusive: false }
+  const continuousSpec = { unit: 'HOUR', precision: 12, scale: 6, minimumValue: '0', maximumValue: `49.${tag.replace(/\D/g, '').slice(-6)}`, minimumInclusive: true, maximumInclusive: false }
   detail = await api('PATCH', `/meta/value-set-versions/${original.versionId}`, { resourceVersion: detail.version.resourceVersion, name: original.name, matchMode: 'CONTINUOUS', valueType: 'DECIMAL', continuousSpec })
   check('连续值集非整数边界和开闭区间准确保存', Object.entries(continuousSpec).every(([key, value]) => detail.version.continuousSpec[key] === value))
   const validation = await api('POST', `/meta/value-set-versions/${original.versionId}/validate`, {})
   check('连续值集唯一内容可校验', validation.valid, validation)
   detail = await api('POST', `/meta/value-sets/${original.id}/versions/${original.versionId}/publish`, { resourceVersion: validation.resourceVersion })
-  check('连续值集发布精度不丢失', detail.version.continuousSpec.maximumValue === '49.75' && detail.version.publicationStatus === 'PUBLISHED')
+  check('连续值集发布精度不丢失', detail.version.continuousSpec.maximumValue === continuousSpec.maximumValue && detail.version.publicationStatus === 'PUBLISHED')
   const copy = await api('POST', `/meta/value-sets/${original.id}/versions`, { copyFromVersionId: original.versionId })
   await reject('连续值集逆序边界不能保存', 'PATCH', `/meta/value-set-versions/${copy.version.id}`, { resourceVersion: copy.version.resourceVersion, name: original.name, matchMode: 'CONTINUOUS', valueType: 'DECIMAL', continuousSpec: { ...continuousSpec, minimumValue: '50' } })
 })
@@ -208,7 +208,7 @@ if (mode === '预警') {
 
 if (mode === '回收站') {
   for (const [index, type, name] of [[0, 'factors', '普通因子'], [1, 'indicators', '普通指标'], [2, 'factors', '嵌套条件因子']]) await run(`回收站${name}`, async () => {
-    const payload = { code: `${tag}_RECYCLE${index}`, name: `全量验收回收站${name}` }
+    const payload = { code: `${tag}_RECYCLE${index}`, name: fixtureName(`全量验收回收站${name}`) }
     if (type === 'factors') payload.dsl = buildFactorDsl({ tableName: 'vmq_surgeryinfo', aggregation: 'COUNT', calculationMode: 'STATIC', filters: { nodeType: 'TRUE' } })
     let resource = await remember(type, await api('POST', `/${type}`, payload))
     const id = resource.id

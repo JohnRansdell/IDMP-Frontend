@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { api, get, rows, state, save, checkpoint, check, run, reject, sql, close, remember, finish, origin, folder, poll } from './comprehensive-client.mjs'
+import { api, get, rows, state, save, checkpoint, check, run, reject, sql, close, remember, finish, origin, folder, poll, fixtureName } from './comprehensive-client.mjs'
 import { parseJsonPreservingLargeIntegers as parse } from '../src/idmp/api/request.js'
 
 const mode = process.argv[2], tag = `${state.tag}_EXTRA`
@@ -56,7 +56,7 @@ if (mode === '运行参数') await run('原生SQL多参数与周期完整链路'
     factor = await get(`/factors/${factor.id}`)
     const version = await get(`/factor-versions/${factor.draftVersionId}`)
     factor = await api('PATCH', `/factors/${factor.id}`, { name: factor.name, resourceVersion: factor.resourceVersion, dsl, factorVersionId: version.id, versionResourceVersion: version.resourceVersion })
-  } else factor = await remember('factors', await api('POST', '/factors', { code: `${tag}_PARAM`, name: '全量验收按科室性别查询出院人次', dsl }))
+  } else factor = await remember('factors', await api('POST', '/factors', { code: `${tag}_PARAM`, name: fixtureName('全量验收按科室性别查询出院人次'), dsl }))
   const compilation = await api('POST', `/factor-versions/${factor.draftVersionId}/compile`, {})
   check('SQL运行参数因子编译通过', ['VALID', 'VALID_WITH_WARNINGS'].includes(compilation.status), compilation)
   assert.ok(['VALID', 'VALID_WITH_WARNINGS'].includes(compilation.status))
@@ -128,7 +128,7 @@ if (mode === '复合因子') {
   for (const [index, name, dimension, expected] of [[0, '药品与耗材总费用', 'SUM', Number(source.drug) + Number(source.material)], [1, '除药品耗材外医疗费用', 'SUM', Number(source.total) - Number(source.drug) - Number(source.material)], [2, '每出院人次非药非耗材费用', 'SUM_PER_COUNT', (Number(source.total) - Number(source.drug) - Number(source.material)) / Number(source.visits)]]) await run(`多层复合因子${name}`, async () => {
     const expression = index === 0 ? binary('ADD', ref(state.costFactors.drug.draftVersionId), ref(state.costFactors.material.draftVersionId)) : index === 1 ? binary('SUB', ref(state.costFactors.total.draftVersionId), ref(state.derivedFactors[0].draftVersionId)) : binary('DIV', ref(state.derivedFactors[1].draftVersionId), ref(state.costFactors.visits.draftVersionId))
     const dsl = { schemaVersion: '1.1', dslType: 'FACTOR', definitionKind: 'DERIVED', calculationMode: 'STATIC', primaryDomain: { domainCode: state.domain.code }, expression, output: { valueType: 'DECIMAL', semanticKind: 'MEASURE', dimension, grain: [] } }
-    const factor = await remember('factors', await api('POST', '/factors', { code: `${tag}_DERIVED${index}`, name: `全量验收${name}复合因子`, dsl }))
+    const factor = await remember('factors', await api('POST', '/factors', { code: `${tag}_DERIVED${index}`, name: fixtureName(`全量验收${name}复合因子`), dsl }))
     state.derivedFactors[index] = factor; await checkpoint()
     const compiled = await api('POST', `/factor-versions/${factor.draftVersionId}/compile`, {})
     check(`${name}冻结依赖编译通过`, ['VALID', 'VALID_WITH_WARNINGS'].includes(compiled.status), compiled)

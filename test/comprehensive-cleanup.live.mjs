@@ -2,18 +2,27 @@ import { state, rows, api, get, check, save, finish, reject } from './comprehens
 
 // Only stop fixtures belonging to this audit; retain their definitions and history.
 const versions = new Set([...(state.factors || []).map(item => item.draftVersionId), ...(state.indicators || []).map(item => item.versionId), state.eventTest?.indicator?.versionId].filter(Boolean))
-const schedules = rows(await get('/calc/schedules')).filter(item => item.scheduleCode.startsWith(state.tag) || versions.has(item.ownerVersionId))
+async function allPages(path) {
+  const result = []
+  for (let page = 1; ; page++) {
+    const data = await get(`${path}?page=${page}&size=100`), batch = rows(data)
+    if (Array.isArray(data)) return data
+    result.push(...batch)
+    if (!batch.length || result.length >= Number(data.total)) return result
+  }
+}
+const schedules = (await allPages('/calc/schedules')).filter(item => item.scheduleCode.startsWith(state.tag) || versions.has(item.ownerVersionId))
 for (const item of schedules) {
   const stopped = item.status === 'PAUSED' ? item : await api('PATCH', `/calc/schedules/${item.id}/status`, { enabled: false })
   check(`${item.scheduleName}已暂停且无下次触发`, stopped.status === 'PAUSED' && stopped.nextTriggerAt === null)
 }
-const rules = rows(await get('/analysis/warning-rules?size=100')).filter(item => item.code.startsWith(state.tag))
+const rules = (await allPages('/analysis/warning-rules')).filter(item => item.code.startsWith(state.tag))
 for (const item of rules) {
   const stopped = item.enableStatus === 'DISABLED' ? item : await api('POST', `/analysis/warning-rules/${item.id}/disable`, { resourceVersion: item.resourceVersion })
   check(`${item.name}已停用`, stopped.enableStatus === 'DISABLED')
 }
 const users = rows(await get('/system/users'))
-const temporary = users.filter(item => /^(audit_session_|audit_warning_|warn_|rbac_)/.test(item.user?.userName || item.userName))
+const temporary = users.filter(item => /^(audit_session_|audit_warning_|audit_role_|warn_|rbac_)/.test(item.user?.userName || item.userName))
 check('本轮临时会话权限预警用户全部删除', !temporary.length, temporary.map(item => ({ id: item.userId, name: item.user?.nickName || item.nickName })))
 for (const item of state.testBoards || []) await reject('隔离验收看板删除状态保留', 'GET', `/analysis/dashboards/${item.id}`, undefined, [404])
 const analyst = await api('POST', '/auth/login', { username: '300112', password: 'test2026' }, { token: '' })
