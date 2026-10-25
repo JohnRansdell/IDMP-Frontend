@@ -301,6 +301,7 @@ export function normalizeIndicatorAnalysisParams(params = {}) {
 export function normalizeIndicatorRangeSummaryParams(params = {}) {
   return normalizeIndicatorAnalysisParams({
     indicatorVersionId: params.indicatorVersionId,
+    ...(params.granularity ? { granularity: params.granularity } : {}),
     periodStart: params.periodStart,
     periodEnd: params.periodEnd
   })

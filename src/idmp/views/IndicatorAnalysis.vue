@@ -7,7 +7,7 @@
     >
       <template #meta>
         <span>报告期 <strong>{{ reportPeriodLabel }}</strong></span>
-        <span v-if="rangeSummary">查询方式 <strong>即时计算</strong></span>
+        <span v-if="rangeSummary">查询方式 <strong>{{ reportResultModeLabel }}</strong></span>
         <span v-else>统计粒度 <strong>{{ period }}</strong></span>
         <span>更新时间 <strong>{{ analysisUpdatedAt }}</strong></span>
       </template>
@@ -49,7 +49,7 @@
       :closable="false"
       :title="analysisErrorMessage || rangeSummaryErrorMessage"
     />
-    <section v-if="$can('POST', '/indicator-versions/1/query') && selectedBackendIndicator && (backendAnalysisGranularity !== 'STATIC' || indicatorRuntimeParameters.length)" class="surface-card instant-query-panel" aria-label="即时查询条件">
+    <section v-if="($can('POST', '/indicator-versions/1/query') || $can('GET', '/analysis/indicators/1/range-summary')) && selectedBackendIndicator && (backendAnalysisGranularity !== 'STATIC' || indicatorRuntimeParameters.length)" class="surface-card instant-query-panel" aria-label="即时查询条件">
       <div class="instant-query-panel__header">
         <h2>查询条件</h2>
         <div v-if="backendAnalysisGranularity !== 'STATIC'" class="instant-query-panel__context">
@@ -57,6 +57,13 @@
         </div>
       </div>
       <div class="instant-query-panel__controls">
+        <div v-if="backendAnalysisGranularity !== 'STATIC'" class="instant-query-panel__period">
+          <label>查询方式</label>
+          <el-radio-group v-model="reportQueryMode" size="small" aria-label="报告期查询方式" @change="clearInstantQueryResult">
+            <el-radio-button value="FORMAL" :disabled="!$can('GET', '/analysis/indicators/1/range-summary')">正式结果</el-radio-button>
+            <el-radio-button value="INSTANT" :disabled="!$can('POST', '/indicator-versions/1/query')">即时计算</el-radio-button>
+          </el-radio-group>
+        </div>
         <div v-if="backendAnalysisGranularity !== 'STATIC'" class="instant-query-panel__period">
           <label>报告期</label>
           <div class="date-range-fields report-period-picker" aria-label="报告期范围">
@@ -73,12 +80,12 @@
             />
           </div>
         </div>
-        <RuntimeParameterFields v-if="indicatorRuntimeParameters.length" v-model="indicatorRuntimeParameterValues" :declarations="indicatorRuntimeParameters" :show-metadata="false" @change="clearInstantQueryResult" />
+        <RuntimeParameterFields v-if="reportQueryMode === 'INSTANT' && indicatorRuntimeParameters.length" v-model="indicatorRuntimeParameterValues" :declarations="indicatorRuntimeParameters" :show-metadata="false" @change="clearInstantQueryResult" />
         <div class="instant-query-panel__actions">
-          <el-button type="primary" :loading="rangeSummaryLoading" :disabled="indicatorRuntimeParameterConflicts.length > 0" @click="applyReportPeriod">查询</el-button>
+          <el-button type="primary" :loading="rangeSummaryLoading" :disabled="reportQueryMode === 'INSTANT' && indicatorRuntimeParameterConflicts.length > 0" @click="applyReportPeriod">查询</el-button>
         </div>
       </div>
-      <el-alert v-if="indicatorRuntimeParameterConflicts.length" type="error" show-icon :closable="false" :title="`存在不兼容的同名参数：${indicatorRuntimeParameterConflicts.map(item => item.code).join('、')}`" />
+      <el-alert v-if="reportQueryMode === 'INSTANT' && indicatorRuntimeParameterConflicts.length" type="error" show-icon :closable="false" :title="`存在不兼容的同名参数：${indicatorRuntimeParameterConflicts.map(item => item.code).join('、')}`" />
       <div v-if="runtimeQueryResult" class="runtime-query-result">
         <div class="runtime-query-result__summary">
           <el-tag :type="runtimeQueryResult.executionMode === 'AD_HOC_SOURCE' ? 'warning' : 'success'">{{ runtimeQueryExecutionModeLabel }}</el-tag>
@@ -381,7 +388,7 @@ import RuntimeParameterFields from '@/idmp/components/RuntimeParameterFields.vue
 import DrillExplorer from '@/idmp/features/analysis/DrillExplorer.vue'
 import IndicatorDrillAnalysis from '@/idmp/features/analysis/IndicatorDrillAnalysis.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
-import { fetchIndicatorAnalysis, fetchIndicatorAvailablePeriod, fetchIndicatorGrainOptions, fetchAllIndicators, fetchIndicatorVersion, fetchAllIndicatorVersions, queryIndicatorVersion } from '@/idmp/api/modules/indicators'
+import { fetchIndicatorAnalysis, fetchIndicatorRangeSummary, fetchIndicatorAvailablePeriod, fetchIndicatorGrainOptions, fetchAllIndicators, fetchIndicatorVersion, fetchAllIndicatorVersions, queryIndicatorVersion } from '@/idmp/api/modules/indicators'
 import { fetchFactorVersion } from '@/idmp/api/modules/factors'
 import { collectFormulaFactorVersionIds, createIndicatorDataExplanation, extractIndicatorFormula, normalizeIndicatorInstantSummary } from '@/idmp/api/adapters/indicator'
 import { deriveDrillPathResultIds } from '@/idmp/api/adapters/drill'
@@ -401,12 +408,16 @@ import { resolvePrimaryAnalysisOverview } from '@/idmp/features/dashboard/visual
 import { buildSqlRuntimeParameterValues, collectSqlRuntimeParameters, validateSqlRuntimeParameterValues } from '@/idmp/api/adapters/sqlImport'
 import { exportIndicatorAnalysisPdf } from '@/idmp/api/modules/indicators'
 import { analysisPdfFilename, buildAnalysisPdfReport, downloadAnalysisPdf, renderAnalysisChartPng } from '@/idmp/features/analysis/pdfReport'
+import { analysisReportContext, formalReportGranularity, normalizeAnalysisGranularity } from '@/idmp/features/analysis/reportPeriod.js'
 
 const route = useRoute()
 const router = useRouter()
 const activeTab = ref('trend')
 const period = ref('月度')
-const reportGranularity = ref(String(route.query.granularity || 'MONTHLY').toUpperCase())
+const reportGranularity = ref(analysisReportContext(route.query).granularity)
+const reportQueryMode = ref(analysisReportContext(route.query).mode)
+const reportSummaryGranularity = ref(analysisReportContext(route.query).summaryGranularity)
+const reportResultModeLabel = computed(() => rangeSummary.value?.executionMode === 'FORMAL_RESULTS' ? '正式结果汇总' : '即时计算')
 const backendAnalysis = ref(null)
 const rangeSummary = ref(null)
 const rangeSummaryLoading = ref(false)
@@ -601,10 +612,10 @@ const rangeSummaryPeriodLabel = computed(() => rangeSummary.value
 const analysisAvailability = computed(() => rangeSummary.value
   ? {
       status: rangeSummary.value.status === 'READY' ? 'ACTIVE_RESULT' : rangeSummary.value.status,
-      message: rangeSummary.value.message || (rangeSummary.value.status === 'READY' ? '已按指定报告期即时计算' : '指定报告期未取得可用的即时结果')
+      message: rangeSummary.value.message || (rangeSummary.value.status === 'READY' ? `已按指定报告期取得${reportResultModeLabel.value}` : '指定报告期未取得可用结果')
     }
   : backendAnalysis.value ? resolveResultAvailability(backendAnalysis.value) : null)
-const reportPeriodLabel = computed(() => rangeSummaryPeriodLabel.value || formatAnalysisPeriod(analysisOverview.value) || formatRange(reportPeriodRange.value) || '由最新正式结果确定')
+const reportPeriodLabel = computed(() => (rangeSummaryLoading.value || rangeSummaryErrorMessage.value ? formatRange(reportPeriodRange.value) : '') || rangeSummaryPeriodLabel.value || formatAnalysisPeriod(analysisOverview.value) || formatRange(reportPeriodRange.value) || '由最新正式结果确定')
 const analysisNotice = computed(() => {
   const availability = analysisAvailability.value
   if (!availability || availability.status === 'ACTIVE_RESULT') return null
@@ -649,6 +660,11 @@ const currentTrend = computed(() => backendTrend.value || emptyTrend())
 // 同级医院均值必须来自正式分析接口；后端接入 peerTrend 后再由适配层填充 backendTrend.peer。
 const hasPeerTrend = computed(() => Boolean(backendTrend.value?.peer?.some(isChartNumber)))
 const primaryMetric = computed(() => {
+  if (rangeSummaryLoading.value || rangeSummaryErrorMessage.value) return {
+    label: `${formatRange(reportPeriodRange.value)}指标值`, value: '-', tone: 'neutral',
+    status: rangeSummaryLoading.value ? 'LOADING' : 'UNKNOWN', statusLabel: rangeSummaryLoading.value ? '查询中' : '查询失败',
+    periodLabel: formatRange(reportPeriodRange.value)
+  }
   if (rangeSummary.value) {
     const result = rangeSummary.value
     const ready = result.status === 'READY'
@@ -657,7 +673,7 @@ const primaryMetric = computed(() => {
       value: ready ? (isUsableDisplayValue(result.displayValue) ? result.displayValue : formatMetricValue(result.value, currentProfile.value.unit)) : '-',
       tone: ready && result.qualityStatus === 'PASSED' ? 'success' : 'neutral',
       status: ready ? 'ACTIVE' : result.status,
-      statusLabel: ready ? '即时计算' : '区间结果不可用',
+      statusLabel: ready ? reportResultModeLabel.value : '区间结果不可用',
       periodLabel: rangeSummaryPeriodLabel.value
     }
   }
@@ -676,11 +692,12 @@ const primaryMetric = computed(() => {
   return { label: '当前指标值', value: '-', tone: 'neutral', status: 'NO_DATA', statusLabel: '暂无正式结果', periodLabel: '尚未读取到已激活结果' }
 })
 const summaryMetrics = computed(() => {
+  if (rangeSummaryLoading.value || rangeSummaryErrorMessage.value) return [{ label: '查询状态', value: rangeSummaryLoading.value ? '查询中' : '查询失败', description: rangeSummaryErrorMessage.value }]
   if (selectedBackendIndicator.value) {
     if (rangeSummary.value) {
       const result = rangeSummary.value
       if (result.status !== 'READY') return [
-        { label: '即时计算', value: '不可用', description: result.message || '源数据未返回可用结果' }
+        { label: reportResultModeLabel.value, value: '不可用', description: result.message || '未返回可用结果' }
       ]
       return [
         { label: '分子', value: result.numeratorValue == null ? '-' : formatCount(result.numeratorValue), description: '计入事件数' },
@@ -754,7 +771,7 @@ const rankTableData = computed(() => {
 })
 
 const analysisSourceLabel = computed(() => rangeSummary.value
-  ? rangeSummary.value.status === 'READY' ? '即时计算' : '区间结果不可用'
+  ? rangeSummary.value.status === 'READY' ? reportResultModeLabel.value : '区间结果不可用'
   : hasBackendAnalysisData.value ? '已发布结果' : '暂无正式结果')
 const availablePeriodText = computed(() => {
   const value = availablePeriod.value
@@ -1107,11 +1124,15 @@ async function applyReportPeriod() {
     if (!validateOptionalDateRange(reportPeriodRange.value, '报告期')) return
     if (!isCompleteDateRange(reportPeriodRange.value)) return ElMessage.warning('请选择完整的报告期范围')
   }
-  const parameterMessage = validateSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)
+  const parameterMessage = reportQueryMode.value === 'INSTANT' && validateSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)
   if (parameterMessage) return ElMessage.warning(parameterMessage)
-  if (temporal && (route.query.periodStart !== reportPeriodRange.value[0] || route.query.periodEnd !== reportPeriodRange.value[1])) {
+  if (temporal && (route.query.periodStart !== reportPeriodRange.value[0] || route.query.periodEnd !== reportPeriodRange.value[1]
+    || route.query.summaryMode !== reportQueryMode.value || route.query.granularity !== backendAnalysisGranularity.value)) {
     await router.replace({ path: '/analysis', query: {
       ...route.query,
+      granularity: backendAnalysisGranularity.value,
+      summaryMode: reportQueryMode.value,
+      summaryGranularity: reportSummaryGranularity.value,
       periodStart: reportPeriodRange.value[0],
       periodEnd: reportPeriodRange.value[1]
     } })
@@ -1132,7 +1153,11 @@ function reportQueryPayload() {
 }
 
 async function loadRangeSummary() {
-  if (!canRequest('POST', '/indicator-versions/1/query')) return
+  if (reportQueryMode.value === 'FORMAL'
+    ? !canRequest('GET', '/analysis/indicators/1/range-summary') : !canRequest('POST', '/indicator-versions/1/query')) {
+    rangeSummaryErrorMessage.value = '当前账号没有所选查询方式的访问权限'
+    return
+  }
   const versionId = currentIndicatorVersionId.value
   if (!versionId || (backendAnalysisGranularity.value !== 'STATIC' && !isCompleteDateRange(reportPeriodRange.value))) return
   const requestSequence = ++rangeSummaryRequestSequence
@@ -1144,6 +1169,17 @@ async function loadRangeSummary() {
   const [periodStart, periodEnd] = backendAnalysisGranularity.value === 'STATIC' ? ['', ''] : reportPeriodRange.value
   const payload = reportQueryPayload()
   try {
+    if (reportQueryMode.value === 'FORMAL' && backendAnalysisGranularity.value !== 'STATIC') {
+      const result = await fetchIndicatorRangeSummary(String(selectedBackendIndicator.value.id || selectedBackendIndicator.value.indicatorId), {
+        indicatorVersionId: versionId, periodStart, periodEnd,
+        granularity: formalReportGranularity([periodStart, periodEnd], reportSummaryGranularity.value)
+      })
+      if (requestSequence === rangeSummaryRequestSequence) {
+        rangeSummary.value = { ...result, executionMode: 'FORMAL_RESULTS' }
+        reportParameterSnapshot.value = {}
+      }
+      return
+    }
     const result = await queryIndicatorVersion(versionId, payload)
     if (requestSequence === rangeSummaryRequestSequence) {
       rangeSummary.value = normalizeIndicatorInstantSummary(result, periodStart, periodEnd)
@@ -1156,7 +1192,8 @@ async function loadRangeSummary() {
       const migrationHint = message.includes('SQL业务参数不支持冒号写法')
         ? '；该指标使用了旧式 SQL 参数，请改为 [[AND 字段 = {{参数名}}]] 后重新导入并发布'
         : ''
-      rangeSummaryErrorMessage.value = message ? `即时查询失败：${message}${migrationHint}` : '即时查询失败，请核对查询条件后重试'
+      const label = reportQueryMode.value === 'FORMAL' ? '正式区间查询' : '即时查询'
+      rangeSummaryErrorMessage.value = message ? `${label}失败：${message}${migrationHint}` : `${label}失败，请核对查询条件后重试`
       ElMessage.warning(rangeSummaryErrorMessage.value)
     }
   } finally {
@@ -1465,6 +1502,7 @@ async function refreshIndicatorAnalysis({ preserveRangeSummary = false } = {}) {
     }
     const calculationMode = resolveIndicatorCalculationMode(backendIndicatorVersion.value, backendIndicator, route.query.granularity)
     if (calculationMode === 'STATIC') {
+      reportQueryMode.value = 'INSTANT'
       reportGranularity.value = 'STATIC'
       reportPeriodRange.value = []
       analysisPeriodRange.value = []
@@ -1472,14 +1510,14 @@ async function refreshIndicatorAnalysis({ preserveRangeSummary = false } = {}) {
       isSourceDefaultTrendRange.value = false
       sourceTrendRangePending = false
     } else if (reportGranularity.value === 'STATIC') {
-      reportGranularity.value = String(route.query.granularity || 'MONTHLY').toUpperCase() === 'STATIC' ? 'MONTHLY' : String(route.query.granularity || 'MONTHLY').toUpperCase()
+      reportGranularity.value = normalizeAnalysisGranularity(route.query.granularity) === 'STATIC' ? 'MONTHLY' : normalizeAnalysisGranularity(route.query.granularity)
     }
     if (calculationMode !== 'STATIC') void loadAvailablePeriod(initialVersionId, refreshSequence)
 
     const granularity = backendAnalysisGranularity.value
     const backendIndicatorId = String(backendIndicator.id || backendIndicator.indicatorId)
     const useRangeSummary = !preserveRangeSummary && calculationMode !== 'STATIC' && isCompleteDateRange(reportPeriodRange.value)
-      && !validateSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)
+      && (reportQueryMode.value === 'FORMAL' || !validateSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value))
     if (useRangeSummary) void loadRangeSummary()
 
     const analysisParams = buildAnalysisParams(analysisPeriodRange.value)
@@ -1622,6 +1660,10 @@ async function loadAvailablePeriod(versionId, refreshSequence) {
 onMounted(loadBackendAnalysisIndicators)
 
 watch(indicatorCode, () => {
+  const reportContext = analysisReportContext(route.query)
+  reportGranularity.value = reportContext.granularity
+  reportQueryMode.value = reportContext.mode
+  reportSummaryGranularity.value = reportContext.summaryGranularity
   selectedIndicatorCode.value = indicatorCode.value
   analysisPeriodRange.value = initialAnalysisPeriodRange()
   trendPeriodDraft.value = [...analysisPeriodRange.value]
@@ -1645,7 +1687,8 @@ watch(indicatorCode, () => {
 function initialAnalysisPeriodRange() {
   const range = route.query.trendStart && route.query.trendEnd
     ? [normalizeDateValue(route.query.trendStart), normalizeDateValue(route.query.trendEnd)]
-    : readRememberedAnalysisPeriod(route.query.indicator, route.query.indicatorVersionId)
+    : String(route.query.granularity).toUpperCase() === 'CUSTOM' ? analysisReportContext(route.query).range
+      : readRememberedAnalysisPeriod(route.query.indicator, route.query.indicatorVersionId)
   return normalizeTrendMonthRange(range)
 }
 
@@ -1660,9 +1703,7 @@ function normalizeTrendMonthRange(range) {
 }
 
 function initialReportPeriodRange() {
-  return route.query.periodStart && route.query.periodEnd
-    ? [normalizeDateValue(route.query.periodStart), normalizeDateValue(route.query.periodEnd)]
-    : []
+  return analysisReportContext(route.query).range
 }
 
 function normalizeDateValue(value) {

@@ -56,7 +56,7 @@ test('range summary only sends inclusive dates and optional published version', 
     indicatorVersionId: '102027642461313071', granularity: 'MONTHLY'
   }), {
     periodStart: '2026-04-01', periodEnd: '2026-05-08',
-    indicatorVersionId: '102027642461313071'
+    indicatorVersionId: '102027642461313071', granularity: 'MONTHLY'
   })
 })
 

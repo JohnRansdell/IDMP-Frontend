@@ -1,3 +1,5 @@
+import { formalReportGranularity, normalizeAnalysisGranularity, shiftReportDate } from '../analysis/reportPeriod.js'
+
 function firstIdentifier(source = {}) {
   return [
     source.analysisIndicatorId,
@@ -14,6 +16,7 @@ export function buildIndicatorAnalysisPeriodContext(period = '', backendQuery = 
     return {
       periodStart: fixedStart,
       periodEnd: fixedEnd,
+      periodEndInclusive: true,
       granularity: String(backendQuery.granularity || 'MONTHLY').toUpperCase()
     }
   }
@@ -39,13 +42,16 @@ export function buildIndicatorAnalysisRouteQuery(source = {}, context = {}) {
   const indicatorName = String(source.indicatorName || source.title || source.name || '').trim()
   const indicatorVersionId = String(source.analysisIndicatorVersionId || source.indicatorVersionId || '').trim()
   const periodStart = String(context.periodStart || '').trim()
-  const periodEnd = String(context.periodEnd || '').trim()
+  const rawEnd = String(context.periodEnd || '').trim()
+  const periodEnd = rawEnd ? context.periodEndInclusive ? rawEnd : shiftReportDate(rawEnd, -1) : ''
   const granularity = String(context.granularity || '').trim().toUpperCase()
   return {
     indicator,
     ...(indicatorName ? { indicatorName } : {}),
     ...(indicatorVersionId ? { indicatorVersionId } : {}),
-    ...(periodStart && periodEnd ? { periodStart, periodEnd } : {}),
-    ...(granularity ? { granularity } : {})
+    ...(periodStart && periodEnd ? { periodStart, periodEnd, summaryMode: 'FORMAL',
+      summaryGranularity: formalReportGranularity([periodStart, periodEnd], granularity),
+      trendStart: periodStart, trendEnd: periodEnd } : {}),
+    ...(granularity ? { granularity: normalizeAnalysisGranularity(granularity) } : {})
   }
 }
