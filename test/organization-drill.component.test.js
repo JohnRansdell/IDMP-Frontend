@@ -61,7 +61,7 @@ test('only department or doctor depth can be selected; source-field semantics do
   const payload = serializeDrillPaths(current(w))
   assert.deepEqual(payload[1].levels.map(level => level.levelName), ['医院', '科室', '医生'])
   assert.equal(payload[1].levels[1].memberKeyFieldCode, '科室')
-  assert.deepEqual(sqlImportGroupingFields(payload), ['病种', '科室', '科室名称', '医生', '医生名称'])
+  assert.deepEqual(sqlImportGroupingFields(payload), ['病种', '科室', '医生'])
   assert.doesNotMatch(w.text(), /入院科室|出院科室|转入科室|添加层级/)
   assert.throws(() => organization.setOrganizationDepth(current(w), 'IN_DEPT'), /仅支持/)
   await change('是否启用组织下钻', false)
@@ -99,6 +99,19 @@ test('organization validation rejects hospital-only, doctor-first, duplicate rol
   assert.match(organization.organizationConfigurationError([{ ...path, maxLevel: 'ATTENDING_DOCTOR', levels: [path.levels[0], doctor] }]), /链路必须/)
   assert.match(organization.organizationConfigurationError([{ ...path, maxLevel: 'ATTENDING_DOCTOR', levels: [...path.levels, department(), doctor] }]), /链路必须/)
   assert.match(organization.organizationConfigurationError([{ ...path, levels: [path.levels[0], { ...department(), dimensionFieldCode: 'dept;DROP' }] }]), /只能包含/)
+})
+
+test('editable organization paths bind only codes without rewriting business paths or historical snapshots', () => {
+  const historical = { ...path, pathVersionId: '999' }
+  const snapshot = JSON.stringify(historical)
+  const result = organization.codeOnlyOrganizationPaths([custom, historical])
+  assert.equal(result[0], custom)
+  assert.equal(result[1].pathVersionId, undefined)
+  assert.equal(result[1].levels[1].memberKeyFieldCode, '入院科室编码')
+  assert.equal(result[1].levels[1].displayFieldCode, undefined)
+  assert.deepEqual(sqlImportGroupingFields(result), ['病种', '入院科室编码'])
+  assert.equal(JSON.stringify(historical), snapshot)
+  assert.equal(organization.codeOnlyOrganizationPaths(result), result)
 })
 
 test('preflight never automatically enables organization and factor changes preserve the user choice', () => {

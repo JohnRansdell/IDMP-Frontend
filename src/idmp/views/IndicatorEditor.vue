@@ -685,7 +685,7 @@ import RuntimeParameterFields from '@/idmp/components/RuntimeParameterFields.vue
 import DimensionGrainEditor from '@/idmp/components/DimensionGrainEditor.vue'
 import CustomDrillPathEditor from '@/idmp/components/CustomDrillPathEditor.vue'
 import OrganizationDrillPathEditor from '@/idmp/components/OrganizationDrillPathEditor.vue'
-import { organizationConfigurationError } from '@/idmp/features/indicator/organizationDrill.js'
+import { organizationConfigurationError, codeOnlyOrganizationPaths } from '@/idmp/features/indicator/organizationDrill.js'
 import FactorDimensionBindingsEditor from '@/idmp/components/FactorDimensionBindingsEditor.vue'
 import { serializeDrillPaths, sqlImportGroupingFields, sqlImportGroupingFieldLabels } from '@/idmp/features/indicator/grouping.js'
 import { normalizeDimensionGrain } from '@/idmp/features/indicator/grouping'
@@ -746,7 +746,7 @@ const factorFieldTableSelections = reactive(new Map())
 const factorFieldState = reactive({ status: 'idle', factorVersionIds: [], fieldOptions: [], errorMessage: '' })
 const indicatorDimensionGrain = ref([])
 const drillMappingFields = computed(() => sqlImportGroupingFields(selectedDrillPaths.value))
-const organizationMappingFields = computed(() => sqlImportGroupingFields(selectedDrillPaths.value.filter(path => path.pathCode === 'ORGANIZATION')))
+const organizationMappingFields = computed(() => sqlImportGroupingFields(codeOnlyOrganizationPaths(selectedDrillPaths.value.filter(path => path.pathCode === 'ORGANIZATION'))))
 const organizationMappingLabels = computed(() => sqlImportGroupingFieldLabels(selectedDrillPaths.value.filter(path => path.pathCode === 'ORGANIZATION')))
 const businessDrillMappingFields = computed(() => sqlImportGroupingFields(selectedDrillPaths.value.filter(path => path.pathCode !== 'ORGANIZATION')))
 const grainMappingFields = computed(() => {
@@ -1615,7 +1615,7 @@ function hydrateIndicatorVersion(version) {
   const formula = extractFormula(version)
   resetDrillCapability()
   hydrateFormulaFactors(formula)
-  selectedDrillPaths.value = normalizeDrillPaths(version)
+  selectedDrillPaths.value = indicatorWorkflow.published ? normalizeDrillPaths(version) : codeOnlyOrganizationPaths(normalizeDrillPaths(version))
   dataOwnership.value = version.dataOwnership ? { ...version.dataOwnership } : null
   factorDimensionBindings.value = version.factorDimensionBindings || version.drillConfig?.factorDimensionBindings || {}
   indicatorRuntimeParameterGroups.value = Array.isArray(version.factorRuntimeParameters) ? version.factorRuntimeParameters : []
@@ -2041,7 +2041,7 @@ async function createFirstIndicatorVersionWithFormula(formula) {
     initializationStatus: ''
   })
   resetIndicatorTrialResultCollection()
-  selectedDrillPaths.value = normalizeDrillPaths(version)
+  selectedDrillPaths.value = codeOnlyOrganizationPaths(normalizeDrillPaths(version))
   dataOwnership.value = version.dataOwnership ? { ...version.dataOwnership } : null
   factorDimensionBindings.value = version.factorDimensionBindings || version.drillConfig?.factorDimensionBindings || {}
   rememberIndicatorEditorForm(indicatorWorkflow.indicatorId)
@@ -2436,7 +2436,7 @@ async function persistIndicatorFormula() {
     formulaPayload
   )
   indicatorWorkflow.resourceVersion = resolveResourceVersion(savedFormula, indicatorWorkflow.resourceVersion)
-  selectedDrillPaths.value = normalizeDrillPaths(savedFormula)
+  selectedDrillPaths.value = codeOnlyOrganizationPaths(normalizeDrillPaths(savedFormula))
   dataOwnership.value = savedFormula.dataOwnership ? { ...savedFormula.dataOwnership } : null
   factorDimensionBindings.value = savedFormula.factorDimensionBindings || savedFormula.drillConfig?.factorDimensionBindings || {}
   indicatorWorkflow.formulaSaved = true

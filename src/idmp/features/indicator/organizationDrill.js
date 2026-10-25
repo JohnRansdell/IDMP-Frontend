@@ -1,8 +1,8 @@
 import { normalizeDimensionGrain } from './grouping.js'
 
 const departmentRoles = new Set(['DEPARTMENT', 'DEPT', 'IN_DEPT', 'OUT_DEPT', 'CHANGE_DEPT'])
-const departmentLevel = () => ({ levelCode: 'DEPARTMENT', levelName: '科室', dimensionFieldCode: '科室', memberKeyFieldCode: '科室', displayFieldCode: '科室名称' })
-const doctorLevel = () => ({ levelCode: 'ATTENDING_DOCTOR', levelName: '医生', dimensionFieldCode: '医生', memberKeyFieldCode: '医生', displayFieldCode: '医生名称' })
+const departmentLevel = () => ({ levelCode: 'DEPARTMENT', levelName: '科室', dimensionFieldCode: '科室', memberKeyFieldCode: '科室' })
+const doctorLevel = () => ({ levelCode: 'ATTENDING_DOCTOR', levelName: '医生', dimensionFieldCode: '医生', memberKeyFieldCode: '医生' })
 
 export const organizationPath = paths => paths.find(path => path.pathCode === 'ORGANIZATION')
 
@@ -16,6 +16,16 @@ export function replaceOrganizationPath(paths, levels) {
   const previous = organizationPath(paths)
   const next = { pathCode: 'ORGANIZATION', pathName: previous?.pathName || '组织下钻路径', maxLevel: levels.at(-1)?.levelCode || 'HOSPITAL', levels }
   return previous ? paths.map(path => path === previous ? next : path) : [...paths, next]
+}
+
+export function codeOnlyOrganizationPaths(paths) {
+  const path = organizationPath(paths)
+  if (!path?.levels?.some(level => level.displayFieldCode || level.displaySemanticFieldCode || level.displaySemanticFieldId)) return paths
+  const levels = activeOrganizationLevels(path).map(level => {
+    const { displayFieldCode, displaySemanticFieldCode, displaySemanticFieldId, ...identity } = level
+    return identity
+  })
+  return replaceOrganizationPath(paths, levels)
 }
 
 export function setOrganizationEnabled(paths, enabled) {
@@ -35,7 +45,7 @@ export function setOrganizationDepth(paths, depth) {
     { ...(current[1] || departmentLevel()), levelCode: 'DEPARTMENT', levelName: '科室' }
   ]
   if (depth === 'ATTENDING_DOCTOR') levels.push({ ...(current[2] || doctorLevel()), levelCode: 'ATTENDING_DOCTOR', levelName: '医生' })
-  return replaceOrganizationPath(paths, levels)
+  return codeOnlyOrganizationPaths(replaceOrganizationPath(paths, levels))
 }
 
 export function organizationConfigurationError(paths) {

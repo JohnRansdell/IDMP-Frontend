@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { bindingChartOption, compileWidgetData, emptyBinding } from '../src/idmp/features/dashboard/bindingEngine.js'
 import { createFieldCatalog, createWidgetBindingDatasets } from '../src/idmp/features/dashboard/fieldCatalog.js'
-import { collectDepartmentNames, normalizeDepartmentDataset } from '../src/idmp/features/dashboard/dimensionNames.js'
+import { collectDepartmentNames, normalizeDepartmentDataset, namedDrillRecord, visibleDimensionName } from '../src/idmp/features/dashboard/dimensionNames.js'
 import { effectiveDrill, resolveDrillClickValue } from '../src/idmp/features/dashboard/drillDown.js'
 import { applyIndicatorAnalysisToSource } from '../src/idmp/features/dashboard/visualization.js'
 import { adaptDrillResult } from '../src/idmp/api/adapters/drill.js'
@@ -16,6 +16,25 @@ const path = { pathCode: 'CUSTOM_TCM_DEPT_DOCTOR', maxLevel: 'DOCTOR', levels: [
 ] }
 const binding = field => ({ ...emptyBinding('backend'), dimensions: [{ field }], measures: [{ field: 'value', aggregation: 'sum' }] })
 const dataset = rows => ({ id: 'backend', rows, fields: createFieldCatalog(rows) })
+
+test('dictionary names override stale source labels without changing member keys', () => {
+  const level = { levelCode: 'ATTENDING_DOCTOR', levelName: '医生', memberKeyFieldCode: '医生', displayFieldCode: '医生名称' }
+  const row = { dimensionKey: '001', dimensionName: '张医生', dimensionLabelSource: 'DICTIONARY', dimensions: { 医生: '001', 医生名称: '过期姓名' } }
+  assert.equal(namedDrillRecord(row, level).dimensionLabel, '张医生')
+  assert.equal(namedDrillRecord(row, level).dimensionKey, '001')
+  assert.equal(namedDrillRecord({ ...row, dimensionName: '缺失', dimensionKey: '缺失' }, level).dimensionLabel, '缺失')
+  assert.equal(row.dimensions.医生名称, '过期姓名')
+})
+
+test('projected organization labels use explicit server metadata rather than guessed column names', () => {
+  const row = { 自选医生编码: '001', dimensionLabels: { 自选医生编码: '张医生' }, value: 0.2 }
+  assert.equal(visibleDimensionName(row, { field: '自选医生编码' }), '张医生')
+  const raw = { ...dataset([row]), serverCalculated: true, rowMode: 'PROJECTED' }
+  const projectedBinding = { ...binding('自选医生编码'), measures: [{ field: 'value', aggregation: 'direct' }] }
+  const model = compileWidgetData('pie', projectedBinding, raw)
+  assert.deepEqual(model.categories, ['张医生'])
+  assert.equal(bindingChartOption('pie', model).series[0].data[0].dimensionValues.自选医生编码, '001')
+})
 
 test('Chinese department labels are names while pie click values remain member codes', () => {
   const raw = dataset([{ 科室: '791', 科室名称: '血管外科', value: 12 }, { 科室: '30', 科室名称: '肾内科', value: 8 }])
