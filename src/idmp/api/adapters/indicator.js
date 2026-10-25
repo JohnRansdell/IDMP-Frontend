@@ -385,6 +385,7 @@ export function normalizeDrillCapabilities(payload = {}) {
     factorVersionIds: Array.isArray(data.factorVersionIds) ? data.factorVersionIds.map((id) => String(id)) : [],
     defaultOrganizationPath: data.defaultOrganizationPath ? normalizeDrillPaths({ drillPaths: [data.defaultOrganizationPath] })[0] : null,
     suggestedDataOwnership: data.suggestedDataOwnership ? { ...data.suggestedDataOwnership } : null,
+    configuredDataOwnership: data.configuredDataOwnership ? { ...data.configuredDataOwnership } : null,
     dimensionGrainOptions: Array.isArray(data.dimensionGrainOptions) ? data.dimensionGrainOptions.map(String) : [],
     fieldOptions: (data.fieldOptions || []).map(item => ({ ...item, factorVersionId: String(item.factorVersionId || ''), fields: (item.fields || []).map(field => ({ ...field, fieldId: String(field.fieldId || '') })) })),
     dimensions: Array.isArray(data.dimensions) ? data.dimensions.map((dimension) => ({

@@ -1,17 +1,21 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-test('organization defaults and independent ownership survive API normalization and authoring', () => {
+test('organization defaults and configured visibility survive API normalization and authoring', () => {
   const path = { pathCode: 'ORGANIZATION', maxLevel: 'OUT_DEPT', levels: [{ levelCode: 'HOSPITAL' }, { levelCode: 'OUT_DEPT', dimensionFieldCode: '科室' }] }
   const ownership = { mode: 'DEPARTMENT', departmentFieldCode: '科室' }
-  const result = normalizeDrillCapabilities({ defaultOrganizationPath: path, suggestedDataOwnership: ownership })
+  const publicOwnership = { mode: 'GLOBAL_PUBLIC', departmentFieldCode: null }
+  const result = normalizeDrillCapabilities({ defaultOrganizationPath: path, suggestedDataOwnership: ownership, configuredDataOwnership: publicOwnership })
   assert.equal(result.defaultOrganizationPath.levels[1].dimensionFieldCode, '科室')
   assert.deepEqual(result.suggestedDataOwnership, ownership)
+  assert.deepEqual(result.configuredDataOwnership, publicOwnership)
+  assert.notEqual(result.configuredDataOwnership, publicOwnership)
   const payload = buildIndicatorVersionPayload({ drillPaths: [], dataOwnership: ownership })
   assert.deepEqual(payload.drillPaths, [])
   assert.deepEqual(payload.dataOwnership, ownership)
   assert.notEqual(payload.dataOwnership, ownership)
   assert.equal(normalizeDrillCapabilities({}).suggestedDataOwnership, null)
+  assert.equal(normalizeDrillCapabilities({}).configuredDataOwnership, null)
 })
 import {
   buildIndicatorVersionPayload,

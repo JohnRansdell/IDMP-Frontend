@@ -310,16 +310,10 @@
                 <h4>数据归属</h4>
                 <el-form label-position="top" class="ownership-fields">
                   <el-form-item label="归属类型">
-                    <el-select :model-value="dataOwnership?.mode || ''" :disabled="indicatorWorkflow.published" placeholder="历史版本未确认" aria-label="数据归属类型" @update:model-value="setDataOwnershipMode">
-                      <el-option label="科室归属" value="DEPARTMENT" />
-                      <el-option label="全院公共" value="GLOBAL_PUBLIC" />
-                      <el-option label="待确认" value="UNCLASSIFIED" />
-                    </el-select>
+                    <output aria-label="数据归属类型">{{ ownershipDisplayLabel }}</output>
                   </el-form-item>
                   <el-form-item v-if="dataOwnership?.mode === 'DEPARTMENT'" label="科室编码字段">
-                    <el-select v-model="dataOwnership.departmentFieldCode" :disabled="indicatorWorkflow.published" filterable placeholder="选择科室编码字段" aria-label="数据归属科室编码字段" @change="markDataOwnershipChanged">
-                      <el-option v-for="field in ownershipFieldOptions" :key="field" :label="field" :value="field" />
-                    </el-select>
+                    <output aria-label="数据归属科室编码字段">{{ dataOwnership.departmentFieldCode }}</output>
                   </el-form-item>
                 </el-form>
               </section>
@@ -753,9 +747,11 @@ const selectedIndicatorTrialTargetKey = ref('')
 const indicatorTrialResultsLoaded = ref(false)
 const selectedDrillPaths = ref([])
 const dataOwnership = ref(null)
-const ownershipFieldOptions = computed(() => [...new Set([dataOwnership.value?.departmentFieldCode, ...drillCapability.dimensionGrainOptions].filter(Boolean))])
+const ownershipDisplayLabel = computed(() => {
+  if (!indicatorWorkflow.published && drillCapability.status !== 'ready') return '待校验'
+  return { DEPARTMENT: '科室归属', GLOBAL_PUBLIC: '全院公共', UNCLASSIFIED: '待确认' }[dataOwnership.value?.mode] || '待校验'
+})
 let organizationDefaultsInitialized = false
-let dataOwnershipCustomized = false
 const factorDimensionBindings = ref({})
 const factorFieldTableSelections = reactive(new Map())
 const factorFieldState = reactive({ status: 'idle', factorVersionIds: [], fieldOptions: [], errorMessage: '' })
@@ -1319,21 +1315,11 @@ function isDrillPathSelected(pathCode) {
   return selectedDrillPaths.value.some((path) => path.pathCode === pathCode)
 }
 
-function setDataOwnershipMode(mode) {
-  dataOwnership.value = { mode, departmentFieldCode: mode === 'DEPARTMENT' ? drillCapability.suggestedDataOwnership?.departmentFieldCode || dataOwnership.value?.departmentFieldCode || '' : null }
-  markDataOwnershipChanged()
-}
-
-function markDataOwnershipChanged() {
-  dataOwnershipCustomized = true
-  invalidateGroupingConfiguration()
-}
-
 function applyOrganizationDefaults() {
   const path = drillCapability.defaultOrganizationPath
   if (!path || indicatorWorkflow.published) return
   selectedDrillPaths.value = [...selectedDrillPaths.value.filter(item => item.pathCode !== 'ORGANIZATION'), JSON.parse(JSON.stringify(path))]
-  if (!dataOwnership.value || dataOwnership.value.mode === 'UNCLASSIFIED') dataOwnership.value = { ...drillCapability.suggestedDataOwnership }
+  dataOwnership.value = { ...drillCapability.suggestedDataOwnership }
   invalidateGroupingConfiguration()
   runDrillCapabilityPreflight()
 }
@@ -1408,13 +1394,16 @@ async function runDrillCapabilityPreflight(providedFormula) {
       suggestedDataOwnership: capability.suggestedDataOwnership,
       errorMessage: ''
     })
+    let appliedDefaultPath = false
     if (!indicatorWorkflow.versionId && !organizationDefaultsInitialized) {
       if (!selectedDrillPaths.value.some(path => path.pathCode === 'ORGANIZATION') && capability.defaultOrganizationPath) {
         selectedDrillPaths.value = [...selectedDrillPaths.value, capability.defaultOrganizationPath]
+        appliedDefaultPath = true
       }
-      if (!dataOwnershipCustomized) dataOwnership.value = capability.suggestedDataOwnership || { mode: 'UNCLASSIFIED', departmentFieldCode: null }
       organizationDefaultsInitialized = true
     }
+    if (!indicatorWorkflow.published) dataOwnership.value = (appliedDefaultPath ? capability.suggestedDataOwnership : capability.configuredDataOwnership)
+      || { mode: 'UNCLASSIFIED', departmentFieldCode: null }
     drillCapability.formulaSignature = formulaSignature(formula)
     return true
   } catch (error) {
@@ -1644,7 +1633,6 @@ function hydrateIndicatorVersion(version) {
   hydrateFormulaFactors(formula)
   selectedDrillPaths.value = normalizeDrillPaths(version)
   dataOwnership.value = version.dataOwnership ? { ...version.dataOwnership } : null
-  dataOwnershipCustomized = true
   organizationDefaultsInitialized = true
   factorDimensionBindings.value = version.factorDimensionBindings || version.drillConfig?.factorDimensionBindings || {}
   indicatorRuntimeParameterGroups.value = Array.isArray(version.factorRuntimeParameters) ? version.factorRuntimeParameters : []
