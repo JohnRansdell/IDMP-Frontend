@@ -1,6 +1,6 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { DRILL_GRANULARITIES, drillPeriodKey, drillPeriodOptions } from './drillPeriods.js'
-import { shiftReportDate } from './reportPeriod.js'
+import { serializeAnalysisFilters, shiftReportDate } from './reportPeriod.js'
 
 export function useAnalysisPeriod(props, fetchIndicatorAnalysis) {
   const granularity = ref('MONTHLY')
@@ -24,7 +24,7 @@ export function useAnalysisPeriod(props, fetchIndicatorAnalysis) {
     const context = contextKey
     const data = await fetchIndicatorAnalysis(props.indicatorId, {
       ...params, ...(props.indicatorVersionId ? { indicatorVersionId: props.indicatorVersionId } : {}),
-      ...Object.fromEntries(Object.entries(props.filters || {}).map(([field, value]) => [`filter.${field}`, value]))
+      ...serializeAnalysisFilters(props.filters || {})
     })
     if (context === contextKey) cache.set(key, data)
     return data

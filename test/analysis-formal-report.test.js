@@ -38,7 +38,7 @@ test('old CUSTOM links recover exclusive dates without changing ordinary manual 
 
 test('formal queries use the range endpoint and do not fall back to a different monthly value on failure', async () => {
   const source = await readFile(new URL('../src/idmp/views/IndicatorAnalysis.vue', import.meta.url), 'utf8')
-  assert.match(source, /fetchIndicatorRangeSummary\(String\(selectedBackendIndicator/)
+  assert.match(source, /fetchIndicatorRangeSummary\(request.id, request.params\)/)
   assert.match(source, /rangeSummary\.value = \{ \.\.\.result, executionMode: 'FORMAL_RESULTS' \}/)
   assert.match(source, /if \(rangeSummaryLoading\.value \|\| rangeSummaryErrorMessage\.value\) return/)
   assert.match(source, /get filters\(\) \{ return rankPeriodProps\.value\.filters \}/)

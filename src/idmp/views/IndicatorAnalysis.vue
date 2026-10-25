@@ -69,7 +69,7 @@
               start-placeholder="开始日期"
               end-placeholder="结束日期"
               size="default"
-              @change="clearInstantQueryResult"
+              @change="invalidateReportSummary()"
             />
           </div>
         </div>
@@ -77,7 +77,7 @@
           <label>筛选范围</label>
           <span v-for="(values, field) in reportFilters" :key="field">{{ field }}：{{ Array.isArray(values) ? values.join('、') : values }}</span>
         </div>
-        <RuntimeParameterFields v-if="reportQueryMode === 'INSTANT' && indicatorRuntimeParameters.length" v-model="indicatorRuntimeParameterValues" :declarations="indicatorRuntimeParameters" :show-metadata="false" @change="clearInstantQueryResult" />
+        <RuntimeParameterFields v-if="reportQueryMode === 'INSTANT' && indicatorRuntimeParameters.length" v-model="indicatorRuntimeParameterValues" :declarations="indicatorRuntimeParameters" :show-metadata="false" @change="invalidateReportSummary()" />
         <div class="instant-query-panel__actions">
           <el-button type="primary" :loading="rangeSummaryLoading" :disabled="reportQueryMode === 'INSTANT' && indicatorRuntimeParameterConflicts.length > 0" @click="applyReportPeriod">查询</el-button>
         </div>
@@ -409,16 +409,20 @@ import { resolvePrimaryAnalysisOverview } from '@/idmp/features/dashboard/visual
 import { buildSqlRuntimeParameterValues, collectSqlRuntimeParameters, validateSqlRuntimeParameterValues } from '@/idmp/api/adapters/sqlImport'
 import { exportIndicatorAnalysisPdf } from '@/idmp/api/modules/indicators'
 import { analysisPdfFilename, buildAnalysisPdfReport, downloadAnalysisPdf, renderAnalysisChartPng } from '@/idmp/features/analysis/pdfReport'
-import { analysisReportContext, formalReportGranularity, normalizeAnalysisGranularity, shiftReportDate, analysisFilterParams, analysisFilters, analysisRouteKey } from '@/idmp/features/analysis/reportPeriod.js'
+import { analysisReportContext, resolveReportPeriod, reportPeriodQuery, normalizeAnalysisGranularity, shiftReportDate, analysisFilterParams, analysisFilters, analysisRouteKey } from '@/idmp/features/analysis/reportPeriod.js'
+import { buildReportSummaryRequest } from '@/idmp/features/analysis/reportQuery.js'
 import { reportOverview, reportProvenance } from '@/idmp/features/analysis/reportResult.js'
 
 const route = useRoute()
 const router = useRouter()
 const activeTab = ref('trend')
 const period = ref('月度')
-const reportGranularity = ref(analysisReportContext(route.query).granularity)
-const reportQueryMode = ref(analysisReportContext(route.query).mode)
-const reportSummaryGranularity = ref(analysisReportContext(route.query).summaryGranularity)
+const initialReportContext = analysisReportContext(route.query)
+const reportGranularity = ref(initialReportContext.granularity)
+const reportSummaryGranularity = ref(initialReportContext.summaryGranularity)
+const reportSelection = computed(() => resolveReportPeriod(reportPeriodRange.value,
+  reportGranularity.value === 'STATIC' ? 'STATIC' : reportSummaryGranularity.value))
+const reportQueryMode = computed(() => reportSelection.value.mode)
 const reportDirty = ref(false)
 const reportFilterParams = computed(() => analysisFilterParams(route.query))
 const reportFilters = computed(() => analysisFilters(route.query))
@@ -1138,73 +1142,50 @@ async function applyReportPeriod() {
   if (temporal) {
     if (!validateOptionalDateRange(reportPeriodRange.value, '报告期')) return
     if (!isCompleteDateRange(reportPeriodRange.value)) return ElMessage.warning('请选择完整的报告期范围')
-    reportSummaryGranularity.value = formalReportGranularity(reportPeriodRange.value, reportSummaryGranularity.value)
-    reportQueryMode.value = reportSummaryGranularity.value === 'CUSTOM' ? 'INSTANT' : 'FORMAL'
   }
   const parameterMessage = reportQueryMode.value === 'INSTANT' && validateSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)
   if (parameterMessage) return ElMessage.warning(parameterMessage)
-  if (temporal && (route.query.periodStart !== reportPeriodRange.value[0] || route.query.periodEnd !== reportPeriodRange.value[1]
-    || route.query.summaryMode !== reportQueryMode.value || route.query.granularity !== backendAnalysisGranularity.value)) {
-    const query = {
-      ...route.query,
-      granularity: backendAnalysisGranularity.value,
-      summaryMode: reportQueryMode.value,
-      summaryGranularity: reportSummaryGranularity.value,
-      periodStart: reportPeriodRange.value[0],
-      periodEnd: reportPeriodRange.value[1]
-    }
+  const query = { ...route.query, ...reportPeriodQuery({ ...reportSelection.value, granularity: backendAnalysisGranularity.value }) }
+  if (temporal && analysisRouteKey(query) !== analysisRouteKey(route.query)) {
+    reportSummaryGranularity.value = reportSelection.value.summaryGranularity
     localReportRouteKey = analysisRouteKey(query)
     await router.replace({ path: '/analysis', query })
   }
   void loadRangeSummary()
 }
 
-function reportQueryPayload() {
-  const payload = { summaryOnly: true, ...(Object.keys(reportFilters.value).length ? { filters: reportFilters.value } : {}) }
-  if (backendAnalysisGranularity.value !== 'STATIC') {
-    payload.periodStart = `${normalizeDateValue(reportPeriodRange.value[0])}T00:00:00`
-    payload.periodEnd = nextDayStart(reportPeriodRange.value[1])
-  }
-  if (indicatorRuntimeParameters.value.length) {
-    payload.parameters = buildSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)
-  }
-  return payload
-}
-
 async function loadRangeSummary() {
-  reportDirty.value = false
-  if (reportQueryMode.value === 'FORMAL'
-    ? !canRequest('GET', '/analysis/indicators/1/range-summary') : !canRequest('POST', '/analysis/indicator-versions/1/instant-summary')) {
+  invalidateReportSummary(false)
+  const request = buildReportSummaryRequest({
+    indicatorId: selectedBackendIndicator.value?.id || selectedBackendIndicator.value?.indicatorId,
+    versionId: currentIndicatorVersionId.value,
+    range: reportSelection.value.range,
+    granularity: reportSelection.value.summaryGranularity,
+    filters: reportFilters.value,
+    parameters: indicatorRuntimeParameters.value.length
+      ? buildSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value) : undefined
+  })
+  if (!request) return
+  if (!canRequest(request.method, request.path)) {
     rangeSummaryErrorMessage.value = '当前账号没有所选查询方式的访问权限'
     return
   }
-  const versionId = currentIndicatorVersionId.value
-  if (!versionId || (backendAnalysisGranularity.value !== 'STATIC' && !isCompleteDateRange(reportPeriodRange.value))) return
-  const requestSequence = ++rangeSummaryRequestSequence
-  rangeSummary.value = null
-  runtimeQueryResult.value = null
-  runtimeQueryExpanded.value = []
-  rangeSummaryErrorMessage.value = ''
+  const requestSequence = rangeSummaryRequestSequence
   rangeSummaryLoading.value = true
-  const [periodStart, periodEnd] = backendAnalysisGranularity.value === 'STATIC' ? ['', ''] : reportPeriodRange.value
-  const payload = reportQueryPayload()
+  const [periodStart = '', periodEnd = ''] = request.range
   try {
-    if (reportQueryMode.value === 'FORMAL' && backendAnalysisGranularity.value !== 'STATIC') {
-      const result = await fetchIndicatorRangeSummary(String(selectedBackendIndicator.value.id || selectedBackendIndicator.value.indicatorId), {
-        indicatorVersionId: versionId, periodStart, periodEnd,
-        ...reportFilterParams.value,
-        granularity: formalReportGranularity([periodStart, periodEnd], reportSummaryGranularity.value)
-      })
+    if (request.mode === 'FORMAL') {
+      const result = await fetchIndicatorRangeSummary(request.id, request.params)
       if (requestSequence === rangeSummaryRequestSequence) {
         rangeSummary.value = { ...result, executionMode: 'FORMAL_RESULTS' }
         reportParameterSnapshot.value = {}
       }
       return
     }
-    const result = await queryIndicatorSummary(versionId, payload)
+    const result = await queryIndicatorSummary(request.id, request.payload)
     if (requestSequence === rangeSummaryRequestSequence) {
       rangeSummary.value = normalizeIndicatorInstantSummary(result, periodStart, periodEnd)
-      reportParameterSnapshot.value = result.parameterSnapshot || payload.parameters || {}
+      reportParameterSnapshot.value = result.parameterSnapshot || request.payload.parameters || {}
       if (indicatorRuntimeParameters.value.length) runtimeQueryResult.value = result
     }
   } catch (error) {
@@ -1213,7 +1194,7 @@ async function loadRangeSummary() {
       const migrationHint = message.includes('SQL业务参数不支持冒号写法')
         ? '；该指标使用了旧式 SQL 参数，请改为 [[AND 字段 = {{参数名}}]] 后重新导入并发布'
         : ''
-      const label = reportQueryMode.value === 'FORMAL' ? '正式区间查询' : '即时查询'
+      const label = request.mode === 'FORMAL' ? '正式区间查询' : '即时查询'
       rangeSummaryErrorMessage.value = message ? `${label}失败：${message}${migrationHint}` : `${label}失败，请核对查询条件后重试`
       ElMessage.warning(rangeSummaryErrorMessage.value)
     }
@@ -1222,21 +1203,15 @@ async function loadRangeSummary() {
   }
 }
 
-function clearInstantQueryResult() {
-  reportDirty.value = true
+function invalidateReportSummary(dirty = true) {
+  reportDirty.value = dirty
   ++rangeSummaryRequestSequence
   rangeSummary.value = null
   rangeSummaryErrorMessage.value = ''
   rangeSummaryLoading.value = false
   runtimeQueryResult.value = null
   runtimeQueryExpanded.value = []
-}
-
-function nextDayStart(value) {
-  const parts = normalizeDateValue(value).split('-').map(Number)
-  if (parts.length !== 3 || parts.some(part => !Number.isFinite(part))) return ''
-  const date = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + 1))
-  return `${date.toISOString().slice(0, 10)}T00:00:00`
+  reportParameterSnapshot.value = {}
 }
 
 function formatRuntimeQueryCell(value) {
@@ -1492,17 +1467,11 @@ function normalizeList(payload) {
 
 async function refreshIndicatorAnalysis({ preserveRangeSummary = false } = {}) {
   const refreshSequence = ++analysisRefreshSequence
-  if (!preserveRangeSummary) ++rangeSummaryRequestSequence
+  if (!preserveRangeSummary) invalidateReportSummary(false)
   const trendSequence = ++trendRefreshSequence
   trendLoading.value = false
   analysisLoading.value = true
   backendAnalysis.value = null
-  if (!preserveRangeSummary) {
-    reportDirty.value = false
-    rangeSummary.value = null
-    rangeSummaryLoading.value = false
-    rangeSummaryErrorMessage.value = ''
-  }
   trendBackendAnalysis.value = null
   backendIndicatorVersion.value = null
   departmentNamesByCode.value = {}
@@ -1528,7 +1497,6 @@ async function refreshIndicatorAnalysis({ preserveRangeSummary = false } = {}) {
     }
     const calculationMode = resolveIndicatorCalculationMode(backendIndicatorVersion.value, backendIndicator, route.query.granularity)
     if (calculationMode === 'STATIC') {
-      reportQueryMode.value = 'INSTANT'
       reportGranularity.value = 'STATIC'
       reportPeriodRange.value = []
       analysisPeriodRange.value = []
@@ -1696,7 +1664,6 @@ watch(() => analysisRouteKey(route.query), key => {
   localReportRouteKey = ''
   const reportContext = analysisReportContext(route.query)
   reportGranularity.value = reportContext.granularity
-  reportQueryMode.value = reportContext.mode
   reportSummaryGranularity.value = reportContext.summaryGranularity
   selectedIndicatorCode.value = indicatorCode.value
   drillStartLevel.value = String(route.query.drillStartLevel || 'HOSPITAL').toUpperCase()

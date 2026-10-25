@@ -10,10 +10,34 @@ export function shiftReportDate(value, days) {
 export function formalReportGranularity(range, requested = 'CUSTOM') {
   if (!range?.[0] || !range?.[1] || !FORMAL_GRAINS.includes(requested)) return 'CUSTOM'
   const start = new Date(`${range[0]}T00:00:00Z`)
+  if (!Number.isFinite(start.getTime())) return 'CUSTOM'
   if (start.getUTCDate() !== 1 || requested === 'QUARTERLY' && start.getUTCMonth() % 3 !== 0
     || requested === 'YEARLY' && start.getUTCMonth() !== 0) return 'CUSTOM'
   start.setUTCMonth(start.getUTCMonth() + { MONTHLY: 1, QUARTERLY: 3, YEARLY: 12 }[requested])
   return start.toISOString().slice(0, 10) === shiftReportDate(range[1], 1) ? requested : 'CUSTOM'
+}
+
+// Report ranges are inclusive calendar dates. CUSTOM remains custom even for a full quarter/year.
+export function resolveReportPeriod(range = [], requested = 'MONTHLY') {
+  const dates = range.length === 2 && range.every(Boolean) ? range.map(value => String(value).slice(0, 10)) : []
+  const grain = String(requested).toUpperCase()
+  const summaryGranularity = grain === 'STATIC' ? 'STATIC'
+    : dates.length ? formalReportGranularity(dates, grain) : grain
+  return {
+    range: summaryGranularity === 'STATIC' ? [] : dates,
+    summaryGranularity,
+    mode: FORMAL_GRAINS.includes(summaryGranularity) ? 'FORMAL' : 'INSTANT'
+  }
+}
+
+export function reportPeriodQuery(context) {
+  const { range, summaryGranularity, mode } = context
+  return {
+    granularity: normalizeAnalysisGranularity(context.granularity),
+    summaryMode: mode,
+    summaryGranularity,
+    ...(range.length === 2 ? { periodStart: range[0], periodEnd: range[1] } : {})
+  }
 }
 
 export function analysisReportContext(query = {}) {
@@ -22,9 +46,11 @@ export function analysisReportContext(query = {}) {
   const range = query.periodStart && query.periodEnd ? [String(query.periodStart).slice(0, 10),
     legacyCustom ? shiftReportDate(query.periodEnd, -1) : String(query.periodEnd).slice(0, 10)] : []
   const summaryGranularity = String(query.summaryGranularity || (legacyCustom ? 'CUSTOM' : query.granularity) || 'MONTHLY').toUpperCase()
-  return { range, mode: summaryGranularity === 'CUSTOM' || summaryGranularity === 'STATIC' ? 'INSTANT' : 'FORMAL',
-    granularity: normalizeAnalysisGranularity(query.granularity),
-    summaryGranularity }
+  return { ...resolveReportPeriod(range, summaryGranularity), granularity: normalizeAnalysisGranularity(query.granularity) }
+}
+
+export function serializeAnalysisFilters(filters = {}) {
+  return Object.fromEntries(Object.entries(filters).map(([field, value]) => [`filter.${field}`, value]))
 }
 
 export function analysisFilterParams(query = {}) {
