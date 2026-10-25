@@ -19,7 +19,8 @@ export function createMedicalDashboardRuntime(api = { fetchMedicalDashboard, fet
       return detail
     },
     async query(id, query, options) {
-      const periodEnd = query.periodEnd ? new Date(new Date(`${query.periodEnd}T00:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10) : null
+      const periodEnd = query.granularity === 'CUSTOM' ? query.periodEnd
+        : query.periodEnd ? new Date(new Date(`${query.periodEnd}T00:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10) : null
       const response = await api.queryMedicalDashboard(id, { ...query, periodEnd }, options)
       options?.signal?.throwIfAborted()
       const widgets = Object.fromEntries(Object.entries(response.data.widgets).map(([code, result]) => {

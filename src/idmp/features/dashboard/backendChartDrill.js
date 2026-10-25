@@ -63,6 +63,7 @@ export async function loadBackendChartRoot(search, target, { signal } = {}) {
     const levels = path?.levels || []
     const maxIndex = levels.findIndex(level => level.levelCode === path.maxLevel)
     return { resultId: context.resultId, snapshotId: context.snapshotId, indicatorVersionId: target.indicatorVersionId,
+      periodRange: context.periodRange,
       ...(levels.length ? { ...(path?.pathCode ? { pathCode: path.pathCode } : {}), levels: maxIndex >= 0 ? levels.slice(0, maxIndex + 1) : levels } : {}),
       parentKeys: context.parentKeys, hospitalCode: context.parentKeys?.HOSPITAL_CODE,
       filters: context.filters || {}, departmentNames: target.departmentNames, maxLevel: path?.maxLevel || '',
@@ -122,6 +123,7 @@ export async function loadBackendChartLevel(search, root, navigation, { signal }
   for (let pageNum = 1; ; pageNum += 1) {
     signal?.throwIfAborted()
     const result = await search(root.resultId, {
+      ...(root.periodRange ? { periodRange: root.periodRange } : {}),
       ...(root.pathCode ? { pathCode: root.pathCode } : {}), currentLevel: level, parentKeys, filters: root.filters || {}, pageNum, pageSize: PAGE_SIZE, snapshotId: root.snapshotId
     }, { source: 'live', signal })
     checkLevel(result, root, level, parentKeys)
@@ -221,6 +223,8 @@ function checkRoot(result, target) {
 
 function checkLevel(result, root, level, parentKeys) {
   const context = result?.context || {}
+  if (root.periodRange && (context.periodStart?.slice(0, 10) !== root.periodRange.periodStart
+    || context.periodEnd?.slice(0, 10) !== root.periodRange.periodEnd)) throw new Error('下钻结果与所选统计区间不一致')
   const currentLevel = root.levels ? context.currentLevel : normalizeOrganizationDrillLevel(context.currentLevel)
   if (result?.dataSource === 'mock' || context.resultId !== root.resultId || context.snapshotId !== root.snapshotId || context.indicatorVersionId !== root.indicatorVersionId || currentLevel !== level || (root.pathCode && context.pathCode && context.pathCode !== root.pathCode)) throw new Error('下钻结果版本、快照或层级不一致')
   for (const [field, value] of Object.entries(parentKeys)) {

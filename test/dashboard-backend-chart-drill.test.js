@@ -7,6 +7,31 @@ import {
   loadBackendChartRoot, nextBackendChartNavigation, projectedDrillNavigation
 } from '../src/idmp/features/dashboard/backendChartDrill.js'
 
+test('range drill keeps its dates across paged requests and rejects a single-month response', async () => {
+  const periodRange = { periodStart: '2026-02-01', periodEnd: '2026-05-01' }
+  const root = await loadBackendChartRoot(() => assert.fail('range entry must not reload analysis'), {
+    resultId: '55', indicatorVersionId: '10',
+    drillContext: { resultId: '55', snapshotId: '66', currentLevel: 'DOCTOR', parentKeys: { 科室: '15' }, filters: {}, periodRange },
+    path: { levels: [{ levelCode: 'DEPT', dimensionFieldCode: '科室' }, { levelCode: 'DOCTOR', dimensionFieldCode: '医生' }], maxLevel: 'DOCTOR' }
+  })
+  const navigation = { currentLevel: 'DOCTOR', parentKeys: { 科室: '15' } }
+  const response = { context: { resultId: '55', snapshotId: '66', indicatorVersionId: '10', currentLevel: 'DOCTOR', ...periodRange },
+    records: [], pageInfo: { hasTotal: true, hasPageNum: true, hasPageSize: true, total: 201, pageNum: 1, pageSize: 200 } }
+  const pages = []
+  const result = await loadBackendChartLevel(async (id, payload) => {
+    assert.deepEqual(payload.periodRange, periodRange)
+    assert.deepEqual(payload.parentKeys, { 科室: '15' })
+    pages.push(payload.pageNum)
+    return { ...response, pageInfo: { ...response.pageInfo, pageNum: payload.pageNum },
+      records: Array.from({ length: payload.pageNum === 1 ? 200 : 1 }, (_, index) => ({
+        dimensionKey: String((payload.pageNum - 1) * 200 + index), levelCode: 'DOCTOR', indicatorValue: 0.1
+      })) }
+  }, root, navigation)
+  assert.deepEqual(pages, [1, 2])
+  assert.equal(result.records.length, 201)
+  await assert.rejects(loadBackendChartLevel(async () => ({ ...response, context: { ...response.context, periodEnd: '2026-03-01' } }), root, navigation), /统计区间不一致/)
+})
+
 test('scoped medical drill uses supplied levels without switching to a generic path', async () => {
   const levels = [{ levelCode: 'OUT_DEPT', dimensionFieldCode: 'OUT_DEPT_CODE' }, { levelCode: 'DOCTOR', dimensionFieldCode: 'DOCTOR_NO' }]
   const root = await loadBackendChartRoot(() => assert.fail('must not fetch an unscoped root'), {

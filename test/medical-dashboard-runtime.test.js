@@ -27,6 +27,8 @@ test('shared viewer uses scoped metadata, inclusive wire bounds and per-result d
   assert.ok(calls.filter(c => c[0] === 'query').every(c => c[1].periodEnd === '2026-01-31'))
   assert.equal(results[0].widgets.BLOCKED.status, 'ERROR')
   assert.equal(results[0].widgets.BLOCKED.message, 'No scoped source')
+  await runtime.query('2', { periodStart: '2026-02-01', periodEnd: '2026-05-01', granularity: 'CUSTOM', widgetCodes: ['57'] })
+  assert.equal(calls.filter(c => c[0] === 'query').at(-1)[1].periodEnd, '2026-05-01')
   await runtime.drillTarget({ config: {} }, {}, { rows: results[0].widgets['55'].rows })
   await runtime.searchDrill('55', {})
   await runtime.searchDrill('56', {})
