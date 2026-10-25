@@ -73,7 +73,9 @@ export function fetchDashboardDataSources(options = {}) {
 }
 
 export function fetchDashboardDataSourceFields(code, options = {}) {
-  return requestJson(`/analysis/dashboard-data-sources/${encodeURIComponent(code)}/fields`, options)
+  const { indicatorVersionId, ...requestOptions } = options
+  const query = indicatorVersionId ? `?indicatorVersionId=${encodeURIComponent(indicatorVersionId)}` : ''
+  return requestJson(`/analysis/dashboard-data-sources/${encodeURIComponent(code)}/fields${query}`, requestOptions)
 }
 
 export function previewDashboardWidget(payload, options = {}) {

@@ -732,6 +732,7 @@ const remoteWidgetPreviewGenerations = new Map()
 const designerSourceLoadingId = ref('')
 const designerSourceSelectionGenerations = new Map()
 const remoteFieldCatalog = ref({})
+const remoteVersionFieldCatalog = ref({})
 const remoteSourcePeriodOptions = ref({})
 const designerPeriodOptions = computed(() => {
   const options = [...periodOptions.value, ...Object.values(remoteSourcePeriodOptions.value).flat()].filter(option => /^\d{4}-\d{2}$/.test(String(option?.value || '')))
@@ -1587,15 +1588,15 @@ function canOpenWidgetAnalysis(widget) {
 
 function goWidgetAnalysis(widget) {
   if (isEditing.value || remoteQueryLoading.value) return
-  const source = getWidgetSource(widget) || {
+  const source = { ...(getWidgetSource(widget) || {
     code: widget.sourceCode || '',
     indicatorCode: widget.sourceCode || '',
     indicatorName: widget.title || widget.sourceName || '',
     analysisIndicatorVersionId: widget.config?.analysisIndicatorVersionId || ''
-  }
+  }), ...(widget.config?.analysisIndicatorVersionId ? { analysisIndicatorVersionId: widget.config.analysisIndicatorVersionId } : {}) }
   const result = dashboardQueryResult.value?.widgets?.[widget.id]
   const drillContext = result?.drillContext || result?.rows?.find(row => row?.drillContext)?.drillContext || null
-  const planned = buildRemoteWidgetQuery(widget, remoteWidgetQueryContext(remoteSelectedPeriod(widget), widget.sourceCode))
+  const planned = buildRemoteWidgetQuery(widget, remoteWidgetQueryContext(remoteSelectedPeriod(widget), widget))
   if (!planned.query) return ElMessage.warning(planned.error || '当前组件筛选范围没有交集')
   if (widget.config?.dataBinding?.filters?.length) return ElMessage.warning('该组件包含独立比较筛选，暂不支持保持此口径跳转分析页')
   goIndicatorAnalysis(source, widget.config?.backendQuery, drillContext, planned.query)
@@ -2786,7 +2787,7 @@ async function previewRemoteWidget(widget, { templateAutoConfigure = false } = {
       remoteWidgetDatasets.value = { ...remoteWidgetDatasets.value, [widgetId]: createMultiIndicatorDataset(widget, datasets) }
       return
     }
-    const planned = buildRemoteWidgetQuery(widget, remoteWidgetQueryContext(range, widget.sourceCode))
+    const planned = buildRemoteWidgetQuery(widget, remoteWidgetQueryContext(range, widget))
     if (planned.error) throw new Error(planned.error)
     if (planned.empty) throw new Error('组件范围与看板周期没有交集')
     const { widgetCodes, ...baseQuery } = planned.query
@@ -3020,6 +3021,15 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
       return dashboardDataSourceToFrontend({ code, name: widget?.sourceName || widget?.title || code, indicatorVersionId: widget?.config?.analysisIndicatorVersionId })
     })
     remoteFieldCatalog.value = Object.fromEntries(metadataEntries.map(item => [item.code, item.fields]))
+    const versionedWidgets = [...new Map(rawSchema.widgets.filter(widget => widget.sourceCode && widget.config?.analysisIndicatorVersionId)
+      .map(widget => [`${widget.sourceCode}@${widget.config.analysisIndicatorVersionId}`, widget])).entries()]
+    const versionedFields = medicalMode.value ? [] : await Promise.all(versionedWidgets.map(async ([key, widget]) => {
+      const fields = await fetchDashboardDataSourceFields(widget.sourceCode, { signal, indicatorVersionId: widget.config.analysisIndicatorVersionId })
+      const version = await dashboardIndicatorVersion(null, widget)
+      return [key, annotateDepartmentFilterFields(fields, version?.drillConfig?.drillPaths || version?.drillPaths || [])]
+    }))
+    if (!isCurrentLoad()) return
+    remoteVersionFieldCatalog.value = Object.fromEntries(versionedFields)
     remoteSourcePeriodOptions.value = Object.fromEntries(metadataEntries.map(item => [item.code, createPublishedDashboardPeriodOptions([item.periods])]))
     const availablePeriods = createPublishedDashboardPeriodOptions(metadataEntries.map(item => item.periods))
     periodOptions.value = availablePeriods
@@ -3067,11 +3077,14 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
   }
 }
 
-function remoteWidgetQueryContext(range, sourceCode, schema = isEditing.value ? editingDashboardSchema.value : dashboardSchema.value) {
+function remoteWidgetQueryContext(range, widgetOrCode, schema = isEditing.value ? editingDashboardSchema.value : dashboardSchema.value) {
+  const sourceCode = typeof widgetOrCode === 'string' ? widgetOrCode : widgetOrCode.sourceCode
+  const versionId = typeof widgetOrCode === 'string' ? null : widgetOrCode.config?.analysisIndicatorVersionId
+  const fields = remoteVersionFieldCatalog.value[`${sourceCode}@${versionId}`] || remoteFieldCatalog.value[sourceCode] || []
   const definitions = schema?.globalFilters || globalFilterDefinitions.value
   return {
     ...range, definitions, values: schema === dashboardSchema.value || schema === editingDashboardSchema.value ? filterRuntimeValues.value : initialFilterValues(definitions),
-    fields: remoteFieldCatalog.value[sourceCode] || [], department: department.value, interactions: interactionFilterState.value
+    fields, department: department.value, interactions: interactionFilterState.value
   }
 }
 
@@ -3115,7 +3128,7 @@ async function queryRemoteDashboardByPeriod(schema, signal, dashboardId) {
         return { widgets: { [widget.id]: { status: 'ERROR', message: error?.message || '多指标查询失败', rows: [] } } }
       }
     }
-    const planned = buildRemoteWidgetQuery(widget, remoteWidgetQueryContext(range, widget.sourceCode, schema))
+    const planned = buildRemoteWidgetQuery(widget, remoteWidgetQueryContext(range, widget, schema))
     if (planned.error || planned.empty) return { widgets: { [widget.id]: { status: planned.error ? 'ERROR' : 'EMPTY', message: planned.error || '组件范围与看板周期没有交集', rows: [] } } }
     const query = planned.query
     const appliedGlobalFilterFields = Object.keys(query.filters || {})
@@ -3221,7 +3234,7 @@ async function buildDashboardWidgetDatasets(schema, result) {
   const entries = await mapWithConcurrency(schema.widgets.filter(isDashboardIndicatorQueryWidget), 3, async widget => {
     const dataset = widgetResultToDataset(dashboardWidgetResult(result, schema.widgets, widget), remoteFieldCatalog.value[widget.sourceCode], 'backend')
     const query = remoteSelectedPeriod(widget)
-    const planned = buildRemoteWidgetQuery(widget, remoteWidgetQueryContext(query, widget.sourceCode, schema))
+    const planned = buildRemoteWidgetQuery(widget, remoteWidgetQueryContext(query, widget, schema))
     return [String(widget.id), await normalizeDashboardWidgetDataset(widget, dataset, planned.query || query)]
   })
   return Object.fromEntries(entries)

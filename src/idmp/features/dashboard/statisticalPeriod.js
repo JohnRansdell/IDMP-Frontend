@@ -63,6 +63,11 @@ export function enforceDashboardResultPeriod(result, query, { timeSeries = false
     ? boundary(row.periodStart) && boundary(row.periodEnd) && boundary(row.periodStart) >= query.periodStart && boundary(row.periodEnd) <= query.periodEnd
     : samePeriod(row, query))
   const context = { ...period, label: dashboardPeriodLabel(period), ...dashboardComparisonPeriods(period) }
+  if (result?.status === 'EMPTY' && !rows.length) return {
+    ...result, rows: [], resultId: null, snapshotId: null, drillContext: null,
+    timeComparison: null, comparison: { yoy: null, mom: null }, periodContext: context,
+    message: result.message || '当前统计周期与筛选条件下没有匹配的结果'
+  }
   const unavailable = !query.granularity || (!rows.length && result?.status !== 'LOADING')
   if (unavailable) return {
     ...result, status: 'NO_ACTIVE_RESULT', rows: [], resultId: null, snapshotId: null, drillContext: null,
