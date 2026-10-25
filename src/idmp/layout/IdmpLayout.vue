@@ -1,7 +1,7 @@
 <template>
   <div class="idmp-shell" :class="{ 'is-designer-immersive': designerImmersive }">
     <aside v-if="!designerImmersive" class="idmp-sidebar">
-      <RouterLink :to="medicalViewer ? '/dashboard?medical=1' : '/dashboard'" class="idmp-brand" aria-label="返回指标总览">
+      <RouterLink :to="medicalViewer ? '/dashboard?medical=1' : accessibleHome()" class="idmp-brand" aria-label="返回首页">
         <span class="idmp-brand__mark">
           <el-icon :size="18"><DataAnalysis /></el-icon>
         </span>
@@ -125,7 +125,7 @@ import {
   TrendCharts,
   SwitchButton
 } from '@element-plus/icons-vue'
-import { logoutSession, sessionState, canNavigate, canRequest } from '@/idmp/auth/session'
+import { logoutSession, sessionState, canNavigate, canRequest, accessibleHome } from '@/idmp/auth/session'
 import { isMedicalDashboardSession } from '@/idmp/api/request'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import { ElMessage } from '@/idmp/utils/message'

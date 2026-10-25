@@ -2,8 +2,16 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { canAccess, canVisit, firstAccessiblePath, matchesPath } from '../src/idmp/auth/permissions.js'
 import { createAuthenticationGuard } from '../src/idmp/auth/navigation.js'
+import { readFileSync } from 'node:fs'
 
 const session = (rules = [], roles = ['CUSTOM'], deniedPaths = []) => ({ roles, apiRules: rules.map(([action, resourcePattern]) => ({ action, resourcePattern: '/api/v1' + resourcePattern })), deniedPaths })
+test('the platform brand link uses the authorized home while the medical viewer stays isolated', () => {
+  const layout = readFileSync(new URL('../src/idmp/layout/IdmpLayout.vue', import.meta.url), 'utf8')
+  assert.match(layout, /:to="medicalViewer \? '\/dashboard\?medical=1' : accessibleHome\(\)"/)
+  assert.equal(firstAccessiblePath(session([['GET', '/indicators']], ['SCHEDULER'])), '/indicator')
+  assert.equal(firstAccessiblePath(session([['GET', '/analysis/dashboards']], ['DEPARTMENT_ANALYST'])), '/dashboard')
+  assert.equal(firstAccessiblePath(session()), '/forbidden')
+})
 test('Ant paths distinguish a child wildcard from recursive paths, including an empty suffix', () => {
   assert.equal(matchesPath('/api/v1/meta/policy-files/**', '/api/v1/meta/policy-files'), true)
   assert.equal(matchesPath('/api/v1/indicators/*', '/api/v1/indicators/12'), true)
