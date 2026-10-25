@@ -17,7 +17,6 @@
     <section v-else-if="detail.id" class="detail-layout">
       <article class="surface-card formula-definition" aria-label="指标公式">
         <dl class="identity-grid" aria-label="指标标识信息">
-          <div><dt>数据归属</dt><dd>{{ { DEPARTMENT: '科室归属', GLOBAL_PUBLIC: '全院公共', UNCLASSIFIED: '待确认' }[selectedVersion?.dataOwnership?.mode] || '历史版本未确认' }}<small v-if="selectedVersion?.dataOwnership?.mode === 'DEPARTMENT'" class="version-id-text">{{ selectedVersion.dataOwnership.departmentFieldCode }}</small></dd></div>
           <div><dt>指标名称</dt><dd class="identity-name">{{ indicatorName }}</dd></div>
           <div><dt>指标 ID</dt><dd class="identity-id mono-data">{{ detail.id || '—' }}</dd></div>
           <div>

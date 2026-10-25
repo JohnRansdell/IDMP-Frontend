@@ -306,17 +306,6 @@
               </el-tooltip>
             </div>
             <section class="drill-capability-card" aria-label="指标版本下钻能力预检">
-              <section class="grouping-section" aria-label="数据归属">
-                <h4>数据归属</h4>
-                <el-form label-position="top" class="ownership-fields">
-                  <el-form-item label="归属类型">
-                    <output aria-label="数据归属类型">{{ ownershipDisplayLabel }}</output>
-                  </el-form-item>
-                  <el-form-item v-if="dataOwnership?.mode === 'DEPARTMENT'" label="科室编码字段">
-                    <output aria-label="数据归属科室编码字段">{{ dataOwnership.departmentFieldCode }}</output>
-                  </el-form-item>
-                </el-form>
-              </section>
               <section class="grouping-section" aria-label="下钻配置">
               <CustomDrillPathEditor v-model="selectedDrillPaths" :disabled="indicatorWorkflow.published" @update:model-value="invalidateGroupingConfiguration" />
               <FactorDimensionBindingsEditor v-model="factorDimensionBindings" title="下钻字段映射" class="drill-field-bindings" :table-selections="factorFieldTableSelections" :disabled="indicatorWorkflow.published" :fields="drillMappingFields" :factors="dimensionBindingFactors" :field-options="factorFieldState.fieldOptions" :loading="factorFieldState.status === 'loading'" :error="factorFieldState.errorMessage" @retry="loadFactorFieldOptions" @update:model-value="invalidateGroupingConfiguration" />
@@ -747,10 +736,6 @@ const selectedIndicatorTrialTargetKey = ref('')
 const indicatorTrialResultsLoaded = ref(false)
 const selectedDrillPaths = ref([])
 const dataOwnership = ref(null)
-const ownershipDisplayLabel = computed(() => {
-  if (!indicatorWorkflow.published && drillCapability.status !== 'ready') return '待校验'
-  return { DEPARTMENT: '科室归属', GLOBAL_PUBLIC: '全院公共', UNCLASSIFIED: '待确认' }[dataOwnership.value?.mode] || '待校验'
-})
 let organizationDefaultsInitialized = false
 const factorDimensionBindings = ref({})
 const factorFieldTableSelections = reactive(new Map())
@@ -3154,15 +3139,6 @@ onMounted(async () => {
   border-radius: 8px;
   background: var(--idmp-layer-02);
 }
-
-.ownership-fields {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
-  gap: 0 16px;
-  max-width: 720px;
-}
-
-.ownership-fields :deep(.el-select) { width: 100%; }
 
 .drill-capability-card .drill-config-card__heading p {
   margin: 5px 0 0;
