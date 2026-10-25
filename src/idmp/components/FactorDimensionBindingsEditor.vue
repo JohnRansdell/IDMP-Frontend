@@ -9,7 +9,7 @@
     <div v-for="factor in factors" :key="factor.versionId" class="bindings__factor">
       <strong>{{ factor.name || factor.factorName || factor.versionId }}</strong>
       <el-form label-position="top" class="bindings__fields">
-        <el-form-item v-for="field in fields" :key="field" :label="field">
+        <el-form-item v-for="field in fields" :key="field" :label="fieldLabels[field] || field">
           <div class="bindings__selectors">
             <el-select class="bindings__table-select" :model-value="selectedTable(factor.versionId, field)" filterable clearable :loading="loading" :disabled="disabled || loading || Boolean(error)" :aria-label="`${factor.name || factor.versionId} ${field}物理表`" placeholder="选择物理表" no-data-text="该因子暂无可选物理表" @update:model-value="value => selectTable(factor.versionId, field, value)">
               <el-option v-for="table in tablesFor(factor.versionId)" :key="table.key" :value="table.key" :label="table.label" />
@@ -26,7 +26,7 @@
 <script setup>
 import { computed, reactive, watch } from 'vue'
 import { dimensionFieldTableGroups, dimensionFieldTableKey } from '../utils/dimensionFieldOptions.js'
-const props = defineProps({ modelValue: { type: Object, default: () => ({}) }, title: { type: String, default: '因子维度字段映射' }, tableSelections: { type: Map, default: null }, fields: { type: Array, default: () => [] }, factors: { type: Array, default: () => [] }, fieldOptions: { type: Array, default: () => [] }, disabled: Boolean, loading: Boolean, error: { type: String, default: '' } })
+const props = defineProps({ modelValue: { type: Object, default: () => ({}) }, title: { type: String, default: '因子维度字段映射' }, tableSelections: { type: Map, default: null }, fields: { type: Array, default: () => [] }, fieldLabels: { type: Object, default: () => ({}) }, factors: { type: Array, default: () => [] }, fieldOptions: { type: Array, default: () => [] }, disabled: Boolean, loading: Boolean, error: { type: String, default: '' } })
 const emit = defineEmits(['update:modelValue', 'retry'])
 const tableSelections = props.tableSelections || reactive(new Map())
 const tableGroups = computed(() => new Map(props.fieldOptions.map(item => [String(item.factorVersionId), dimensionFieldTableGroups(item)])))
