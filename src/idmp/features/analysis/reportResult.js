@@ -1,7 +1,10 @@
+import { normalizeResultMetrics } from '../../api/adapters/result.js'
+
 export function reportOverview(summary, overview, unavailable = false) {
   if (unavailable) return {}
   if (!summary) return overview || {}
-  return { ...summary, numerator: summary.numeratorValue, denominator: summary.denominatorValue }
+  const result = normalizeResultMetrics(summary)
+  return { ...result, numerator: result.numeratorValue, denominator: result.denominatorValue }
 }
 
 export function reportProvenance(summary, overview = {}) {

@@ -1,5 +1,7 @@
 import { IDMP_CHART_COLORS } from '../../charts/theme.js'
 import { departmentIdentity, normalizeDepartmentDataset } from './dimensionNames.js'
+import { normalizeResultMetrics } from '../../api/adapters/result.js'
+import { formatResultValue, hasResultDisplay, resultChartNumber, resultNumber, resultUnit } from '../shared/resultPresentation.js'
 
 const DASHBOARD_DRILL_LEVELS = new Set([
   'HOSPITAL',
@@ -225,19 +227,16 @@ export function applyIndicatorAnalysisToSource(source, payload = {}, departmentN
 }
 
 function analysisResultRow(item, unit, includeDimensions = false) {
-  const numeric = (value) => {
-    const result = Number(value)
-    return Number.isFinite(result) ? result : null
-  }
+  const metrics = normalizeResultMetrics(item)
   return {
     ...(includeDimensions && isRecord(item?.dimensions) ? Object.fromEntries(Object.entries(item.dimensions)
       .filter(([, value]) => ['string', 'number', 'boolean'].includes(typeof value))) : {}),
     periodStart: toSourceString(item?.periodStart).slice(0, 10),
     periodEnd: toSourceString(item?.periodEnd).slice(0, 10),
-    value: normalizeAnalysisNumber(item?.value, unit),
-    displayValue: item?.displayValue ?? null,
-    numeratorValue: numeric(item?.numeratorValue ?? item?.numerator),
-    denominatorValue: numeric(item?.denominatorValue ?? item?.denominator)
+    value: normalizeAnalysisNumber(metrics.value, unit),
+    displayValue: metrics.displayValue,
+    numeratorValue: resultNumber(metrics.numeratorValue),
+    denominatorValue: resultNumber(metrics.denominatorValue)
   }
 }
 
@@ -392,22 +391,16 @@ function isHospitalOverview(item) {
 }
 
 function resolveAnalysisDisplayValue(item, unit) {
-  if (item?.displayValue !== undefined && item?.displayValue !== null && item.displayValue !== '') {
-    return item.displayValue
-  }
-  const value = normalizeAnalysisNumber(item?.value, unit)
-  if (value === null) return null
-  return isPercentUnit(unit) ? `${value.toFixed(2)}%` : value
+  if (hasResultDisplay(item?.displayValue)) return item.displayValue
+  return isPercentUnit(unit) ? formatResultValue(item?.value, { unit, missing: null }) : resultNumber(item?.value)
 }
 
 function normalizeAnalysisNumber(value, unit) {
-  const number = Number(value)
-  if (!Number.isFinite(number)) return null
-  return isPercentUnit(unit) ? Number((number * 100).toFixed(2)) : number
+  return resultChartNumber(value, { unit })
 }
 
 function isPercentUnit(unit) {
-  return unit === '%' || String(unit || '').toUpperCase() === 'PERCENT'
+  return resultUnit(unit) === '%'
 }
 
 function formatAnalysisPeriod(item, granularity) {

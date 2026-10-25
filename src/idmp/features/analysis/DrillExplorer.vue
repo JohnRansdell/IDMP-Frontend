@@ -28,9 +28,9 @@
     </nav>
 
     <div class="drill-summary-strip" aria-label="当前层汇总">
-      <div><span>指标值</span><strong>{{ result.summary.displayValue || result.summary.indicatorValue || '-' }}</strong></div>
-      <div><span>分子</span><strong>{{ result.summary.numerator ?? '-' }}</strong></div>
-      <div><span>分母</span><strong>{{ result.summary.denominator ?? '-' }}</strong></div>
+      <div><span>指标值</span><strong>{{ formatResultValue(result.summary.indicatorValue, { displayValue: result.summary.displayValue, unit: result.summary.unit || result.context.unit }) }}</strong></div>
+      <div><span>分子</span><strong>{{ formatResultNumber(result.summary.numerator) }}</strong></div>
+      <div><span>分母</span><strong>{{ formatResultNumber(result.summary.denominator) }}</strong></div>
       <div><span>质量状态</span><strong>{{ result.summary.qualityStatus ? getStatusLabel(result.summary.qualityStatus) : '-' }}</strong></div>
     </div>
 
@@ -68,6 +68,8 @@
         >
           <template #default="{ row }">
             <strong v-if="column.field === 'dimensionLabel' || column.field === 'dimensionName'">{{ row[column.field] || '-' }}</strong>
+            <span v-else-if="['displayValue', 'indicatorValue'].includes(column.field)">{{ formatResultValue(row.indicatorValue, { displayValue: row.displayValue, unit: row.unit || result.context.unit }) }}</span>
+            <span v-else-if="['numerator', 'denominator'].includes(column.field)">{{ formatResultNumber(row[column.field]) }}</span>
             <span v-else>{{ row[column.field] ?? '-' }}</span>
           </template>
         </el-table-column>
@@ -134,6 +136,7 @@ import { canonicalDrillRootResultId, limitDrillNextLevels } from '@/idmp/api/ada
 import { assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation } from './drillContext.js'
 import { isStatusRecord } from '@/idmp/features/analysis/resultAvailability'
 import { getStatusLabel } from '@/idmp/design/status'
+import { formatResultNumber, formatResultValue } from '../shared/resultPresentation.js'
 
 const props = defineProps({
   resultId: { type: [String, Number], default: '' },

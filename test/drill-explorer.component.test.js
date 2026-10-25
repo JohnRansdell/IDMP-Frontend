@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import { JSDOM } from 'jsdom'
 import { canonicalDrillRootResultId } from '../src/idmp/api/adapters/drill.js'
+import { formatResultNumber, formatResultValue } from '../src/idmp/features/shared/resultPresentation.js'
 import { assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation } from '../src/idmp/features/analysis/drillContext.js'
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>')
@@ -27,7 +28,8 @@ const Button = vue.defineComponent({ setup: (_, { slots }) => () => vue.h('butto
 
 function create(fetchResultFactors = async () => ({ context: {}, factors: [] }), props = {}, drillResponse = {}) {
   const requests = []
-  const component = Function('vue', 'deps', `const { useRoute, useRouter, StatePanel, FactorTraceTree, searchResultDrill, fetchResultFactors, limitDrillNextLevels, isStatusRecord, getStatusLabel, fetchDepartmentNames, isDepartmentLevel, namedDrillRecord, canonicalDrillRootResultId, assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation } = deps;\n${bindings}\n${code}`)(vue, {
+  const component = Function('vue', 'deps', `const { useRoute, useRouter, StatePanel, FactorTraceTree, searchResultDrill, fetchResultFactors, limitDrillNextLevels, isStatusRecord, getStatusLabel, fetchDepartmentNames, isDepartmentLevel, namedDrillRecord, canonicalDrillRootResultId, assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation, formatResultNumber, formatResultValue } = deps;\n${bindings}\n${code}`)(vue, {
+    formatResultNumber, formatResultValue,
     canonicalDrillRootResultId, assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation,
     useRoute: () => ({ query: {} }), useRouter: () => ({ push() {}, replace() {} }),
     StatePanel: vue.defineComponent({ props: ['title'], setup: props => () => vue.h('div', props.title) }),

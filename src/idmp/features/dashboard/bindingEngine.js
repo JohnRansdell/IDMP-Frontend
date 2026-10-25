@@ -2,6 +2,7 @@ import { numericValue } from './fieldCatalog.js'
 import { visibleDimensionName } from './dimensionNames.js'
 import { chartColorKey } from './visualStyle.js'
 import { toUserMessage } from '../../utils/userMessage.js'
+import { formatResultNumber, formatResultValue, hasResultDisplay, resultUnit } from '../shared/resultPresentation.js'
 
 export const AGGREGATIONS = { direct: '直接值（不聚合）', sum: '求和', avg: '平均值', max: '最大值', min: '最小值', count: '有效值计数' }
 export const BINDING_CAPABILITIES = {
@@ -98,34 +99,32 @@ function aggregateMeasureRows(rows, measure, fields) {
 
 // Keep chart and filter values numeric; apply formatting only at presentation.
 export function formatDashboardMetric(value, { maximumFractionDigits = 2 } = {}) {
-  if (value === null || value === undefined || value === '') return ''
-  const numeric = Number(value)
-  if (!Number.isFinite(numeric)) return String(value)
-  return new Intl.NumberFormat('zh-CN', { maximumFractionDigits }).format(numeric)
+  return formatResultNumber(value, { maximumFractionDigits, missing: '' })
 }
 export function normalizeDashboardMetricUnit(unit) {
-  const value = String(unit || '').trim()
-  return value.toUpperCase() === 'PERCENT' || value === '%' ? '%' : value
+  return resultUnit(unit)
 }
 export function formatDashboardKpiMetric(value, { unit = '', displayValue } = {}) {
-  const sourceUnit = String(unit || '').trim()
   const visibleUnit = normalizeDashboardMetricUnit(unit)
-  if (displayValue !== null && displayValue !== undefined && displayValue !== '') {
+  if (hasResultDisplay(displayValue)) {
     const visible = String(displayValue).trim()
     if (visible.endsWith('%')) return { value: visible.slice(0, -1).trimEnd(), unit: '%' }
     return { value: visible, unit: '' }
   }
-  const numeric = Number(value)
-  if (visibleUnit === '%' && Number.isFinite(numeric)) {
-    const percent = sourceUnit.toUpperCase() === 'PERCENT' ? numeric * 100 : numeric
-    return { value: percent.toFixed(2), unit: '%' }
+  if (numericValue(value) === null) return { value: '—', unit: '' }
+  if (visibleUnit === '%') {
+    const formatted = formatResultValue(value, { unit, percentRepresentation: String(unit).trim().toUpperCase() === 'PERCENT' ? 'ratio' : 'points' })
+    return { value: formatted.slice(0, -1), unit: '%' }
   }
   return { value: formatDashboardMetric(value), unit: visibleUnit }
 }
-export function formatDashboardTableMetric(value, { unit = '', aggregation, semanticType = 'measure' } = {}) {
+export function formatDashboardTableMetric(value, { unit = '', aggregation, semanticType = 'measure', displayValue } = {}) {
+  if (semanticType === 'measure' && aggregation !== 'count' && hasResultDisplay(displayValue)) return String(displayValue).trim()
   if (value === null || value === undefined) return '—'
   if (semanticType !== 'measure') return String(value)
-  if (aggregation !== 'count' && normalizeDashboardMetricUnit(unit) === '%' && value !== '' && Number.isFinite(Number(value))) {
+  if (typeof value === 'string' && /^[+-]?(?:\d+\.?\d*|\.\d+)\s*%$/.test(value.trim())) return value.trim()
+  if (numericValue(value) === null) return '—'
+  if (aggregation !== 'count' && normalizeDashboardMetricUnit(unit) === '%') {
     const display = formatDashboardKpiMetric(value, { unit })
     return `${display.value}${display.unit}`
   }
@@ -234,6 +233,14 @@ export function compileWidgetData(kind, binding, dataset) {
         return serverCalculated ? numericValue(group?.[measure.field]) : aggregateMeasureRows(group || [], measure, dataset.fields)
       })
     })))
+    // Only a direct, unique result owns displayValue; never reuse one row's text for an aggregate.
+    if (serverCalculated) for (const [splitIndex, [splitKey]] of [...splits].entries()) {
+      binding.measures.forEach((measure, measureIndex) => {
+        if (!['value', 'indicatorvalue'].includes(String(measure.field).toLowerCase())) return
+        const displays = categoryKeys.map(key => groups.get(JSON.stringify([key, splitKey]))?.displayValue)
+        if (displays.some(hasResultDisplay)) series[splitIndex * binding.measures.length + measureIndex].displayValues = displays
+      })
+    }
     if (!series.some(item => item.values.some(value => value !== null))) return { status: 'empty', message: '暂无数据' }
     let order = categoryKeys.map((_, index) => index)
     const sort = binding.sort[0]
@@ -257,9 +264,10 @@ export function compileWidgetData(kind, binding, dataset) {
     }
     const categoryValues = [...categories.values()]
     const sortedCategories = order.map(index => Array.isArray(categoryValues[index].visible) ? categoryValues[index].visible.join(' / ') : String(categoryValues[index].visible))
-    const sortedSeries = series.map(item => ({ ...item, values: order.map(index => item.values[index]) }))
+    const sortedSeries = series.map(item => ({ ...item, values: order.map(index => item.values[index]),
+      ...(item.displayValues ? { displayValues: order.map(index => item.displayValues[index]) } : {}) }))
     if (kind === 'kpi') return { status: 'ready', value: sortedSeries[0].values[0], label: sortedSeries[0].name, unit: binding.measures[0].aggregation === 'count' ? '' : dataset.fields.find(field => field.id === binding.measures[0].field)?.unit || '' }
-    return { status: 'ready', categories: sortedCategories, dimensionTuples: order.map(index => ({ ...Object.fromEntries(binding.dimensions.map((dimension, dimensionIndex) => [dimension.field, categoryValues[index].raw[dimensionIndex]])), ...categoryValues[index].identityValues })), series: sortedSeries.map(seriesItem => ({ ...seriesItem, axis: binding.measures.find(measure => measure.field === seriesItem.field)?.axis || 'left' })), items: sortedCategories.map((name, index) => ({ name, value: sortedSeries[0].values[index] })).filter(item => item.value !== null) }
+    return { status: 'ready', categories: sortedCategories, dimensionTuples: order.map(index => ({ ...Object.fromEntries(binding.dimensions.map((dimension, dimensionIndex) => [dimension.field, categoryValues[index].raw[dimensionIndex]])), ...categoryValues[index].identityValues })), series: sortedSeries.map(seriesItem => ({ ...seriesItem, axis: binding.measures.find(measure => measure.field === seriesItem.field)?.axis || 'left' })), items: sortedCategories.map((name, index) => ({ name, value: sortedSeries[0].values[index], ...(sortedSeries[0].displayValues ? { displayValue: sortedSeries[0].displayValues[index] } : {}) })).filter(item => item.value !== null) }
   } catch (error) { return { status: 'invalid', message: toUserMessage(error, '组件字段绑定无效，请检查字段与聚合方式。') } }
 }
 
@@ -268,7 +276,7 @@ export function bindingChartOption(kind, model, options = {}) {
   if (model.status !== 'ready') return {}
   if (kind === 'pie') {
     const tuples = model.dimensionTuples?.filter((_, index) => model.series[0].values[index] !== null) || []
-    return { tooltip: { trigger: 'item', valueFormatter: value => formatDashboardTableMetric(value, { unit: model.series[0]?.unit }) }, legend: { bottom: 0 }, series: [{ type: 'pie', data: model.items.map((item, index) => ({ ...item, dimensionValues: tuples[index] || {} })) }] }
+    return { tooltip: { trigger: 'item', valueFormatter: (value, index) => formatDashboardTableMetric(value, { unit: model.series[0]?.unit, displayValue: model.items[index]?.displayValue }) }, legend: { bottom: 0 }, series: [{ type: 'pie', data: model.items.map((item, index) => ({ ...item, dimensionValues: tuples[index] || {} })) }] }
   }
   if (kind === 'funnel') return { tooltip: { trigger: 'item' }, series: [{ type: 'funnel', left: '12%', top: 12, bottom: 12, width: '76%', data: model.items }] }
   if (kind === 'gauge') return { series: [{ type: 'gauge', progress: { show: true }, detail: { valueAnimation: true, formatter: '{value}' }, data: [{ value: model.series[0]?.values[0], name: model.series[0]?.name }] }] }
@@ -296,5 +304,5 @@ export function bindingChartOption(kind, model, options = {}) {
     // Format ticks, not data: drill filters and mixed-unit series retain their original values.
     return { type: 'value', ...(normalizeDashboardMetricUnit(unit) === '%' ? { axisLabel: { formatter: value => formatDashboardTableMetric(value, { unit }) } } : {}) }
   }
-  return { tooltip: { trigger: 'axis' }, legend: { top: 0 }, grid: { top: 38, bottom: 28, left: 12, right: 16, containLabel: true }, xAxis: { type: 'category', data: model.categories }, yAxis: dualAxis ? [valueAxis('left'), valueAxis('right')] : valueAxis('left'), series: model.series.map(item => ({ name: item.name, type: kind, tooltip: { valueFormatter: value => formatDashboardTableMetric(value, { unit: item.unit }) }, label: { formatter: params => formatDashboardTableMetric(params.value, { unit: item.unit }) }, data: categoryColoredBar ? item.values.map((value, index) => ({ value, id: chartColorKey('category', model.dimensionTuples?.[index] || model.categories[index]), dimensionValues: model.dimensionTuples?.[index] || {} })) : item.values, ...(dualAxis ? { yAxisIndex: item.axis === 'right' ? 1 : 0 } : {}) })) }
+  return { tooltip: { trigger: 'axis' }, legend: { top: 0 }, grid: { top: 38, bottom: 28, left: 12, right: 16, containLabel: true }, xAxis: { type: 'category', data: model.categories }, yAxis: dualAxis ? [valueAxis('left'), valueAxis('right')] : valueAxis('left'), series: model.series.map(item => ({ name: item.name, type: kind, tooltip: { valueFormatter: (value, index) => formatDashboardTableMetric(value, { unit: item.unit, displayValue: item.displayValues?.[index] }) }, label: { formatter: params => formatDashboardTableMetric(params.value, { unit: item.unit, displayValue: item.displayValues?.[params.dataIndex] }) }, data: categoryColoredBar ? item.values.map((value, index) => ({ value, id: chartColorKey('category', model.dimensionTuples?.[index] || model.categories[index]), dimensionValues: model.dimensionTuples?.[index] || {} })) : item.values, ...(dualAxis ? { yAxisIndex: item.axis === 'right' ? 1 : 0 } : {}) })) }
 }

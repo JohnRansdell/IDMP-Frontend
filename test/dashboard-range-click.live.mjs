@@ -82,7 +82,7 @@ try {
         const label = `${role.name}${period.label}${title}`
         check(`${label}下钻成功并保留完整周期`, !actual.error && actual.result?.records.length > 0 && actual.result.context.periodStart.slice(0, 10) === period.start && actual.result.context.periodEnd.slice(0, 10) === period.end, { error: actual.error, context: actual.result?.context })
         check(`${label}图形仍使用指标值`, actual.chart?.series?.[0]?.data?.every(item => {
-          const expected = actual.kind === 'pie' ? Number(item.row.indicatorValue) : String(item.row.displayValue).endsWith('%') ? Number(item.row.displayValue.slice(0, -1)) : Number(item.row.indicatorValue) * (actual.unit === '%' ? 100 : 1)
+          const expected = Number(item.row.indicatorValue) * (actual.kind !== 'pie' && ['%', 'PERCENT'].includes(item.row.unit || actual.unit) ? 100 : 1)
           return Math.abs(item.value - expected) < 1e-8
         }), actual.chart?.series?.[0]?.data?.slice(0, 1))
         if (period.selection.type === 'CUSTOM') check(`${label}请求携带区间`, actual.root?.periodRange?.periodStart === period.start && actual.root?.periodRange?.periodEnd === period.end, requests)

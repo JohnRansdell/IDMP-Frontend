@@ -1,3 +1,5 @@
+import { drillResultMetrics } from './result.js'
+
 export const DRILL_DIMENSIONS = Object.freeze({
   ORGANIZATION: 'ORGANIZATION',
   DISEASE: 'DISEASE',
@@ -139,10 +141,7 @@ function normalizeContext(value = {}) {
 function normalizeSummary(value = {}) {
   return {
     ...value,
-    indicatorValue: value.indicatorValue ?? value.value ?? null,
-    displayValue: value.displayValue ?? null,
-    numerator: value.numerator ?? value.numeratorValue ?? null,
-    denominator: value.denominator ?? value.denominatorValue ?? null,
+    ...drillResultMetrics(value),
     qualityStatus: value.qualityStatus || '-'
   }
 }
@@ -263,10 +262,7 @@ function normalizeRecord(item = {}) {
     dimensionKey,
     dimensionName,
     dimensionLabel,
-    displayValue: item.displayValue ?? item.indicatorValue ?? item.value ?? null,
-    indicatorValue: item.indicatorValue ?? item.value ?? null,
-    numerator: item.numerator ?? item.numeratorValue ?? null,
-    denominator: item.denominator ?? item.denominatorValue ?? null,
+    ...drillResultMetrics(item),
     unit: item.unit ?? item.indicatorUnit ?? '',
     nextLevel: item.nextLevel || ''
   }

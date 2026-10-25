@@ -2,6 +2,7 @@ import { canonicalDrillRootResultId, legacyProjectedOrganizationLevels, limitDri
 import { buildDrillRequest, drillMemberField, drillScope, nextDrillNavigation } from '../analysis/drillContext.js'
 import { isDepartmentLevel, namedDrillRecord } from './dimensionNames.js'
 import { numericValue } from './fieldCatalog.js'
+import { resultChartNumber } from '../shared/resultPresentation.js'
 
 const PAGE_SIZE = 200
 const MAX_CHART_ROWS = 500
@@ -203,11 +204,7 @@ export function backendChartValue(row, kind, unit = '', field = 'value') {
     const value = rowField ? numericValue(row?.[rowField]) : null
     return value !== null && value >= 0 ? value : null
   }
-  const displayed = String(row?.displayValue ?? '').trim()
-  if (/^[+-]?(?:\d+\.?\d*|\.\d+)\s*%$/.test(displayed)) return Number(displayed.replace('%', '').trim())
-  const value = Number(row?.indicatorValue)
-  if (row?.indicatorValue === null || row?.indicatorValue === undefined || !Number.isFinite(value)) return null
-  return unit === '%' ? value * 100 : value
+  return resultChartNumber(row?.indicatorValue, { unit: row?.unit || unit })
 }
 
 function checkRoot(result, target) {

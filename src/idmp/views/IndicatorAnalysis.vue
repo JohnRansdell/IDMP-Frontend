@@ -202,8 +202,8 @@
                   <tbody>
                     <tr v-for="row in trendTableRows" :key="row.label">
                       <th scope="row">{{ row.label }}</th>
-                      <td>{{ row.actual }}{{ currentProfile.unit }}</td>
-                      <td v-if="hasPeerTrend">{{ row.peer }}{{ currentProfile.unit }}</td>
+                      <td>{{ row.actualDisplay }}</td>
+                      <td v-if="hasPeerTrend">{{ row.peerDisplay }}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -413,6 +413,7 @@ import { analysisPdfFilename, buildAnalysisPdfReport, downloadAnalysisPdf, rende
 import { analysisReportContext, resolveReportPeriod, reportPeriodQuery, normalizeAnalysisGranularity, shiftReportDate, analysisFilterParams, analysisFilters, analysisRouteKey } from '@/idmp/features/analysis/reportPeriod.js'
 import { buildReportSummaryRequest } from '@/idmp/features/analysis/reportQuery.js'
 import { reportOverview, reportProvenance } from '@/idmp/features/analysis/reportResult.js'
+import { formatResultNumber, formatResultValue, hasResultDisplay, resultNumber, resultChartNumber, resultUnit } from '@/idmp/features/shared/resultPresentation.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -438,6 +439,7 @@ let rangeSummaryRequestSequence = 0
 const trendBackendAnalysis = ref(null)
 const trendLoading = ref(false)
 const backendIndicatorVersion = ref(null)
+const metricDisplay = computed(() => extractIndicatorFormula(backendIndicatorVersion.value)?.display)
 const departmentNamesByCode = ref({})
 const formulaFactorVersions = ref({})
 const availablePeriod = ref(null)
@@ -757,7 +759,9 @@ const trendTableRows = computed(() =>
   currentTrend.value.labels.map((label, index) => ({
     label,
     actual: currentTrend.value.actual[index] ?? '-',
-    peer: currentTrend.value.peer[index] ?? '-'
+    peer: currentTrend.value.peer[index] ?? '-',
+    actualDisplay: hasResultDisplay(currentTrend.value.display?.[index]) ? currentTrend.value.display[index] : formatTrendDisplay(currentTrend.value.actual[index]),
+    peerDisplay: formatTrendDisplay(currentTrend.value.peer[index])
   }))
 )
 const rankTableData = computed(() => {
@@ -774,7 +778,7 @@ const rankTableData = computed(() => {
       department: item.departmentName,
       hospitalCode: item.dimensions?.hospital_code || item.dimensions?.HOSPITAL_CODE || '',
       departmentCode: item.departmentCode,
-      rate: item.displayValue || (item.value != null ? String(item.value) : '-'),
+      rate: hasResultDisplay(item.displayValue) ? item.displayValue : formatMetricValue(item.value, currentProfile.value.unit),
       numerator: item.numeratorValue == null ? '-' : formatCount(item.numeratorValue),
       denominator: item.denominatorValue == null ? '-' : formatCount(item.denominatorValue),
       change: '-',
@@ -877,6 +881,8 @@ const trendSeries = computed(() => {
   const actualSeries = {
     name: '本院实际值',
     type: 'line',
+    // A single point needs no reveal animation, including after a table-triggered resize.
+    animation: actualValues.length > 1,
     smooth: actualValues.length > 1,
     showSymbol: true,
     symbol: 'circle',
@@ -884,7 +890,7 @@ const trendSeries = computed(() => {
     lineStyle: { width: 3 },
     itemStyle: { borderWidth: 2 },
     label: actualValues.length <= 1
-      ? { show: true, position: 'top', formatter: ({ value }) => `${value}${currentProfile.value.unit || ''}` }
+      ? { show: true, position: 'top', formatter: ({ value }) => formatTrendDisplay(value) }
       : { show: false },
     data: actualValues
   }
@@ -917,7 +923,7 @@ const trendOption = computed(() => ({
   color: [IDMP_CHART_COLORS[0], IDMP_CHART_COLORS[4]],
   tooltip: {
     trigger: 'axis',
-    valueFormatter: (value) => `${value}${currentProfile.value.unit || ''}`
+    valueFormatter: (value) => formatTrendDisplay(value)
   },
   legend: {
     top: 2,
@@ -937,8 +943,9 @@ const trendOption = computed(() => ({
   },
   yAxis: {
     type: 'value',
-    min: 0,
-    max: currentProfile.value.yAxisMax,
+    min: ({ min }) => Math.min(0, min, currentProfile.value.markLineValue ?? 0),
+    max: isChartNumber(currentProfile.value.markLineValue)
+      ? ({ max }) => Math.max(max, currentProfile.value.markLineValue) : currentProfile.value.yAxisMax,
     name: currentProfile.value.unit ? `单位：${currentProfile.value.unit}` : '指标值',
     nameTextStyle: { padding: [0, 0, 4, 0] },
     axisLabel: { formatter: `{value}${currentProfile.value.unit || ''}` },
@@ -1026,8 +1033,7 @@ const openDepartmentDrill = (row) => {
 }
 
 function formatCount(value) {
-  const number = Number(value)
-  return Number.isFinite(number) ? number.toLocaleString('zh-CN') : '-'
+  return formatResultNumber(value, { maximumFractionDigits: 3 })
 }
 
 function formatExplanationOperandValue(operand) {
@@ -1053,19 +1059,23 @@ function resolveCurrentMetricValue() {
 }
 
 function isUsableDisplayValue(value) {
-  return value !== undefined && value !== null && value !== ''
+  return hasResultDisplay(value)
 }
 
 function isUsableRawValue(value) {
-  const number = Number(value)
-  return value !== null && value !== '' && Number.isFinite(number)
+  return resultNumber(value) !== null
 }
 
 function formatMetricValue(value, unit) {
-  const number = Number(value)
-  if (!Number.isFinite(number)) return '-'
-  if (unit === '%') return `${(number * 100).toFixed(2)}%`
-  return String(number)
+  return formatResultValue(value, { unit, display: metricDisplay.value })
+}
+
+function formatTrendDisplay(value) {
+  const display = metricDisplay.value
+  const text = formatResultValue(value, { unit: currentProfile.value.unit, percentRepresentation: 'points',
+    display: display ? { ...display, multiplier: '1' } : undefined })
+  if (text === '-' || resultUnit(currentProfile.value.unit) === '%') return text
+  return `${text}${currentProfile.value.unit || ''}`
 }
 
 function createTrendFromBackendAnalysis(payload, unit) {
@@ -1085,15 +1095,13 @@ function createTrendFromBackendAnalysis(payload, unit) {
       : responseGranularity === 'YEARLY' ? '展示全部可用年度结果' : '展示全部可用周期结果',
     labels: payload.trend.map((item) => formatTrendPeriodLabel(item, responseGranularity)),
     actual: payload.trend.map((item) => normalizeTrendValue(item, unit)),
+    display: payload.trend.map((item) => item.displayValue),
     peer: payload.trend.map(() => null)
   }
 }
 
 function normalizeTrendValue(item, unit) {
-  const value = Number(item?.value)
-  if (!Number.isFinite(value)) return null
-  if (unit === '%') return Number((value * 100).toFixed(2))
-  return value
+  return resultChartNumber(item?.value, { unit, display: metricDisplay.value })
 }
 
 function formatTrendPeriodLabel(item, granularity) {
@@ -1439,7 +1447,7 @@ function resolveAnalysisPerformanceTarget(versionId, ...analyses) {
 
 function createGenericAnalysisProfile(indicator, performanceTarget) {
   const name = indicator?.name || indicator?.code || '未命名指标'
-  const unit = indicator?.unit || indicator?.displayUnit || ''
+  const unit = metricDisplay.value?.format === 'PERCENT' ? '%' : resultUnit(indicator?.unit || indicator?.displayUnit || '')
   const targetValue = isUsableRawValue(performanceTarget?.targetValue)
     && String(performanceTarget.targetValue).trim() !== ''
     ? normalizeTrendValue({ value: performanceTarget.targetValue }, unit) : null

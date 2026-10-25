@@ -11,7 +11,7 @@ export function buildAnalysisPdfReport({ versionId, metadata = [], primaryMetric
       ...summaryMetrics.map(item => [text(item.label), text(item.value), text(item.description)])
     ] },
     { title: '趋势分析', description: trendDescription, columns: ['周期', '本院实际值', ...(hasPeerTrend ? ['同级医院均值'] : [])],
-      rows: trendRows.map(row => [text(row.label), metric(row.actual, unit), ...(hasPeerTrend ? [metric(row.peer, unit)] : [])]),
+      rows: trendRows.map(row => [text(row.label), row.actualDisplay ?? metric(row.actual, unit), ...(hasPeerTrend ? [row.peerDisplay ?? metric(row.peer, unit)] : [])]),
       ...(chartPng ? { chartPng } : {}) },
     { title: '科室指标排名', description: rankDescription, columns: ['排名', '科室', '指标值', '分子', '分母', '状态'],
       rows: rankRows.map(row => [row.rank, row.department, row.rate, row.numerator, row.denominator, row.status].map(text)) },
