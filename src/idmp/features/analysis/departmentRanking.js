@@ -1,16 +1,14 @@
-import { deriveDrillPathResultIds } from '../../api/adapters/drill.js'
+import { deriveDrillPathResultIds, normalizeDrillLevelDefinition } from '../../api/adapters/drill.js'
 import { drillPeriodKey } from './drillPeriods.js'
+import { assertDrillResponseContext, buildDrillRequest, drillMemberField, drillScope } from './drillContext.js'
 
 export async function resolveAnalysisDrillPaths(paths = [], fetchPathVersion) {
   return Promise.all(paths.map(async path => {
-    if (path.levels?.length || !path.pathVersionId) return path
+    if (path.levels?.length) return { ...path, levels: path.levels.map(normalizeDrillLevelDefinition) }
+    if (!path.pathVersionId) return path
     const metadata = await fetchPathVersion(path.pathVersionId)
     if (!metadata?.levels?.length) throw new Error('指标绑定的下钻路径未返回层级配置')
-    return { ...path, levels: metadata.levels.map(level => ({ ...level,
-      dimensionFieldCode: level.dimensionFieldCode || level.dimensionSemanticFieldCode,
-      memberKeyFieldCode: level.memberKeyFieldCode || level.memberKeySemanticFieldCode,
-      displayFieldCode: level.displayFieldCode || level.displaySemanticFieldCode
-    })) }
+    return { ...path, levels: metadata.levels.map(normalizeDrillLevelDefinition) }
   }))
 }
 
@@ -81,16 +79,20 @@ export async function loadDepartmentComparisons(analysis, paths, searchDrill, fi
   const rows = []
   let receivedCount = 0
   for (let pageNum = 1; pageNum <= 100; pageNum += 1) {
-    const result = await searchDrill(anchor, {
+    const context = { resultId: anchor, indicatorVersionId: analysis.indicatorVersionId, period: analysis.overview,
       pathCode: definition.path.pathCode,
       currentLevel: definition.level.levelCode,
-      parentKeys: {}, filters, pageNum, pageSize: 100,
-      sort: [{ field: 'indicatorValue', direction: 'DESC' }]
-    })
-    if (drillPeriodKey(result.context) !== period) throw new Error('科室结果的统计周期不一致，请刷新后重试。')
+      parentKeys: {}, filters }
+    const request = buildDrillRequest(context, { path: definition.path, pageNum, pageSize: 100, sort: [{ field: 'indicatorValue', direction: 'DESC' }] })
+    const result = await searchDrill(request.resultId, request.payload)
+    assertDrillResponseContext(result, context)
     receivedCount += result.records.length
     rows.push(...result.records.filter(row => row.recordType !== 'CALCULATION_STATUS').map(row => ({
       ...row,
+      snapshotId: row.snapshotId || (String(row.resultId) === String(result.context.resultId) ? result.context.snapshotId : undefined),
+      indicatorVersionId: row.indicatorVersionId || result.context.indicatorVersionId,
+      periodStart: row.periodStart || result.context.periodStart,
+      periodEnd: row.periodEnd || result.context.periodEnd,
       departmentCode: row.dimensionKey,
       departmentName: row.dimensionName || row.dimensionLabel,
       value: row.indicatorValue ?? row.value,
@@ -110,12 +112,14 @@ export function departmentDrillContext(row, paths, granularity) {
   const { path, level, index } = definition
   const maximumIndex = path.levels.findIndex(item => item.levelCode === path.maxLevel)
   const next = (maximumIndex < 0 || index < maximumIndex) ? path.levels[index + 1] : null
-  const key = level.memberKeyFieldCode || level.dimensionFieldCode || 'OUT_DEPT_CODE'
+  const key = drillMemberField(path, level.levelCode)
+  if (!key || row.departmentCode == null || row.departmentCode === '') return null
   return {
     period: { periodStart: row.periodStart, periodEnd: row.periodEnd }, granularity,
     resultId: String(row.resultId || ''), pathCode: path.pathCode,
+    ...(row.snapshotId ? { snapshotId: String(row.snapshotId) } : {}),
+    ...(row.indicatorVersionId ? { indicatorVersionId: String(row.indicatorVersionId) } : {}),
     currentLevel: next?.levelCode || level.levelCode,
-    filters: { [key]: row.departmentCode },
-    parentKeys: { ...(row.parentKeys || {}), [key]: row.departmentCode }
+    ...drillScope({ filters: { [key]: row.departmentCode }, parentKeys: { ...(row.parentKeys || {}), [key]: row.departmentCode } }, path)
   }
 }

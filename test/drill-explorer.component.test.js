@@ -3,6 +3,8 @@ import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import { JSDOM } from 'jsdom'
+import { canonicalDrillRootResultId } from '../src/idmp/api/adapters/drill.js'
+import { assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation } from '../src/idmp/features/analysis/drillContext.js'
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>')
 for (const name of ['window', 'document', 'HTMLElement', 'SVGElement', 'Element', 'Node', 'Document', 'Text', 'Comment']) globalThis[name] = dom.window[name]
@@ -25,13 +27,15 @@ const Button = vue.defineComponent({ setup: (_, { slots }) => () => vue.h('butto
 
 function create(fetchResultFactors = async () => ({ context: {}, factors: [] }), props = {}, drillResponse = {}) {
   const requests = []
-  const component = Function('vue', 'deps', `const { useRoute, useRouter, StatePanel, FactorTraceTree, searchResultDrill, fetchResultFactors, limitDrillNextLevels, isStatusRecord, getStatusLabel, fetchDepartmentNames, isDepartmentLevel, namedDrillRecord } = deps;\n${bindings}\n${code}`)(vue, {
+  const component = Function('vue', 'deps', `const { useRoute, useRouter, StatePanel, FactorTraceTree, searchResultDrill, fetchResultFactors, limitDrillNextLevels, isStatusRecord, getStatusLabel, fetchDepartmentNames, isDepartmentLevel, namedDrillRecord, canonicalDrillRootResultId, assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation } = deps;\n${bindings}\n${code}`)(vue, {
+    canonicalDrillRootResultId, assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation,
     useRoute: () => ({ query: {} }), useRouter: () => ({ push() {}, replace() {} }),
     StatePanel: vue.defineComponent({ props: ['title'], setup: props => () => vue.h('div', props.title) }),
     FactorTraceTree: vue.defineComponent({ setup: () => () => vue.h('div', 'trace-tree') }),
     searchResultDrill: async (id, payload) => {
       requests.push({ id, payload })
-      return { context: {}, breadcrumb: [], summary: {}, columns: [], records: [], nextLevels: [], pageInfo: {}, ...drillResponse }
+      const response = typeof drillResponse === 'function' ? await drillResponse(id, payload) : drillResponse
+      return { context: {}, breadcrumb: [], summary: {}, columns: [], records: [], nextLevels: [], pageInfo: {}, ...response }
     },
     fetchResultFactors, limitDrillNextLevels: levels => levels, isStatusRecord: () => false, getStatusLabel: value => value,
     fetchDepartmentNames: async () => new Map(), isDepartmentLevel, namedDrillRecord
@@ -145,4 +149,61 @@ test('clearing a custom sort requests the backend default order', async () => {
   await flushPromises()
   assert.deepEqual(requests.at(-1).payload.sort, [])
   wrapper.unmount()
+})
+
+test('table requests forward snapshots and strip redundant display names using configured bindings', async () => {
+  const { wrapper, requests } = create(undefined, { snapshotId: '快照甲', indicatorVersionId: '版本甲',
+    configuredPaths: [{ pathCode: 'CUSTOM_DEPT', levels: [{ levelCode: 'DEPT', memberKeyFieldCode: 'OUT_DEPT_CODE', displayFieldCode: 'OUT_DEPT_NAME' }] }],
+    startParentKeys: { OUT_DEPT_CODE: '17', OUT_DEPT_NAME: '旧名称' }, startFilters: { OUT_DEPT_CODE: '17', OUT_DEPT_NAME: '新名称', IN_ICD10: ['J18'] }
+  })
+  await flushPromises()
+  assert.equal(requests[0].payload.snapshotId, '快照甲')
+  assert.deepEqual(requests[0].payload.parentKeys, { OUT_DEPT_CODE: '17' })
+  assert.deepEqual(requests[0].payload.filters, { OUT_DEPT_CODE: '17', IN_ICD10: ['J18'] })
+  wrapper.unmount()
+})
+
+test('table rejects responses for another period version or snapshot', async () => {
+  for (const [props, context, message] of [
+    [{ indicatorVersionId: '版本甲' }, { indicatorVersionId: '版本乙' }, /指标版本不一致/],
+    [{ snapshotId: '快照甲' }, { snapshotId: '快照乙' }, /快照不一致/],
+    [{ resultPeriod: { periodStart: '2026-01-01', periodEnd: '2026-02-01' } }, { periodStart: '2026-02-01', periodEnd: '2026-03-01' }, /统计周期不一致/]
+  ]) {
+    const { wrapper } = create(undefined, props, { context, records: [{ dimensionKey: '17', indicatorValue: 0.5 }] })
+    await flushPromises()
+    const snapshot = wrapper.vm.getReportSnapshot()
+    assert.match(snapshot.section.description, message)
+    assert.deepEqual(snapshot.section.rows, [])
+    wrapper.unmount()
+  }
+})
+
+test('switching paths never pins the previous path snapshot', async () => {
+  const { wrapper, requests } = create(undefined, { snapshotId: '科室快照' })
+  await flushPromises()
+  assert.equal(requests.at(-1).payload.snapshotId, '科室快照')
+  wrapper.findComponent(Select).vm.$emit('update:modelValue', 'DISEASE')
+  await flushPromises()
+  assert.equal(requests.at(-1).payload.pathCode, 'DISEASE')
+  assert.equal(requests.at(-1).payload.snapshotId, undefined)
+  wrapper.unmount()
+})
+
+test('a late response cannot restore a cleared result or overwrite a newer selection', async () => {
+  for (const nextId of ['', '新周期结果']) {
+    let resolve
+    const pending = new Promise(done => { resolve = done })
+    const { wrapper } = create(undefined, {}, id => id === 'dept-result' ? pending : {
+      columns: [{ field: 'dimensionName', label: '科室' }], records: [{ dimensionKey: '15', dimensionName: '新周期科室' }]
+    })
+    await flushPromises()
+    await wrapper.setProps({ resultId: nextId })
+    await flushPromises()
+    resolve({ columns: [{ field: 'dimensionName', label: '科室' }], records: [{ dimensionKey: '16', dimensionName: '旧周期科室' }] })
+    await flushPromises()
+    const snapshot = wrapper.vm.getReportSnapshot()
+    assert.equal(snapshot.loading, false)
+    assert.deepEqual(snapshot.section.rows, nextId ? [['新周期科室']] : [])
+    wrapper.unmount()
+  }
 })

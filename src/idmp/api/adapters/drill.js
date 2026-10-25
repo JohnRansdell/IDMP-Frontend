@@ -35,6 +35,44 @@ export function normalizeOrganizationDrillLevel(value) {
   return { DEPARTMENT: 'OUT_DEPT', DOCTOR: 'ATTENDING_DOCTOR' }[level] || level
 }
 
+export function normalizeDrillLevelDefinition(level = {}) {
+  const dimensionFieldCode = level.dimensionFieldCode || level.dimensionSemanticFieldCode
+  const memberKeyFieldCode = level.memberKeyFieldCode || level.memberKeySemanticFieldCode
+  const displayFieldCode = level.displayFieldCode || level.displaySemanticFieldCode
+  if (dimensionFieldCode === level.dimensionFieldCode && memberKeyFieldCode === level.memberKeyFieldCode && displayFieldCode === level.displayFieldCode) return level
+  return { ...level,
+    ...(dimensionFieldCode ? { dimensionFieldCode } : {}),
+    ...(memberKeyFieldCode ? { memberKeyFieldCode } : {}),
+    ...(displayFieldCode ? { displayFieldCode } : {}) }
+}
+
+// Older built-in paths did not carry field bindings. Keep their protocol here, not in views.
+export function legacyDrillLevelDefinition(levelCode) {
+  const fields = {
+    HOSPITAL: ['HOSPITAL_CODE', 'HOSPITAL_NAME'],
+    OUT_DEPT: ['OUT_DEPT_CODE', 'OUT_DEPT_NAME'], DEPARTMENT: ['DEPARTMENT_CODE', 'DEPARTMENT_NAME'],
+    MEDICAL_GROUP: ['MEDICAL_GROUP_CODE', 'MEDICAL_GROUP_NAME'],
+    ATTENDING_DOCTOR: ['ATTENDING_DOCTOR_CODE', 'ATTENDING_DOCTOR_NAME'], DOCTOR: ['DOCTOR_CODE', 'DOCTOR_NAME'],
+    ALL_SINGLE_DISEASE: ['HOSPITAL_CODE', 'HOSPITAL_NAME'], SINGLE_DISEASE: ['SINGLE_DISEASE_CODE', 'SINGLE_DISEASE_NAME']
+  }
+  const [memberKeyFieldCode, displayFieldCode] = fields[levelCode] || []
+  return { levelCode, memberKeyFieldCode, displayFieldCode }
+}
+
+export function canonicalDrillRootResultId(result, rootLevel) {
+  const level = normalizeOrganizationDrillLevel(rootLevel)
+  const root = result?.records?.find(row => normalizeOrganizationDrillLevel(row.levelCode) === level && row.resultId)
+  return toOpaqueId(root?.resultId)
+}
+
+export function legacyProjectedOrganizationLevels(fieldLevels = {}) {
+  return ['HOSPITAL', 'OUT_DEPT', 'MEDICAL_GROUP', 'ATTENDING_DOCTOR'].map(code => {
+    const level = legacyDrillLevelDefinition(code)
+    const field = code === 'ATTENDING_DOCTOR' && Object.hasOwn(fieldLevels, 'ATTENDING_DOCTOR') ? 'ATTENDING_DOCTOR' : level.memberKeyFieldCode
+    return { ...level, dimensionFieldCode: field, memberKeyFieldCode: field }
+  }).filter(level => Object.hasOwn(fieldLevels, level.memberKeyFieldCode))
+}
+
 export function limitDrillNextLevels(nextLevels = [], pathCode = '', maxLevel = '') {
   const levels = Array.isArray(nextLevels) ? nextLevels : []
   const ranks = DRILL_LEVEL_RANKS[pathCode] || {}

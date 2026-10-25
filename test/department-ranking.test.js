@@ -129,3 +129,17 @@ test('incomplete pages cannot silently produce an incomplete department ranking'
     context: period, records: [], pageInfo: { totalPages: 2, total: 150 }
   })), /尚未读取完整/)
 })
+
+test('ranking entry keeps the member snapshot and never borrows a root snapshot for another result ID', async () => {
+  for (const snapshotId of ['科室快照', undefined]) {
+    const rows = await loadDepartmentComparisons({ indicatorVersionId: '指标版本', overview: period,
+      dimensionComparison: [{ ...period, resultId: '组合结果' }] }, paths, async () => ({
+      context: { ...period, indicatorVersionId: '指标版本', snapshotId: '根快照', resultId: '根结果' },
+      records: [{ dimensionKey: '15', resultId: '科室结果', snapshotId }], pageInfo: {}
+    }))
+    const entry = departmentDrillContext(rows[0], paths, 'MONTHLY')
+    assert.equal(entry.snapshotId, snapshotId)
+    assert.equal(entry.indicatorVersionId, '指标版本')
+    assert.deepEqual(entry.period, period)
+  }
+})

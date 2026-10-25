@@ -125,18 +125,21 @@
 <script setup>
 import { fetchDepartmentNames } from '@/idmp/api/modules/departments'
 import { isDepartmentLevel, namedDrillRecord } from '../dashboard/dimensionNames.js'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import FactorTraceTree from '@/idmp/components/FactorTraceTree.vue'
 import { fetchResultFactors, searchResultDrill } from '@/idmp/api/modules/drill'
-import { limitDrillNextLevels } from '@/idmp/api/adapters/drill'
+import { canonicalDrillRootResultId, limitDrillNextLevels } from '@/idmp/api/adapters/drill'
+import { assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation } from './drillContext.js'
 import { isStatusRecord } from '@/idmp/features/analysis/resultAvailability'
 import { getStatusLabel } from '@/idmp/design/status'
 
 const props = defineProps({
   resultId: { type: [String, Number], default: '' },
   snapshotId: { type: [String, Number], default: '' },
+  indicatorVersionId: { type: [String, Number], default: '' },
+  resultPeriod: { type: Object, default: () => ({}) },
   pathResultIds: { type: Object, default: () => ({}) },
   indicatorName: { type: String, default: '指标' },
   period: { type: String, default: '' },
@@ -235,17 +238,8 @@ function formulaRoleLabel(role) {
   return { NUMERATOR: '分子', DENOMINATOR: '分母' }[String(role || '').toUpperCase()] || role || '-'
 }
 
-function buildPayload() {
-  const payload = {
-    pathCode: lastDrillDimension.value,
-    parentKeys: parentKeys.value,
-    filters: { ...props.startFilters },
-    pageNum: pageNum.value,
-    pageSize: pageSize.value,
-    sort: sort.value
-  }
-  if (currentLevel.value) payload.currentLevel = currentLevel.value
-  return payload
+function selectedPath() {
+  return props.configuredPaths.find(path => path.pathCode === lastDrillDimension.value)
 }
 
 function resetPaging() {
@@ -273,12 +267,20 @@ function changeSort({ prop, order }) {
 }
 
 async function loadDrill() {
-  if (!activeResultId.value || isFactorTraceMode.value) return
   const requestId = ++drillRequestId
+  loading.value = false
+  if (!activeResultId.value || isFactorTraceMode.value) { result.value = emptyResult(); return }
   loading.value = true
   errorMessage.value = ''
   try {
-    const response = await searchResultDrill(activeResultId.value, buildPayload(), { source: props.source })
+    const context = { resultId: activeResultId.value, indicatorVersionId: props.indicatorVersionId,
+      snapshotId: lastDrillDimension.value === (props.startPathCode || initialDimension) ? props.snapshotId : '',
+      period: props.resultPeriod, pathCode: lastDrillDimension.value,
+      currentLevel: currentLevel.value, parentKeys: parentKeys.value, filters: props.startFilters }
+    const request = buildDrillRequest(context, { path: selectedPath(), pageNum: pageNum.value, pageSize: pageSize.value, sort: sort.value })
+    const response = await searchResultDrill(request.resultId, request.payload, { source: props.source })
+    if (requestId !== drillRequestId) return
+    assertDrillResponseContext(response, context)
     const levelCode = response.context.currentLevel || currentLevel.value
     const definition = props.configuredPaths.find(path => path.pathCode === lastDrillDimension.value)?.levels?.find(level => level.levelCode === levelCode)
       || { levelCode }
@@ -296,6 +298,7 @@ async function loadDrill() {
     resolveCanonicalRootResultId()
   } catch (error) {
     if (requestId !== drillRequestId) return
+    result.value = emptyResult()
     errorMessage.value = error?.message || '请稍后重试。'
   } finally {
     if (requestId === drillRequestId) loading.value = false
@@ -305,10 +308,7 @@ async function loadDrill() {
 function resolveCanonicalRootResultId() {
   const rootLevel = rootForPath(lastDrillDimension.value)
   if (String(currentLevel.value).toUpperCase() !== rootLevel) return
-  const rootRecord = result.value.records.find((record) => (
-    String(record.levelCode || '').toUpperCase() === rootLevel && record.resultId
-  ))
-  const canonicalResultId = String(rootRecord?.resultId || '')
+  const canonicalResultId = canonicalDrillRootResultId(result.value, rootLevel)
   if (!canonicalResultId || canonicalResultId === activeResultId.value) return
   resolvedPathResultIds.value = {
     ...resolvedPathResultIds.value,
@@ -319,30 +319,18 @@ function resolveCanonicalRootResultId() {
 
 function openNextLevel(row) {
   const nextLevel = availableNextLevels.value[0]
-  if (!nextLevel) return
+  const navigation = nextDrillNavigation({ currentLevel: currentLevel.value, parentKeys: parentKeys.value }, row, nextLevel, selectedPath())
+  if (!navigation) return
   resetPaging()
-  const nextKeys = { ...parentKeys.value }
-  const parentKey = parentKeyForLevel(currentLevel.value)
-  if (parentKey && row.dimensionKey) nextKeys[parentKey] = row.dimensionKey
-  parentKeys.value = nextKeys
-  currentLevel.value = nextLevel
-  emit('level-change', { currentLevel: nextLevel, parentKeys: nextKeys })
+  parentKeys.value = navigation.parentKeys
+  currentLevel.value = navigation.currentLevel
+  emit('level-change', navigation)
   if (!props.embedded) syncRouteContext()
   loadDrill()
 }
 
 function parentKeyForLevel(level) {
-  const definition = props.configuredPaths.find(path => path.pathCode === lastDrillDimension.value)?.levels?.find(item => item.levelCode === level)
-  if (definition) return definition.memberKeyFieldCode || definition.memberKeySemanticFieldCode || definition.dimensionFieldCode || definition.dimensionSemanticFieldCode || ''
-  return {
-    HOSPITAL: 'HOSPITAL_CODE',
-    OUT_DEPT: 'OUT_DEPT_CODE',
-    DEPARTMENT: 'DEPARTMENT_CODE',
-    MEDICAL_GROUP: 'MEDICAL_GROUP_CODE',
-    ATTENDING_DOCTOR: 'ATTENDING_DOCTOR_CODE',
-    ALL_SINGLE_DISEASE: 'HOSPITAL_CODE',
-    SINGLE_DISEASE: 'SINGLE_DISEASE_CODE'
-  }[level] || ''
+  return drillMemberField(selectedPath(), level)
 }
 
 async function loadFactorTrace() {
@@ -435,7 +423,7 @@ watch(() => [props.startLevel, props.startParentKeys, props.startFilters], ([lev
   if (isFactorTraceMode.value) loadFactorTrace()
   else loadDrill()
 }, { deep: true })
-watch(() => [props.resultId, props.pathResultIds, props.configuredPaths], () => {
+watch(() => [props.resultId, props.snapshotId, props.indicatorVersionId, props.resultPeriod, props.pathResultIds, props.configuredPaths], () => {
   resetPaging()
   resolvedPathResultIds.value = {}
   if (!pathAvailable(lastDrillDimension.value)) {
@@ -486,6 +474,7 @@ watch(dimension, (value) => {
   }
 })
 onMounted(loadDrill)
+onBeforeUnmount(() => { drillRequestId += 1; factorTraceRequestId += 1 })
 
 function rootForPath(pathCode) {
   return props.configuredPaths.find(path => path.pathCode === pathCode)?.levels?.[0]?.levelCode || (pathCode.startsWith('CUSTOM_') ? 'ROOT' : pathCode === 'DISEASE' ? 'ALL_SINGLE_DISEASE' : 'HOSPITAL')

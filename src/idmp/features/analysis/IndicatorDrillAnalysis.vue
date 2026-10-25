@@ -20,6 +20,9 @@
     <DrillExplorer
       v-else-if="anchor.resultId" :key="`${granularity}:${selectedPeriod}:${entrySequence}`" ref="explorer"
       :result-id="anchor.resultId" :path-result-ids="anchor.pathResultIds"
+      :indicator-version-id="indicatorVersionId"
+      :snapshot-id="useEntryContext ? entryContext.snapshotId || '' : ''"
+      :result-period="periodOptions.find(item => item.value === selectedPeriod) || {}"
       :indicator-name="indicatorName" :period="selectedPeriodLabel"
       :start-path-code="useEntryContext ? entryContext.pathCode : ''"
       :start-level="useEntryContext ? entryContext.currentLevel : useInitialContext ? startLevel : ''"

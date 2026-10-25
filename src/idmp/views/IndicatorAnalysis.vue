@@ -306,6 +306,7 @@
             ref="staticDrillExplorerRef"
             v-else-if="drillResultId"
             :result-id="drillResultId"
+            :indicator-version-id="currentIndicatorVersionId"
             :path-result-ids="drillPathResultIds"
             :start-filters="reportFilters"
             :indicator-name="currentProfile.name"

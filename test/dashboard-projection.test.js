@@ -126,7 +126,7 @@ test('drill uses exact department parents instead of remerging BASE rows for red
     { currentLevel: 'OUT_DEPT', parentKeys: { HOSPITAL_CODE: 'H' }, filters: { OUT_DEPT_CODE: ['28', '29'], OUT_DEPT_NAME: 'Neurology', disease: 'X' } })
   assert.equal(navigation.initialNavigation.currentLevel, 'DOCTOR')
   assert.deepEqual(navigation.initialNavigation.parentKeys, { HOSPITAL_CODE: 'H', OUT_DEPT_CODE: '28' })
-  assert.deepEqual(navigation.filters, { OUT_DEPT_NAME: 'Neurology', disease: 'X' }, 'Explicit server filters remain intact; display names are not new parent keys')
+  assert.deepEqual(navigation.filters, { disease: 'X' }, 'The selected department code owns scope; stale display names are not filters')
   const legacyPath = projectedDrillNavigation({ out_dept_code: '28', OUT_DEPT_NAME: 'Neurology' }, { pathCode: 'ORGANIZATION', levels: null, maxLevel: 'ATTENDING_DOCTOR' },
     { currentLevel: 'OUT_DEPT', parentKeys: { HOSPITAL_CODE: 'H' }, filters: {}, fieldLevels: { HOSPITAL_CODE: 1, OUT_DEPT_CODE: 2, ATTENDING_DOCTOR: 3 } })
   assert.equal(legacyPath.initialNavigation.currentLevel, 'ATTENDING_DOCTOR')
