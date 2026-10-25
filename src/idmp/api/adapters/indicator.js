@@ -310,7 +310,7 @@ export function normalizeIndicatorRangeSummaryParams(params = {}) {
 
 export function normalizeIndicatorInstantSummary(result, periodStart, periodEnd) {
   if (result?.grainFieldCodes?.length || !Array.isArray(result?.rows) || result.rows.length > 1) {
-    throw new Error('即时查询未返回单条全院汇总结果')
+    throw new Error('即时查询未返回当前筛选范围的单条汇总结果')
   }
   const row = result.rows[0]
   return {

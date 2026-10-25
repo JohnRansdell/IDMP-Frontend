@@ -21,9 +21,10 @@ export function analysisReportContext(query = {}) {
   const legacyCustom = String(query.granularity).toUpperCase() === 'CUSTOM'
   const range = query.periodStart && query.periodEnd ? [String(query.periodStart).slice(0, 10),
     legacyCustom ? shiftReportDate(query.periodEnd, -1) : String(query.periodEnd).slice(0, 10)] : []
-  return { range, mode: !legacyCustom && query.summaryMode === 'INSTANT' ? 'INSTANT' : 'FORMAL',
+  const summaryGranularity = String(query.summaryGranularity || (legacyCustom ? 'CUSTOM' : query.granularity) || 'MONTHLY').toUpperCase()
+  return { range, mode: summaryGranularity === 'CUSTOM' || summaryGranularity === 'STATIC' ? 'INSTANT' : 'FORMAL',
     granularity: normalizeAnalysisGranularity(query.granularity),
-    summaryGranularity: String(query.summaryGranularity || (legacyCustom ? 'CUSTOM' : query.granularity) || 'CUSTOM').toUpperCase() }
+    summaryGranularity }
 }
 
 export function analysisFilterParams(query = {}) {

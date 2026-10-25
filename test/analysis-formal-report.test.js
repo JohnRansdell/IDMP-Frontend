@@ -6,11 +6,11 @@ import { reportOverview, reportProvenance } from '../src/idmp/features/analysis/
 import { normalizeIndicatorRangeSummaryParams, collectFormulaFactorVersionIds, createIndicatorDataExplanation } from '../src/idmp/api/adapters/indicator.js'
 import { buildIndicatorAnalysisPeriodContext, buildIndicatorAnalysisRouteQuery } from '../src/idmp/features/dashboard/analysisNavigation.js'
 
-test('dashboard links retain formal aggregation but never send CUSTOM as trend granularity', () => {
+test('dashboard custom ranges use instant summary while month quarter year use formal results', () => {
   for (const [start, end, granularity] of [['2026-01-01', '2026-04-01', 'CUSTOM'], ['2026-02-01', '2026-05-01', 'CUSTOM'], ['2024-02-01', '2024-03-01', 'MONTHLY'], ['2026-01-01', '2027-01-01', 'YEARLY']]) {
     const route = buildIndicatorAnalysisRouteQuery({ indicatorId: '1' }, { periodStart: start, periodEnd: end, granularity })
     const context = analysisReportContext(route)
-    assert.equal(context.mode, 'FORMAL')
+    assert.equal(context.mode, granularity === 'CUSTOM' ? 'INSTANT' : 'FORMAL')
     assert.notEqual(context.granularity, 'CUSTOM')
     assert.equal(context.summaryGranularity, granularity)
     assert.equal(new Date(`${context.range[1]}T00:00:00Z`).getTime() + 86400000, new Date(`${end}T00:00:00Z`).getTime())
@@ -28,7 +28,7 @@ test('fixed component inclusive dates are not shifted twice', () => {
 
 test('old CUSTOM links recover exclusive dates without changing ordinary manual report dates', () => {
   assert.deepEqual(analysisReportContext({ granularity: 'CUSTOM', periodStart: '2026-01-01', periodEnd: '2026-04-01' }), {
-    mode: 'FORMAL', granularity: 'MONTHLY', summaryGranularity: 'CUSTOM', range: ['2026-01-01', '2026-03-31']
+    mode: 'INSTANT', granularity: 'MONTHLY', summaryGranularity: 'CUSTOM', range: ['2026-01-01', '2026-03-31']
   })
   assert.equal(analysisReportContext({ granularity: 'MONTHLY', periodStart: '2026-01-01', periodEnd: '2026-04-01' }).range[1], '2026-04-01')
   assert.equal(formalReportGranularity(['2026-01-01', '2026-02-28'], 'MONTHLY'), 'CUSTOM')
@@ -47,7 +47,8 @@ test('formal queries use the range endpoint and do not fall back to a different 
 
 test('normal entry defaults to formal and right-open monthly dates become inclusive exactly once', () => {
   assert.equal(analysisReportContext({}).mode, 'FORMAL')
-  assert.equal(analysisReportContext({ summaryMode: 'INSTANT' }).mode, 'INSTANT')
+  assert.equal(analysisReportContext({ summaryMode: 'INSTANT' }).mode, 'FORMAL')
+  assert.equal(analysisReportContext({ summaryMode: 'FORMAL', summaryGranularity: 'CUSTOM' }).mode, 'INSTANT')
   for (const [end, inclusive] of [['2026-02-01', '2026-01-31'], ['2024-03-01', '2024-02-29'], ['2027-01-01', '2026-12-31']]) {
     assert.equal(shiftReportDate(end, -1), inclusive)
     assert.equal(shiftReportDate(inclusive, 1), end)

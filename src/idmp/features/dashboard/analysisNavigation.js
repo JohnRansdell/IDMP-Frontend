@@ -45,13 +45,14 @@ export function buildIndicatorAnalysisRouteQuery(source = {}, context = {}) {
   const rawEnd = String(context.periodEnd || '').trim()
   const periodEnd = rawEnd ? context.periodEndInclusive ? rawEnd : shiftReportDate(rawEnd, -1) : ''
   const granularity = String(context.granularity || '').trim().toUpperCase()
+  const summaryGranularity = formalReportGranularity([periodStart, periodEnd], granularity)
   return {
     indicator,
     ...(indicatorName ? { indicatorName } : {}),
     ...(indicatorVersionId ? { indicatorVersionId } : {}),
     ...Object.fromEntries(Object.entries(context.filters || {}).map(([field, value]) => [`filter.${field}`, value])),
-    ...(periodStart && periodEnd ? { periodStart, periodEnd, summaryMode: 'FORMAL',
-      summaryGranularity: formalReportGranularity([periodStart, periodEnd], granularity),
+    ...(periodStart && periodEnd ? { periodStart, periodEnd, summaryMode: summaryGranularity === 'CUSTOM' ? 'INSTANT' : 'FORMAL',
+      summaryGranularity,
       trendStart: periodStart, trendEnd: periodEnd } : {}),
     ...(granularity ? { granularity: normalizeAnalysisGranularity(granularity) } : {})
   }

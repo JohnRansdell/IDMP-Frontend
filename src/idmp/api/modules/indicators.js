@@ -112,6 +112,12 @@ export function queryIndicatorVersion(versionId, payload, options = {}) {
   })
 }
 
+export function queryIndicatorSummary(versionId, payload) {
+  return requestJson(`/analysis/indicator-versions/${encodeURIComponent(versionId)}/instant-summary`, {
+    method: 'POST', timeoutMs: 120000, body: JSON.stringify(payload)
+  })
+}
+
 export function publishIndicatorVersion(versionId, idempotencyKey) {
   return requestJson(`/indicator-versions/${versionId}/publish`, {
     method: 'POST',

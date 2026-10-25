@@ -49,7 +49,7 @@
       :closable="false"
       :title="analysisErrorMessage || rangeSummaryErrorMessage"
     />
-    <section v-if="($can('POST', '/indicator-versions/1/query') || $can('GET', '/analysis/indicators/1/range-summary')) && selectedBackendIndicator && (backendAnalysisGranularity !== 'STATIC' || indicatorRuntimeParameters.length)" class="surface-card instant-query-panel" aria-label="即时查询条件">
+    <section v-if="($can('POST', '/analysis/indicator-versions/1/instant-summary') || $can('GET', '/analysis/indicators/1/range-summary')) && selectedBackendIndicator && (backendAnalysisGranularity !== 'STATIC' || indicatorRuntimeParameters.length)" class="surface-card instant-query-panel" aria-label="查询条件">
       <div class="instant-query-panel__header">
         <h2>查询条件</h2>
         <div v-if="backendAnalysisGranularity !== 'STATIC'" class="instant-query-panel__context">
@@ -57,13 +57,6 @@
         </div>
       </div>
       <div class="instant-query-panel__controls">
-        <div v-if="backendAnalysisGranularity !== 'STATIC'" class="instant-query-panel__period">
-          <label>查询方式</label>
-          <el-radio-group v-model="reportQueryMode" size="small" aria-label="报告期查询方式" @change="clearInstantQueryResult">
-            <el-radio-button value="FORMAL" :disabled="!$can('GET', '/analysis/indicators/1/range-summary')">正式结果</el-radio-button>
-            <el-radio-button value="INSTANT" :disabled="!$can('POST', '/indicator-versions/1/query') || hasReportFilters">即时计算</el-radio-button>
-          </el-radio-group>
-        </div>
         <div v-if="backendAnalysisGranularity !== 'STATIC'" class="instant-query-panel__period">
           <label>报告期</label>
           <div class="date-range-fields report-period-picker" aria-label="报告期范围">
@@ -394,7 +387,7 @@ import RuntimeParameterFields from '@/idmp/components/RuntimeParameterFields.vue
 import DrillExplorer from '@/idmp/features/analysis/DrillExplorer.vue'
 import IndicatorDrillAnalysis from '@/idmp/features/analysis/IndicatorDrillAnalysis.vue'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
-import { fetchIndicatorAnalysis, fetchIndicatorRangeSummary, fetchIndicatorAvailablePeriod, fetchIndicatorGrainOptions, fetchAllIndicators, fetchIndicatorVersion, fetchAllIndicatorVersions, queryIndicatorVersion } from '@/idmp/api/modules/indicators'
+import { fetchIndicatorAnalysis, fetchIndicatorRangeSummary, fetchIndicatorAvailablePeriod, fetchIndicatorGrainOptions, fetchAllIndicators, fetchIndicatorVersion, fetchAllIndicatorVersions, queryIndicatorSummary } from '@/idmp/api/modules/indicators'
 import { fetchFactorVersion } from '@/idmp/api/modules/factors'
 import { collectFormulaFactorVersionIds, createIndicatorDataExplanation, extractIndicatorFormula, normalizeIndicatorInstantSummary } from '@/idmp/api/adapters/indicator'
 import { deriveDrillPathResultIds } from '@/idmp/api/adapters/drill'
@@ -1143,6 +1136,8 @@ async function applyReportPeriod() {
   if (temporal) {
     if (!validateOptionalDateRange(reportPeriodRange.value, '报告期')) return
     if (!isCompleteDateRange(reportPeriodRange.value)) return ElMessage.warning('请选择完整的报告期范围')
+    reportSummaryGranularity.value = formalReportGranularity(reportPeriodRange.value, reportSummaryGranularity.value)
+    reportQueryMode.value = reportSummaryGranularity.value === 'CUSTOM' ? 'INSTANT' : 'FORMAL'
   }
   const parameterMessage = reportQueryMode.value === 'INSTANT' && validateSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)
   if (parameterMessage) return ElMessage.warning(parameterMessage)
@@ -1163,7 +1158,7 @@ async function applyReportPeriod() {
 }
 
 function reportQueryPayload() {
-  const payload = { summaryOnly: true }
+  const payload = { summaryOnly: true, ...(Object.keys(reportFilters.value).length ? { filters: reportFilters.value } : {}) }
   if (backendAnalysisGranularity.value !== 'STATIC') {
     payload.periodStart = `${normalizeDateValue(reportPeriodRange.value[0])}T00:00:00`
     payload.periodEnd = nextDayStart(reportPeriodRange.value[1])
@@ -1176,12 +1171,8 @@ function reportQueryPayload() {
 
 async function loadRangeSummary() {
   reportDirty.value = false
-  if (reportQueryMode.value === 'INSTANT' && hasReportFilters.value) {
-    rangeSummaryErrorMessage.value = '带看板筛选的分析仅支持正式结果查询'
-    return
-  }
   if (reportQueryMode.value === 'FORMAL'
-    ? !canRequest('GET', '/analysis/indicators/1/range-summary') : !canRequest('POST', '/indicator-versions/1/query')) {
+    ? !canRequest('GET', '/analysis/indicators/1/range-summary') : !canRequest('POST', '/analysis/indicator-versions/1/instant-summary')) {
     rangeSummaryErrorMessage.value = '当前账号没有所选查询方式的访问权限'
     return
   }
@@ -1208,7 +1199,7 @@ async function loadRangeSummary() {
       }
       return
     }
-    const result = await queryIndicatorVersion(versionId, payload)
+    const result = await queryIndicatorSummary(versionId, payload)
     if (requestSequence === rangeSummaryRequestSequence) {
       rangeSummary.value = normalizeIndicatorInstantSummary(result, periodStart, periodEnd)
       reportParameterSnapshot.value = result.parameterSnapshot || payload.parameters || {}
@@ -1534,8 +1525,6 @@ async function refreshIndicatorAnalysis({ preserveRangeSummary = false } = {}) {
       }
     }
     const calculationMode = resolveIndicatorCalculationMode(backendIndicatorVersion.value, backendIndicator, route.query.granularity)
-    if (reportQueryMode.value === 'INSTANT' && (hasReportFilters.value || !canRequest('POST', '/indicator-versions/1/query'))
-      && calculationMode !== 'STATIC') reportQueryMode.value = 'FORMAL'
     if (calculationMode === 'STATIC') {
       reportQueryMode.value = 'INSTANT'
       reportGranularity.value = 'STATIC'

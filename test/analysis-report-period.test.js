@@ -17,7 +17,7 @@ const functions = names.map(name => {
 
 function page(range, granularity = 'MONTHLY') {
   const state = {
-    reportPeriodRange: { value: range }, backendAnalysisGranularity: { value: granularity },
+    reportPeriodRange: { value: range }, backendAnalysisGranularity: { value: granularity }, reportFilters: { value: {} },
     indicatorRuntimeParameters: { value: [] }, indicatorRuntimeParameterValues: { value: {} }
   }
   const methods = Function('state', 'buildSqlRuntimeParameterValues', `
@@ -70,4 +70,12 @@ test('static queries still omit dates and retain declared runtime parameters', (
   view.indicatorRuntimeParameters.value = [{ code: 'deptCode', type: 'STRING' }]
   view.indicatorRuntimeParameterValues.value = { deptCode: '5' }
   assert.deepEqual(view.reportQueryPayload(), { summaryOnly: true, parameters: { deptCode: '5' } })
+})
+
+test('instant summary preserves multiple department and diagnosis members', () => {
+  const view = page(['2026-02-01', '2026-04-30'])
+  view.reportFilters.value = { OUT_DEPT_CODE: ['15', '16'], IN_ICD10: ['J18'] }
+  assert.deepEqual(view.reportQueryPayload().filters, view.reportFilters.value)
+  assert.doesNotMatch(source, /<label>查询方式<\/label>|带看板筛选的分析仅支持正式结果查询/)
+  assert.match(source, /queryIndicatorSummary\(versionId, payload\)/)
 })

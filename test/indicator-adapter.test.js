@@ -72,7 +72,7 @@ test('instant summary displays only an ungrouped source result for the exact sel
   })
   assert.throws(() => normalizeIndicatorInstantSummary({
     grainFieldCodes: ['OUT_DEPT_CODE'], rows: [{ value: 1 }]
-  }, '2026-02-05', '2026-03-05'), /单条全院汇总/)
+  }, '2026-02-05', '2026-03-05'), /当前筛选范围的单条汇总/)
 })
 
 test('indicator trial adapter keeps every returned time target and defaults to month', () => {
