@@ -19,7 +19,7 @@
     <StatePanel v-else-if="!periodOptions.length" type="empty" :title="`暂无${granularityLabel}正式结果`" description="该粒度尚未生成正式计算结果。" />
     <DrillExplorer
       v-else-if="anchor.resultId" :key="`${granularity}:${selectedPeriod}:${entrySequence}`" ref="explorer"
-      :result-id="anchor.resultId" :path-result-ids="anchor.pathResultIds"
+      :result-id="anchor.resultId" :path-result-ids="anchor.pathResultIds" :enabled="enabled"
       :indicator-version-id="indicatorVersionId"
       :snapshot-id="useEntryContext ? entryContext.snapshotId || '' : ''"
       :result-period="periodOptions.find(item => item.value === selectedPeriod) || {}"

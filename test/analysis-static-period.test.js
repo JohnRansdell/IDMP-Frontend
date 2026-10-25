@@ -28,7 +28,7 @@ test('static query with no dates and pending/empty results still has a meaningfu
   const view = page('STATIC')
   assert.equal(view.formatAnalysisPeriod(null), '静态结果')
   assert.equal(view.formatRange([]), '静态结果')
-  assert.match(source, /backendAnalysisGranularity\.value !== 'STATIC' && !reportPeriodRange\.value\.length/)
+  assert.match(source, /backendAnalysisGranularity\.value !== 'STATIC' && !reportDirty\.value && !reportPeriodRange\.value\.length/)
   assert.match(source, /v-if="backendAnalysisGranularity !== 'STATIC'" class="trend-controls"/)
 })
 

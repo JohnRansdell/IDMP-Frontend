@@ -38,11 +38,13 @@ test('old CUSTOM links recover exclusive dates without changing ordinary manual 
 
 test('formal queries use the range endpoint and do not fall back to a different monthly value on failure', async () => {
   const source = await readFile(new URL('../src/idmp/views/IndicatorAnalysis.vue', import.meta.url), 'utf8')
-  assert.match(source, /fetchIndicatorRangeSummary\(request.id, request.params\)/)
-  assert.match(source, /rangeSummary\.value = \{ \.\.\.result, executionMode: 'FORMAL_RESULTS' \}/)
+  const hook = await readFile(new URL('../src/idmp/features/analysis/useReportSummary.js', import.meta.url), 'utf8')
+  assert.match(source, /fetchFormal: fetchIndicatorRangeSummary/)
+  assert.match(hook, /fetchFormal\(request.id, request.params, \{ signal \}\)/)
+  assert.match(hook, /summary: \{ \.\.\.result, executionMode: 'FORMAL_RESULTS' \}/)
   assert.match(source, /if \(rangeSummaryLoading\.value \|\| rangeSummaryErrorMessage\.value\) return/)
   assert.match(source, /get filters\(\) \{ return rankPeriodProps\.value\.filters \}/)
-  assert.match(source, /loadDepartmentComparisons\(data, paths, searchResultDrill, analysisFilters\(params\)\)/)
+  assert.match(source, /loadDepartmentComparisons\(data, paths, searchResultDrill, analysisFilters\(params\), options\)/)
 })
 
 test('normal entry defaults to formal and right-open monthly dates become inclusive exactly once', () => {

@@ -305,3 +305,45 @@ test('analysis page keeps temporal and static drill component refs separate', as
   assert.match(page, /<DrillExplorer\s+[^>]*ref="staticDrillExplorerRef"/)
   assert.equal((page.match(/ref="drillExplorerRef"/g) || []).length, 1)
 })
+
+test('switching away cancels unfinished requests and resumes the same initial period and parent scope', async () => {
+  const pending = deferred(), requests = []
+  const wrapper = create(async (_, params, options) => {
+    requests.push({ params, signal: options.signal })
+    if (params.periodStart && requests.length === 2) return pending.promise
+    return response(params.periodStart ? [march] : [march, april])
+  }, { initialPeriod: march, startLevel: 'DEPT', startParentKeys: { OUT_DEPT_CODE: '16' } })
+  await flushPromises()
+  assert.equal(requests.length, 2)
+  await wrapper.setProps({ enabled: false })
+  assert.equal(requests[1].signal.aborted, true)
+  await wrapper.setProps({ enabled: true })
+  await flushPromises()
+  assert.equal(wrapper.findComponent(Explorer).props('resultId'), 'march')
+  assert.deepEqual(wrapper.findComponent(Explorer).props('startParentKeys'), { OUT_DEPT_CODE: '16' })
+  pending.resolve(response([april]))
+  await flushPromises()
+  assert.equal(wrapper.findComponent(Explorer).props('resultId'), 'march')
+  wrapper.unmount()
+  assert.equal(requests.at(-1).signal.aborted, true)
+})
+
+test('superseded contexts cancel transport and never cache stale period data', async () => {
+  const pending = deferred(), requests = []
+  const wrapper = create(async (id, params, options) => {
+    requests.push({ id, params, signal: options.signal })
+    return requests.length === 1 ? pending.promise : response([april])
+  })
+  await wrapper.setProps({ indicatorId: 'indicator-B', indicatorVersionId: 'version-B', filters: { OUT_DEPT_CODE: ['16'] } })
+  await flushPromises()
+  assert.equal(requests[0].signal.aborted, true)
+  assert.equal(requests[1].id, 'indicator-B')
+  assert.deepEqual(requests[1].params['filter.OUT_DEPT_CODE'], ['16'])
+  pending.resolve(response([march]))
+  await flushPromises()
+  assert.equal(wrapper.findComponent(Explorer).props('resultId'), 'april')
+  await wrapper.setProps({ enabled: false })
+  await wrapper.setProps({ enabled: true })
+  assert.equal(requests.length, 2, 'completed data is reused when revisiting a tab')
+  wrapper.unmount()
+})

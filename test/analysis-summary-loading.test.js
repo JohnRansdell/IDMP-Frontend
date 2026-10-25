@@ -5,7 +5,7 @@ import { compileScript, parse } from '@vue/compiler-sfc'
 import { buildReportSummaryRequest } from '../src/idmp/features/analysis/reportQuery.js'
 import { resolveReportPeriod } from '../src/idmp/features/analysis/reportPeriod.js'
 import { buildSqlRuntimeParameterValues } from '../src/idmp/api/adapters/sqlImport.js'
-import { normalizeIndicatorInstantSummary } from '../src/idmp/api/adapters/indicator.js'
+import { useReportSummary } from '../src/idmp/features/analysis/useReportSummary.js'
 
 const source = await readFile(new URL('../src/idmp/views/IndicatorAnalysis.vue', import.meta.url), 'utf8')
 const { descriptor } = parse(source)
@@ -26,16 +26,17 @@ function harness() {
   }
   const calls = [], warnings = []
   const permission = { allowed: true }
-  const api = kind => (id, input) => new Promise((resolve, reject) => calls.push({ kind, id, input, resolve, reject }))
+  const api = kind => (id, input, options) => new Promise((resolve, reject) => calls.push({ kind, id, input, ...options, resolve, reject }))
+  const reportQuery = useReportSummary({ canRequest: () => permission.allowed, fetchFormal: api('FORMAL'),
+    fetchInstant: api('INSTANT'), notify: text => warnings.push(text) })
+  Object.assign(state, { rangeSummary: reportQuery.summary, rangeSummaryLoading: reportQuery.loading,
+    rangeSummaryErrorMessage: reportQuery.error, runtimeQueryResult: reportQuery.runtime, reportParameterSnapshot: reportQuery.parameters })
   const dependencies = {
-    buildReportSummaryRequest, buildSqlRuntimeParameterValues, normalizeIndicatorInstantSummary,
-    canRequest: () => permission.allowed, ElMessage: { warning: text => warnings.push(text) },
-    fetchIndicatorRangeSummary: api('FORMAL'), queryIndicatorSummary: api('INSTANT')
+    buildReportSummaryRequest, buildSqlRuntimeParameterValues, reportQuery
   }
   const methods = Function('state', 'dependencies', `
     const { ${Object.keys(state).join(', ')} } = state;
     const { ${Object.keys(dependencies).join(', ')} } = dependencies;
-    let rangeSummaryRequestSequence = 0;
     ${functions}
     return { loadRangeSummary, invalidateReportSummary };
   `)(state, dependencies)
@@ -50,6 +51,8 @@ test('switching from formal to custom cannot restore an older formal result', as
   const current = view.loadRangeSummary()
   assert.deepEqual(view.calls.map(call => call.kind), ['FORMAL', 'INSTANT'])
   assert.equal(view.calls[1].id, '23')
+  assert.equal(view.calls[0].signal.aborted, true)
+  assert.equal(view.calls[1].signal.aborted, false)
   view.calls[1].resolve({ executionMode: 'AD_HOC_SOURCE', grainFieldCodes: [], rows: [{ value: 8 / 1574, numeratorValue: 8, denominatorValue: 1574 }] })
   await current
   view.calls[0].resolve({ value: 0.99 })

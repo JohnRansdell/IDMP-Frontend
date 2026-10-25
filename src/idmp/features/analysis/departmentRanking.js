@@ -64,7 +64,8 @@ export function departmentDrillDefinition(paths = []) {
   return null
 }
 
-export async function loadDepartmentComparisons(analysis, paths, searchDrill, filters = {}) {
+export async function loadDepartmentComparisons(analysis, paths, searchDrill, filters = {}, options = {}) {
+  options.signal?.throwIfAborted()
   const period = drillPeriodKey(analysis?.overview)
   const direct = normalizeDepartmentComparisons((analysis?.departmentComparison || []).filter(row => drillPeriodKey(row) === period))
   if (direct.length) return direct
@@ -84,7 +85,9 @@ export async function loadDepartmentComparisons(analysis, paths, searchDrill, fi
       currentLevel: definition.level.levelCode,
       parentKeys: {}, filters }
     const request = buildDrillRequest(context, { path: definition.path, pageNum, pageSize: 100, sort: [{ field: 'indicatorValue', direction: 'DESC' }] })
-    const result = await searchDrill(request.resultId, request.payload)
+    options.signal?.throwIfAborted()
+    const result = await searchDrill(request.resultId, request.payload, options)
+    options.signal?.throwIfAborted()
     assertDrillResponseContext(result, context)
     receivedCount += result.records.length
     rows.push(...result.records.filter(row => row.recordType !== 'CALCULATION_STATUS').map(row => ({

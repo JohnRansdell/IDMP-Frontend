@@ -91,8 +91,8 @@ export function fetchDrillPaths(params = {}) {
   return requestJson(withQuery('/meta/drill-paths', params))
 }
 
-export function fetchDrillPathVersion(versionId) {
-  return requestJson(`/meta/drill-path-versions/${encodeURIComponent(versionId)}`)
+export function fetchDrillPathVersion(versionId, options = {}) {
+  return requestJson(`/meta/drill-path-versions/${encodeURIComponent(versionId)}`, options)
 }
 
 export function syncSourceMappings() {

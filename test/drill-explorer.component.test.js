@@ -11,6 +11,7 @@ const dom = new JSDOM('<!doctype html><html><body></body></html>')
 for (const name of ['window', 'document', 'HTMLElement', 'SVGElement', 'Element', 'Node', 'Document', 'Text', 'Comment']) globalThis[name] = dom.window[name]
 Object.defineProperty(globalThis, 'navigator', { configurable: true, value: dom.window.navigator })
 const vue = await import('vue')
+const { createRequestScope } = await import('../src/idmp/features/analysis/useLatestResult.js')
 const { isDepartmentLevel, namedDrillRecord } = await import('../src/idmp/features/dashboard/dimensionNames.js')
 const { mount, flushPromises } = await import('@vue/test-utils')
 const source = await readFile(new URL('../src/idmp/features/analysis/DrillExplorer.vue', import.meta.url), 'utf8')
@@ -28,14 +29,14 @@ const Button = vue.defineComponent({ setup: (_, { slots }) => () => vue.h('butto
 
 function create(fetchResultFactors = async () => ({ context: {}, factors: [] }), props = {}, drillResponse = {}) {
   const requests = []
-  const component = Function('vue', 'deps', `const { useRoute, useRouter, StatePanel, FactorTraceTree, searchResultDrill, fetchResultFactors, limitDrillNextLevels, isStatusRecord, getStatusLabel, fetchDepartmentNames, isDepartmentLevel, namedDrillRecord, canonicalDrillRootResultId, assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation, formatResultNumber, formatResultValue } = deps;\n${bindings}\n${code}`)(vue, {
-    formatResultNumber, formatResultValue,
+  const component = Function('vue', 'deps', `const { createRequestScope, useRoute, useRouter, StatePanel, FactorTraceTree, searchResultDrill, fetchResultFactors, limitDrillNextLevels, isStatusRecord, getStatusLabel, fetchDepartmentNames, isDepartmentLevel, namedDrillRecord, canonicalDrillRootResultId, assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation, formatResultNumber, formatResultValue } = deps;\n${bindings}\n${code}`)(vue, {
+    createRequestScope, formatResultNumber, formatResultValue,
     canonicalDrillRootResultId, assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation,
     useRoute: () => ({ query: {} }), useRouter: () => ({ push() {}, replace() {} }),
     StatePanel: vue.defineComponent({ props: ['title'], setup: props => () => vue.h('div', props.title) }),
     FactorTraceTree: vue.defineComponent({ setup: () => () => vue.h('div', 'trace-tree') }),
-    searchResultDrill: async (id, payload) => {
-      requests.push({ id, payload })
+    searchResultDrill: async (id, payload, options) => {
+      requests.push({ id, payload, signal: options.signal })
       const response = typeof drillResponse === 'function' ? await drillResponse(id, payload) : drillResponse
       return { context: {}, breadcrumb: [], summary: {}, columns: [], records: [], nextLevels: [], pageInfo: {}, ...response }
     },
@@ -52,6 +53,46 @@ function create(fetchResultFactors = async () => ({ context: {}, factors: [] }),
   return { wrapper, requests }
 }
 function button(wrapper, text) { return wrapper.findAll('button').find(item => item.text() === text) }
+
+test('equivalent parent objects and tab toggles do not reload an already completed drill', async () => {
+  const { wrapper, requests } = create()
+  await flushPromises()
+  await wrapper.setProps({ enabled: false, startParentKeys: { OUT_DEPT_CODE: '17' }, startFilters: { OUT_DEPT_CODE: '17' }, resultPeriod: {} })
+  await wrapper.setProps({ enabled: true, startParentKeys: { OUT_DEPT_CODE: '17' }, startFilters: { OUT_DEPT_CODE: '17' }, resultPeriod: {} })
+  await flushPromises()
+  assert.equal(requests.length, 1)
+  wrapper.unmount()
+})
+
+test('changing result and filters together issues one coherent drill request', async () => {
+  const { wrapper, requests } = create()
+  await flushPromises()
+  await wrapper.setProps({ resultId: 'new-result', startParentKeys: { OUT_DEPT_CODE: '16' }, startFilters: { OUT_DEPT_CODE: '16' } })
+  await flushPromises()
+  assert.equal(requests.length, 2)
+  assert.equal(requests[1].id, 'new-result')
+  assert.deepEqual(requests[1].payload.filters, { OUT_DEPT_CODE: '16' })
+  wrapper.unmount()
+})
+
+test('disabled drill waits for activation and cancels unfinished requests on hiding and unmount', async () => {
+  let resolve
+  const pending = new Promise(done => { resolve = done })
+  const { wrapper, requests } = create(undefined, { enabled: false }, () => pending)
+  assert.equal(requests.length, 0)
+  await wrapper.setProps({ enabled: true })
+  assert.equal(requests.length, 1)
+  await wrapper.setProps({ enabled: false })
+  assert.equal(requests[0].signal.aborted, true)
+  resolve({ summary: { indicatorValue: 99 } })
+  await flushPromises()
+  assert.doesNotMatch(wrapper.text(), /99/)
+  await wrapper.setProps({ enabled: true })
+  await flushPromises()
+  assert.equal(requests.length, 2)
+  wrapper.unmount()
+  assert.equal(requests[1].signal.aborted, true)
+})
 
 test('static drill displays its mode instead of the persisted sentinel period', async () => {
   const { wrapper } = create(undefined, { granularity: 'STATIC' }, {
@@ -88,7 +129,9 @@ test('factor tracing is a separate command, not a drill path option', async () =
   await button(wrapper, '返回下钻').trigger('click')
   await flushPromises()
   assert.equal(wrapper.find('section[aria-label="因子结果追溯"]').exists(), false)
-  assert.deepEqual(requests[1], requests[0], 'return preserves the result, level, parent keys and filters')
+  assert.equal(requests[1].id, requests[0].id)
+  assert.deepEqual(requests[1].payload, requests[0].payload, 'return preserves the result, level, parent keys and filters')
+  assert.equal(requests[0].signal.aborted, true)
   wrapper.unmount()
 })
 
@@ -131,10 +174,10 @@ test('backend pagination and sorting retain drill context and reset pages on con
   await flushPromises()
   assert.equal(requests.at(-1).payload.pageNum, 1)
   assert.deepEqual(requests.at(-1).payload.sort, [{ field: 'indicatorValue', direction: 'ASC' }])
-  pagination.vm.$emit('size-change', 50)
+  wrapper.findComponent({ name: 'ElPagination' }).vm.$emit('size-change', 50)
   await flushPromises()
   assert.equal(requests.at(-1).payload.pageSize, 50)
-  pagination.vm.$emit('current-change', 2)
+  wrapper.findComponent({ name: 'ElPagination' }).vm.$emit('current-change', 2)
   await flushPromises()
   await wrapper.setProps({ resultId: 'new-period-result' })
   await flushPromises()

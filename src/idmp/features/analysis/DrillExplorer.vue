@@ -127,8 +127,9 @@
 <script setup>
 import { fetchDepartmentNames } from '@/idmp/api/modules/departments'
 import { isDepartmentLevel, namedDrillRecord } from '../dashboard/dimensionNames.js'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onDeactivated, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { createRequestScope } from './useLatestResult.js'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import FactorTraceTree from '@/idmp/components/FactorTraceTree.vue'
 import { fetchResultFactors, searchResultDrill } from '@/idmp/api/modules/drill'
@@ -154,6 +155,7 @@ const props = defineProps({
   configuredPaths: { type: Array, default: () => [] },
   startPathCode: { type: String, default: '' },
   source: { type: String, default: 'live', validator: (value) => ['live', 'mock'].includes(value) },
+  enabled: { type: Boolean, default: true },
   embedded: { type: Boolean, default: false }
 })
 const emit = defineEmits(['level-change'])
@@ -168,17 +170,19 @@ const lastDrillDimension = ref(initialDimension)
 const initialPath = props.configuredPaths.find(path => path.pathCode === initialDimension)
 const currentLevel = ref(initialPath?.levels?.length && !initialPath.levels.some(level => level.levelCode === props.startLevel) ? initialPath.levels[0].levelCode : props.startLevel)
 const parentKeys = ref({ ...props.startParentKeys })
-const result = ref(emptyResult())
+const result = shallowRef(emptyResult())
 const loading = ref(false)
 const errorMessage = ref('')
 const pageNum = ref(1)
 const pageSize = ref(20)
 const sort = ref([{ field: 'indicatorValue', direction: 'DESC' }])
-let drillRequestId = 0
-const factorTrace = ref(null)
+const drillScope = createRequestScope()
+let inactive = false
+let interrupted = false
+const factorTrace = shallowRef(null)
 const traceBatchId = computed(() => String(factorTrace.value?.context?.calculationBatchId || ''))
 const factorTraceLoading = ref(false)
-let factorTraceRequestId = 0
+const factorTraceScope = createRequestScope()
 const resolvedPathResultIds = ref({})
 const isFactorTraceMode = ref(false)
 const statusRecord = computed(() => result.value.records.find(isStatusRecord) || null)
@@ -270,7 +274,10 @@ function changeSort({ prop, order }) {
 }
 
 async function loadDrill() {
-  const requestId = ++drillRequestId
+  const ticket = drillScope.begin()
+  if (inactive || !props.enabled) { interrupted = true; suspendRequests(); return }
+  interrupted = false
+  result.value = emptyResult()
   loading.value = false
   if (!activeResultId.value || isFactorTraceMode.value) { result.value = emptyResult(); return }
   loading.value = true
@@ -281,8 +288,8 @@ async function loadDrill() {
       period: props.resultPeriod, pathCode: lastDrillDimension.value,
       currentLevel: currentLevel.value, parentKeys: parentKeys.value, filters: props.startFilters }
     const request = buildDrillRequest(context, { path: selectedPath(), pageNum: pageNum.value, pageSize: pageSize.value, sort: sort.value })
-    const response = await searchResultDrill(request.resultId, request.payload, { source: props.source })
-    if (requestId !== drillRequestId) return
+    const response = await searchResultDrill(request.resultId, request.payload, { source: props.source, signal: ticket.signal })
+    if (!ticket.isCurrent()) return
     assertDrillResponseContext(response, context)
     const levelCode = response.context.currentLevel || currentLevel.value
     const definition = props.configuredPaths.find(path => path.pathCode === lastDrillDimension.value)?.levels?.find(level => level.levelCode === levelCode)
@@ -295,16 +302,16 @@ async function loadDrill() {
         return { ...named, dimensionName: named.dimensionLabel }
       })
     }
-    if (requestId !== drillRequestId) return
+    if (!ticket.isCurrent()) return
     result.value = response
     currentLevel.value = result.value.context.currentLevel || currentLevel.value
     resolveCanonicalRootResultId()
   } catch (error) {
-    if (requestId !== drillRequestId) return
+    if (!ticket.isCurrent()) return
     result.value = emptyResult()
     errorMessage.value = error?.message || '请稍后重试。'
   } finally {
-    if (requestId === drillRequestId) loading.value = false
+    if (ticket.isCurrent()) loading.value = false
   }
 }
 
@@ -337,25 +344,27 @@ function parentKeyForLevel(level) {
 }
 
 async function loadFactorTrace() {
-  if (!activeResultId.value || props.source === 'mock') return
-  const requestId = ++factorTraceRequestId
+  const ticket = factorTraceScope.begin()
+  if (inactive || !props.enabled) { interrupted = true; suspendRequests(); return }
+  interrupted = false
+  if (!activeResultId.value || props.source === 'mock') { factorTraceLoading.value = false; factorTrace.value = null; return }
   const resultId = activeResultId.value
   factorTraceLoading.value = true
   factorTrace.value = null
   errorMessage.value = ''
   try {
-    const data = await fetchResultFactors(resultId)
-    if (requestId === factorTraceRequestId && resultId === activeResultId.value) factorTrace.value = data
+    const data = await fetchResultFactors(resultId, { signal: ticket.signal })
+    if (ticket.isCurrent() && resultId === activeResultId.value) factorTrace.value = data
   } catch (error) {
-    if (requestId === factorTraceRequestId && resultId === activeResultId.value) errorMessage.value = error?.message || '因子追溯加载失败。'
+    if (ticket.isCurrent() && resultId === activeResultId.value) errorMessage.value = error?.message || '因子追溯加载失败。'
   } finally {
-    if (requestId === factorTraceRequestId) factorTraceLoading.value = false
+    if (ticket.isCurrent()) factorTraceLoading.value = false
   }
 }
 
 function showFactorTrace() {
   if (props.source === 'mock') return
-  drillRequestId += 1
+  drillScope.cancel()
   loading.value = false
   errorMessage.value = ''
   factorTrace.value = null
@@ -364,7 +373,7 @@ function showFactorTrace() {
 }
 
 function returnToDrill() {
-  factorTraceRequestId += 1
+  factorTraceScope.cancel()
   factorTraceLoading.value = false
   factorTrace.value = null
   errorMessage.value = ''
@@ -419,16 +428,16 @@ function inferDimensionFromLevel(level) {
     : 'ORGANIZATION'
 }
 
-watch(() => [props.startLevel, props.startParentKeys, props.startFilters], ([level, keys]) => {
+watch([
+  () => JSON.stringify([props.startLevel, props.startParentKeys, props.startFilters]),
+  () => JSON.stringify([props.resultId, props.snapshotId, props.indicatorVersionId, props.resultPeriod, props.pathResultIds, props.configuredPaths])
+], ([entry, target], [previousEntry, previousTarget]) => {
   resetPaging()
-  currentLevel.value = level
-  parentKeys.value = { ...keys }
-  if (isFactorTraceMode.value) loadFactorTrace()
-  else loadDrill()
-}, { deep: true })
-watch(() => [props.resultId, props.snapshotId, props.indicatorVersionId, props.resultPeriod, props.pathResultIds, props.configuredPaths], () => {
-  resetPaging()
-  resolvedPathResultIds.value = {}
+  if (entry !== previousEntry) {
+    currentLevel.value = props.startLevel
+    parentKeys.value = { ...props.startParentKeys }
+  }
+  if (target !== previousTarget) resolvedPathResultIds.value = {}
   if (!pathAvailable(lastDrillDimension.value)) {
     const nextDimension = customPaths.value[0]?.pathCode || (pathAvailable('ORGANIZATION') ? 'ORGANIZATION' : 'DISEASE')
     dimension.value = nextDimension
@@ -438,10 +447,10 @@ watch(() => [props.resultId, props.snapshotId, props.indicatorVersionId, props.r
   }
   if (isFactorTraceMode.value) loadFactorTrace()
   else loadDrill()
-}, { deep: true })
+})
 watch(() => props.source, (source) => {
   resetPaging()
-  factorTraceRequestId += 1
+  factorTraceScope.cancel()
   factorTraceLoading.value = false
   factorTrace.value = null
   errorMessage.value = ''
@@ -451,10 +460,11 @@ watch(() => props.source, (source) => {
   loadDrill()
 })
 watch(dimension, (value) => {
+  if (value === lastDrillDimension.value) return
   resetPaging()
-  factorTraceRequestId += 1
+  factorTraceScope.cancel()
   factorTraceLoading.value = false
-  drillRequestId += 1
+  drillScope.cancel()
   loading.value = false
   factorTrace.value = null
   errorMessage.value = ''
@@ -477,7 +487,22 @@ watch(dimension, (value) => {
   }
 })
 onMounted(loadDrill)
-onBeforeUnmount(() => { drillRequestId += 1; factorTraceRequestId += 1 })
+function suspendRequests() {
+  interrupted = interrupted || loading.value || factorTraceLoading.value
+  drillScope.cancel()
+  factorTraceScope.cancel()
+  loading.value = false
+  factorTraceLoading.value = false
+}
+function resumeRequests() {
+  if (!inactive && props.enabled && interrupted) {
+    if (isFactorTraceMode.value) loadFactorTrace()
+    else loadDrill()
+  }
+}
+watch(() => props.enabled, enabled => { if (enabled) resumeRequests(); else suspendRequests() })
+onDeactivated(() => { inactive = true; suspendRequests() })
+onActivated(() => { inactive = false; resumeRequests() })
 
 function rootForPath(pathCode) {
   return props.configuredPaths.find(path => path.pathCode === pathCode)?.levels?.[0]?.levelCode || (pathCode.startsWith('CUSTOM_') ? 'ROOT' : pathCode === 'DISEASE' ? 'ALL_SINGLE_DISEASE' : 'HOSPITAL')

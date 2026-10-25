@@ -69,7 +69,7 @@ test('instant summary preserves multiple department and diagnosis members', () =
   view.reportFilters.value = { OUT_DEPT_CODE: ['15', '16'], IN_ICD10: ['J18'] }
   assert.deepEqual(view.reportQueryPayload().filters, view.reportFilters.value)
   assert.doesNotMatch(source, /<label>查询方式<\/label>|带看板筛选的分析仅支持正式结果查询/)
-  assert.match(source, /queryIndicatorSummary\(request.id, request.payload\)/)
+  assert.match(source, /fetchInstant: queryIndicatorSummary/)
 })
 
 test('formal request owns its version, inclusive dates and prefixed filters, not runtime parameters', () => {
