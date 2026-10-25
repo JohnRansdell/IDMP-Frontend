@@ -10,6 +10,18 @@ test('API errors keep actionable Chinese business messages', () => {
   assert.doesNotMatch(error.message, /traceId/)
 })
 
+test('technical diagnostics remain on the error object, not in its user message', () => {
+  const path = '/analysis/dashboard-data-sources/example/available-periods'
+  const payload = { message: `读取失败：${path}（HTTP 502）`, traceId: 'trace-for-support' }
+  const error = createApiError(502, payload, path)
+  assert.equal(error.message, '服务暂时不可用，请稍后重试。')
+  assert.equal(error.path, path)
+  assert.equal(error.status, 502)
+  assert.equal(error.rawMessage, payload.message)
+  assert.equal(error.payload, payload)
+  assert.equal(error.traceId, 'trace-for-support')
+})
+
 test('API errors hide backend parser, stack, gateway and English internals', () => {
   assert.match(createApiError(400, { message: 'SQL语法解析失败: Encountered unexpected token: "{"' }).message, /SQL 语句格式有误/)
   assert.doesNotMatch(createApiError(400, { message: 'SQL语法解析失败: Encountered unexpected token: "{"' }).message, /unexpected token/)

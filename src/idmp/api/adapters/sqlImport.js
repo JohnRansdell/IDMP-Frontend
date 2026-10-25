@@ -1,5 +1,6 @@
 import { normalizeDimensionGrain, serializeDrillPaths } from '../../features/indicator/grouping.js'
 import { toUserMessage } from '../../utils/userMessage.js'
+import { formatApiError } from '../../utils/apiError.js'
 import { newResourceCode } from '../../utils/resourceCode.js'
 
 function toOpaqueId(value) {
@@ -340,7 +341,7 @@ export function normalizeSqlImportOperationError(error = {}, fallback = '导入�
     : status === 403 ? '当前账号无权执行此操作'
       : status === 404 ? '导入会话不存在或已失效，请重新开始导入'
         : status === 408 || code === 'REQUEST_TIMEOUT' ? '请求超时，请稍后重试'
-          : status >= 500 && !/[\u3400-\u9fff]/.test(rawMessage) ? '服务暂时不可用，请稍后重试'
+          : status >= 500 || status === 429 ? formatApiError({ status, message: rawMessage }, fallback)
             : readableSqlImportError(rawMessage, '', fallback)?.message || rawMessage
   const conflict = status === 409 || /409/.test(code) || /(因子|指标|资源).*(编码|名称).*(存在|重复|占用)|code.*(exist|duplicate|conflict)/i.test(message)
   const candidate = data.existingResource || data.resource || data.conflictResource || (data.id || data.resourceId ? data : null)

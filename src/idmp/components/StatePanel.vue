@@ -15,6 +15,7 @@
 
 <script setup>
 import { computed, markRaw } from 'vue'
+import { toUserMessage } from '../utils/userMessage.js'
 import {
   CircleClose,
   DataLine,
@@ -55,16 +56,17 @@ const presets = {
     icon: markRaw(Lock)
   },
   unavailable: {
-    title: '能力暂不可用',
-    description: '当前后端尚未提供此能力。',
+    title: '暂不可用',
+    description: '此功能暂时无法使用，请稍后重试或联系管理员。',
     icon: markRaw(Warning)
   }
 }
 
 const currentPreset = computed(() => presets[props.type])
 const icon = computed(() => currentPreset.value.icon)
-const resolvedTitle = computed(() => props.title || currentPreset.value.title)
-const resolvedDescription = computed(() => props.description || currentPreset.value.description)
+const isFailure = computed(() => ['error', 'permission', 'unavailable'].includes(props.type))
+const resolvedTitle = computed(() => isFailure.value ? toUserMessage(props.title, currentPreset.value.title) : props.title || currentPreset.value.title)
+const resolvedDescription = computed(() => isFailure.value ? toUserMessage(props.description, currentPreset.value.description) : props.description || currentPreset.value.description)
 const role = computed(() => (props.type === 'error' ? 'alert' : 'status'))
 const ariaLive = computed(() => (props.type === 'error' ? 'assertive' : 'polite'))
 </script>

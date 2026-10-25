@@ -111,6 +111,7 @@ import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
 import { useRoute, useRouter } from 'vue-router'
 import PageHeader from '@/idmp/components/PageHeader.vue'
+import { fieldLabel, toUserMessage } from '@/idmp/utils/userMessage.js'
 import { fetchDataDomains, fetchPhysicalTableFields, fetchPhysicalTables, fetchSourceTableFields } from '@/idmp/api/modules/meta'
 import { adaptPhysicalTableList, adaptSemanticFieldList, adaptSourceFieldList } from '@/idmp/api/adapters/meta'
 import { adaptFactorPhysicalFields } from '@/idmp/api/adapters/factorMetadata'
@@ -271,7 +272,7 @@ function normalizeList(value) { return Array.isArray(value) ? value : value?.ite
 function optionLabel(item) { const name = item?.name || item?.label || ''; const code = item?.code || ''; return name && code && name !== code ? `${name}（${code}）` : name || code }
 function defaultDefinition() { return { schemaVersion: '1.0', dslType: 'FACTOR', primaryDomain: { domainCode: '' }, filters: { nodeType: 'TRUE' }, aggregation: { function: 'COUNT' }, groupBy: [], parameters: [], output: { valueType: 'DECIMAL', semanticKind: 'MEASURE', dimension: 'COUNT', unit: 'PERSON_TIME', nullable: false, precision: 30, scale: 10, grain: [] }, applicableDomains: [], allowedGrains: ['MONTHLY', 'YEARLY'], drillPathVersionIds: [] } }
 function json(value) { return JSON.stringify(value, null, 2) }
-function listDiagnostics(value) { return Array.isArray(value) ? value.map(item => `${item.path ? `${item.path}：` : ''}${item.message || JSON.stringify(item)}`).join('；') : '' }
+function listDiagnostics(value) { return Array.isArray(value) ? value.map(item => `${item.path ? `${fieldLabel(item.path)}：` : ''}${toUserMessage(item.message, '模板配置未通过校验，请检查后重试。')}`).join('；') : '' }
 </script>
 
 <style scoped lang="scss">

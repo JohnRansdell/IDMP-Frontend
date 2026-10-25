@@ -1,4 +1,5 @@
-import { sanitizeResponseMessages, toUserMessage } from '../utils/userMessage.js'
+import { sanitizeResponseMessages } from '../utils/userMessage.js'
+import { formatApiError } from '../utils/apiError.js'
 
 export const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL || '/api/v1'
 const AUTH_TOKEN_STORAGE_KEY = 'idmp_access_token'
@@ -228,15 +229,8 @@ export async function requestJson(path, options = {}) {
 export function createApiError(status, payload = {}, path = '') {
   const serverMessage = typeof payload?.message === 'string' ? payload.message
     : typeof payload?.error === 'string' ? payload.error : ''
-  const fallback = status === 401 ? '登录状态已失效，请重新登录。'
-      : status === 413 ? '文件超过允许的大小，请选择较小文件。'
-      : status === 403 ? '当前账号没有权限执行此操作。'
-        : status === 404 ? '请求的内容不存在或已失效。'
-          : status === 408 || status === 504 ? '请求超时，请稍后重试。'
-            : status === 429 ? '请求过于频繁，请稍后重试。'
-              : status >= 500 ? '服务暂时不可用，请稍后重试。' : '请求未能完成，请检查输入后重试。'
   const traceId = payload?.traceId || payload?.traceID || payload?.requestId || ''
-  const error = new Error(toUserMessage(serverMessage, fallback))
+  const error = new Error(formatApiError({ status, message: serverMessage }))
   error.status = Number(status) || 0
   error.code = payload?.code
   error.traceId = traceId

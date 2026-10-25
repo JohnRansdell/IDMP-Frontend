@@ -456,6 +456,7 @@ import {
 import IdmpChart from '@/idmp/components/IdmpChart.vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
+import { formatApiError } from '@/idmp/utils/apiError.js'
 import DashboardCanvas from '@/idmp/features/dashboard/components/DashboardCanvas.vue'
 import WidgetRenderer from '@/idmp/features/dashboard/components/WidgetRenderer.vue'
 import BindingInspector from '@/idmp/features/dashboard/components/BindingInspector.vue'
@@ -1431,7 +1432,7 @@ const dashboardSourceLabel = computed(() => ({
   empty: '正式接口数据（暂无结果）',
   'legacy-mock': '需要重新配置',
   'no-dashboards': '暂无看板',
-  error: '正式接口数据加载失败'
+  error: '看板数据加载失败'
 }[dashboardStatus.value] || '正在加载正式数据'))
 
 const activeDesignerWidget = computed(() => editingDashboardSchema.value?.widgets.find((widget) => widget.id === activeWidgetId.value))
@@ -2632,12 +2633,7 @@ async function loadLocalDashboard(targetDashboardId, isCurrentLoad = () => true)
 }
 
 function formatDashboardLoadError(error) {
-  const path = String(error?.path || '')
-  const status = Number(error?.status)
-  const statusLabel = Number.isFinite(status) && status > 0 ? `（HTTP ${status}）` : ''
-  const message = String(error?.message || '').trim()
-  if (!path) return message || '服务端看板目录为空，请创建看板或联系管理员授权。'
-  return `正式看板请求失败：${path}${statusLabel}${message ? `。${message}` : '。生产环境不会自动使用演示数据。'}`
+  return formatApiError(error, '看板暂时无法加载，请重试；若持续失败，请联系管理员。')
 }
 
 function normalizeList(payload) {

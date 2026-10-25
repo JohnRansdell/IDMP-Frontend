@@ -385,8 +385,8 @@ async function handleSyncMappings() {
       label: canContinue ? '同步失败，可继续测试' : '同步失败',
       tone: canContinue ? 'warning' : undefined,
       message: canContinue
-        ? `${error?.message || '来源映射同步失败'}。当前已能看到住院死亡/出院数据域，可继续执行源表绑定或后续因子创建；如需排查同步本身，请按 traceId 查看后端日志。`
-        : `${error?.message || '来源映射同步失败'}。请先确认后端远程源库连接与来源映射配置，或查看 traceId 对应后端日志。`
+        ? `${error?.message || '来源映射同步失败'} 当前已有数据域仍可使用，请稍后重试同步。`
+        : `${error?.message || '来源映射同步失败'} 请稍后重试；若持续失败，请联系管理员检查数据源连接和映射配置。`
     }
     if (canContinue) {
       ElMessage.warning('来源映射同步失败，但已有核心数据域，可继续后续页面测试')
@@ -656,7 +656,7 @@ async function runDataAssetBackendChain() {
     }
     ElMessage.success('数据资产接口验证调用完成')
   } catch (error) {
-    backendChainError.value = error?.message || '数据资产接口验证失败'
+    backendChainError.value = error?.message || '数据资产校验失败，请稍后重试。'
     setBackendStep(activeStep, 'FAILED', backendChainError.value)
     ElMessage.error(backendChainError.value)
   } finally {
