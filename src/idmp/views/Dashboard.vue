@@ -74,7 +74,7 @@
         <div class="dashboard-toolbar" aria-label="看板查询条件">
           <div class="dashboard-query-controls">
             <DashboardPeriodPicker :selection="remotePeriodSelection" :loading="remoteQueryLoading" @apply="applyRemotePeriodSelection" />
-            <span v-if="medicalMode" class="data-source-badge" data-testid="medical-data-scope">数据范围：{{ medicalRuntime.departmentName }}</span>
+            <span v-if="medicalMode" class="data-source-badge" data-testid="medical-data-scope">数据范围：{{ viewerRuntime.departmentName }}</span>
             <label v-if="departmentOptions.length > 1" class="dashboard-query-control"><span>范围</span>
               <el-select v-model="department" class="dashboard-filter dashboard-filter--compact" size="small" aria-label="统计范围">
               <el-option v-for="option in departmentOptions" :key="option.value" :label="option.label" :value="option.value" />
@@ -432,6 +432,8 @@
 </template>
 
 <script setup>
+import { useDashboardHistory } from '@/idmp/features/dashboard/useDashboardHistory.js'
+import { createDashboardViewerRuntime, createPlatformDashboardRuntime, createMedicalViewerRuntime } from '@/idmp/features/dashboard/viewerRuntime.js'
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, shallowRef, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
@@ -481,7 +483,7 @@ import { annotateDepartmentFilterFields, departmentSelectionCodes, isDepartmentF
 import { fetchDepartmentDictionary, fetchDepartmentNames } from '@/idmp/api/modules/departments'
 import { isMedicalDashboardSession } from '@/idmp/api/request'
 import { fetchMedicalCatalog } from '@/idmp/api/modules/medical'
-import { createMedicalDashboardRuntime } from '@/idmp/features/dashboard/medicalRuntime.js'
+import { createMedicalDashboardRuntime } from '@/idmp/features/dashboard/viewerRuntime.js'
 import { singleIndicatorTemplatePlan } from '@/idmp/features/dashboard/templateBinding.js'
 import { createDefaultBinding } from '@/idmp/features/dashboard/smartDefaultBinding.js'
 import { createMultiIndicatorDataset, multiIndicatorMeasureField, normalizeIndicatorBindings, singleIndicatorProjectionBinding } from '@/idmp/features/dashboard/multiIndicator.js'
@@ -660,7 +662,14 @@ function handleStudioCommand(command) {
 const router = useRouter()
 const route = useRoute()
 const medicalMode = computed(() => route.query.medical === '1' || isMedicalDashboardSession())
-const medicalRuntime = createMedicalDashboardRuntime()
+const viewerRuntime = createDashboardViewerRuntime({
+  isMedical: () => medicalMode.value,
+  medical: createMedicalViewerRuntime(createMedicalDashboardRuntime(), fetchMedicalCatalog),
+  platform: createPlatformDashboardRuntime({ fetchCatalog: fetchDashboardCatalog,
+    fetchDefinition: fetchDashboardDefinition, fetchVersions: fetchDashboardVersions, selectVersion: selectDashboardVersion,
+    query: queryDashboard, fetchFields: fetchDashboardDataSourceFields, fetchPeriods: fetchDashboardDataSourcePeriods,
+    fetchFilterOptions: fetchDashboardFilterOptions, searchDrill: searchResultDrill })
+})
 const isDev = import.meta.env.DEV
 const activeSceneCode = dashboardSceneCode
 const managedDashboardId = computed(() => typeof route.query.id === 'string' && route.query.id.trim() ? route.query.id.trim() : '')
@@ -771,9 +780,6 @@ const canRefreshCurrentRemoteDashboard = computed(() => canRefreshRemoteDashboar
   isLoading: dashboardStatus.value === 'loading'
 }))
 const editingDashboardSchema = ref(null)
-const dashboardHistory = ref([])
-const dashboardHistoryIndex = ref(-1)
-let restoringDashboardHistory = false
 let reconcilingRemotePeriod = false
 const designerWidgets = computed(() => editingDashboardSchema.value?.widgets || [])
 const inspectorObjectTitle = computed(() => selectedWidgetIds.value.length > 1 ? `已选择 ${selectedWidgetIds.value.length} 个组件` : activeDesignerWidget.value ? getWidgetTitle(activeDesignerWidget.value) : '看板设置')
@@ -784,8 +790,6 @@ const inspectorObjectType = computed(() => {
   const widget = activeDesignerWidget.value
   return labels[widget.type] || widget.chartKind || '组件'
 })
-const canUndo = computed(() => isEditing.value && dashboardHistoryIndex.value > 0)
-const canRedo = computed(() => isEditing.value && dashboardHistoryIndex.value >= 0 && dashboardHistoryIndex.value < dashboardHistory.value.length - 1)
 const designerInspectorTab = ref('data')
 const designerDrawerOpen = ref(false)
 const dashboardDirty = ref(false)
@@ -794,6 +798,10 @@ const lastSavedAt = ref('')
 const presentationMode = ref('standard')
 const presentationRef = ref()
 const dashboardSchema = ref(null)
+const { reset: resetDashboardHistory, canUndo, canRedo,
+  transaction: runDashboardHistoryTransaction, undo: undoDashboardEdit, redo: redoDashboardEdit
+} = useDashboardHistory({ editing: isEditing, schema: editingDashboardSchema, dirty: dashboardDirty,
+  saveState, reconcile: () => reconcileDesignerCanvasLayout() })
 const dashboardBackgroundConfig = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.appearance?.background || {})
 const dashboardTheme = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.appearance?.theme === 'mint-medical' ? 'mint-medical' : 'default')
 const dashboardBackground = computed(() => dashboardBackgroundConfig.value.value || '#ffffff')
@@ -888,7 +896,7 @@ provide('dashboardSupportsBackendDrill', (widget) => {
   return Boolean(source?.analysisIndicatorId && ['indicator-catalog', 'dashboard-data-source'].includes(source.origin))
 })
 provide('dashboardResolveWidgetDrill', async (widget, params) => {
-  if (medicalMode.value) return medicalRuntime.drillTarget(widget, params, remoteWidgetDatasets.value[String(widget.id)])
+  if (medicalMode.value) return viewerRuntime.drillTarget(widget, params, remoteWidgetDatasets.value[String(widget.id)])
   const source = getWidgetSource(widget)
   if (!source?.analysisIndicatorId || !['indicator-catalog', 'dashboard-data-source'].includes(source.origin)) return null
   const projected = getBindingDatasets(widget).find(dataset => dataset.rowMode === 'PROJECTED')
@@ -941,7 +949,7 @@ provide('dashboardResolveWidgetDrill', async (widget, params) => {
     configuredPaths
   }
 })
-provide('dashboardSearchDrill', (id, payload, options) => medicalMode.value ? medicalRuntime.searchDrill(id, payload, options) : searchResultDrill(id, payload, options))
+provide('dashboardSearchDrill', (id, payload, options) => viewerRuntime.searchDrill(id, payload, options))
 provide('dashboardSurfaceTone', computed(() => resolveDashboardSurfaceTone(dashboardBackgroundConfig.value)))
 provide('dashboardAppearanceTheme', dashboardTheme)
 const globalFilterDefinitions = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.globalFilters || [])
@@ -1044,12 +1052,12 @@ function updateDashboardMetadata(field, value) {
 }
   async function refreshDashboardCatalog() {
     if (medicalMode.value) {
-      localDashboardCatalog.value = (await fetchMedicalCatalog()).map(dashboardSummaryToCatalogEntry)
+      localDashboardCatalog.value = (await viewerRuntime.catalog()).map(dashboardSummaryToCatalogEntry)
       return localDashboardCatalog.value
     }
     const local = readDashboardCatalog(localStorage).map(item => ({ ...item, origin: 'local' }))
     try {
-      const remote = await fetchDashboardCatalog()
+      const remote = await viewerRuntime.catalog()
       const remoteEntries = (Array.isArray(remote) ? remote : []).map(dashboardSummaryToCatalogEntry)
       localDashboardCatalog.value = [...local, ...remoteEntries.filter(item => !local.some(localItem => String(localItem.id) === String(item.id)))]
       notifyDashboardCatalogChanged()
@@ -1327,27 +1335,6 @@ function updateDesignerBinding(dataBinding) {
   const source = availableIndicatorSources.value.find(item => item.code === updatedWidget?.sourceCode)
   if (dataBinding && source?.origin === 'dashboard-data-source') void previewRemoteWidget(updatedWidget)
 }
-// The bounded history records canonical, plain schema data only. GridStack nodes,
-// Vue proxies, filter runtime values and preview interaction state stay outside it.
-let dashboardHistoryTransactionDepth = 0
-function recordDashboardHistorySnapshot() {
-  if (!isEditing.value || restoringDashboardHistory || !editingDashboardSchema.value) return
-  const snapshot = clonePersistableValue(editingDashboardSchema.value)
-  if (JSON.stringify(dashboardHistory.value[dashboardHistoryIndex.value]) === JSON.stringify(snapshot)) return
-  dashboardHistory.value = [...dashboardHistory.value.slice(0, dashboardHistoryIndex.value + 1), snapshot].slice(-50)
-  dashboardHistoryIndex.value = dashboardHistory.value.length - 1
-}
-async function runDashboardHistoryTransaction(operation) {
-  dashboardHistoryTransactionDepth += 1
-  try { return await operation() } finally {
-    dashboardHistoryTransactionDepth -= 1
-    if (dashboardHistoryTransactionDepth === 0) recordDashboardHistorySnapshot()
-  }
-}
-watch(() => JSON.stringify(editingDashboardSchema.value), () => {
-  if (dashboardHistoryTransactionDepth > 0) return
-  recordDashboardHistorySnapshot()
-})
 let dashboardAbortController
 let dashboardLoadGeneration = 0
 
@@ -1363,7 +1350,7 @@ function syncViewerViewport() { viewerViewportWidth.value = window.innerWidth }
 
 const dashboardLoading = computed(() => dashboardStatus.value === 'loading')
 const dashboardQueryLabel = computed(() => {
-  return `查询条件：${dashboardPeriodLabel(remoteSelectedPeriod())} · ${medicalMode.value ? medicalRuntime.departmentName : department.value || '全院'}`
+  return `查询条件：${dashboardPeriodLabel(remoteSelectedPeriod())} · ${medicalMode.value ? viewerRuntime.departmentName : department.value || '全院'}`
 })
 
 const warningWidgetRuntime = ref({})
@@ -2197,8 +2184,7 @@ function beginDashboardEdit(schema = dashboardSchema.value) {
   lastSavedAt.value = ''
   isEditing.value = true
   designerImmersive.value = true
-  dashboardHistory.value = [clonePersistableValue(editingDashboardSchema.value)]
-  dashboardHistoryIndex.value = 0
+  resetDashboardHistory(editingDashboardSchema.value)
 }
 
 async function startDashboardEdit() {
@@ -2236,29 +2222,13 @@ async function startDashboardEdit() {
   }
 }
 
-async function applyDashboardHistory(index) {
-  const snapshot = dashboardHistory.value[index]
-  if (!snapshot) return
-  restoringDashboardHistory = true
-  try {
-    editingDashboardSchema.value = clonePersistableValue(snapshot)
-    dashboardHistoryIndex.value = index
-    dashboardDirty.value = index !== 0
-    saveState.value = dashboardDirty.value ? 'dirty' : 'saved'
-    await reconcileDesignerCanvasLayout()
-  } finally { restoringDashboardHistory = false }
-}
-function undoDashboardEdit() { if (canUndo.value) void applyDashboardHistory(dashboardHistoryIndex.value - 1) }
-function redoDashboardEdit() { if (canRedo.value) void applyDashboardHistory(dashboardHistoryIndex.value + 1) }
-
 function finishDashboardEdit() {
   const refreshPublishedViewer = isFormalRemoteDashboard.value && canRefreshCurrentRemoteDashboard.value
   if (refreshPublishedViewer) {
     reconcilingRemotePeriod = true
   }
   editingDashboardSchema.value = null
-  dashboardHistory.value = []
-  dashboardHistoryIndex.value = -1
+  resetDashboardHistory()
   activeWidgetId.value = ''
   designerDrawerOpen.value = false
   isEditing.value = false
@@ -2406,8 +2376,7 @@ function applyRemoteDashboardDetail(detail, fallbackSchema = null) {
   if (!schema) return
   editingDashboardSchema.value = schema
   if (!remoteDashboardMeta.value.currentPublishedVersionId) dashboardSchema.value = schema
-  dashboardHistory.value = [clonePersistableValue(schema)]
-  dashboardHistoryIndex.value = 0
+  resetDashboardHistory(schema)
   dashboardDirty.value = false
   saveState.value = 'saved'
 }
@@ -2478,8 +2447,7 @@ async function saveDashboardSchema() {
       const normalizedRemote = saved?.version?.layout ? dashboardDetailToSchema(saved) : schema
       editingDashboardSchema.value = normalizedRemote
       if (!remoteDashboardMeta.value.currentPublishedVersionId) dashboardSchema.value = normalizedRemote
-      dashboardHistory.value = [clonePersistableValue(normalizedRemote)]
-      dashboardHistoryIndex.value = 0
+      resetDashboardHistory(normalizedRemote)
       dashboardDirty.value = false
       saveState.value = 'saved'
       lastSavedAt.value = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date())
@@ -2494,8 +2462,7 @@ async function saveDashboardSchema() {
       saveDashboardToCatalog(persisted, localStorage)
       dashboardSchema.value = clonePersistableValue(persisted)
       editingDashboardSchema.value = clonePersistableValue(persisted)
-      dashboardHistory.value = [clonePersistableValue(persisted)]
-      dashboardHistoryIndex.value = 0
+      resetDashboardHistory(persisted)
       dashboardDirty.value = false
       saveState.value = 'saved'
       lastSavedAt.value = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date())
@@ -2733,12 +2700,12 @@ async function loadRemoteFilterOptions() {
       })
       if (medicalMode.value) {
         const widget = widgets.find(widget => widget.sourceCode === sourceCode)
-        const rows = await medicalRuntime.filterOptions(widget.id, query)
+        const rows = await viewerRuntime.filterOptions(sourceCode, widget, query)
         next[definition.id] = rows.map(item => ({ value: item.value, label: item.label || String(item.value) }))
       } else if (isDepartmentFilterField(definition.field, fields)) {
         next[definition.id] = await loadDepartmentCodeOptions({ fields, fetchDictionary: fetchDepartmentDictionary })
       } else {
-        const rows = await fetchDashboardFilterOptions(sourceCode, query)
+        const rows = await viewerRuntime.filterOptions(sourceCode, null, query)
         next[definition.id] = (Array.isArray(rows) ? rows : []).map(item => ({ value: item.value, label: item.label || String(item.value) }))
       }
     } catch (error) {
@@ -2911,7 +2878,7 @@ async function loadDashboardDepartmentNames() {
 }
 
 async function normalizeDashboardWidgetDataset(widget, dataset, query) {
-  if (medicalMode.value) return normalizeDepartmentDataset(dataset, { names: medicalRuntime.departmentNames })
+  if (medicalMode.value) return normalizeDepartmentDataset(dataset, { names: viewerRuntime.departmentNames })
   if (dataset.periodContext && !dataset.rows?.length) return dataset
   const source = getWidgetSource(widget)
   try {
@@ -2969,15 +2936,10 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
   dashboardStatus.value = 'loading'
   dashboardLoadMessage.value = ''
   try {
-    const detail = medicalMode.value ? await medicalRuntime.load(targetDashboardId, { signal }) : await fetchDashboardDefinition(targetDashboardId, { signal })
+    const detail = await viewerRuntime.load(targetDashboardId, { signal, editing: isEditing.value })
     if (!isCurrentLoad()) return
     remoteDashboardMeta.value = dashboardDetailMeta(detail)
-    let version = detail.version
-    if (!medicalMode.value && remoteDashboardMeta.value.currentPublishedVersionId && !isEditing.value) {
-      const versions = await fetchDashboardVersions(remoteDashboardMeta.value.dashboardId, { signal })
-      if (!isCurrentLoad()) return
-      version = selectDashboardVersion(detail, versions, { editing: false })
-    }
+    const version = detail.version
     remoteDashboardIsMock.value = isMockDashboardDetail({ dashboard: detail.dashboard, version })
     if (!remoteDashboardIsMock.value) indicatorDataSources.value = []
     const rawSchema = dashboardDetailToSchema({ dashboard: detail.dashboard, version })
@@ -2999,15 +2961,9 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
     }
     const sourceCodes = [...new Set(rawSchema.widgets.flatMap(widget => [widget.sourceCode, ...normalizeIndicatorBindings(widget.config?.indicatorBindings, widget).map(binding => binding.sourceCode), ...metricGroupSourceCodes(widget)]).filter(Boolean))]
     const metadataEntries = await Promise.all(sourceCodes.map(async code => {
-      if (medicalMode.value) {
-        const sample = rawSchema.widgets.find(widget => widget.sourceCode === code)
-        return { code, ...medicalRuntime.widgetMetadata(sample?.id) }
-      }
-      const [fields, periods] = await Promise.all([
-        fetchDashboardDataSourceFields(code, { signal }),
-        fetchDashboardDataSourcePeriods(code, { signal })
-      ])
       const sample = rawSchema.widgets.find(widget => widget.sourceCode === code)
+      const { fields, periods } = await viewerRuntime.metadata(code, sample, { signal })
+      if (viewerRuntime.restricted) return { code, fields, periods }
       const version = await dashboardIndicatorVersion(null, sample).catch(() => null)
       return { code, fields: annotateDepartmentFilterFields(fields, version?.drillConfig?.drillPaths || version?.drillPaths || []), periods }
     }))
@@ -3044,8 +3000,7 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
     dashboardSchema.value = schema
     if (isEditing.value) {
       editingDashboardSchema.value = clonePersistableValue(schema)
-      dashboardHistory.value = [clonePersistableValue(schema)]
-      dashboardHistoryIndex.value = 0
+      resetDashboardHistory(schema)
     }
     dashboardDefinition.value = detail
     dashboardQueryResult.value = null
@@ -3156,7 +3111,7 @@ async function queryRemoteDashboardCached(dashboardId, query, signal) {
   if (!medicalMode.value && cached && cached.expiresAt > Date.now()) return cached.result
   remoteDashboardQueryCache.delete(key)
   const selectionType = remotePeriodSelection.value.type
-  const response = medicalMode.value ? await medicalRuntime.query(dashboardId, query, { signal }) : await queryDashboard(dashboardId, query, { signal, cache: 'no-store' })
+  const response = await viewerRuntime.query(dashboardId, query, { signal })
   const schema = dashboardSchema.value
   const result = { ...response, widgets: Object.fromEntries(Object.entries(response.widgets || {}).map(([id, item]) => {
     const widget = schema?.widgets?.find(widget => String(widget.id) === id)
@@ -3323,8 +3278,7 @@ async function performDashboardSwitch(nextDashboardId, previousDashboardId) {
   drillRuntimeState.value = {}
   selectedWidgetIds.value = []
   primarySelectedWidgetId.value = ''
-  dashboardHistory.value = []
-  dashboardHistoryIndex.value = -1
+  resetDashboardHistory()
   dashboardDirty.value = false
   // Schema recovery is synchronous; commit identity and schema in the same
   // Vue update batch so selector, title, canvas and editing snapshot agree.
@@ -3334,8 +3288,7 @@ async function performDashboardSwitch(nextDashboardId, previousDashboardId) {
   activeSceneCode.value = ''
   if (isEditing.value && dashboardSchema.value) {
     editingDashboardSchema.value = clonePersistableValue(dashboardSchema.value)
-    dashboardHistory.value = [clonePersistableValue(editingDashboardSchema.value)]
-    dashboardHistoryIndex.value = 0
+    resetDashboardHistory(editingDashboardSchema.value)
     await reconcileDesignerCanvasLayout()
   }
   await loadDashboard(nextDashboardId)
