@@ -1,3 +1,4 @@
+import { normalizePage as normalizePageModel } from '../pageModel.js'
 export const WARNING_TYPES = [
   { value: 'THRESHOLD', label: '阈值预警' },
   { value: 'TREND', label: '趋势预警' },
@@ -22,14 +23,9 @@ export function warningLabel(value) {
   return LABELS[String(value || '').toUpperCase()] || value || '-'
 }
 
-export function normalizePage(payload = {}) {
-  if (Array.isArray(payload)) return { records: payload, total: payload.length, page: 1, size: payload.length }
-  return {
-    records: payload.records || payload.items || payload.list || [],
-    total: Number(payload.total ?? 0),
-    page: Number(payload.pageNum ?? payload.page ?? 1),
-    size: Number(payload.pageSize ?? payload.size ?? 20)
-  }
+export function normalizePage(payload) {
+  const { items, ...page } = normalizePageModel(payload)
+  return { records: items, ...page }
 }
 
 export function normalizeWarningRule(rule = {}) {

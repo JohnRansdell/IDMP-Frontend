@@ -320,6 +320,8 @@
 </template>
 
 <script setup>
+import { toOpaqueId } from '@/idmp/utils/resourceId.js'
+
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
@@ -915,10 +917,6 @@ async function refreshCurrent() {
   await Promise.allSettled(jobs)
 }
 
-function toOpaqueId(value) {
-  if (value === undefined || value === null || value === '') return ''
-  return String(value)
-}
 
 function displayId(value) {
   return toOpaqueId(value) || '-'

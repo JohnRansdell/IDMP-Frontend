@@ -1,3 +1,4 @@
+import { toOpaqueId } from '../../utils/resourceId.js'
 import { drillResultMetrics } from './result.js'
 
 export const DRILL_DIMENSIONS = Object.freeze({
@@ -289,6 +290,3 @@ function isPageNumber(value, minimum) {
     Number.isSafeInteger(Number(value)) && Number(value) >= minimum
 }
 
-function toOpaqueId(value) {
-  return value === undefined || value === null || value === '' ? '' : String(value)
-}

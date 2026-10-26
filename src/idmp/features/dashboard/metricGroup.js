@@ -1,4 +1,4 @@
-import { clonePersistableValue } from './schema.js'
+import { clonePersistableValue } from '../../utils/persistableValue.js'
 import { normalizeKpiVariant } from './kpiVariants.js'
 
 export const METRIC_GROUP_COLUMNS = Object.freeze(['auto', '2', '3', '4'])

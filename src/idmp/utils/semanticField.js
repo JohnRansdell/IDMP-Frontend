@@ -1,27 +1,15 @@
-﻿export const semanticFieldMap = { DEATH_DATETIME: { label: '死亡时间', type: 'DATETIME' }, SURGERY_CODE: { label: '手术编码', type: 'CODE' }, SURGERY_FLAG: { label: '是否发生手术', type: 'CODE' }, SEX: { label: '性别', type: 'CODE' }, DEPT_CODE: { label: '科室', type: 'CODE' }, DIAGNOSTIC_CODE: { label: '疾病编码', type: 'VALUE_SET' } }
+import { normalizeSemanticFieldBase } from './semanticFieldModel.js'
+export const semanticFieldMap = { DEATH_DATETIME: { label: '死亡时间', type: 'DATETIME' }, SURGERY_CODE: { label: '手术编码', type: 'CODE' }, SURGERY_FLAG: { label: '是否发生手术', type: 'CODE' }, SEX: { label: '性别', type: 'CODE' }, DEPT_CODE: { label: '科室', type: 'CODE' }, DIAGNOSTIC_CODE: { label: '疾病编码', type: 'VALUE_SET' } }
 
 export function normalizeSemanticField(item = {}) {
-  const code = item.code ?? item.fieldCode
+  const base = normalizeSemanticFieldBase(item)
+  const code = base.code
   const dataType = String(item.dataType ?? item.fieldType ?? 'STRING').toUpperCase()
-  const semanticKind = String(item.semanticKind || item.semanticRole || item.role || '').toUpperCase()
   return {
-    id: item.id ?? item.fieldId ?? '',
-    code,
+    ...base,
     label: item.displayName || item.label || item.name || semanticFieldMap[code]?.label || code,
     name: item.name || item.displayName || item.label || semanticFieldMap[code]?.label || code,
-    dataType,
-    kind: normalizeFieldKind(dataType),
-    options: item.options || item.values || item.enumValues || [],
-    semanticKind,
-    semanticRole: semanticKind,
-    groupable: item.groupable,
-    aggregatable: item.aggregatable,
-    filterable: item.filterable,
-    sensitive: item.sensitive === true || item.sensitive === 1 || item.sensitive === '1' || item.sensitive === 'true',
-    sourceFieldName: item.sourceFieldName || item.sourceField || item.columnName || '',
-    sourceFieldMappingId: item.sourceFieldMappingId ?? item.mappingId ?? '',
-    valueSetId: item.valueSetId ?? '',
-    resourceVersion: item.resourceVersion ?? null
+    dataType, kind: normalizeFieldKind(dataType)
   }
 }
 

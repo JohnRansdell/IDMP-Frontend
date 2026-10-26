@@ -1,3 +1,4 @@
+import { toOpaqueId } from '../../utils/resourceId.js'
 import { normalizeDimensionGrain, serializeDrillPaths } from '../../features/indicator/grouping.js'
 import { formulaChildren, arithmeticFormulaText } from '../../features/indicator/arithmeticFormula.js'
 import { normalizeResultMetrics } from './result.js'
@@ -267,9 +268,6 @@ function presentDimension(dimensions, ...keys) {
   return ''
 }
 
-function toOpaqueId(value) {
-  return value === undefined || value === null || value === '' ? '' : String(value)
-}
 
 function toCount(value, fallback) {
   const number = Number(value)

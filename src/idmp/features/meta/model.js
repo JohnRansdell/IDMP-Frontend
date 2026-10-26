@@ -1,7 +1,6 @@
-export function toOpaqueId(value) {
-  if (value === undefined || value === null || value === '') return ''
-  return String(value)
-}
+import { normalizeSemanticFieldBase } from '../../utils/semanticFieldModel.js'
+import { toOpaqueId } from '../../utils/resourceId.js'
+export { toOpaqueId } from '../../utils/resourceId.js'
 
 export function normalizeList(payload) {
   if (Array.isArray(payload)) return payload
@@ -124,31 +123,14 @@ export function normalizeSemanticTable(item = {}) {
 }
 
 export function normalizeSemanticField(item = {}) {
-  const semanticKind = String(item.semanticKind || item.semanticRole || item.role || '').toUpperCase()
   return {
-    id: toOpaqueId(item.id),
+    ...normalizeSemanticFieldBase(item),
     domainId: toOpaqueId(item.domainId),
     tableCode: item.tableCode || item.semanticTableCode || '',
-    code: item.code || item.fieldCode || item.semanticCode || '',
     name: item.name || item.fieldName || item.semanticName || '',
     dataType: item.dataType || item.valueType || '',
     sourceDataType: item.sourceDataType || '',
-    conversionFormat: item.conversionFormat || '',
-    semanticKind,
-    semanticRole: semanticKind,
-    groupable: item.groupable,
-    aggregatable: item.aggregatable,
-    filterable: item.filterable,
-    options: item.options || item.values || item.enumValues || [],
-    sensitive: normalizeBoolean(item.sensitive) || Boolean(item.sensitivityLevel && String(item.sensitivityLevel).toUpperCase() !== 'NONE'),
-    sourceFieldName: item.sourceFieldName || item.sourceColumn || item.columnName || '',
-    sourceFieldMappingId: toOpaqueId(item.sourceFieldMappingId ?? item.mappingId),
-    valueSetId: toOpaqueId(item.valueSetId),
-    resourceVersion: item.resourceVersion ?? null
+    conversionFormat: item.conversionFormat || ''
   }
 }
 
-function normalizeBoolean(value) {
-  if (value === true || value === 1 || value === '1' || value === 'true') return true
-  return false
-}

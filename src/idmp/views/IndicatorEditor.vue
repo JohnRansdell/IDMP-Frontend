@@ -612,6 +612,9 @@
 </template>
 
 <script setup>
+import { resolveIndicatorVersionId, extractFormula, pickLatestVersion } from '@/idmp/features/indicator/versionModel.js'
+import { toOpaqueId } from '@/idmp/utils/resourceId.js'
+
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
@@ -1622,9 +1625,6 @@ function hydrateIndicatorVersion(version) {
   indicatorRuntimeParameterValues.value = {}
 }
 
-function extractFormula(payload) {
-  return payload?.formula?.formula || payload?.formula || payload?.formulaAst || payload?.definition?.formula || null
-}
 
 function hydrateFormulaFactors(formula) {
   formulaHydrating.value = true
@@ -2732,18 +2732,6 @@ function resolveIndicatorId(indicator) {
   )
 }
 
-function resolveIndicatorVersionId(version) {
-  return toOpaqueId(
-    version?.indicatorVersionId ??
-    version?.versionId ??
-    version?.draftVersionId ??
-    version?.currentVersionId ??
-    version?.latestVersionId ??
-    version?.id ??
-    version?.version?.id ??
-    version?.version?.indicatorVersionId
-  )
-}
 
 function resolveResourceVersion(payload, fallback = 0) {
   const value =
@@ -2781,9 +2769,6 @@ function resolveBatchId(payload) {
   )
 }
 
-function toOpaqueId(value) {
-  return value === null || value === undefined ? '' : String(value)
-}
 
 function normalizeList(payload) {
   if (Array.isArray(payload)) return payload
@@ -2793,14 +2778,6 @@ function normalizeList(payload) {
   return []
 }
 
-function pickLatestVersion(versions) {
-  return [...versions].sort((a, b) => {
-    const aNo = Number(a.versionNo ?? a.version ?? 0)
-    const bNo = Number(b.versionNo ?? b.version ?? 0)
-    if (aNo !== bNo) return bNo - aNo
-    return String(b.createdAt || b.updatedAt || '').localeCompare(String(a.createdAt || a.updatedAt || ''))
-  })[0]
-}
 
 async function refreshTrialTaskStatus() {
   if (!indicatorWorkflow.taskId) return

@@ -93,6 +93,9 @@
 </template>
 
 <script setup>
+import { resolveIndicatorVersionId, extractFormula, pickLatestVersion } from '@/idmp/features/indicator/versionModel.js'
+import { toOpaqueId } from '@/idmp/utils/resourceId.js'
+
 import { canRequest } from '@/idmp/auth/session'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -424,9 +427,6 @@ function findIndicator(rows) {
   return rows.find(item => [item.id, item.indicatorId, item.code].map(toOpaqueId).includes(routeIndicatorKey.value))
 }
 
-function toOpaqueId(value) {
-  return value === null || value === undefined ? '' : String(value)
-}
 
 function normalizeList(payload) {
   if (Array.isArray(payload)) return payload
@@ -436,29 +436,8 @@ function normalizeList(payload) {
   return []
 }
 
-function resolveIndicatorVersionId(version) {
-  return toOpaqueId(
-    version?.indicatorVersionId ??
-    version?.versionId ??
-    version?.draftVersionId ??
-    version?.currentVersionId ??
-    version?.latestVersionId ??
-    version?.id
-  )
-}
 
-function extractFormula(payload) {
-  return payload?.formula?.formula || payload?.formula || payload?.formulaAst || payload?.definition?.formula || null
-}
 
-function pickLatestVersion(versions) {
-  return [...versions].sort((a, b) => {
-    const aNo = Number(a.versionNo ?? a.version ?? 0)
-    const bNo = Number(b.versionNo ?? b.version ?? 0)
-    if (aNo !== bNo) return bNo - aNo
-    return String(b.createdAt || b.updatedAt || '').localeCompare(String(a.createdAt || a.updatedAt || ''))
-  })[0]
-}
 
 onMounted(loadIndicatorDetail)
 </script>

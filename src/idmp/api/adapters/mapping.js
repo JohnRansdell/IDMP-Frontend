@@ -1,3 +1,6 @@
+import { toOpaqueId } from '../../utils/resourceId.js'
+export { toOpaqueId } from '../../utils/resourceId.js'
+import { normalizePage as normalizePageModel } from '../pageModel.js'
 export const MAPPING_TYPES = [
   { value: 'EXACT', label: '完全一致', description: '定义、公式与统计范围可视为一致。' },
   { value: 'SAME_CONCEPT', label: '同一业务含义', description: '表达同一业务主题，但允许存在口径差异。' },
@@ -27,14 +30,8 @@ const MAPPING_STATUS_LABELS = {
   INVALIDATED: '已失效'
 }
 
-export function normalizePage(payload = {}) {
-  if (Array.isArray(payload)) return { items: payload, total: payload.length, page: 1, size: payload.length }
-  return {
-    items: payload.records || payload.items || payload.list || [],
-    total: Number(payload.total ?? 0),
-    page: Number(payload.pageNum ?? payload.page ?? 1),
-    size: Number(payload.pageSize ?? payload.size ?? 20)
-  }
+export function normalizePage(payload) {
+  return normalizePageModel(payload)
 }
 
 export function mappingTypeLabel(value) {
@@ -91,9 +88,6 @@ export function mappingActionAllowed(detail = {}, action = '') {
   })[action] === true
 }
 
-export function toOpaqueId(value) {
-  return value === undefined || value === null || value === '' ? '' : String(value)
-}
 
 export function formatIndicatorRef(indicator = {}) {
   const code = indicator.indicatorCode || indicator.code || ''

@@ -1,11 +1,9 @@
+import { toOpaqueId } from '../../utils/resourceId.js'
 import { normalizeDimensionGrain, serializeDrillPaths } from '../../features/indicator/grouping.js'
 import { toUserMessage } from '../../utils/userMessage.js'
 import { formatApiError } from '../../utils/apiError.js'
 import { newResourceCode } from '../../utils/resourceCode.js'
 
-function toOpaqueId(value) {
-  return value === undefined || value === null || value === '' ? '' : String(value)
-}
 
 function cleanMappings(tableMappings = {}) {
   return Object.fromEntries(Object.entries(tableMappings)

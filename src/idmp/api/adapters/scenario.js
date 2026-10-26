@@ -1,3 +1,4 @@
+import { normalizePage as normalizePageModel } from '../pageModel.js'
 export const SCENARIO_TYPES = [
   { value: 'ASSESSMENT', label: '考核上报' },
   { value: 'REVIEW', label: '医院评审' },
@@ -53,13 +54,7 @@ export function normalizePeriodType(value, fallback = '') {
 }
 
 export function normalizePage(payload) {
-  if (Array.isArray(payload)) return { items: payload, total: payload.length, page: 1, size: payload.length }
-  return {
-    items: payload?.items || payload?.records || payload?.list || [],
-    total: Number(payload?.total ?? 0),
-    page: Number(payload?.page ?? payload?.pageNum ?? 1),
-    size: Number(payload?.size ?? payload?.pageSize ?? 20)
-  }
+  return normalizePageModel(payload, { listKeys: ['items', 'records', 'list'], pageKeys: ['page', 'pageNum'], sizeKeys: ['size', 'pageSize'] })
 }
 
 export function normalizeResourceId(value) {

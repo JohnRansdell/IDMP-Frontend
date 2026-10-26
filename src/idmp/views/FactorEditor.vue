@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="idmp-page factor-editor">
   <PageHeader :title="pageTitle"><template #actions><div class="page-toolbar"><el-button :icon="ArrowLeft" @click="router.push('/factor')">返回列表</el-button><el-button type="primary" :loading="loading.save" :disabled="workflow.published || (!!unsupportedDsl && !isNativeSql) || !!periodConfigurationError || joins.some(item=>item.saving||item.configuring)" @click="saveFactor">{{ isCreate ? '保存因子定义' : '保存修改' }}</el-button></div></template></PageHeader>
   <el-alert v-if="periodConfigurationError" type="error" :closable="false" :title="periodConfigurationError" /><el-alert v-if="!isCreate" class="editor-alert" :type="unsupportedDsl && !isNativeSql ? 'warning' : 'info'" show-icon :closable="false" :title="workflow.published ? '当前版本已发布，计算口径只读。' : unsupportedDsl && !isNativeSql ? '该因子使用暂不支持的高级表达式，计算口径只读。' : workflow.message || '保存草稿后可继续完成编译、试算和发布。'" />
@@ -93,6 +93,8 @@
   </div>
 </template>
 <script setup>
+import { toOpaqueId } from '@/idmp/utils/resourceId.js'
+
 import { canRequest } from '@/idmp/auth/session'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -608,7 +610,6 @@ async function publishCurrentVersion(){if(!canPublish.value)return;try{await ElM
 function formatDimensions(row){const dimensions=row?.dimensions??row?.dimensionValues??row?.dimension??{};if(!dimensions||!Object.keys(dimensions).length)return '总体';return Object.entries(dimensions).map(([key,value])=>`${key}=${value}`).join('，')}
 function resultValue(row){return row?.displayValue??row?.valueDecimal??row?.resultValue??row?.value??row?.factor_value??'-'}
 function openIndicatorEditor(){const query={};if(Array.isArray(trialPeriod.value)&&trialPeriod.value.length===2){query.periodStart=trialPeriod.value[0];query.periodEnd=trialPeriod.value[1]}router.push({path:'/indicator/edit/new',query})}
-function toOpaqueId(value){return value===undefined||value===null||value===''?'':String(value)}
 async function handleFactorSaveError(error){const conflict=resolveResourceConflict(error);if(!conflict){ElMessage.error(error?.message||'因子保存失败');return}const action=await ElMessageBox.confirm(`已存在同名因子：${conflict.resource.name}（${conflict.resource.code}）。未创建新因子。`, '因子名称冲突', {type:'warning',confirmButtonText:'打开已有因子',cancelButtonText:'返回修改',distinguishCancelAndClose:true}).catch(()=> 'cancel');if(action==='confirm'){const path=resourceConflictEditorPath(conflict);if(path)router.push(path)}}
 function wait(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
 function formatCompileDiagnostics(diagnostics){return(diagnostics||[]).map(item=>{const label=fieldLabel(item.path);const message=toUserMessage(item.message||item.suggestion,'因子配置未通过校验，请检查计算口径');const suggestion=item.suggestion?toUserMessage(item.suggestion,''):'';return `${label==='填写的信息'?'':label+'：'}${message}${suggestion&&suggestion!==message?`（建议：${suggestion}）`:''}`}).join('；')}
