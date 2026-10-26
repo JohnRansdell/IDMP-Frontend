@@ -49,6 +49,9 @@ function response(points) {
   const latest = points.at(-1)
   return { trend: points, overview: latest, dimensionComparison: [{ ...latest, dimensions: { out_dept_code: 'A' } }] }
 }
+function monthlyResponse(params) {
+  return response(params.periodStart ? [params.periodStart === '2026-03-01' ? march : april] : [march, april])
+}
 async function change(wrapper, type, value) {
   const control = wrapper.findComponent(type)
   control.vm.$emit('update:modelValue', value)
@@ -70,26 +73,29 @@ test('loads lazily, selects newest monthly result, and forwards the PDF snapshot
   await flushPromises()
   assert.equal(wrapper.findComponent(Select).props('modelValue'), '2026-04-01/2026-05-01')
   assert.equal(wrapper.findComponent(Explorer).props('resultId'), 'april')
-  assert.deepEqual(requests[0].params, { granularity: 'MONTHLY', indicatorVersionId: 'version-A' })
+  assert.deepEqual(requests[0].params, { granularity: 'MONTHLY', sections: 'TREND', indicatorVersionId: 'version-A' })
+  assert.deepEqual(requests[1].params, { granularity: 'MONTHLY', periodStart: '2026-04-01', periodEnd: '2026-04-30',
+    sections: 'OVERVIEW,DEPARTMENT_COMPARISON,CALCULATION_TARGETS', indicatorVersionId: 'version-A' })
   assert.equal(wrapper.vm.getReportSnapshot().section.title, '2026年4月')
   await wrapper.setProps({ enabled: false })
   await wrapper.setProps({ enabled: true })
-  assert.equal(requests.length, 1)
+  assert.equal(requests.length, 2)
   wrapper.unmount()
 })
 
 test('older month fetches its exact period and changing month resets the drill hierarchy', async () => {
   const requests = []
-  const wrapper = create(async (id, params) => { requests.push(params); return response(params.periodStart ? [march] : [march, april]) })
+  const wrapper = create(async (id, params) => { requests.push(params); return monthlyResponse(params) })
   await flushPromises()
   await wrapper.find('.explorer').trigger('click')
   assert.match(wrapper.text(), /april:DEPT/)
   await change(wrapper, Select, '2026-03-01/2026-04-01')
   assert.match(wrapper.text(), /march:ROOT/)
-  assert.deepEqual(requests[1], { granularity: 'MONTHLY', periodStart: '2026-03-01', periodEnd: '2026-03-31', indicatorVersionId: 'version-A' })
+  assert.deepEqual(requests[2], { granularity: 'MONTHLY', periodStart: '2026-03-01', periodEnd: '2026-03-31',
+    sections: 'OVERVIEW,DEPARTMENT_COMPARISON,CALCULATION_TARGETS', indicatorVersionId: 'version-A' })
   await change(wrapper, Select, '2026-04-01/2026-05-01')
   await change(wrapper, Select, '2026-03-01/2026-04-01')
-  assert.equal(requests.length, 2, 'visited periods are reused')
+  assert.equal(requests.length, 3, 'visited periods are reused')
   wrapper.unmount()
 })
 
@@ -118,8 +124,9 @@ test('department filters reach period and drill requests and invalidate cached r
   assert.equal(wrapper.findComponent(Explorer).props('resultId'), 'old-department-result')
   await wrapper.setProps({ filters: { OUT_DEPT_CODE: ['16'] } })
   await flushPromises()
-  assert.equal(requests.length, 2)
-  assert.deepEqual(requests[1]['filter.OUT_DEPT_CODE'], ['16'])
+  assert.equal(requests.length, 4)
+  assert.deepEqual(requests[2]['filter.OUT_DEPT_CODE'], ['16'])
+  assert.deepEqual(requests[3]['filter.OUT_DEPT_CODE'], ['16'])
   assert.deepEqual(wrapper.findComponent(Explorer).props('startFilters'), { OUT_DEPT_CODE: ['16'] })
   assert.equal(wrapper.findComponent(Explorer).props('resultId'), 'april')
   wrapper.unmount()
@@ -151,7 +158,7 @@ test('switching indicator/version clears selections and prevents stale responses
   await wrapper.setProps({ indicatorVersionId: 'version-C' })
   await flushPromises()
   assert.equal(calls.at(-1).params.indicatorVersionId, 'version-C')
-  assert.equal(calls.length, 3)
+  assert.equal(calls.length, 5)
   wrapper.unmount()
 })
 
@@ -173,18 +180,18 @@ test('failed period read removes previous data and supports retry', async () => 
 
 test('unrelated analysis period changes do not reset a selected drill period', async () => {
   const calls = []
-  const wrapper = create(async (_, params) => { calls.push(params); return response(params.periodStart ? [march] : [march, april]) })
+  const wrapper = create(async (_, params) => { calls.push(params); return monthlyResponse(params) })
   await flushPromises()
   await change(wrapper, Select, '2026-03-01/2026-04-01')
   await wrapper.setProps({ initialPeriod: april, initialGranularity: 'QUARTERLY' })
   assert.equal(wrapper.findComponent(Explorer).props('resultId'), 'march')
-  assert.equal(calls.length, 2)
+  assert.equal(calls.length, 3)
   wrapper.unmount()
 })
 
 test('a slow previous month response cannot restore the old result after selecting the latest month', async () => {
   const slow = deferred()
-  const wrapper = create(async (_, params) => params.periodStart ? slow.promise : response([march, april]))
+  const wrapper = create(async (_, params) => params.periodStart === '2026-03-01' ? slow.promise : monthlyResponse(params))
   await flushPromises()
   await change(wrapper, Select, '2026-03-01/2026-04-01')
   assert.equal(wrapper.findComponent(Explorer).exists(), false)
@@ -196,7 +203,7 @@ test('a slow previous month response cannot restore the old result after selecti
 })
 
 test('honors initial drill context only on entry, then removes old parent filters after changing period', async () => {
-  const wrapper = create(async (_, params) => response(params.periodStart ? [march] : [march, april]), {
+  const wrapper = create(async (_, params) => monthlyResponse(params), {
     initialPeriod: march, initialResultId: 'march-root', startLevel: 'DEPT', startParentKeys: { dept: 'A' }
   })
   await flushPromises()
@@ -209,7 +216,7 @@ test('honors initial drill context only on entry, then removes old parent filter
 })
 
 test('department ranking entry restores its period and parent context after a previous drill selection', async () => {
-  const wrapper = create(async (_, params) => response(params.periodStart ? [march] : [march, april]))
+  const wrapper = create(async (_, params) => monthlyResponse(params))
   await flushPromises()
   await change(wrapper, Select, '2026-03-01/2026-04-01')
   await wrapper.setProps({ initialPeriod: april, startLevel: 'ATTENDING_DOCTOR', startParentKeys: { OUT_DEPT_CODE: 'A' } })
@@ -246,7 +253,7 @@ test('ranking and drill maintain independent period selections and requests', as
   const Harness = vue.defineComponent({
     setup(_, { expose }) {
       const props = vue.reactive({ indicatorId: 'A', indicatorVersionId: 'V1', enabled: true })
-      const fetcher = async (_, params) => { calls.push(params); return response(params.periodStart ? [march] : [march, april]) }
+      const fetcher = async (_, params) => { calls.push(params); return monthlyResponse(params) }
       const rank = useAnalysisPeriod(props, fetcher)
       const drill = useAnalysisPeriod(props, fetcher)
       expose({ rank, drill })
@@ -260,7 +267,7 @@ test('ranking and drill maintain independent period selections and requests', as
   assert.equal(wrapper.vm.rank.analysis.value.overview.resultId, 'march')
   assert.equal(wrapper.vm.drill.analysis.value.overview.resultId, 'april')
   assert.equal(wrapper.vm.drill.selectedPeriod.value, '2026-04-01/2026-05-01')
-  assert.equal(calls.length, 3)
+  assert.equal(calls.length, 5)
   wrapper.unmount()
 })
 
@@ -269,8 +276,8 @@ test('retry preserves a failed old-period selection instead of switching to the 
   const Harness = vue.defineComponent({
     setup(_, { expose }) {
       const state = useAnalysisPeriod({ indicatorId: 'A', enabled: true }, async (_, params) => {
-        if (params.periodStart && fail) throw new Error('连接暂不可用')
-        return response(params.periodStart ? [march] : [march, april])
+        if (params.periodStart === '2026-03-01' && fail) throw new Error('连接暂不可用')
+        return monthlyResponse(params)
       })
       expose({ state })
       return () => null
@@ -311,7 +318,7 @@ test('switching away cancels unfinished requests and resumes the same initial pe
   const wrapper = create(async (_, params, options) => {
     requests.push({ params, signal: options.signal })
     if (params.periodStart && requests.length === 2) return pending.promise
-    return response(params.periodStart ? [march] : [march, april])
+    return monthlyResponse(params)
   }, { initialPeriod: march, startLevel: 'DEPT', startParentKeys: { OUT_DEPT_CODE: '16' } })
   await flushPromises()
   assert.equal(requests.length, 2)
@@ -344,6 +351,6 @@ test('superseded contexts cancel transport and never cache stale period data', a
   assert.equal(wrapper.findComponent(Explorer).props('resultId'), 'april')
   await wrapper.setProps({ enabled: false })
   await wrapper.setProps({ enabled: true })
-  assert.equal(requests.length, 2, 'completed data is reused when revisiting a tab')
+  assert.equal(requests.length, 3, 'completed data is reused when revisiting a tab')
   wrapper.unmount()
 })

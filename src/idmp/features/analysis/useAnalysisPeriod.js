@@ -48,7 +48,7 @@ export function useAnalysisPeriod(props, fetchIndicatorAnalysis) {
     selectedPeriod.value = ''
     useInitialContext.value = false
     try {
-      const data = await fetchAnalysis({ granularity: requestedGranularity }, currentRequest)
+      const data = await fetchAnalysis({ granularity: requestedGranularity, sections: 'TREND' }, currentRequest)
       if (!currentRequest.isCurrent()) return
       periodOptions.value = drillPeriodOptions(data, requestedGranularity)
       const initial = !initialized.value && requestedGranularity === currentRequest.initialGranularity
@@ -58,7 +58,7 @@ export function useAnalysisPeriod(props, fetchIndicatorAnalysis) {
         || (preferredPeriod ? '' : periodOptions.value[0]?.value || '')
       useInitialContext.value = (!initialized.value || restoreContext) && Boolean(preferred && preferred === selectedPeriod.value)
       initialized.value = true
-      await resolveSelectedPeriod(data, currentRequest)
+      await resolveSelectedPeriod(currentRequest)
     } catch (error) {
       if (currentRequest.isCurrent()) errorMessage.value = error?.message || '暂时无法读取正式结果，请稍后重试。'
     } finally {
@@ -66,12 +66,13 @@ export function useAnalysisPeriod(props, fetchIndicatorAnalysis) {
     }
   }
 
-  async function resolveSelectedPeriod(allPeriods, currentRequest) {
+  async function resolveSelectedPeriod(currentRequest) {
     const selected = periodOptions.value.find(item => item.value === selectedPeriod.value)
     if (!selected) return
-    // 多周期分析的维度结果只属于最新一期；旧周期必须重新定位正式结果。
-    const data = drillPeriodKey(allPeriods?.overview) === selected.value ? allPeriods
-      : await fetchAnalysis({ granularity: currentRequest.granularity, periodStart: selected.periodStart, periodEnd: shiftReportDate(selected.periodEnd, -1) }, currentRequest)
+    // Period discovery never loads members; resolve ranking and drill anchors for one selected period.
+    const data = await fetchAnalysis({ granularity: currentRequest.granularity,
+      periodStart: selected.periodStart, periodEnd: shiftReportDate(selected.periodEnd, -1),
+      sections: 'OVERVIEW,DEPARTMENT_COMPARISON,CALCULATION_TARGETS' }, currentRequest)
     if (currentRequest.isCurrent()) analysis.value = data
   }
 
@@ -82,7 +83,7 @@ export function useAnalysisPeriod(props, fetchIndicatorAnalysis) {
     errorMessage.value = ''
     useInitialContext.value = false
     try {
-      await resolveSelectedPeriod(cache.get(JSON.stringify({ granularity: granularity.value })), currentRequest)
+      await resolveSelectedPeriod(currentRequest)
     } catch (error) {
       if (currentRequest.isCurrent()) errorMessage.value = error?.message || '暂时无法读取该周期结果，请稍后重试。'
     } finally {

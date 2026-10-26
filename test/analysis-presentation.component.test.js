@@ -82,6 +82,15 @@ test('overview dirty, loading and failed queries never expose an old result', ()
   }
 })
 
+test('overview without requested members does not claim missing dimension results and uses API operands', () => {
+  const model = overview({ formal: { analysis: { dataAvailable: true },
+    overview: { value: 0, numeratorValue: 0, denominatorValue: 429 }, dimensionCount: null, hasDrill: true } })
+  assert.equal(model.summaries.find(item => item.label === '分子').value, '0')
+  assert.equal(model.summaries.find(item => item.label === '分母').value, '429')
+  assert.equal(model.summaries.find(item => item.label === '维度分析').value, '已配置')
+  assert.ok(!JSON.stringify(model).includes('本期暂无结果'))
+})
+
 test('overview formal, instant and static labels reflect the actual result source', () => {
   for (const executionMode of ['AD_HOC_SOURCE', 'FORMAL_RESULTS']) {
     const model = overview({ report: { result: { status: 'READY', value: 0.0052, numeratorValue: 13, denominatorValue: 2490, executionMode }, resultPeriodLabel: '2026年2月至4月', modeLabel: executionMode === 'AD_HOC_SOURCE' ? '即时计算' : '正式结果汇总' } })
