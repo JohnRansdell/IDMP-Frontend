@@ -262,3 +262,4 @@ location /api/v1/ {
 本项目许可证见 [LICENSE](./LICENSE)。
 
 代码整理在 `refactor/frontend-consolidation` 分支推进，基于 `main` 合并最新业务分支。`dist/` 为本地构建输出，不纳入版本控制；发布时交付同一次构建的完整目录。
+`docs/frontend-consolidation-20261026.md` 记录本轮拆分、验证边界和后续收敛范围。

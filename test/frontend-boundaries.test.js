@@ -26,6 +26,7 @@ test('all named button and page grants resolve and unknown grants fail closed', 
   }
   for (const rule of PAGE_ACCESS) assert.ok(ACTION_GRANTS[rule.action], rule.action)
   assert.equal(resolveAccessGrant('missing.permission'), null)
+  assert.equal(resolveAccessGrant('toString'), null)
   assert.equal(resolveAccessGrant(undefined), null)
   assert.deepEqual(resolveAccessGrant(['GET', '/dynamic/id']), ['GET', '/dynamic/id'])
 })

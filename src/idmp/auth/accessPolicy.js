@@ -109,6 +109,6 @@ export const ROUTE_PERMISSION_METADATA = {
 
 // Tuple annotations remain supported for dynamic/legacy callers. Unknown names fail closed.
 export function resolveAccessGrant(value) {
-  if (typeof value === 'string') return ACTION_GRANTS[value] || null
+  if (typeof value === 'string') return Object.hasOwn(ACTION_GRANTS, value) ? ACTION_GRANTS[value] : null
   return Array.isArray(value) && value.length === 2 && value.every(item => typeof item === 'string') ? value : null
 }
