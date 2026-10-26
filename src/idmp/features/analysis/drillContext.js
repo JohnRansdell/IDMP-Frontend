@@ -53,6 +53,13 @@ export function buildDrillRequest(context, { path, pageNum = 1, pageSize = 20, s
 
 export function nextDrillNavigation(context, row, nextLevel, path) {
   const field = drillMemberField(path, context.currentLevel)
+  const virtualOrganizationRoot = path?.pathCode === 'ORGANIZATION'
+    && path.levels?.[0]?.levelCode === context.currentLevel
+    && ['HOSPITAL', 'ROOT'].includes(context.currentLevel)
+  if (!field && virtualOrganizationRoot && nextLevel) {
+    return { currentLevel: nextLevel, parentKeys: drillScope(context, path).parentKeys,
+      label: row?.dimensionLabel || row?.dimensionName || '医院' }
+  }
   if (!field || !hasValue(row?.dimensionKey) || !nextLevel) return null
   return { currentLevel: nextLevel, parentKeys: { ...drillScope(context, path).parentKeys, [field]: String(row.dimensionKey) },
     label: row.dimensionLabel || row.dimensionName || String(row.dimensionKey) }

@@ -52,6 +52,19 @@ function response(points) {
 function monthlyResponse(params) {
   return response(params.periodStart ? [params.periodStart === '2026-03-01' ? march : april] : [march, april])
 }
+
+test('a scoped overview enters its configured department level instead of an empty hospital layer', async () => {
+  for (const field of ['科室', 'IN_DEPT_CODE', 'ORG_UNIT']) {
+    const wrapper = create(async () => ({ trend: [march], overview: { ...march, dimensions: { [field]: '15' } } }), {
+      configuredPaths: [{ pathCode: 'ORGANIZATION', levels: [{ levelCode: 'HOSPITAL' },
+        { levelCode: 'DEPARTMENT', memberKeyFieldCode: field }, { levelCode: 'ATTENDING_DOCTOR', memberKeyFieldCode: '医生' }] }]
+    })
+    await flushPromises()
+    assert.equal(wrapper.findComponent(Explorer).props('startLevel'), 'DEPARTMENT')
+    assert.equal(wrapper.findComponent(Explorer).props('resultId'), 'march')
+    wrapper.unmount()
+  }
+})
 async function change(wrapper, type, value) {
   const control = wrapper.findComponent(type)
   control.vm.$emit('update:modelValue', value)

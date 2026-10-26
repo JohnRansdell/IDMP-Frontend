@@ -184,6 +184,7 @@ const traceBatchId = computed(() => String(factorTrace.value?.context?.calculati
 const factorTraceLoading = ref(false)
 const factorTraceScope = createRequestScope()
 const resolvedPathResultIds = ref({})
+const navigationAnchors = shallowRef({})
 const isFactorTraceMode = ref(false)
 const statusRecord = computed(() => result.value.records.find(isStatusRecord) || null)
 const memberRecords = computed(() => result.value.records.filter((item) => !isStatusRecord(item)))
@@ -191,9 +192,13 @@ const visibleColumns = computed(() => result.value.columns.filter((column) => (
   String(column.field || '').toLowerCase() !== 'factorsourceprofiles'
 )))
 const activeResultId = computed(() => String(
+  navigationAnchors.value[navigationKey()]?.resultId ||
   resolvedPathResultIds.value[lastDrillDimension.value] ||
   props.pathResultIds?.[lastDrillDimension.value] || props.resultId || ''
 ))
+function navigationKey(level = currentLevel.value, keys = parentKeys.value) {
+  return JSON.stringify([lastDrillDimension.value, level, Object.entries(keys).sort(([a], [b]) => a.localeCompare(b))])
+}
 const availableNextLevels = computed(() => {
   const pathCode = lastDrillDimension.value
   return limitDrillNextLevels(result.value.nextLevels, pathCode, props.maxLevels?.[pathCode])
@@ -284,13 +289,22 @@ async function loadDrill() {
   errorMessage.value = ''
   try {
     const context = { resultId: activeResultId.value, indicatorVersionId: props.indicatorVersionId,
-      snapshotId: lastDrillDimension.value === (props.startPathCode || initialDimension) ? props.snapshotId : '',
+      snapshotId: navigationAnchors.value[navigationKey()]?.snapshotId
+        || (lastDrillDimension.value === (props.startPathCode || initialDimension) ? props.snapshotId : ''),
       period: props.resultPeriod, pathCode: lastDrillDimension.value,
       currentLevel: currentLevel.value, parentKeys: parentKeys.value, filters: props.startFilters }
     const request = buildDrillRequest(context, { path: selectedPath(), pageNum: pageNum.value, pageSize: pageSize.value, sort: sort.value })
     const response = await searchResultDrill(request.resultId, request.payload, { source: props.source, signal: ticket.signal })
     if (!ticket.isCurrent()) return
     assertDrillResponseContext(response, context)
+    const root = selectedPath()?.levels?.[0]
+    if (lastDrillDimension.value === 'ORGANIZATION' && root && !drillMemberField(selectedPath(), root.levelCode)) {
+      const label = root.levelName || '医院'
+      response.records = response.records.map(row => row.levelCode === root.levelCode && row.dimensionKey === '__UNASSIGNED__'
+        ? { ...row, dimensionName: label, dimensionLabel: label } : row)
+      response.breadcrumb = response.breadcrumb.map(item => item.level === root.levelCode && item.key === '__UNASSIGNED__'
+        ? { ...item, label } : item)
+    }
     const levelCode = response.context.currentLevel || currentLevel.value
     const definition = props.configuredPaths.find(path => path.pathCode === lastDrillDimension.value)?.levels?.find(level => level.levelCode === levelCode)
       || { levelCode }
@@ -332,6 +346,11 @@ function openNextLevel(row) {
   const navigation = nextDrillNavigation({ currentLevel: currentLevel.value, parentKeys: parentKeys.value }, row, nextLevel, selectedPath())
   if (!navigation) return
   resetPaging()
+  if (row.resultId) navigationAnchors.value = {
+    ...navigationAnchors.value, [navigationKey(navigation.currentLevel, navigation.parentKeys)]: {
+      resultId: String(row.resultId), snapshotId: row.snapshotId ? String(row.snapshotId) : ''
+    }
+  }
   parentKeys.value = navigation.parentKeys
   currentLevel.value = navigation.currentLevel
   emit('level-change', navigation)
@@ -436,8 +455,12 @@ watch([
   if (entry !== previousEntry) {
     currentLevel.value = props.startLevel
     parentKeys.value = { ...props.startParentKeys }
+    navigationAnchors.value = {}
   }
-  if (target !== previousTarget) resolvedPathResultIds.value = {}
+  if (target !== previousTarget) {
+    resolvedPathResultIds.value = {}
+    navigationAnchors.value = {}
+  }
   if (!pathAvailable(lastDrillDimension.value)) {
     const nextDimension = customPaths.value[0]?.pathCode || (pathAvailable('ORGANIZATION') ? 'ORGANIZATION' : 'DISEASE')
     dimension.value = nextDimension

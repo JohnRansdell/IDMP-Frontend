@@ -25,7 +25,7 @@
       :result-period="periodOptions.find(item => item.value === selectedPeriod) || {}"
       :indicator-name="indicatorName" :period="selectedPeriodLabel"
       :start-path-code="useEntryContext ? entryContext.pathCode : ''"
-      :start-level="useEntryContext ? entryContext.currentLevel : useInitialContext ? startLevel : ''"
+      :start-level="useEntryContext ? entryContext.currentLevel : scopedStartLevel || (useInitialContext ? startLevel : '')"
       :start-parent-keys="useEntryContext ? entryContext.parentKeys : useInitialContext ? startParentKeys : {}"
       :start-filters="{ ...filters, ...(useEntryContext ? entryContext.filters || {} : {}) }"
       :max-levels="maxLevels" :configured-paths="configuredPaths" embedded
@@ -72,6 +72,17 @@ const anchor = computed(() => {
   return useInitialContext.value && props.initialResultId
     ? { ...resolved, resultId: String(props.initialResultId) }
     : resolved
+})
+const scopedStartLevel = computed(() => {
+  const point = analysis.value?.overview
+  if (!point?.resultId || String(point.resultId) !== anchor.value.resultId) return ''
+  const path = props.configuredPaths.find(item => anchor.value.pathResultIds[item.pathCode] === String(point.resultId))
+  const keys = new Map(Object.entries(point.dimensions || {}).map(([key, value]) => [key.toLowerCase(), value]))
+  return path?.levels?.filter(level => {
+    const field = level.memberKeyFieldCode || level.dimensionFieldCode
+    const value = field && keys.get(field.toLowerCase())
+    return value !== undefined && value !== null && value !== ''
+  }).at(-1)?.levelCode || ''
 })
 function loadPeriods() { entryContext.value = null; return readPeriods() }
 function changePeriod() { entryContext.value = null; return loadSelectedPeriod() }

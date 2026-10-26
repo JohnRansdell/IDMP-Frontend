@@ -27,7 +27,7 @@ const Select = vue.defineComponent({ props: ['modelValue'], emits: ['update:mode
   setup: (props, { slots }) => () => vue.h('div', { 'data-path': props.modelValue }, slots.default?.()) })
 const Button = vue.defineComponent({ setup: (_, { slots }) => () => vue.h('button', slots.default?.()) })
 
-function create(fetchResultFactors = async () => ({ context: {}, factors: [] }), props = {}, drillResponse = {}) {
+function create(fetchResultFactors = async () => ({ context: {}, factors: [] }), props = {}, drillResponse = {}, interactive = false) {
   const requests = []
   const component = Function('vue', 'deps', `const { createRequestScope, useRoute, useRouter, StatePanel, FactorTraceTree, searchResultDrill, fetchResultFactors, limitDrillNextLevels, isStatusRecord, getStatusLabel, fetchDepartmentNames, isDepartmentLevel, namedDrillRecord, canonicalDrillRootResultId, assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation, formatResultNumber, formatResultValue } = deps;\n${bindings}\n${code}`)(vue, {
     createRequestScope, formatResultNumber, formatResultValue,
@@ -48,11 +48,64 @@ function create(fetchResultFactors = async () => ({ context: {}, factors: [] }),
       startParentKeys: { OUT_DEPT_CODE: '17' }, startFilters: { OUT_DEPT_CODE: '17' },
       configuredPaths: [{ pathCode: 'CUSTOM_DEPT', pathName: '科室下钻', levels: [{ levelCode: 'ROOT' }, { levelCode: 'DEPT' }] }], embedded: true, ...props },
     global: { components: { ElSelect: Select, ElButton: Button },
-      stubs: { ElOption: true, ElTable: true, ElTableColumn: true, ElPagination: true }, directives: { loading() {} } }
+      stubs: { ElOption: true, ElTable: interactive ? vue.defineComponent({ props: ['data'], setup(props, { slots }) {
+        vue.provide('testRows', vue.computed(() => props.data))
+        return () => vue.h('div', slots.default?.())
+      } }) : true, ElTableColumn: interactive ? vue.defineComponent({ setup(_, { slots }) {
+        const rows = vue.inject('testRows')
+        return () => vue.h('div', rows.value.flatMap(row => slots.default?.({ row }) || []))
+      } }) : true, ElPagination: true }, directives: { loading() {} } }
   })
   return { wrapper, requests }
 }
 function button(wrapper, text) { return wrapper.findAll('button').find(item => item.text() === text) }
+
+test('organization clicks use each selected result anchor and restore the hospital when navigating back', async () => {
+  const { wrapper, requests } = create(undefined, {
+    resultId: 'hospital-result', snapshotId: 'hospital-snapshot', startPathCode: 'ORGANIZATION', startLevel: 'HOSPITAL', startParentKeys: {}, startFilters: {},
+    configuredPaths: [{ pathCode: 'ORGANIZATION', levels: [{ levelCode: 'HOSPITAL' },
+      { levelCode: 'DEPARTMENT', memberKeyFieldCode: '科室' }, { levelCode: 'ATTENDING_DOCTOR', memberKeyFieldCode: '医生' }] }]
+  }, (id, payload) => ({ context: { currentLevel: payload.currentLevel },
+    nextLevels: payload.currentLevel === 'HOSPITAL' ? ['DEPARTMENT'] : payload.currentLevel === 'DEPARTMENT' ? ['ATTENDING_DOCTOR'] : [],
+    breadcrumb: payload.currentLevel === 'ATTENDING_DOCTOR' ? [{ level: 'HOSPITAL', label: '医院' }, { level: 'DEPARTMENT', key: '15', label: '科室' }] : [],
+    pageInfo: { total: 1 }, records: [{ resultId: payload.currentLevel === 'HOSPITAL' ? 'hospital-result' : 'selected-department-result',
+      snapshotId: payload.currentLevel === 'HOSPITAL' ? 'hospital-snapshot' : 'department-snapshot', dimensionKey: '15' }]
+  }), true)
+  await flushPromises()
+  await button(wrapper, '查看下一级').trigger('click')
+  await flushPromises()
+  assert.equal(requests.at(-1).payload.currentLevel, 'DEPARTMENT')
+  assert.deepEqual(requests.at(-1).payload.parentKeys, {})
+  await button(wrapper, '查看下一级').trigger('click')
+  await flushPromises()
+  assert.equal(requests.at(-1).id, 'selected-department-result')
+  assert.equal(requests.at(-1).payload.snapshotId, 'department-snapshot')
+  assert.deepEqual(requests.at(-1).payload.parentKeys, { 科室: '15' })
+  wrapper.findComponent({ name: 'ElPagination' }).vm.$emit('current-change', 2)
+  await flushPromises()
+  assert.equal(requests.at(-1).id, 'selected-department-result')
+  await wrapper.find('.drill-breadcrumb__item').trigger('click')
+  await flushPromises()
+  assert.equal(requests.at(-1).id, 'hospital-result')
+  assert.equal(requests.at(-1).payload.currentLevel, 'HOSPITAL')
+  assert.deepEqual(requests.at(-1).payload.parentKeys, {})
+  await wrapper.setProps({ resultId: 'new-month-result', startLevel: 'ATTENDING_DOCTOR', startParentKeys: { 科室: '15' } })
+  await flushPromises()
+  assert.equal(requests.at(-1).id, 'new-month-result')
+  wrapper.unmount()
+})
+
+test('an unbound hospital root is a configured summary, not a missing hospital member', async () => {
+  const { wrapper } = create(undefined, { resultId: 'root', startLevel: 'HOSPITAL', startPathCode: 'ORGANIZATION',
+    configuredPaths: [{ pathCode: 'ORGANIZATION', levels: [{ levelCode: 'HOSPITAL', levelName: '医院' }] }]
+  }, { context: { currentLevel: 'HOSPITAL' }, columns: [{ field: 'dimensionName', label: '医院' }],
+    records: [{ levelCode: 'HOSPITAL', dimensionKey: '__UNASSIGNED__', dimensionName: '未维护医院' }],
+    breadcrumb: [{ level: 'HOSPITAL', key: '__UNASSIGNED__', label: '未维护医院' }] })
+  await flushPromises()
+  assert.deepEqual(wrapper.vm.getReportSnapshot().section.rows, [['医院']])
+  assert.equal(wrapper.find('.drill-breadcrumb__item').text(), '医院')
+  wrapper.unmount()
+})
 
 test('equivalent parent objects and tab toggles do not reload an already completed drill', async () => {
   const { wrapper, requests } = create()
