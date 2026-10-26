@@ -26,10 +26,10 @@
       <section class="surface-card workspace-section" aria-label="物理表">
         <div class="section-title section-title--toolbar">
           <div><h2>物理表</h2><p class="section-title__description">选择一张源表或视图，查看并维护字段映射</p></div>
-          <div class="toolbar-actions"><el-button v-access="['POST', '/meta/data-domains/1/physical-tables']" type="primary" :icon="Plus" @click="openAddDialog">接入物理表</el-button></div>
+          <div class="toolbar-actions"><el-button v-access="'domain.physicalTables.create'" type="primary" :icon="Plus" @click="openAddDialog">接入物理表</el-button></div>
         </div>
         <div v-if="!physicalTables.length" class="workspace-section__body"><StatePanel type="empty" title="尚未接入物理表">
-          <template #actions><el-button v-access="['POST', '/meta/data-domains/1/physical-tables']" type="primary" @click="openAddDialog">接入物理表</el-button></template>
+          <template #actions><el-button v-access="'domain.physicalTables.create'" type="primary" @click="openAddDialog">接入物理表</el-button></template>
         </StatePanel></div>
         <div v-else class="workspace-table-scroll"><el-table :data="physicalTables" :current-row-key="selectedTableName" row-key="tableName" highlight-current-row @row-click="selectTable">
           <el-table-column prop="tableName" label="表名" min-width="220" show-overflow-tooltip />
@@ -58,7 +58,7 @@
             <el-table-column prop="mapped.code" label="业务字段" min-width="180"><template #default="{ row }">{{ row.mapped?.name || row.mapped?.code || '未映射' }}<small v-if="row.mapped?.code">{{ row.mapped.code }}</small></template></el-table-column>
             <el-table-column label="配置类型" width="110"><template #default="{ row }">{{ row.mapped ? dataTypeLabel(row.mapped.dataType) : '未映射' }}</template></el-table-column>
             <el-table-column label="角色" width="110"><template #default="{ row }">{{ roleLabel(row.mapped?.semanticKind) }}</template></el-table-column>
-<el-table-column label="操作" width="260" fixed="right"><template #default="{ row }"><el-button v-access="['POST', '/meta/data-domains/1/physical-tables']" link type="primary" @click="openMappingDialog(row)">{{ row.mapped ? '编辑' : '映射' }}</el-button><template v-if="row.mapped"><el-button v-access="['PUT', '/meta/semantic-fields/1/value-set']" link :disabled="!canBindValueSet(row.mapped)" @click="openValueSetBinding(row.mapped)">值集</el-button><el-button v-access="['POST', '/transform-rule-versions/1/preview']" link :disabled="!canStandardize(row.mapped)" @click="openStandardization(row.mapped)">标准化</el-button><el-button v-access="['GET', '/meta/source-field-mappings/1/value-profile']" link :disabled="!row.mapped.sourceFieldMappingId" @click="openFieldProfile(row.mapped)">画像</el-button></template></template></el-table-column>
+<el-table-column label="操作" width="260" fixed="right"><template #default="{ row }"><el-button v-access="'domain.physicalTables.create'" link type="primary" @click="openMappingDialog(row)">{{ row.mapped ? '编辑' : '映射' }}</el-button><template v-if="row.mapped"><el-button v-access="'field.valueSet.update'" link :disabled="!canBindValueSet(row.mapped)" @click="openValueSetBinding(row.mapped)">值集</el-button><el-button v-access="'transformVersion.preview'" link :disabled="!canStandardize(row.mapped)" @click="openStandardization(row.mapped)">标准化</el-button><el-button v-access="'sourceField.valueProfile.read'" link :disabled="!row.mapped.sourceFieldMappingId" @click="openFieldProfile(row.mapped)">画像</el-button></template></template></el-table-column>
           </el-table></div>
         </template>
       </section>
@@ -67,7 +67,7 @@
     <el-dialog v-model="addDialogVisible" title="接入物理表" width="520px" destroy-on-close>
       <el-form label-position="top"><el-form-item label="源表或视图"><el-select v-model="tableToAdd" filterable :loading="sourceLoading" placeholder="选择来源对象"><el-option v-for="table in availableSourceTables" :key="table.tableName" :label="table.comment ? `${table.tableName} · ${table.comment}` : table.tableName" :value="table.tableName" /></el-select></el-form-item></el-form>
       <StatePanel v-if="sourceError" type="error" title="来源目录加载失败" :description="sourceErrorMessage"><template #actions><el-button @click="loadSourceTables">重试</el-button></template></StatePanel>
-      <template #footer><el-button @click="addDialogVisible = false">取消</el-button><el-button v-access="['POST', '/meta/data-domains/1/physical-tables']" type="primary" :loading="adding" :disabled="!tableToAdd" @click="submitAddTable">确认接入</el-button></template>
+      <template #footer><el-button @click="addDialogVisible = false">取消</el-button><el-button v-access="'domain.physicalTables.create'" type="primary" :loading="adding" :disabled="!tableToAdd" @click="submitAddTable">确认接入</el-button></template>
     </el-dialog>
 
     <el-dialog v-model="mappingDialogVisible" :title="`映射字段 · ${mappingForm.sourceFieldName}`" width="min(560px, calc(100vw - 32px))" destroy-on-close>
@@ -80,12 +80,12 @@
         <el-form-item label="业务角色" prop="semanticKind"><el-select v-model="mappingForm.semanticKind"><el-option v-for="item in roleOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
         <el-form-item><el-checkbox v-model="mappingForm.sensitive">敏感字段</el-checkbox></el-form-item>
       </el-form>
-      <template #footer><el-button @click="mappingDialogVisible = false">取消</el-button><el-button v-access="['POST', '/meta/data-domains/1/physical-tables']" type="primary" :loading="mappingSaving" @click="submitMapping">保存映射</el-button></template>
+      <template #footer><el-button @click="mappingDialogVisible = false">取消</el-button><el-button v-access="'domain.physicalTables.create'" type="primary" :loading="mappingSaving" @click="submitMapping">保存映射</el-button></template>
     </el-dialog>
 
     <el-dialog v-model="valueSetDialogVisible" title="绑定值集" width="500px" destroy-on-close>
       <el-select v-model="selectedValueSetId" filterable clearable :loading="valueSetLoading" placeholder="选择已发布值集" class="dialog-select" @change="validateSelectedValueSet"><el-option v-for="item in valueSets" :key="item.id" :label="item.name || item.code" :value="String(item.id)" /></el-select>
-      <template #footer><el-button @click="valueSetDialogVisible = false">取消</el-button><el-button v-access="['PUT', '/meta/semantic-fields/1/value-set']" type="primary" :loading="valueSetSaving" :disabled="!selectedValueSetId" @click="saveValueSetBinding">保存</el-button></template>
+      <template #footer><el-button @click="valueSetDialogVisible = false">取消</el-button><el-button v-access="'field.valueSet.update'" type="primary" :loading="valueSetSaving" :disabled="!selectedValueSetId" @click="saveValueSetBinding">保存</el-button></template>
     </el-dialog>
 
     <el-dialog v-model="profileDialogVisible" :title="`源值画像 · ${profileField?.sourceFieldName || ''}`" width="640px" destroy-on-close>

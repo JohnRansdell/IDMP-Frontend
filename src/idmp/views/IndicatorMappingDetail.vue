@@ -7,11 +7,11 @@
       <template #actions>
         <div class="mapping-detail-actions">
         <el-button :icon="Back" @click="backToList">返回列表</el-button>
-        <el-button v-access="['PATCH', '/mappings/1']" v-if="capabilities.canEdit" type="primary" :icon="Edit" @click="openEdit">编辑草稿</el-button>
-        <el-button v-access="['POST', '/mappings/1/submit']" v-if="capabilities.canSubmit" type="primary" :loading="mutating" @click="runCurrentAction('submit')">提交审核</el-button>
-        <el-button v-access="['POST', '/mappings/1/approve']" v-if="capabilities.canApprove" type="success" :loading="mutating" @click="reviewCurrentMapping('approve')">审核通过并发布</el-button>
-        <el-button v-access="['POST', '/mappings/1/approve']" v-if="capabilities.canReject" type="danger" plain :loading="mutating" @click="reviewCurrentMapping('reject')">驳回</el-button>
-        <el-button v-access="['POST', '/mappings/1/invalidate']" v-if="capabilities.canInvalidate" type="warning" :loading="mutating" @click="invalidateCurrentMapping">人工失效</el-button>
+        <el-button v-access="'mapping.edit'" v-if="capabilities.canEdit" type="primary" :icon="Edit" @click="openEdit">编辑草稿</el-button>
+        <el-button v-access="'mapping.submit'" v-if="capabilities.canSubmit" type="primary" :loading="mutating" @click="runCurrentAction('submit')">提交审核</el-button>
+        <el-button v-access="'mapping.approve'" v-if="capabilities.canApprove" type="success" :loading="mutating" @click="reviewCurrentMapping('approve')">审核通过并发布</el-button>
+        <el-button v-access="'mapping.approve'" v-if="capabilities.canReject" type="danger" plain :loading="mutating" @click="reviewCurrentMapping('reject')">驳回</el-button>
+        <el-button v-access="'mapping.invalidate'" v-if="capabilities.canInvalidate" type="warning" :loading="mutating" @click="invalidateCurrentMapping">人工失效</el-button>
         </div>
       </template>
     </PageHeader>
@@ -117,14 +117,14 @@
               <section v-for="side in policySides" :key="side.key" class="policy-panel">
                 <div class="policy-panel__head">
                   <div><h2>{{ side.label }}</h2><p>{{ policyLabel(side.indicator) }}</p></div>
-                  <el-button v-access="['POST', '/mappings/indicator-versions/1/policy-references']" link type="primary" @click="togglePolicyForm(side.key)">{{ addingPolicySide === side.key ? '收起添加' : '添加引用' }}</el-button>
+                  <el-button v-access="'mapping.indicatorVersions.policyReferences.create'" link type="primary" @click="togglePolicyForm(side.key)">{{ addingPolicySide === side.key ? '收起添加' : '添加引用' }}</el-button>
                 </div>
                 <el-form v-if="addingPolicySide === side.key" label-position="top" class="policy-form">
                   <el-form-item label="已发布政策版本"><PolicyVersionPicker v-model="policyForms[side.key].policyFileVersionId" clearable :disabled="mutating" /></el-form-item>
                   <el-form-item label="引用角色"><el-select v-model="policyForms[side.key].relationRole"><el-option v-for="item in POLICY_REFERENCE_ROLES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
                   <el-form-item label="出处"><el-input v-model="policyForms[side.key].citationLocation" /></el-form-item>
                   <el-form-item label="政策原文"><el-input v-model="policyForms[side.key].citationText" type="textarea" :rows="2" /></el-form-item>
-                  <el-button v-access="['POST', '/mappings/indicator-versions/1/policy-references']" type="primary" :loading="mutating" @click="savePolicyReference(side.key)">保存引用</el-button>
+                  <el-button v-access="'mapping.indicatorVersions.policyReferences.create'" type="primary" :loading="mutating" @click="savePolicyReference(side.key)">保存引用</el-button>
                 </el-form>
                 <div class="policy-table-scroll">
                   <div class="policy-table">
@@ -132,7 +132,7 @@
                       <el-table-column label="政策文件" min-width="180"><template #default="{ row }">{{ row.policyFileName || row.policyFileCode || `政策版本 ${row.policyFileVersionId}` }}</template></el-table-column>
                       <el-table-column label="引用角色" width="110"><template #default="{ row }">{{ policyReferenceRoleLabel(row.relationRole) }}</template></el-table-column>
                       <el-table-column prop="citationLocation" label="出处" min-width="150" show-overflow-tooltip />
-                      <el-table-column label="操作" width="76"><template #default="{ row }"><el-button v-access="['POST', '/mappings/policy-references/1/invalidate']" link type="danger" @click="invalidatePolicyReference(row, side.key)">失效</el-button></template></el-table-column>
+                      <el-table-column label="操作" width="76"><template #default="{ row }"><el-button v-access="'mapping.policyReferences.invalidate'" link type="danger" @click="invalidatePolicyReference(row, side.key)">失效</el-button></template></el-table-column>
                     </el-table>
                   </div>
                 </div>
@@ -146,6 +146,8 @@
 </template>
 
 <script setup>
+import { policyLabel, buildDifferenceRows as mappingDifferenceRows } from '@/idmp/features/mapping/presentation.js'
+function buildDifferenceRows(difference) { return mappingDifferenceRows(difference, { detailed: true }) }
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
@@ -183,10 +185,6 @@ const policySides = computed(() => [
 
 function emptyPolicyForm() { return { policyFileVersionId: '', citationLocation: '', citationText: '', relationRole: 'SOURCE' } }
 function indicatorRef(indicator) { return formatIndicatorRef(indicator || {}) }
-function policyLabel(indicator) { const references = Array.isArray(indicator?.policyReferences) ? indicator.policyReferences : []; const policy = references.find(item => item?.policyFileName || item?.policyFileCode || item?.policyFileVersionId); return policy?.policyFileName || policy?.policyFileCode || indicator?.policyFileName || indicator?.policyFileCode || '未标注政策来源' }
-function differenceLabel(key) { return ({ indicatorName: '指标名称', definition: '指标定义', meaning: '业务含义', formulaAst: '计算公式', factors: '因子与过滤', policyReferences: '政策依据', defaultExclusion: '默认排除规则', unit: '单位', statisticalPeriod: '统计周期', granularity: '统计粒度', organizationScope: '组织范围' })[key] || key }
-function differenceValue(value) { if (value === undefined || value === null || value === '') return '未提供'; if (typeof value !== 'object') return String(value); if (Array.isArray(value)) return value.length ? `共 ${value.length} 项配置` : '无配置'; const name = value.name || value.indicatorName || value.policyFileName; if (name) return String(name); return '已返回结构化内容' }
-function buildDifferenceRows(difference) { return Object.entries(difference || {}).filter(([key]) => key !== 'hasDifferences').map(([key, item]) => ({ label: differenceLabel(key), different: Boolean(item?.different), source: differenceValue(item?.source), target: differenceValue(item?.target) })) }
 function evidenceLabel(key) { return ({ reviewBasis: '人工核对依据', differenceNote: '差异说明', supplemental: '补充说明' })[key] || key }
 function evidenceValue(value) { return typeof value === 'object' ? '已保存结构化内容' : String(value || '未填写') }
 function formatJson(value) { return JSON.stringify(value || {}, null, 2) }

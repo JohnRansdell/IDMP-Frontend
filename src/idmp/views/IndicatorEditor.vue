@@ -15,20 +15,7 @@
       </template>
     </PageHeader>
 
-    <section class="surface-card workflow-overview" aria-label="指标配置生命周期">
-      <div
-        v-for="(step, index) in workflowSteps"
-        :key="step.key"
-        class="workflow-step"
-        :class="`is-${step.state}`"
-      >
-        <span class="workflow-step__index">{{ index + 1 }}</span>
-        <span class="workflow-step__copy">
-          <strong>{{ step.label }}</strong>
-          <small>{{ step.description }}</small>
-        </span>
-      </div>
-    </section>
+    <IndicatorWorkflowOverview :steps="workflowSteps" />
 
     <div class="notice-strip is-warning editor-contract-note">
       <el-icon><InfoFilled /></el-icon>
@@ -409,11 +396,11 @@
               <el-button :disabled="!indicatorWorkflow.formulaSaved" :loading="workflowLoading.compile" @click="compileIndicatorFormulaOnly">
                 公式校验
               </el-button>
-              <el-button type="primary" :disabled="!indicatorWorkflow.compiled || (!isStaticIndicator && !hasIndicatorTrialPeriod)" :loading="workflowLoading.trial || workflowLoading.result" v-access="['POST', '/indicator-versions/1/trial']" @click="trialIndicatorAndLoadResult">
+              <el-button type="primary" :disabled="!indicatorWorkflow.compiled || (!isStaticIndicator && !hasIndicatorTrialPeriod)" :loading="workflowLoading.trial || workflowLoading.result" v-access="'indicatorVersions.trial'" @click="trialIndicatorAndLoadResult">
                 {{ indicatorTrialButtonLabel }}
               </el-button>
               <el-button type="success" plain @click="activeTab = 'publish'">前往第 6 页发布检查</el-button>
-              <el-button v-if="indicatorWorkflow.published && !isStaticIndicator && !hasTemporaryIndicatorRuntimeParameters" type="primary" plain :loading="workflowLoading.formal" v-access="['POST', '/calc/batches']" @click="generateFormalResultAndOpenAnalysis">
+              <el-button v-if="indicatorWorkflow.published && !isStaticIndicator && !hasTemporaryIndicatorRuntimeParameters" type="primary" plain :loading="workflowLoading.formal" v-access="'calc.calculation.create'" @click="generateFormalResultAndOpenAnalysis">
                 生成正式结果并去指标分析
               </el-button>
             </div>
@@ -554,64 +541,20 @@
       </el-tab-pane>
 
       <el-tab-pane label="6 发布检查" name="publish">
-        <section class="publish-layout">
-          <article class="surface-card publish-gates">
-            <div class="section-title">
-              <div>
-                <h2>发布门禁</h2>
-                <p class="section-title__description">仅展示当前前端能够判断的状态，不替代后端最终校验</p>
-              </div>
-            </div>
-            <ul>
-              <li v-for="gate in publishGates" :key="gate.label" :class="`is-${gate.state}`">
-                <span class="publish-gate__mark" aria-hidden="true" />
-                <div>
-                  <strong>{{ gate.label }}</strong>
-                  <p>{{ gate.description }}</p>
-                </div>
-                <span>{{ gate.stateLabel }}</span>
-              </li>
-            </ul>
-          </article>
-          <article class="surface-card publish-action-card">
-            <div class="section-title">
-              <div>
-                <h2>发布指标版本</h2>
-                <p class="section-title__description">调用当前后端接口发布已编译并试算通过的指标版本。</p>
-              </div>
-            </div>
-            <div class="publish-action-content">
-              <StatePanel
-                :type="indicatorWorkflow.published ? 'empty' : 'permission'"
-                :title="indicatorWorkflow.published ? '指标版本已发布' : '等待发布条件'"
-                :description="publishPanelDescription"
-              />
-            </div>
-            <div class="business-action-bar publish-actions">
-              <div>
-                <span>后端写入接口</span>
-                <small class="mono-data">POST /api/v1/indicator-versions/{{ indicatorWorkflow.versionId || '{id}' }}/publish</small>
-              </div>
-              <el-button
-                type="primary"
-                :disabled="!indicatorWorkflow.versionId || indicatorWorkflow.published || policySourceState.loading || policySourceState.saving"
-                :loading="workflowLoading.publish"
-                @click="publishIndicatorVersionOnly"
-              >
-                发布指标版本
-              </el-button>
-              <el-button v-if="indicatorWorkflow.published && (form.policyDrafts.length || policySourceState.error)" type="warning" :loading="policySourceState.saving" @click="retryPolicySources">重试保存政策来源</el-button>
-              <el-button v-if="indicatorWorkflow.published && !isStaticIndicator && !hasTemporaryIndicatorRuntimeParameters" plain :loading="workflowLoading.formal" v-access="['POST', '/calc/batches']" @click="generateFormalResultAndOpenAnalysis">独立正式计算并查看结果</el-button>
-
-            </div>
-          </article>
-        </section>
+        <IndicatorPublishPanel :workflow="indicatorWorkflow" :loading="workflowLoading" :policy-state="policySourceState"
+          :policy-drafts="form.policyDrafts" :is-static="isStaticIndicator" :temporary-parameters="hasTemporaryIndicatorRuntimeParameters"
+          :description="publishPanelDescription" :gates="publishGates" @publish="publishIndicatorVersionOnly"
+          @retry-policy="retryPolicySources" @formal-result="generateFormalResultAndOpenAnalysis" />
       </el-tab-pane>
     </el-tabs>
   </div>
 </template>
 
 <script setup>
+import IndicatorWorkflowOverview from '@/idmp/features/indicator/components/IndicatorWorkflowOverview.vue'
+import IndicatorPublishPanel from '@/idmp/features/indicator/components/IndicatorPublishPanel.vue'
+import { useIndicatorPublicationState } from '@/idmp/features/indicator/useIndicatorPublicationState.js'
+import { defaultCategoryPath, indicatorCategoryOptions, indicatorCategoryProps, normalizeCategoryPath, resolveCategoryPath } from '@/idmp/features/indicator/categoryModel.js'
 import { resolveIndicatorVersionId, extractFormula, pickLatestVersion } from '@/idmp/features/indicator/versionModel.js'
 import { toOpaqueId } from '@/idmp/utils/resourceId.js'
 
@@ -826,63 +769,9 @@ const indicatorTrialHasNumerator = computed(() =>
 const indicatorTrialHasDenominator = computed(() =>
   indicatorTrialRows.value.some((row) => row.denominatorValue !== null && row.denominatorValue !== undefined)
 )
-const canPublishIndicatorVersion = computed(() =>
-  Boolean(
-    indicatorWorkflow.versionId &&
-    !indicatorWorkflow.published
-  )
-)
-
-const publishPanelDescription = computed(() => {
-  if (indicatorWorkflow.published) {
-    return `后端已返回发布结果，版本 ${indicatorWorkflow.publishedVersionId || indicatorWorkflow.versionId} 可用于分析查询。`
-  }
-  if (!indicatorWorkflow.versionId) return '请先创建指标版本。'
-  if (!policySourceState.count) return '请先在第 1 页选择政策文件来源；依据说明选填，场景关联可跳过。'
-  if (!indicatorWorkflow.compiled) return '发布时会对当前公式执行编译校验，失败时保留草稿。'
-  if (!hasIndicatorTrialResults.value) return '发布前需要成功试算；提交发布时会补齐校验，并以后端最终校验为准。'
-  return '发布接口已就绪，点击按钮会写入后端发布状态。'
+const { canPublishIndicatorVersion, publishPanelDescription, workflowSteps, publishGates } = useIndicatorPublicationState({
+  indicatorWorkflow, policySourceState, hasIndicatorTrialResults
 })
-
-const workflowSteps = computed(() => [
-  { key: 'basic', label: '基础与版本', description: indicatorWorkflow.versionId ? '指标与版本已创建' : '填写基本信息并选择政策来源', state: indicatorWorkflow.versionId ? 'complete' : 'current' },
-  { key: 'formula', label: '公式与试算', description: hasIndicatorTrialResults.value ? '试算结果已读取，可前往发布检查' : indicatorWorkflow.compiled ? '校验通过，可执行试算' : '保存公式后编译、试算', state: hasIndicatorTrialResults.value ? 'complete' : 'pending' },
-  { key: 'exclusion', label: '规则与排除', description: '指标级默认排除暂不支持此处保存', state: 'blocked' },
-  { key: 'scene', label: '场景关联', description: '可选，不影响独立指标计算', state: 'optional' },
-  { key: 'policy', label: '政策依据', description: '选填，自动同步第 1 页政策来源，可跳过', state: 'optional' },
-  { key: 'publish', label: '发布检查', description: indicatorWorkflow.published ? '指标已发布，可独立正式计算' : '统一在第 6 页确认发布', state: indicatorWorkflow.published ? 'complete' : 'pending' }
-])
-
-const publishGates = computed(() => [
-  { label: '政策文件来源（必填）', description: policySourceState.error || `已选择 ${policySourceState.count} 份，待绑定 ${policySourceState.pending} 份；依据说明选填。草稿来源发布后绑定。`, state: policySourceState.error || !policySourceState.count ? 'pending' : policySourceState.pending ? 'warning' : 'pass', stateLabel: policySourceState.error ? '需重试' : !policySourceState.count ? '待选择' : policySourceState.pending ? '待绑定' : '已保存' },
-  { label: '场景关联（可选）', description: '无需关联场景即可发布并生成独立正式结果', state: 'pass', stateLabel: '可跳过' },
-  {
-    label: '稳定指标与草稿版本',
-    description: indicatorWorkflow.versionId ? `版本 ${indicatorWorkflow.versionId}` : '尚未创建可发布的草稿版本',
-    state: indicatorWorkflow.versionId ? 'pass' : 'pending',
-    stateLabel: indicatorWorkflow.versionId ? '已具备' : '待完成'
-  },
-  {
-    label: 'Formula AST 服务端编译',
-    description: indicatorWorkflow.compiled ? '服务端编译校验已通过' : '尚未取得有效编译产物',
-    state: indicatorWorkflow.compiled ? 'pass' : 'pending',
-    stateLabel: indicatorWorkflow.compiled ? '已通过' : '待完成'
-  },
-  {
-    label: '试算结果与配置一致性',
-    description: hasIndicatorTrialResults.value
-      ? '已读取试算结果，但当前接口未返回配置 Hash'
-      : '尚未取得可核验的试算结果',
-    state: hasIndicatorTrialResults.value ? 'warning' : 'pending',
-    stateLabel: hasIndicatorTrialResults.value ? '需核验 Hash' : '待完成'
-  },
-  {
-    label: '质量、下钻与隐私',
-    description: indicatorWorkflow.published ? '发布接口已由后端完成最终校验' : '发布时由后端执行最终门禁校验',
-    state: indicatorWorkflow.published ? 'pass' : canPublishIndicatorVersion.value ? 'warning' : 'pending',
-    stateLabel: indicatorWorkflow.published ? '已发布' : canPublishIndicatorVersion.value ? '后端校验' : '待发布'
-  }
-])
 const savedDataSources = ref([])
 const sourceOptions = computed(() => {
   const options = ['HIS', '手术麻醉', 'EMR', 'LIS', 'PACS', '病案', '药事', '财务'].map(value => ({ value, label: value }))
@@ -892,63 +781,6 @@ const sourceOptions = computed(() => {
   }
   return options
 })
-const defaultCategoryPath = ['医疗质量', '质量安全']
-const indicatorCategoryOptions = [
-  {
-    value: '医疗质量',
-    label: '医疗质量',
-    children: [
-      {
-        value: '质量安全',
-        label: '质量安全',
-        children: [
-          { value: '手术安全', label: '手术安全' },
-          { value: '围术期安全', label: '围术期安全' },
-          { value: '患者安全', label: '患者安全' }
-        ]
-      },
-      {
-        value: '功能定位',
-        label: '功能定位',
-        children: [
-          { value: '门诊服务', label: '门诊服务' },
-          { value: '住院服务', label: '住院服务' },
-          { value: '日间医疗', label: '日间医疗' }
-        ]
-      },
-      {
-        value: '合理用药',
-        label: '合理用药',
-        children: [
-          { value: '抗菌药物', label: '抗菌药物' },
-          { value: '药品结构', label: '药品结构' }
-        ]
-      }
-    ]
-  },
-  {
-    value: '运营效率',
-    label: '运营效率',
-    children: [
-      { value: '服务流程', label: '服务流程' },
-      { value: '收支结构', label: '收支结构' },
-      { value: '经济管理', label: '经济管理' }
-    ]
-  },
-  {
-    value: '专项指标',
-    label: '专项指标',
-    children: [
-      { value: '住院死亡类', label: '住院死亡类' },
-      { value: '评审指标', label: '评审指标' }
-    ]
-  }
-]
-const indicatorCategoryProps = {
-  checkStrictly: true,
-  emitPath: true
-}
-
 const form = reactive({
   code: isNew.value ? newResourceCode('INDICATOR') : routeIndicatorKey.value,
   name: '',
@@ -1023,66 +855,6 @@ const rules = computed(() => ({
   period: [required('请选择统计周期')],
   policyDrafts: [{ validator: (_rule, _value, done) => policySourceState.loading || policySourceState.saving ? done(new Error('请等待政策来源读取或保存完成')) : policySourceState.error ? done(new Error(policySourceState.error)) : policySourceState.count > 0 ? done() : done(new Error('请选择至少一份政策文件来源；依据说明选填')), trigger: 'change' }]
 }))
-
-function findCategoryPath(target, options, trail = []) {
-  const needle = String(target || '').trim()
-  if (!needle) return []
-
-  for (const option of options) {
-    const nextTrail = [...trail, option.value]
-    if (option.value === needle || option.label === needle) return nextTrail
-    if (Array.isArray(option.children) && option.children.length) {
-      const matched = findCategoryPath(needle, option.children, nextTrail)
-      if (matched.length) return matched
-    }
-  }
-
-  return []
-}
-
-function normalizeCategoryPath(source) {
-  if (Array.isArray(source)) {
-    return source.map(segment => String(segment || '').trim()).filter(Boolean)
-  }
-
-  if (!source || typeof source !== 'object') return []
-
-  const explicitPath = Array.isArray(source.categoryPath) ? source.categoryPath : []
-  if (explicitPath.length) {
-    return explicitPath.map(segment => String(segment || '').trim()).filter(Boolean)
-  }
-
-  const categoryText = String(source.category || '').trim()
-  if (categoryText.includes('/')) {
-    const parsedPath = categoryText.split('/').map(segment => segment.trim()).filter(Boolean)
-    if (parsedPath.length) return parsedPath
-  }
-
-  const categoryMain = String(source.categoryMain || categoryText).trim()
-  const categorySub = String(source.categorySub || '').trim()
-  if (!categoryMain && !categorySub) return []
-
-  if (categorySub) {
-    const subPath = findCategoryPath(categorySub, indicatorCategoryOptions)
-    if (subPath.length && (!categoryMain || subPath[0] === categoryMain || subPath.includes(categoryMain))) {
-      return subPath
-    }
-  }
-
-  if (!categoryMain) return [categorySub]
-
-  const matchedPath = findCategoryPath(categoryMain, indicatorCategoryOptions)
-  const path = matchedPath.length ? matchedPath : [categoryMain]
-  if (categorySub && path[path.length - 1] !== categorySub) {
-    path.push(categorySub)
-  }
-  return path
-}
-
-function resolveCategoryPath(source, fallback = defaultCategoryPath) {
-  const path = normalizeCategoryPath(source)
-  return path.length ? path : [...fallback]
-}
 
 function syncCategorySelection(path = form.categoryPath) {
   const normalized = normalizeCategoryPath(path)
@@ -2823,186 +2595,12 @@ onMounted(async () => {
   display: inline-flex;
 }
 
-.workflow-overview {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  margin-bottom: 12px;
-  padding: 14px 16px;
-  gap: 0;
-}
-
-.workflow-step {
-  position: relative;
-  display: flex;
-  min-width: 0;
-  align-items: flex-start;
-  padding-right: 16px;
-  gap: 9px;
-
-  &::after {
-    position: absolute;
-    top: 11px;
-    right: 6px;
-    left: 30px;
-    z-index: 0;
-    height: 1px;
-    background: var(--idmp-border-strong);
-    content: "";
-  }
-
-  &:last-child::after {
-    display: none;
-  }
-}
-
-.workflow-step__index {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 auto;
-  border: 1px solid var(--idmp-border-strong);
-  border-radius: var(--idmp-radius-sm);
-  background: var(--idmp-layer-01);
-  color: var(--idmp-text-helper);
-  place-items: center;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.workflow-step__copy {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  min-width: 0;
-  padding-right: 6px;
-  background: var(--idmp-layer-01);
-  gap: 2px;
-
-  strong {
-    color: var(--idmp-text-primary);
-    font-size: 12px;
-    line-height: 20px;
-  }
-
-  small {
-    color: var(--idmp-text-helper);
-    font-size: 11px;
-    line-height: 16px;
-  }
-}
-
-.workflow-step.is-current .workflow-step__index {
-  border-color: var(--idmp-interactive);
-  background: var(--idmp-interactive-subtle);
-  color: var(--idmp-interactive);
-  font-weight: 650;
-}
-
-.workflow-step.is-complete .workflow-step__index {
-  border-color: var(--idmp-support-success);
-  background: var(--idmp-support-success-bg);
-  color: var(--idmp-support-success);
-}
-
-.workflow-step.is-blocked .workflow-step__index {
-  border-color: var(--idmp-support-warning);
-  background: var(--idmp-support-warning-bg);
-  color: var(--idmp-support-warning);
-}
-
 .editor-contract-note {
   margin-bottom: 16px;
 }
 
 .formula-contract-note {
   margin-bottom: 18px;
-}
-
-.publish-layout {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: stretch;
-  gap: 16px;
-}
-
-.publish-gates {
-  padding: 18px;
-}
-
-.publish-action-card {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  padding: 18px;
-}
-
-.publish-action-content {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  align-items: center;
-}
-
-.publish-action-content :deep(.state-panel) {
-  width: 100%;
-}
-
-.publish-actions {
-  align-items: flex-end;
-}
-
-.publish-actions small {
-  overflow-wrap: anywhere;
-}
-
-.publish-gates ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.publish-gates li {
-  display: grid;
-  grid-template-columns: 10px minmax(0, 1fr) auto;
-  align-items: center;
-  min-height: 60px;
-  padding: 8px 4px;
-  gap: 12px;
-  border-top: 1px solid var(--idmp-border-soft);
-
-  strong {
-    color: var(--idmp-text-primary);
-    font-size: 13px;
-  }
-
-  p {
-    margin: 2px 0 0;
-    color: var(--idmp-text-helper);
-    font-size: 11px;
-  }
-
-  > span:last-child {
-    color: var(--idmp-text-secondary);
-    font-size: 12px;
-  }
-}
-
-.publish-gate__mark {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--idmp-border-strong);
-}
-
-.publish-gates li.is-pass .publish-gate__mark {
-  background: var(--idmp-support-success);
-}
-
-.publish-gates li.is-warning .publish-gate__mark,
-.publish-gates li.is-blocked .publish-gate__mark {
-  background: var(--idmp-support-warning);
 }
 
 .action-link:disabled {
@@ -3039,17 +2637,6 @@ onMounted(async () => {
     color: var(--idmp-text-helper);
     font-size: 12px;
     line-height: 18px;
-  }
-}
-
-@media (max-width: 1280px) {
-  .workflow-overview {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 14px 0;
-  }
-
-  .publish-layout {
-    grid-template-columns: 1fr;
   }
 }
 

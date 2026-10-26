@@ -6,7 +6,7 @@
         <span class="header-meta">查看已接入系统的来源结构，并将其交给标准数据模型使用</span>
       </template>
       <template #actions>
-        <el-button v-access="['POST', '/meta/source-mappings/sync']" :icon="Refresh" :loading="syncLoading" @click="handleSync">
+        <el-button v-access="'sourceMapping.sync'" :icon="Refresh" :loading="syncLoading" @click="handleSync">
           同步数据结构
         </el-button>
         <el-button type="primary" :icon="Refresh" :loading="tableLoading" @click="loadSourceTables">
@@ -61,7 +61,7 @@
           :description="syncErrorMessage"
         >
           <template #actions>
-            <el-button v-access="['POST', '/meta/source-mappings/sync']" :disabled="syncLoading" @click="handleSync">重新同步</el-button>
+            <el-button v-access="'sourceMapping.sync'" :disabled="syncLoading" @click="handleSync">重新同步</el-button>
           </template>
         </StatePanel>
       </div>

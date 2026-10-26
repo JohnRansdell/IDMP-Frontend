@@ -7,7 +7,7 @@
       </template>
       <template #actions>
         <el-button :icon="Refresh" :loading="listLoading" @click="loadDomains">刷新列表</el-button>
-        <el-button v-access="['POST', '/meta/data-domains']" type="primary" :icon="Plus" @click="openCreateDialog">新建数据域</el-button>
+        <el-button v-access="'domain.create'" type="primary" :icon="Plus" @click="openCreateDialog">新建数据域</el-button>
       </template>
     </PageHeader>
 
@@ -55,7 +55,7 @@
         description="当前接口没有返回数据域记录，可以创建一个新的数据域。"
       >
         <template #actions>
-          <el-button v-access="['POST', '/meta/data-domains']" type="primary" @click="openCreateDialog">新建数据域</el-button>
+          <el-button v-access="'domain.create'" type="primary" @click="openCreateDialog">新建数据域</el-button>
         </template>
       </StatePanel>
       <StatePanel
@@ -124,7 +124,7 @@
       </div>
       <template #footer>
         <el-button @click="createDialogVisible = false">取消</el-button>
-        <el-button v-access="['POST', '/meta/data-domains']" type="primary" :loading="createLoading" @click="submitCreate">确认创建</el-button>
+        <el-button v-access="'domain.create'" type="primary" :loading="createLoading" @click="submitCreate">确认创建</el-button>
       </template>
     </el-dialog>
   </div>

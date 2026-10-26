@@ -35,8 +35,8 @@
             </el-option>
           </el-select>
           <el-button type="primary" @click="switchIndicatorAnalysis">查看分析</el-button>
-          <el-button v-access="['GET', '/calc/batches/1']" :disabled="!selectedBackendIndicator || !currentIndicatorVersionId" @click="showDataDiagnostics = true">计算诊断</el-button>
-          <el-button v-access="['POST', '/analysis/indicators/1/export/pdf']" :icon="Download" :loading="pdfExportLoading" :disabled="!canExportPdf" @click="exportAnalysisPdf">导出PDF</el-button>
+          <el-button v-access="'calc.calculation.read'" :disabled="!selectedBackendIndicator || !currentIndicatorVersionId" @click="showDataDiagnostics = true">计算诊断</el-button>
+          <el-button v-access="'indicator.export.pdf.create'" :icon="Download" :loading="pdfExportLoading" :disabled="!canExportPdf" @click="exportAnalysisPdf">导出PDF</el-button>
         </div>
       </template>
     </PageHeader>

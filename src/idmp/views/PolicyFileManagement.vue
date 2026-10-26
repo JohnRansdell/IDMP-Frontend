@@ -2,7 +2,7 @@
   <div class="idmp-page policy-page">
     <PageHeader title="政策文件">
       <template #meta><span>共 {{ total }} 份文件</span></template>
-      <template #actions><el-button v-access="['POST', '/meta/policy-files']" type="primary" :icon="Upload" @click="newPolicy">新建政策文件</el-button></template>
+      <template #actions><el-button v-access="'policy.create'" type="primary" :icon="Upload" @click="newPolicy">新建政策文件</el-button></template>
     </PageHeader>
     <section class="surface-card policy-filter-card" aria-label="政策文件筛选">
       <form class="policy-filters" @submit.prevent="search">
@@ -21,7 +21,7 @@
           <el-table-column prop="issuingOrganization" label="发布机构" min-width="140" />
           <el-table-column prop="documentNumber" label="文号" min-width="160" />
           <el-table-column label="发布状态" width="100"><template #default="{ row }"><StatusBadge :status="row.status" /></template></el-table-column>
-          <el-table-column label="操作" width="140"><template #default="{ row }"><el-button link type="primary" @click="openDetail(row)">查看</el-button><el-button v-access="['PATCH', '/meta/policy-files/1']" link @click="editPolicy(row)">编辑</el-button></template></el-table-column>
+          <el-table-column label="操作" width="140"><template #default="{ row }"><el-button link type="primary" @click="openDetail(row)">查看</el-button><el-button v-access="'policy.edit'" link @click="editPolicy(row)">编辑</el-button></template></el-table-column>
         </el-table>
       </div>
       <div class="policy-table-footer"><el-pagination v-model:current-page="page" :page-size="20" :total="Number(total)" layout="total, prev, pager, next" @current-change="load" /></div>
@@ -36,7 +36,7 @@
         <el-form-item label="文号"><el-input v-model.trim="metadata.documentNumber" maxlength="100" /></el-form-item>
         <el-form-item class="policy-metadata-form__wide" label="说明"><el-input v-model="metadata.description" type="textarea" maxlength="10000" :rows="3" /></el-form-item>
       </el-form>
-      <template #footer><el-button :disabled="saving" @click="metadataVisible = false">取消</el-button><el-button v-access="['POST', '/meta/policy-files']" type="primary" :loading="saving" @click="saveMetadata">保存</el-button></template>
+      <template #footer><el-button :disabled="saving" @click="metadataVisible = false">取消</el-button><el-button v-access="'policy.create'" type="primary" :loading="saving" @click="saveMetadata">保存</el-button></template>
     </el-dialog>
 
     <el-drawer v-model="detailVisible" :title="detail?.policyFile?.name || '政策文件详情'" size="min(900px, 96vw)">
@@ -44,16 +44,16 @@
       <div v-loading="detailLoading">
         <template v-if="detail">
           <el-descriptions :column="2" border><el-descriptions-item label="编码">{{ detail.policyFile.code }}</el-descriptions-item><el-descriptions-item label="发布机构">{{ detail.policyFile.issuingOrganization || '-' }}</el-descriptions-item><el-descriptions-item label="文号">{{ detail.policyFile.documentNumber || '-' }}</el-descriptions-item><el-descriptions-item label="说明">{{ detail.policyFile.description || '-' }}</el-descriptions-item></el-descriptions>
-          <div class="section-toolbar"><h3>文件版本</h3><el-button v-access="['POST', '/meta/policy-files/1/versions']" type="primary" :icon="Upload" :disabled="uploading || saving" @click="newVersion">上传新版本</el-button></div>
+          <div class="section-toolbar"><h3>文件版本</h3><el-button v-access="'policy.versions.create'" type="primary" :icon="Upload" :disabled="uploading || saving" @click="newVersion">上传新版本</el-button></div>
           <el-table :data="detail.versions" empty-text="尚未上传文件版本">
             <el-table-column prop="versionNo" label="版本" width="70" />
             <el-table-column prop="issueDate" label="发布日期" width="110" />
             <el-table-column label="状态" width="95"><template #default="{ row }"><StatusBadge :status="row.publicationStatus" /></template></el-table-column>
             <el-table-column label="操作" min-width="245"><template #default="{ row }">
               <el-button link type="primary" @click="viewerId = String(row.id)">查看文件</el-button>
-              <el-button v-access="['PATCH', '/meta/policy-file-versions/1']" v-if="row.publicationStatus === 'DRAFT'" link @click="editVersion(row)">编辑</el-button>
-              <el-button v-access="['POST', '/meta/policy-files/1/versions/1/publish']" v-if="row.publicationStatus === 'DRAFT'" link type="primary" :disabled="saving" @click="publish(row)">发布</el-button>
-              <el-button v-access="['POST', '/meta/policy-file-versions/1/archive']" v-if="row.publicationStatus !== 'ARCHIVED' && String(row.id) !== String(detail.policyFile.currentPublishedVersionId)" link type="danger" :disabled="saving" @click="archive(row)">归档</el-button>
+              <el-button v-access="'policyVersion.edit'" v-if="row.publicationStatus === 'DRAFT'" link @click="editVersion(row)">编辑</el-button>
+              <el-button v-access="'policy.versions.publish'" v-if="row.publicationStatus === 'DRAFT'" link type="primary" :disabled="saving" @click="publish(row)">发布</el-button>
+              <el-button v-access="'policyVersion.archive'" v-if="row.publicationStatus !== 'ARCHIVED' && String(row.id) !== String(detail.policyFile.currentPublishedVersionId)" link type="danger" :disabled="saving" @click="archive(row)">归档</el-button>
             </template></el-table-column>
           </el-table>
           <div class="section-toolbar"><h3>政策文件关系</h3></div>

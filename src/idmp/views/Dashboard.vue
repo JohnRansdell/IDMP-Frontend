@@ -47,7 +47,7 @@
     >
       <template #actions>
         <el-button type="primary" @click="retryRemoteDashboardCatalog">重新加载</el-button>
-        <el-button v-access="['POST', '/analysis/dashboards']" v-if="!medicalMode" @click="router.push('/dashboard/manage')">前往看板管理</el-button>
+        <el-button v-access="'dashboard.create'" v-if="!medicalMode" @click="router.push('/dashboard/manage')">前往看板管理</el-button>
       </template>
     </StatePanel>
     <StatePanel
@@ -155,7 +155,7 @@
         </el-select>
         <span class="dashboard-save-state" :class="`is-${saveState}`" role="status">{{ saveStateLabel }}</span>
         <div class="studio-command-actions">
-          <el-button v-access="['POST', '/analysis/dashboards']" @click="router.push('/dashboard/manage')">返回看板管理</el-button>
+          <el-button v-access="'dashboard.create'" @click="router.push('/dashboard/manage')">返回看板管理</el-button>
           <el-button v-if="isRemoteDashboard()" @click="openDashboardHistory">版本历史</el-button>
           <el-button data-testid="dashboard-preview" @click="studioPreview = true">预览</el-button>
           <el-button data-testid="dashboard-undo" title="撤销上一步编辑" :disabled="!canUndo" @click="undoDashboardEdit">撤销</el-button>
@@ -483,7 +483,7 @@ import { annotateDepartmentFilterFields, departmentSelectionCodes, isDepartmentF
 import { fetchDepartmentDictionary, fetchDepartmentNames } from '@/idmp/api/modules/departments'
 import { isMedicalDashboardSession } from '@/idmp/api/request'
 import { fetchMedicalCatalog } from '@/idmp/api/modules/medical'
-import { createMedicalDashboardRuntime } from '@/idmp/features/dashboard/viewerRuntime.js'
+import { createMedicalDashboardRuntime } from '@/idmp/features/dashboard/medicalRuntime.js'
 import { singleIndicatorTemplatePlan } from '@/idmp/features/dashboard/templateBinding.js'
 import { createDefaultBinding } from '@/idmp/features/dashboard/smartDefaultBinding.js'
 import { createMultiIndicatorDataset, multiIndicatorMeasureField, normalizeIndicatorBindings, singleIndicatorProjectionBinding } from '@/idmp/features/dashboard/multiIndicator.js'

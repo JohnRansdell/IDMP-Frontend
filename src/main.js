@@ -1,3 +1,4 @@
+import { resolveAccessGrant } from '@/idmp/auth/accessPolicy.js'
 import { createApp, watchEffect } from 'vue'
 import { canRequest } from '@/idmp/auth/session'
 import ElementPlus from 'element-plus'
@@ -14,7 +15,8 @@ app.config.globalProperties.$can = canRequest
 app.directive('access', {
   beforeMount(el, binding) {
     el.__accessStop = watchEffect(() => {
-      const allowed = canRequest(...binding.value)
+      const grant = resolveAccessGrant(binding.value)
+      const allowed = Boolean(grant && canRequest(...grant))
       el.hidden = !allowed
       if (!allowed) el.style.setProperty('display', 'none', 'important')
       else el.style.removeProperty('display')

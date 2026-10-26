@@ -174,7 +174,7 @@ test('existing configured metadata and explicit manual edits survive saving', ()
 
 test('editing legacy empty metadata is valid while new indicator selections remain required', () => {
   const start = source.indexOf('const rules = ')
-  const end = source.indexOf('\n\nfunction findCategoryPath', start)
+  const end = source.indexOf('\n\nfunction syncCategorySelection', start)
   const isNew = ref(false)
   const rules = Function('computed', 'isNew', 'required', `${source.slice(start, end)}\nreturn rules`)(
     computed, isNew, message => ({ required: true, message }),

@@ -13,17 +13,17 @@
       </template>
       <template #actions>
         <div class="page-toolbar">
-          <el-button v-access="['POST', '/factors']" type="primary" :icon="Plus" @click="openFactorEditor('new')">
+          <el-button v-access="'factor.create'" type="primary" :icon="Plus" @click="openFactorEditor('new')">
             新建因子
           </el-button>
-          <el-button v-access="['GET', '/factor-templates']" @click="router.push('/factor/templates')">
+          <el-button v-access="'factorTemplate.read'" @click="router.push('/factor/templates')">
             从模板创建因子
           </el-button>
-          <el-button v-access="['POST', '/factors']" v-if="canUseAdvancedCreation" @click="openAdvancedFactorEditor">
+          <el-button v-access="'factor.create'" v-if="canUseAdvancedCreation" @click="openAdvancedFactorEditor">
             高级自定义创建
           </el-button>
-          <el-button v-access="['GET', '/factors/recycle-bin']" @click="router.push('/factor/recycle-bin')">回收站</el-button>
-          <el-button v-access="['POST', '/factors']" :icon="Upload" @click="showUnavailable('批量导入')">批量导入</el-button>
+          <el-button v-access="'factor.recycleBin.read'" @click="router.push('/factor/recycle-bin')">回收站</el-button>
+          <el-button v-access="'factor.create'" :icon="Upload" @click="showUnavailable('批量导入')">批量导入</el-button>
         </div>
       </template>
     </PageHeader>
@@ -93,7 +93,7 @@
       >
         <template #actions>
           <el-button @click="resetFilters">清除筛选</el-button>
-          <el-button v-access="['POST', '/factors']" type="primary" @click="openFactorEditor('new')">新建因子</el-button>
+          <el-button v-access="'factor.create'" type="primary" @click="openFactorEditor('new')">新建因子</el-button>
         </template>
       </StatePanel>
       <div v-else class="table-scroll">
@@ -133,10 +133,10 @@
               <button class="action-link" type="button" @click="openFactorDetail(row)">
                 查看
               </button>
-               <button v-access="['POST', '/factors']" class="action-link" type="button" @click="openFactorEditor(row.id || row.code)">
+               <button v-access="'factor.create'" class="action-link" type="button" @click="openFactorEditor(row.id || row.code)">
                  编辑
                </button>
-               <button v-access="['DELETE', '/factors/1']" v-if="row.id" class="action-link danger-link" type="button" @click="openDelete(row)">删除</button>
+               <button v-access="'factor.delete'" v-if="row.id" class="action-link danger-link" type="button" @click="openDelete(row)">删除</button>
             </template>
           </el-table-column>
         </el-table>

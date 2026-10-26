@@ -1,3 +1,4 @@
+import { ROUTE_PERMISSION_METADATA } from '@/idmp/auth/accessPolicy.js'
 import { createRouter, createWebHistory } from 'vue-router'
 import IdmpLayout from '@/idmp/layout/IdmpLayout.vue'
 import { scrollBehavior } from './scrollBehavior'
@@ -258,16 +259,8 @@ const routes = [
   { path: '/:pathMatch(.*)*', redirect: '/dashboard' }
 ]
 
-const idmpPermissionMetadata = {
-  ScenarioList: { view: 'scenario:view', actions: { create: 'scenario:create', edit: 'scenario:edit', publish: 'scenario:publish' } },
-  ScenarioEditor: { view: 'scenario:view', actions: { edit: 'scenario:edit', publish: 'scenario:publish' } },
-  // 后端权限码保持既有契约；页面术语改为面向用户的“数据源管理”。
-  DataSourceManagement: { view: 'idmp:source-metadata:read', actions: { sync: 'idmp:source-metadata:sync' } },
-  DataDomainManagement: { view: 'idmp:data-domains:read', actions: { create: 'idmp:data-domains:create' } },
-  DataDomainWorkspace: { view: 'idmp:data-domains:read' }
-}
 routes[0].children.forEach((route) => {
-  if (idmpPermissionMetadata[route.name]) route.meta = { ...route.meta, permissions: idmpPermissionMetadata[route.name] }
+  if (ROUTE_PERMISSION_METADATA[route.name]) route.meta = { ...route.meta, permissions: ROUTE_PERMISSION_METADATA[route.name] }
 })
 if (import.meta.env.DEV) {
   routes[0].children.push({

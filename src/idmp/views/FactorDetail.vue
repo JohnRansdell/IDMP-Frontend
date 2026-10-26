@@ -7,7 +7,7 @@
       </template>
       <template #actions>
         <el-button @click="router.push('/factor')">返回因子目录</el-button>
-        <el-button v-access="['POST', '/factors']" v-if="factor" type="primary" @click="edit">编辑因子</el-button>
+        <el-button v-access="'factor.create'" v-if="factor" type="primary" @click="edit">编辑因子</el-button>
       </template>
     </PageHeader>
     <StatePanel v-if="loading" type="loading" title="正在读取因子详情" />
