@@ -15,9 +15,11 @@ export const ACTION_GRANTS = Object.freeze(Object.fromEntries([
   ['transformVersion.preview', 'POST', '/transform-rule-versions/1/preview'],
   ['sourceField.valueProfile.read', 'GET', '/meta/source-field-mappings/1/value-profile'],
   ['factor.create', 'POST', '/factors'],
+  ['factor.edit', 'PATCH', '/factors/1'],
   ['factorVersion.trial', 'POST', '/factor-versions/1/trial'],
   ['factorVersion.publish', 'POST', '/factor-versions/1/publish'],
   ['indicator.create', 'POST', '/indicators'],
+  ['indicator.edit', 'PUT', '/indicators/1'],
   ['factorVersion.query', 'POST', '/factor-versions/1/query'],
   ['factorTemplate.read', 'GET', '/factor-templates'],
   ['factor.recycleBin.read', 'GET', '/factors/recycle-bin'],
@@ -69,33 +71,35 @@ export const ACTION_GRANTS = Object.freeze(Object.fromEntries([
 
 export const PAGE_ACCESS = [
   { pattern: /^\/dashboard\/manage$/, action: 'dashboard.create' },
-  { pattern: /^\/dashboard$/, action: 'dashboard.read' },
+  { pattern: /^\/dashboard$/, action: 'dashboard.read', homePath: '/dashboard', homeOrder: 0 },
   { pattern: /^\/indicator\/import\/sql$/, action: 'sqlImport.create' },
   { pattern: /^\/indicator\/recycle-bin$/, action: 'indicator.recycleBin.read' },
-  { pattern: /^\/indicator\/edit(?:\/.*)?$/, action: 'indicator.create' },
-  { pattern: /^\/indicator(?:\/view\/[^/]+)?$/, action: 'indicator.read' },
+  { pattern: /^\/indicator\/edit(?:\/new)?\/?$/, action: 'indicator.create' },
+  { pattern: /^\/indicator\/edit\/([^/]+)\/?$/, action: 'indicator.edit', resourceIdGroup: 1 },
+  { pattern: /^\/indicator(?:\/view\/[^/]+)?$/, action: 'indicator.read', homePath: '/indicator', homeOrder: 1 },
   { pattern: /^\/factor\/templates\/new$/, action: 'factorTemplate.create' },
   { pattern: /^\/factor\/templates\/.*\/instantiate$/, action: 'factorTemplateVersion.instantiate' },
   { pattern: /^\/factor\/templates\/.+$/, action: 'factorTemplateVersion.edit' },
-  { pattern: /^\/factor\/templates$/, action: 'factorTemplate.read' },
+  { pattern: /^\/factor\/templates$/, action: 'factorTemplate.read', homePath: '/factor/templates', homeOrder: 13 },
   { pattern: /^\/factor\/recycle-bin$/, action: 'factor.recycleBin.read' },
-  { pattern: /^\/factor\/edit(?:\/.*)?$/, action: 'factor.create' },
-  { pattern: /^\/factor(?:\/view\/[^/]+)?$/, action: 'factor.read' },
+  { pattern: /^\/factor\/edit(?:\/new)?\/?$/, action: 'factor.create' },
+  { pattern: /^\/factor\/edit\/([^/]+)\/?$/, action: 'factor.edit', resourceIdGroup: 1 },
+  { pattern: /^\/factor(?:\/view\/[^/]+)?$/, action: 'factor.read', homePath: '/factor', homeOrder: 2 },
   { pattern: /^\/scenarios\/[^/]+\/edit$/, action: 'scenario.create' },
-  { pattern: /^\/scenarios$/, action: 'scenario.read' },
-  { pattern: /^\/mapping(?:\/.*)?$/, action: 'mapping.read' },
+  { pattern: /^\/scenarios$/, action: 'scenario.read', homePath: '/scenarios', homeOrder: 8 },
+  { pattern: /^\/mapping(?:\/.*)?$/, action: 'mapping.read', homePath: '/mapping', homeOrder: 9 },
   { pattern: /^\/analysis\/drill$/, action: 'result.drill.search' },
-  { pattern: /^\/analysis$/, action: 'indicator.analysis.read' },
-  { pattern: /^\/alerts$/, action: 'warning.read' },
-  { pattern: /^\/calc$/, action: 'calc.calculation.read' },
-  { pattern: /^\/data\/sources$/, action: 'source.read' },
-  { pattern: /^\/data\/domains(?:\/.*)?$/, action: 'domain.read' },
+  { pattern: /^\/analysis$/, action: 'indicator.analysis.read', homePath: '/analysis', homeOrder: 10 },
+  { pattern: /^\/alerts$/, action: 'warning.read', homePath: '/alerts', homeOrder: 3 },
+  { pattern: /^\/calc$/, action: 'calc.calculation.read', homePath: '/calc', homeOrder: 4 },
+  { pattern: /^\/data\/sources$/, action: 'source.read', homePath: '/data/sources', homeOrder: 5 },
+  { pattern: /^\/data\/domains(?:\/.*)?$/, action: 'domain.read', homePath: '/data/domains', homeOrder: 11 },
   { pattern: /^\/data\/value-sets\/new$/, action: 'valueSet.create' },
   { pattern: /^\/data\/value-set-versions\/.+\/edit$/, action: 'valueSetVersion.edit' },
-  { pattern: /^\/data\/value-sets(?:\/.*)?$/, action: 'valueSet.read' },
+  { pattern: /^\/data\/value-sets(?:\/.*)?$/, action: 'valueSet.read', homePath: '/data/value-sets', homeOrder: 12 },
   { pattern: /^\/data\/standardization\/.*$/, action: 'transformVersion.preview' },
-  { pattern: /^\/policies$/, action: 'policy.read' },
-  { pattern: /^\/system$/, action: 'system.users.read' },
+  { pattern: /^\/policies$/, action: 'policy.read', homePath: '/policies', homeOrder: 6 },
+  { pattern: /^\/system$/, action: 'system.users.read', homePath: '/system', homeOrder: 7 },
 ]
 
 export const ROUTE_PERMISSION_METADATA = {
@@ -110,5 +114,10 @@ export const ROUTE_PERMISSION_METADATA = {
 // Tuple annotations remain supported for dynamic/legacy callers. Unknown names fail closed.
 export function resolveAccessGrant(value) {
   if (typeof value === 'string') return Object.hasOwn(ACTION_GRANTS, value) ? ACTION_GRANTS[value] : null
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const grant = resolveAccessGrant(value.action)
+    if (!grant || value.resourceId === undefined || value.resourceId === null || value.resourceId === '') return null
+    return [grant[0], grant[1].replace(/\/1(?=\/|$)/, `/${encodeURIComponent(String(value.resourceId))}`)]
+  }
   return Array.isArray(value) && value.length === 2 && value.every(item => typeof item === 'string') ? value : null
 }

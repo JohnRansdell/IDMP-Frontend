@@ -7,7 +7,7 @@
       <template #actions>
         <el-button v-if="selectedVersion" @click="relatedDrawerOpen = true">更多关联</el-button>
         <el-button @click="router.push('/indicator')">返回指标目录</el-button>
-        <el-button v-access="'indicator.create'" type="primary" plain :disabled="detailLoading || !!loadError || !detail.id" @click="openIndicatorEditor">编辑指标</el-button>
+        <el-button v-access="{ action: 'indicator.edit', resourceId: detail.id }" type="primary" plain :disabled="detailLoading || !!loadError || !detail.id" @click="openIndicatorEditor">编辑指标</el-button>
       </template>
     </PageHeader>
     <StatePanel v-if="detailLoading" type="loading" title="正在加载指标详情" />

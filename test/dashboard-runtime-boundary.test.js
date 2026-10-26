@@ -11,7 +11,12 @@ test('medical read failures never fall back to platform APIs, including after mo
     platform: { query: async () => { platformCalls++; return 'platform' } } })
   await assert.rejects(runtime.query('id', {}), /expired ticket/)
   assert.equal(platformCalls, 0)
+  assert.equal(runtime.capabilities.edit, false)
+  assert.equal(runtime.capabilities.queryCache, false)
+  assert.equal(runtime.capabilities.warnings, false)
   medical = false
+  assert.equal(runtime.capabilities.edit, true)
+  assert.equal(runtime.capabilities.queryCache, true)
   assert.equal(await runtime.query('id', {}), 'platform')
   assert.equal(platformCalls, 1)
 })

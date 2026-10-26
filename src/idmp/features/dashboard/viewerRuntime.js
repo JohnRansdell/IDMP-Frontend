@@ -1,8 +1,12 @@
+const platformCapabilities = Object.freeze({ edit: true, queryCache: true, warnings: true, analysisNavigation: true, sourceCatalog: true, multiIndicator: true })
+const medicalCapabilities = Object.freeze({ edit: false, queryCache: false, warnings: false, analysisNavigation: false, sourceCatalog: false, multiIndicator: false })
+
 // Both viewers expose the same reads. Selecting the restricted runtime never retries a management API.
 export function createDashboardViewerRuntime({ isMedical, platform, medical }) {
   const active = () => isMedical() ? medical : platform
   return {
     get restricted() { return Boolean(isMedical()) },
+    get capabilities() { return isMedical() ? medicalCapabilities : platformCapabilities },
     get departmentName() { return isMedical() ? medical.departmentName : '' },
     get departmentNames() { return isMedical() ? medical.departmentNames : new Map() },
     catalog: (...args) => active().catalog(...args),

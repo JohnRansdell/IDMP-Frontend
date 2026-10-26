@@ -52,7 +52,17 @@ function fixture() {
     window.__calls.push({ path, method: options.method || 'GET' })
     const mode = window.__mode
     let data = [], status = 200
-    if (path.endsWith('/auth/me')) data = { user: { id: '1', username: 'real-user', displayName: '接口用户' }, roles: ['SYSTEM_ADMIN'], permissions: [] }
+    if (path.endsWith('/auth/me')) {
+      const resource = mode === 'edit-factor' ? 'factors' : 'indicators'
+      data = { user: { id: '1', username: 'real-user', displayName: '接口用户' }, roles: ['SYSTEM_ADMIN'], permissions: [] }
+      if (mode === 'scenario-only') Object.assign(data, { roles: ['CUSTOM'], permissions: ['scenario:view'],
+        apiRules: [{ action: 'GET', resourcePattern: '/api/v1/scenarios' }] })
+      if (mode.startsWith('edit-')) Object.assign(data, { roles: ['CUSTOM'], permissions: ['resource:view'], apiRules: [
+        { action: 'GET', resourcePattern: `/api/v1/${resource}` },
+        { action: 'GET', resourcePattern: `/api/v1/${resource}/**` },
+        { action: resource === 'factors' ? 'PATCH' : 'PUT', resourcePattern: `/api/v1/${resource}/101` }
+      ] })
+    }
     else if (path.endsWith('/notifications/unread-count')) data = { unreadCount: 0 }
     else if (path === '/api/v1/analysis/dashboards') data = mode === 'legacy' ? [{ id: '900', name: '旧配置看板', status: 'PUBLISHED', currentPublishedVersionId: '901' }]
       : mode.startsWith('board-') ? ['800', '810'].filter(id => !window.__deletedBoards.includes(id)).map(id => ({ id, name: '绩效看板', status: 'PUBLISHED', currentPublishedVersionId: id === '800' ? '801' : '811' })) : []
@@ -81,7 +91,7 @@ function fixture() {
     else if (path === '/api/v1/indicators' || path === '/api/v1/factors' || path === '/api/v1/scenarios') {
       if (mode === 'hold') await new Promise(resolve => { window.__release = resolve })
       if (mode === 'error' || mode === 'hold') status = 500
-      else if (mode === 'success') data = { records: [{ id: '101', code: 'REAL_101', name: '接口真实记录', status: 'DRAFT', type: 'CUSTOM' }], total: 1 }
+      else if (mode === 'success' || mode.startsWith('edit-')) data = { records: [{ id: '101', code: 'REAL_101', name: '接口真实记录', status: 'DRAFT', type: 'CUSTOM' }], total: 1 }
       else data = { records: [], total: 0 }
     }
     else if (path === '/api/v1/indicators/101') {
@@ -108,6 +118,16 @@ try {
   await send('Page.enable'); await send('Runtime.enable')
   await send('Page.addScriptToEvaluateOnNewDocument', { source: `(${fixture.toString()})()` })
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, mobile: false, deviceScaleFactor: 1 })
+  await navigate('/login?testState=scenario-only', '暂无场景')
+  assert.equal(await evaluate('location.pathname'), '/scenarios')
+  for (const [kind, createLabel] of [['factor', '新建因子'], ['indicator', '新增指标']]) {
+    await navigate(`/${kind}?testState=edit-${kind}`, '接口真实记录')
+    assert.equal(await evaluate(`[...document.querySelectorAll('button')].some(el=>el.textContent.trim()===${JSON.stringify(createLabel)} && el.checkVisibility({checkOpacity:true}))`), false)
+    assert.equal(await evaluate(`[...document.querySelectorAll('button')].some(el=>el.textContent.trim()==='编辑' && el.checkVisibility({checkOpacity:true}))`), true)
+    await click('编辑')
+    await until(() => evaluate(`location.pathname==='/${kind}/edit/101'`), `${kind} edit-only navigation uses resource ID`)
+    assert.equal(await evaluate(`window.__calls.some(call=>call.path==='/api/v1/${kind}s' && call.method==='POST')`), false)
+  }
   for (const [path, loading, failed, empty] of [
     ['/indicator', '正在加载指标目录', '指标目录加载失败', '没有符合条件的指标'],
     ['/factor', '正在加载因子目录', '因子目录加载失败', '没有符合条件的因子'],
@@ -190,7 +210,7 @@ try {
   await screenshot('blocked-demo-drill.png')
   assert.deepEqual(errors, [])
   await writeFile(join(evidence, 'result.json'), JSON.stringify({ passed: true, errors }, null, 2))
-  console.log('PASS: catalog loading/error/retry/empty/live; detail retry; indicator publication step; empty/error board editing and confirmed deletion; empty dashboard creation; legacy MOCK repair; obsolete mock drill blocked; no runtime exceptions')
+  console.log('PASS: scoped homepage and edit-only access; catalog loading/error/retry/empty/live; detail retry; indicator publication step; empty/error board editing and confirmed deletion; empty dashboard creation; legacy MOCK repair; obsolete mock drill blocked; no runtime exceptions')
 } catch (error) {
   if (socket?.readyState === WebSocket.OPEN) {
     await screenshot('failure.png')

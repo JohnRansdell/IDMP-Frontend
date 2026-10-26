@@ -168,7 +168,7 @@
            <el-table-column label="操作" width="210" fixed="right">
             <template #default="{ row }">
               <button type="button" class="action-link" @click="openDetail(row)">查看</button>
-               <button v-access="'indicator.create'" type="button" class="action-link" @click="openEditor(row.code)">编辑</button>
+               <button v-access="{ action: 'indicator.edit', resourceId: row.indicatorId || row.code }" type="button" class="action-link" @click="openEditor(row.indicatorId || row.code)">编辑</button>
               <button v-access="'indicator.delete'" v-if="row.indicatorId" type="button" class="action-link danger-link" @click="openDelete(row)">删除</button>
             </template>
           </el-table-column>
@@ -202,7 +202,7 @@
           </dl>
           <div class="indicator-card__actions">
             <el-button @click="openDetail(row)">查看详情</el-button>
-            <el-button v-access="'indicator.create'" type="primary" plain @click="openEditor(row.code)">编辑</el-button>
+            <el-button v-access="{ action: 'indicator.edit', resourceId: row.indicatorId || row.code }" type="primary" plain @click="openEditor(row.indicatorId || row.code)">编辑</el-button>
             <el-button v-access="'indicator.analysis.read'" v-if="canOpenAnalysis(row)" type="success" plain @click="openAnalysis(row)">指标分析</el-button>
           </div>
         </article>

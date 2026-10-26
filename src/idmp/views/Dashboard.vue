@@ -12,17 +12,6 @@
         </el-tooltip>
       </template>
       <template #actions>
-        <template v-if="isEditing">
-          <el-button :icon="RefreshLeft" @click="resetDashboardLayout">恢复默认</el-button>
-          <el-button data-testid="dashboard-undo" title="撤销上一步编辑" :disabled="!canUndo" @click="undoDashboardEdit">撤销</el-button>
-          <el-button data-testid="dashboard-redo" title="重做上一步编辑" :disabled="!canRedo" @click="redoDashboardEdit">重做</el-button>
-          <el-button data-testid="dashboard-configure-widget" :disabled="!activeDesignerWidget" @click="openWidgetConfig(activeWidgetId)">配置组件</el-button>
-          <el-button data-testid="dashboard-delete-widget" :icon="Delete" :disabled="!activeDesignerWidget" @click="deleteActiveWidget">删除组件</el-button>
-          <span class="dashboard-save-state" :class="`is-${saveState}`">{{ saveStateLabel }}</span>
-          <el-button v-if="isDev" text @click="showDashboardSchemaDiagnostic">查看当前 Schema</el-button>
-          <el-button :icon="Close" @click="exitDashboardEdit">退出编辑</el-button>
-          <el-button data-testid="dashboard-save" type="primary" :icon="Check" @click="saveDashboardLayout">保存布局</el-button>
-        </template>
         <el-button v-if="dashboardStatus === 'unpublished'" @click="loadDashboard()">重新加载</el-button>
       </template>
     </PageHeader>
@@ -450,7 +439,6 @@ import {
   InfoFilled,
   PieChart,
   Plus,
-  RefreshLeft,
   TrendCharts,
   TrophyBase,
   WarningFilled
@@ -670,7 +658,6 @@ const viewerRuntime = createDashboardViewerRuntime({
     query: queryDashboard, fetchFields: fetchDashboardDataSourceFields, fetchPeriods: fetchDashboardDataSourcePeriods,
     fetchFilterOptions: fetchDashboardFilterOptions, searchDrill: searchResultDrill })
 })
-const isDev = import.meta.env.DEV
 const activeSceneCode = dashboardSceneCode
 const managedDashboardId = computed(() => typeof route.query.id === 'string' && route.query.id.trim() ? route.query.id.trim() : '')
 const activeDashboardId = dashboardActiveId
@@ -839,7 +826,7 @@ const viewerViewportWidth = ref(typeof window === 'undefined' ? 1440 : window.in
 const viewerBreakpoint = computed(() => dashboardBreakpointForWidth(viewerViewportWidth.value))
 const viewerColumns = computed(() => responsiveColumns(viewerBreakpoint.value))
 const viewerWidgets = computed(() => deriveResponsiveLayout((dashboardSchema.value?.widgets || []).filter(widget =>
-  (widget.type !== 'warnings' || (!medicalMode.value && canRequest('GET', '/analysis/warnings')))
+  (widget.type !== 'warnings' || (viewerRuntime.capabilities.warnings && canRequest('GET', '/analysis/warnings')))
   && (!isFormalRemoteDashboard.value || (!['primary', 'supporting'].includes(widget.type) && !(widget.kpiIndex !== undefined && !widget.sourceCode)))
 ), viewerBreakpoint.value, dashboardSchema.value?.responsivePolicy))
 // The studio preview intentionally renders the same desktop geometry as GridStack.
@@ -1372,7 +1359,7 @@ async function refreshWarningWidgets() {
   const widgets = warningQueryWidgets.value
   const generation = ++warningWidgetLoadGeneration
   warningWidgetAbortController?.abort()
-  if (medicalMode.value || !canRequest('GET', '/analysis/warnings')) {
+  if (!viewerRuntime.capabilities.warnings || !canRequest('GET', '/analysis/warnings')) {
     warningWidgetRuntime.value = Object.fromEntries(widgets.map(widget => [String(widget.id), { status: 'error', records: [], total: 0, error: '预警组件尚不支持科室隔离，未加载全院预警' }]))
     return
   }
@@ -1568,7 +1555,7 @@ function getWidgetSource(widget) {
 }
 
 function canOpenWidgetAnalysis(widget) {
-  if (medicalMode.value) return false
+  if (!viewerRuntime.capabilities.analysisNavigation) return false
   const source = getWidgetSource(widget)
   return Boolean(source?.analysisIndicatorId && ['indicator-catalog', 'dashboard-data-source', 'backend'].includes(source.origin)
     && (source.origin !== 'backend' || dashboardStatus.value === 'ready'))
@@ -2188,7 +2175,7 @@ function beginDashboardEdit(schema = dashboardSchema.value) {
 }
 
 async function startDashboardEdit() {
-  if (medicalMode.value) return
+  if (!viewerRuntime.capabilities.edit) return
   if (dashboardEditLoading.value || dashboardDeleting.value || isEditing.value || (!isRemoteDashboard() && !isLocalDashboard())) return
   const targetDashboardId = activeDashboardId.value
   if (isLocalDashboard(targetDashboardId)) {
@@ -2486,16 +2473,6 @@ async function saveDashboardSchema() {
     ElMessage.error(`保存布局失败：${message}`)
     return false
   }
-}
-
-function showDashboardSchemaDiagnostic() {
-  const schema = isEditing.value ? editingDashboardSchema.value : dashboardSchema.value
-  const canvas = isEditing.value ? designerCanvasRef.value : viewerCanvasRef.value
-  const diagnostics = (schema?.widgets || []).map(widget => canvas?.collectWidgetLayoutDiagnostic?.(widget.id))
-  // Dev-only four-layer evidence for a layout issue: canonical schema, GridStack
-  // node, gs-* attributes, and rendered/content rectangles.
-  console.table(diagnostics)
-  ElMessage.info(`Schema: ${schema?.id || activeDashboardId.value}；组件 ${diagnostics.length} 个；Key: ${activeDashboardStorageKey.value}${lastSavedAt.value ? `；最近保存 ${lastSavedAt.value}` : ''}`)
 }
 
 async function resetDashboardLayout() {
@@ -2954,7 +2931,7 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
       return
     }
     const requiresSourceCatalog = rawSchema.widgets.some(widget => normalizeIndicatorBindings(widget.config?.indicatorBindings, widget).length > 1)
-    if (!medicalMode.value && (requiresSourceCatalog || rawSchema.widgets.some(widget => widget.chartKind === 'pie'))) {
+    if (viewerRuntime.capabilities.sourceCatalog && (requiresSourceCatalog || rawSchema.widgets.some(widget => widget.chartKind === 'pie'))) {
       const loaded = await loadPublishedIndicatorCatalog()
       if (!isCurrentLoad()) return
       if (!loaded && requiresSourceCatalog) throw new Error(indicatorCatalogError.value || '指标目录暂不可用')
@@ -3069,7 +3046,7 @@ async function queryRemoteDashboardByPeriod(schema, signal, dashboardId) {
   const parts = await mapWithConcurrency(widgets, 3, async widget => {
     const trend = dashboardWidgetResultShape(widget) === 'TREND'
     const range = remoteSelectedPeriod(widget)
-    if (!medicalMode.value && normalizeIndicatorBindings(widget.config?.indicatorBindings, widget).length > 1) {
+    if (viewerRuntime.capabilities.multiIndicator && normalizeIndicatorBindings(widget.config?.indicatorBindings, widget).length > 1) {
       try {
         const datasets = await queryRemoteMultiIndicatorSources(widget, range, signal, schema)
         const combined = createMultiIndicatorDataset(widget, datasets)
@@ -3108,7 +3085,7 @@ function remoteDashboardQueryCacheKey(dashboardId, query) {
 async function queryRemoteDashboardCached(dashboardId, query, signal) {
   const key = remoteDashboardQueryCacheKey(dashboardId, query)
   const cached = remoteDashboardQueryCache.get(key)
-  if (!medicalMode.value && cached && cached.expiresAt > Date.now()) return cached.result
+  if (viewerRuntime.capabilities.queryCache && cached && cached.expiresAt > Date.now()) return cached.result
   remoteDashboardQueryCache.delete(key)
   const selectionType = remotePeriodSelection.value.type
   const response = await viewerRuntime.query(dashboardId, query, { signal })
@@ -3118,7 +3095,7 @@ async function queryRemoteDashboardCached(dashboardId, query, signal) {
     return [id, enforceDashboardResultPeriod(item, query, { timeSeries: dashboardWidgetResultShape(widget || {}) === 'TREND', selectionType: ['FIXED', 'INDEPENDENT'].includes(widget?.config?.backendQuery?.periodMode) ? query.granularity : selectionType })]
   })) }
   const widgets = Object.values(result?.widgets || {})
-  if (!medicalMode.value && !signal?.aborted && widgets.length && widgets.every(widget => widget?.status === 'READY')) {
+  if (viewerRuntime.capabilities.queryCache && !signal?.aborted && widgets.length && widgets.every(widget => widget?.status === 'READY')) {
     remoteDashboardQueryCache.set(key, { result, expiresAt: Date.now() + REMOTE_DASHBOARD_QUERY_CACHE_TTL_MS })
     while (remoteDashboardQueryCache.size > 64) remoteDashboardQueryCache.delete(remoteDashboardQueryCache.keys().next().value)
   }

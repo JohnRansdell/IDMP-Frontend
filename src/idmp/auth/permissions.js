@@ -1,4 +1,4 @@
-import { ACTION_GRANTS, PAGE_ACCESS } from './accessPolicy.js'
+import { ACTION_GRANTS, PAGE_ACCESS, resolveAccessGrant } from './accessPolicy.js'
 // Use the same method/path grants returned by /auth/me as the API authorization filter.
 export function matchesPath(pattern, path) {
   if (!pattern || !path) return false
@@ -26,10 +26,14 @@ export function canVisit(session, target) {
   if (path === '/dashboard' && typeof target !== 'string' && target.query?.edit)
     return canAccess(session, ...ACTION_GRANTS['dashboard.update'])
   const rule = PAGE_ACCESS.find(rule => rule.pattern.test(path))
-  return rule ? canAccess(session, ...ACTION_GRANTS[rule.action]) : session.roles?.some(role => ['SYSTEM_ADMIN', 'ADMIN'].includes(role)) || false
+  if (!rule) return session.roles?.some(role => ['SYSTEM_ADMIN', 'ADMIN'].includes(role)) || false
+  const grant = rule.resourceIdGroup
+    ? resolveAccessGrant({ action: rule.action, resourceId: rule.pattern.exec(path)?.[rule.resourceIdGroup] })
+    : resolveAccessGrant(rule.action)
+  return Boolean(grant && canAccess(session, ...grant))
 }
 
 export function firstAccessiblePath(session) {
-  return ['/dashboard', '/indicator', '/factor', '/alerts', '/calc', '/data/sources', '/policies', '/system']
+  return PAGE_ACCESS.filter(rule => rule.homePath).sort((a, b) => a.homeOrder - b.homeOrder).map(rule => rule.homePath)
     .find(path => canVisit(session, path)) || '/forbidden'
 }

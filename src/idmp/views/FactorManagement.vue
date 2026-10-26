@@ -133,7 +133,7 @@
               <button class="action-link" type="button" @click="openFactorDetail(row)">
                 查看
               </button>
-               <button v-access="'factor.create'" class="action-link" type="button" @click="openFactorEditor(row.id || row.code)">
+               <button v-access="{ action: 'factor.edit', resourceId: row.id || row.code }" class="action-link" type="button" @click="openFactorEditor(row.id || row.code)">
                  编辑
                </button>
                <button v-access="'factor.delete'" v-if="row.id" class="action-link danger-link" type="button" @click="openDelete(row)">删除</button>
