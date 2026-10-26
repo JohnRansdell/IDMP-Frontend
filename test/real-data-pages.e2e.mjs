@@ -46,6 +46,9 @@ function fixture() {
   window.__calls = []
   window.__deletedBoards = []
   window.__failDelete = false
+  if (window.__mode === 'publication') localStorage.setItem('idmp:dashboard-catalog:v1', JSON.stringify([
+    { id: 'local-draft', name: '本地未发布看板', dashboardType: 'custom', scope: 'personal', updatedAt: '2026-10-26T00:00:00Z' }
+  ]))
   window.fetch = async (input, options = {}) => {
     const path = new URL(typeof input === 'string' ? input : input.url, location.href).pathname
     if (!path.startsWith('/api/v1/')) return original(input, options)
@@ -65,7 +68,11 @@ function fixture() {
     }
     else if (path.endsWith('/notifications/unread-count')) data = { unreadCount: 0 }
     else if (path === '/api/v1/analysis/dashboards') data = mode === 'legacy' ? [{ id: '900', name: '旧配置看板', status: 'PUBLISHED', currentPublishedVersionId: '901' }]
-      : mode.startsWith('board-') ? ['800', '810'].filter(id => !window.__deletedBoards.includes(id)).map(id => ({ id, name: '绩效看板', status: 'PUBLISHED', currentPublishedVersionId: id === '800' ? '801' : '811' })) : []
+      : mode === 'publication' ? [
+        { id: 'draft', name: '服务端未发布看板', workingVersionId: 'd1', workingVersionStatus: 'DRAFT', ...(window.__publishedDraft ? { status: 'PUBLISHED', currentPublishedVersionId: 'd1', workingVersionStatus: 'PUBLISHED' } : {}) },
+        { id: 'published', name: '已上线看板', status: 'PUBLISHED', currentPublishedVersionId: 'p1', workingVersionId: 'p1' },
+        { id: 'changed', name: '已上线待更新看板', status: 'DRAFT', currentPublishedVersionId: 'c1', workingVersionId: 'c2', workingVersionStatus: 'DRAFT' }
+      ] : mode.startsWith('board-') ? ['800', '810'].filter(id => !window.__deletedBoards.includes(id)).map(id => ({ id, name: '绩效看板', status: 'PUBLISHED', currentPublishedVersionId: id === '800' ? '801' : '811' })) : []
     else if (/\/analysis\/dashboards\/(800|810)$/.test(path) && options.method === 'DELETE') {
       if (window.__failDelete) status = 500
       else window.__deletedBoards.push(path.split('/').at(-1))
@@ -155,6 +162,21 @@ try {
   await until(() => evaluate(`!!document.querySelector('.publish-layout')?.checkVisibility({checkOpacity:true})`), 'extracted indicator publication step')
   assert.equal(await evaluate(`[...document.querySelectorAll('button')].find(el=>el.textContent.trim()==='发布指标版本').disabled`), true)
   await screenshot('indicator-publish-step.png')
+  await navigate('/dashboard/manage?testState=publication', '本地未发布看板')
+  await until(() => evaluate(`document.querySelectorAll('.dashboard-card').length === 4 && document.querySelectorAll('.idmp-nav__subitem').length === 2`), 'mixed publication catalog')
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.dashboard-card')].map(card=>({name:card.querySelector('h2').textContent,status:card.querySelector('.dashboard-card__publication').textContent})).sort((a,b)=>a.name.localeCompare(b.name,'en'))`), [
+    { name: '已上线待更新看板', status: '已发布 · 有未发布修改' },
+    { name: '已上线看板', status: '已发布' },
+    { name: '服务端未发布看板', status: '草稿（未发布）' },
+    { name: '本地未发布看板', status: '本地草稿' }
+  ].sort((a,b)=>a.name.localeCompare(b.name,'en')))
+  assert.deepEqual(await evaluate(`[...document.querySelectorAll('.idmp-nav__subitem')].map(el=>el.textContent).sort()`), ['已上线待更新看板', '已上线看板'].sort())
+  await until(() => evaluate(`[...document.querySelectorAll('.dashboard-card__publication .el-tag')].every(el=>getComputedStyle(el).transform==='none' && Number(getComputedStyle(el).opacity)===1)`), 'publication badges finish entering')
+  await screenshot('dashboard-publication-status.png')
+  await evaluate(`window.__publishedDraft=true; import('/src/idmp/layout/shellState.js').then(module=>module.notifyDashboardCatalogChanged())`)
+  await until(() => evaluate(`document.querySelectorAll('.idmp-nav__subitem').length === 3`), 'publication event refreshes overview without page reload')
+  assert.equal(await evaluate(`[...document.querySelectorAll('.idmp-nav__subitem')].some(el=>el.textContent==='本地未发布看板')`), false)
+  await evaluate(`localStorage.removeItem('idmp:dashboard-catalog:v1')`)
   await navigate('/dashboard?dashboardDemo=1&testState=empty', '暂无服务端看板')
   await click('前往看板管理')
   await until(() => evaluate(`document.body.innerText.includes('还没有看板')`), 'empty catalog management')
@@ -210,7 +232,7 @@ try {
   await screenshot('blocked-demo-drill.png')
   assert.deepEqual(errors, [])
   await writeFile(join(evidence, 'result.json'), JSON.stringify({ passed: true, errors }, null, 2))
-  console.log('PASS: scoped homepage and edit-only access; catalog loading/error/retry/empty/live; detail retry; indicator publication step; empty/error board editing and confirmed deletion; empty dashboard creation; legacy MOCK repair; obsolete mock drill blocked; no runtime exceptions')
+  console.log('PASS: dashboard publication badges, draft exclusion and live publication refresh; scoped homepage and edit-only access; catalog loading/error/retry/empty/live; detail retry; indicator publication step; empty/error board editing and confirmed deletion; empty dashboard creation; legacy MOCK repair; obsolete mock drill blocked; no runtime exceptions')
 } catch (error) {
   if (socket?.readyState === WebSocket.OPEN) {
     await screenshot('failure.png')

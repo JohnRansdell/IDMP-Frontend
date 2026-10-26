@@ -35,7 +35,8 @@ export function dashboardSummaryToCatalogEntry(item = {}) {
     category: String(item.category || ''), scope: normalizeScope(item.applicableScope),
     updatedAt: item.updatedAt || item.createdAt || new Date(0).toISOString(), origin: 'remote',
     status: item.status || 'DRAFT', currentPublishedVersionId: stringId(item.currentPublishedVersionId),
-    workingVersionId: stringId(item.workingVersionId), resourceVersion: Number(item.resourceVersion ?? 0)
+    workingVersionId: stringId(item.workingVersionId), workingVersionStatus: String(item.workingVersionStatus || ''),
+    resourceVersion: Number(item.resourceVersion ?? 0)
   }
 }
 

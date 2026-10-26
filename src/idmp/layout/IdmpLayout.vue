@@ -133,7 +133,7 @@ import { fetchUnreadNotificationCount } from '@/idmp/api/modules/warnings'
 import { fetchDashboardCatalog } from '@/idmp/api/modules/analysisDashboard'
 import { fetchMedicalCatalog } from '@/idmp/api/modules/medical'
 import { dashboardSummaryToCatalogEntry } from '@/idmp/api/adapters/dashboard'
-import { readDashboardCatalog } from '@/idmp/features/dashboard/catalog.js'
+import { isPublishedDashboard } from '@/idmp/features/dashboard/publication.js'
 import { buildPageBreadcrumbs } from '@/router/breadcrumbs.js'
 
 const route = useRoute()
@@ -162,20 +162,16 @@ const currentScene = computed({
 })
 const unreadCount = ref(0)
 const dashboardMenuExpanded = ref(true)
+let dashboardOptionsRequestId = 0
 async function refreshRemoteDashboardOptions() {
-  if (medicalViewer.value) {
-    try { remoteDashboardOptions.value = (await fetchMedicalCatalog()).map(dashboardSummaryToCatalogEntry) }
-    catch { remoteDashboardOptions.value = [] }
-    return
-  }
-  if (platformPermissionsMissing.value || !canNavigate('/dashboard')) { remoteDashboardOptions.value = []; return }
-  const localOptions = readDashboardCatalog(localStorage).map(item => ({ ...item, origin: 'local' }))
+  const requestId = ++dashboardOptionsRequestId
+  if (!medicalViewer.value && (platformPermissionsMissing.value || !canNavigate('/dashboard'))) { remoteDashboardOptions.value = []; return }
   try {
-    const catalog = await fetchDashboardCatalog()
-    const remoteOptions = (Array.isArray(catalog) ? catalog : []).map(dashboardSummaryToCatalogEntry)
-    remoteDashboardOptions.value = [...localOptions, ...remoteOptions.filter(remote => !localOptions.some(local => String(local.id) === String(remote.id)))]
+    const catalog = medicalViewer.value ? await fetchMedicalCatalog() : await fetchDashboardCatalog({ cache: 'no-store' })
+    if (requestId !== dashboardOptionsRequestId) return
+    remoteDashboardOptions.value = (Array.isArray(catalog) ? catalog : []).map(dashboardSummaryToCatalogEntry).filter(isPublishedDashboard)
   } catch {
-    remoteDashboardOptions.value = localOptions
+    if (requestId === dashboardOptionsRequestId) remoteDashboardOptions.value = []
   }
 }
 let unreadRequestId = 0
