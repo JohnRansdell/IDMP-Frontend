@@ -1,3 +1,4 @@
+import { useFactorVersionWorkflow } from '../src/idmp/features/factor/useFactorVersionWorkflow.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -25,7 +26,7 @@ for (const view of ['FactorEditor', 'FactorTemplateInstantiate']) {
           records: [{ valueDecimal: page }], pageNum: page, pageSize: 100, total: 250
         } }
       } }
-    const load = loadFunction(view, 'loadTrialResults', scope)
+    const load = useFactorVersionWorkflow({ ...scope, api: { fetchResults: scope.fetchFactorTrialResults }, notify: messages }).loadTrialResults
     await load(1)
     await load(2)
     await load(3)
@@ -42,7 +43,7 @@ for (const view of ['FactorEditor', 'FactorTemplateInstantiate']) {
       trialPagination: { page: 1, size: 100, total: 250 }, trialRows: ref([{ valueDecimal: 'current' }]),
       ElMessage: messages, getStatusLabel: value => value, normalize: rows => rows,
       fetchFactorTrialResults: () => new Promise(done => { resolve = done }) }
-    const pending = loadFunction(view, 'loadTrialResults', scope)(2)
+    const pending = useFactorVersionWorkflow({ ...scope, api: { fetchResults: scope.fetchFactorTrialResults }, notify: messages }).loadTrialResults(2)
     scope.workflow.batchId = 'new'
     resolve({ results: { records: [{ valueDecimal: 'old' }], pageNum: 2, total: 250 } })
     await pending

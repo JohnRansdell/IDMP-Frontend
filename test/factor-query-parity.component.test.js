@@ -10,6 +10,7 @@ const dom = new JSDOM('<!doctype html><html><body></body></html>')
 for (const name of ['window', 'document', 'HTMLElement', 'SVGElement', 'Element', 'Node', 'Document', 'Text', 'Comment']) globalThis[name] = dom.window[name]
 Object.defineProperty(globalThis, 'navigator', { configurable: true, value: dom.window.navigator })
 const vue = await import('vue')
+const { useFactorVersionWorkflow } = await import('../src/idmp/features/factor/useFactorVersionWorkflow.js')
 const { mount } = await import('@vue/test-utils')
 const Select = vue.defineComponent({ name: 'ElSelect', props: ['modelValue'], emits: ['update:modelValue'], setup: (_, { slots }) => () => vue.h('div', slots.default?.()) })
 const Input = vue.defineComponent({ name: 'ElInput', props: ['modelValue'], emits: ['update:modelValue'], setup: () => () => vue.h('input') })
@@ -43,7 +44,7 @@ async function mountSourceEditor(overrides = {}) {
     fetchSourceTables: async () => [], fetchPhysicalTables: async () => [],
     adaptSourceTableList: rows => rows, adaptPhysicalTableList: rows => rows,
     fetchFactorVersionsByFactor: async () => [], editableFilterTree,
-    factorCalculationMode, factorPeriodColumn, canonicalPeriodColumn, withoutLegacyPeriod,
+    factorCalculationMode, factorPeriodColumn, canonicalPeriodColumn, withoutLegacyPeriod, useFactorVersionWorkflow,
     ...overrides
   })
   const code = script.content.replace(/^import .*$/gm, '').replace('export default', 'return')
