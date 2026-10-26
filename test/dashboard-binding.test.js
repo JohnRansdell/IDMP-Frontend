@@ -27,7 +27,7 @@ test('table formats each measure by its own unit without changing raw ratios or 
   assert.equal(formatDashboardTableMetric(0, { unit: 'PERCENT' }), '0.00%')
   assert.equal(formatDashboardTableMetric(null, { unit: 'PERCENT' }), '—')
   assert.equal(formatDashboardTableMetric(undefined, { unit: 'PERCENT' }), '—')
-  assert.equal(formatDashboardTableMetric('', { unit: 'PERCENT' }), '')
+  assert.equal(formatDashboardTableMetric('', { unit: 'PERCENT' }), '—')
   assert.equal(formatDashboardTableMetric('0.23%', { unit: 'PERCENT' }), '0.23%')
   assert.equal(formatDashboardTableMetric(429, { unit: 'PERSON_TIME' }), '429')
   assert.equal(formatDashboardTableMetric(1, { unit: 'PERCENT', aggregation: 'count' }), '1')

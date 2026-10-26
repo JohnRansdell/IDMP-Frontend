@@ -26,7 +26,7 @@
           <tbody>
             <tr v-for="(row, index) in currentEntry?.result.records || []" :key="row.resultId || `${row.dimensionKey}-${index}`">
               <td><button v-if="nextNavigation(row)" type="button" @click="openRow(row)">{{ row.dimensionLabel }}</button><span v-else>{{ row.dimensionLabel }}</span></td>
-              <td>{{ row.numerator ?? '—' }}</td><td>{{ row.denominator ?? '—' }}</td><td>{{ row.displayValue ?? '—' }}</td>
+              <td>{{ formatResultNumber(row.numerator, { missing: '—' }) }}</td><td>{{ formatResultNumber(row.denominator, { missing: '—' }) }}</td><td>{{ formatResultValue(row.indicatorValue, { displayValue: row.displayValue, unit: row.unit || unit, missing: '—' }) }}</td>
             </tr>
           </tbody>
         </table>
@@ -42,6 +42,7 @@ import { searchResultDrill } from '@/idmp/api/modules/drill'
 import { createDashboardChartTheme } from '../chartTheme.js'
 import { applyWidgetVisualStyle } from '../visualStyle.js'
 import { resolveWidgetSurfaceTone } from '../backgroundAssets.js'
+import { formatResultNumber, formatResultValue } from '../../shared/resultPresentation.js'
 import {
   backendChartMeasure, backendChartValue, chartDrillLevelName, findBackendChartRow,
   initialBackendChartNavigation, loadBackendChartLevel, loadBackendChartRoot, nextBackendChartNavigation
@@ -50,6 +51,7 @@ import {
 const props = defineProps({ widget: { type: Object, required: true }, kind: { type: String, required: true }, title: String, selectedParams: { type: Object, default: () => ({}) }, unit: { type: String, default: '' } })
 const emit = defineEmits(['reset'])
 const resolveTarget = inject('dashboardResolveWidgetDrill', async () => null)
+const searchDrill = inject('dashboardSearchDrill', searchResultDrill)
 const root = ref(null)
 const history = ref([])
 const loading = ref(false)
@@ -77,7 +79,7 @@ const rawOption = computed(() => {
   const tooltip = { trigger: props.kind === 'pie' ? 'item' : 'axis', confine: true, formatter: (params) => {
     const item = Array.isArray(params) ? params[0] : params
     const row = item?.data?.row
-    return row ? `${row.dimensionLabel}<br/>指标值：${row.displayValue ?? '—'}<br/>分子：${row.numerator ?? '—'}<br/>分母：${row.denominator ?? '—'}` : ''
+    return row ? `${row.dimensionLabel}<br/>指标值：${formatResultValue(row.indicatorValue, { displayValue: row.displayValue, unit: row.unit || props.unit, missing: '—' })}<br/>分子：${formatResultNumber(row.numerator, { missing: '—' })}<br/>分母：${formatResultNumber(row.denominator, { missing: '—' })}` : ''
   } }
   if (props.kind === 'pie') return { tooltip, legend: { type: 'scroll', bottom: 0 }, series: [{ name: measure.value.label, type: 'pie', radius: ['42%', '67%'], center: ['50%', '44%'], minShowLabelAngle: 2, data }] }
   return { tooltip, grid: { top: 22, bottom: 34, left: 12, right: 16, containLabel: true }, dataZoom: rows.length > 15 ? [{ type: 'inside', start: 0, end: 15 / rows.length * 100 }, { type: 'slider', height: 12, bottom: 2, start: 0, end: 15 / rows.length * 100 }] : [], xAxis: { type: 'category', data: rows.map(row => row.dimensionLabel), axisLabel: { hideOverlap: true } }, yAxis: { type: 'value', axisLabel: { formatter: props.unit === '%' ? '{value}%' : '{value}' } }, series: [{ type: 'bar', data, barMaxWidth: 42 }] }
@@ -104,9 +106,9 @@ async function initialize() {
     const target = await resolveTarget(props.widget, props.selectedParams)
     if (request.id !== requestId) return
     if (!target) throw new Error('当前指标没有可用的组织下钻结果')
-    const nextRoot = await loadBackendChartRoot(searchResultDrill, target, { signal: request.signal })
+    const nextRoot = await loadBackendChartRoot(searchDrill, target, { signal: request.signal })
     const departmentNavigation = initialBackendChartNavigation(nextRoot)
-    const departments = await loadBackendChartLevel(searchResultDrill, nextRoot, departmentNavigation, { signal: request.signal })
+    const departments = await loadBackendChartLevel(searchDrill, nextRoot, departmentNavigation, { signal: request.signal })
     if (request.id !== requestId) return
     root.value = nextRoot
     const namedDepartments = departments
@@ -143,7 +145,7 @@ async function openNavigation(navigation) {
   const request = beginRequest()
   failedNavigation.value = navigation
   try {
-    const result = await loadBackendChartLevel(searchResultDrill, root.value, navigation, { signal: request.signal })
+    const result = await loadBackendChartLevel(searchDrill, root.value, navigation, { signal: request.signal })
     if (request.id === requestId) {
       history.value = [...history.value, { navigation, result }]
       failedNavigation.value = null

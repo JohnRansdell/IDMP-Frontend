@@ -27,7 +27,8 @@ test('analysis navigation keeps the dashboard and analysis page on the same mont
     periodStart: '2025-12-01', periodEnd: '2026-01-01', granularity: 'MONTHLY'
   })
   assert.deepEqual(buildIndicatorAnalysisRouteQuery({ indicatorId: '1001' }, context), {
-    indicator: '1001', periodStart: '2025-12-01', periodEnd: '2026-01-01', granularity: 'MONTHLY'
+    indicator: '1001', periodStart: '2025-12-01', periodEnd: '2025-12-31', granularity: 'MONTHLY',
+    summaryMode: 'FORMAL', summaryGranularity: 'MONTHLY', trendStart: '2025-12-01', trendEnd: '2025-12-31'
   })
 })
 
@@ -42,12 +43,12 @@ test('a component fixed period takes priority over the dashboard month', () => {
   assert.deepEqual(buildIndicatorAnalysisPeriodContext('2025-12', {
     periodMode: 'FIXED', periodStart: '2026-01-01', periodEnd: '2026-03-31', granularity: 'QUARTERLY'
   }), {
-    periodStart: '2026-01-01', periodEnd: '2026-03-31', granularity: 'QUARTERLY'
+    periodStart: '2026-01-01', periodEnd: '2026-03-31', periodEndInclusive: true, granularity: 'QUARTERLY'
   })
 })
 
 test('analysis navigation keeps an independent component period', () => {
   assert.deepEqual(buildIndicatorAnalysisPeriodContext(['2026-01', '2026-03'], {
     periodMode: 'INDEPENDENT', periodStart: '2026-09-01', periodEnd: '2026-09-30'
-  }), { periodStart: '2026-09-01', periodEnd: '2026-09-30', granularity: 'MONTHLY' })
+  }), { periodStart: '2026-09-01', periodEnd: '2026-09-30', periodEndInclusive: true, granularity: 'MONTHLY' })
 })

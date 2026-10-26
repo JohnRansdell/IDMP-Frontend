@@ -22,7 +22,7 @@ async function evaluate(expression) {
 function mockBackend() {
   localStorage.setItem('idmp_access_token', 'warning-publication-fixture')
   const realFetch = fetch.bind(window)
-  const version = (id, publicationStatus) => ({ id, publicationStatus, resourceVersion: 7, warningType: 'THRESHOLD', indicatorVersionId: '101', periodType: 'MONTHLY', condition: { operator: 'GT', threshold: '0.08' }, notificationPolicy: { recipientUserIds: ['1'] } })
+  const version = (id, publicationStatus) => ({ id, publicationStatus, resourceVersion: 7, warningType: 'THRESHOLD', indicatorVersionId: '101', periodType: 'MONTHLY', condition: { operator: 'GT', threshold: '0.08' }, notificationPolicy: { recipientUsernames: ['tester'] } })
   const rules = [
     { id: '1', name: '未发布测试规则', code: 'DRAFT_RULE', resourceVersion: 4, enableStatus: 'DISABLED', currentPublishedVersionId: null, version: version('11', 'DRAFT') },
     { id: '2', name: '已发布未启用测试规则', code: 'PUBLISHED_RULE', resourceVersion: 5, enableStatus: 'DISABLED', currentPublishedVersionId: '20', version: version('20', 'PUBLISHED') },
@@ -46,7 +46,7 @@ function mockBackend() {
       rules[0].version.publicationStatus = 'PUBLISHED'
       rules[0].currentPublishedVersionId = '11'
       data = rules[0]
-    } else if (path === '/system/users') data = [{ id: '1', username: 'tester' }]
+    } else if (path === '/analysis/warning-rules/recipient-options') data = [{ username: 'tester', displayName: '验收医生' }]
     return new Response(JSON.stringify({ code: '0', data }), { headers: { 'Content-Type': 'application/json' } })
   }
 }

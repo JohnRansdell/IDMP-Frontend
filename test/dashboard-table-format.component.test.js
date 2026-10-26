@@ -92,3 +92,16 @@ test('counting percentage-valued rows produces a count, not a percentage', () =>
   assert.deepEqual(cells(wrapper), [['科室编码：0016', '2']])
   wrapper.unmount()
 })
+
+test('unique formal rows retain backend precision in every table while numeric chart data stays unchanged', () => {
+  for (const kind of ['bar', 'table']) for (const extra of [{}, { tableColumns: ['department', 'value', 'numeratorValue', 'denominatorValue'] }]) {
+    const source = dataset()
+    source.rows[0].displayValue = '0.233100%'
+    const wrapper = create(widget(kind, extra), source)
+    assert.equal(cells(wrapper)[0][1], '0.233100%')
+    assert.equal(cells(wrapper)[0][2], '1')
+    assert.equal(cells(wrapper)[0][3], '429')
+    assert.equal(source.rows[0].value, 1 / 429)
+    wrapper.unmount()
+  }
+})

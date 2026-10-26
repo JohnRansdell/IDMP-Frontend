@@ -1,5 +1,41 @@
-import { deriveDrillPathResultIds } from '../../api/adapters/drill.js'
+import { deriveDrillPathResultIds, normalizeDrillLevelDefinition } from '../../api/adapters/drill.js'
 import { drillPeriodKey } from './drillPeriods.js'
+import { formatResultNumber, formatResultValue, hasResultDisplay } from '../shared/resultPresentation.js'
+import { assertDrillResponseContext, buildDrillRequest, drillMemberField, drillScope } from './drillContext.js'
+
+export async function resolveAnalysisDrillPaths(paths = [], fetchPathVersion) {
+  return Promise.all(paths.map(async path => {
+    if (path.levels?.length) return { ...path, levels: path.levels.map(normalizeDrillLevelDefinition) }
+    if (!path.pathVersionId) return path
+    const metadata = await fetchPathVersion(path.pathVersionId)
+    if (!metadata?.levels?.length) throw new Error('指标绑定的下钻路径未返回层级配置')
+    return { ...path, levels: metadata.levels.map(normalizeDrillLevelDefinition) }
+  }))
+}
+
+export function createDepartmentRankRows({ comparisons, analysis = {}, paths = [], granularity, unit, display }) {
+  if (Array.isArray(comparisons) && comparisons.length > 0) {
+    return [...comparisons].sort((left, right) => {
+      const leftValue = Number(left.value)
+      const rightValue = Number(right.value)
+      if (Number.isFinite(leftValue) && Number.isFinite(rightValue) && leftValue !== rightValue) return rightValue - leftValue
+      return String(left.departmentName).localeCompare(String(right.departmentName), 'zh-CN')
+    }).map((item, index) => ({
+      rank: index + 1,
+      departmentKey: item.departmentCode,
+      department: item.departmentName,
+      hospitalCode: item.dimensions?.hospital_code || item.dimensions?.HOSPITAL_CODE || '',
+      departmentCode: item.departmentCode,
+      rate: hasResultDisplay(item.displayValue) ? item.displayValue : formatResultValue(item.value, { unit, display }),
+      numerator: item.numeratorValue == null ? '-' : formatResultNumber(item.numeratorValue, { maximumFractionDigits: 3 }),
+      denominator: item.denominatorValue == null ? '-' : formatResultNumber(item.denominatorValue, { maximumFractionDigits: 3 }),
+      change: '-',
+      status: departmentAchievement(item, analysis),
+      drillContext: departmentDrillContext(item, paths, granularity)
+    }))
+  }
+  return []
+}
 
 function fieldText(value) {
   if (value == null) return ''
@@ -53,7 +89,8 @@ export function departmentDrillDefinition(paths = []) {
   return null
 }
 
-export async function loadDepartmentComparisons(analysis, paths, searchDrill) {
+export async function loadDepartmentComparisons(analysis, paths, searchDrill, filters = {}, options = {}) {
+  options.signal?.throwIfAborted()
   const period = drillPeriodKey(analysis?.overview)
   const direct = normalizeDepartmentComparisons((analysis?.departmentComparison || []).filter(row => drillPeriodKey(row) === period))
   if (direct.length) return direct
@@ -68,16 +105,22 @@ export async function loadDepartmentComparisons(analysis, paths, searchDrill) {
   const rows = []
   let receivedCount = 0
   for (let pageNum = 1; pageNum <= 100; pageNum += 1) {
-    const result = await searchDrill(anchor, {
-      ...(definition.path.pathCode.startsWith('CUSTOM_') ? { pathCode: definition.path.pathCode } : {}),
+    const context = { resultId: anchor, indicatorVersionId: analysis.indicatorVersionId, period: analysis.overview,
+      pathCode: definition.path.pathCode,
       currentLevel: definition.level.levelCode,
-      parentKeys: {}, filters: {}, pageNum, pageSize: 100,
-      sort: [{ field: 'indicatorValue', direction: 'DESC' }]
-    })
-    if (drillPeriodKey(result.context) !== period) throw new Error('科室结果的统计周期不一致，请刷新后重试。')
+      parentKeys: {}, filters }
+    const request = buildDrillRequest(context, { path: definition.path, pageNum, pageSize: 100, sort: [{ field: 'indicatorValue', direction: 'DESC' }] })
+    options.signal?.throwIfAborted()
+    const result = await searchDrill(request.resultId, request.payload, options)
+    options.signal?.throwIfAborted()
+    assertDrillResponseContext(result, context)
     receivedCount += result.records.length
     rows.push(...result.records.filter(row => row.recordType !== 'CALCULATION_STATUS').map(row => ({
       ...row,
+      snapshotId: row.snapshotId || (String(row.resultId) === String(result.context.resultId) ? result.context.snapshotId : undefined),
+      indicatorVersionId: row.indicatorVersionId || result.context.indicatorVersionId,
+      periodStart: row.periodStart || result.context.periodStart,
+      periodEnd: row.periodEnd || result.context.periodEnd,
       departmentCode: row.dimensionKey,
       departmentName: row.dimensionName || row.dimensionLabel,
       value: row.indicatorValue ?? row.value,
@@ -97,12 +140,14 @@ export function departmentDrillContext(row, paths, granularity) {
   const { path, level, index } = definition
   const maximumIndex = path.levels.findIndex(item => item.levelCode === path.maxLevel)
   const next = (maximumIndex < 0 || index < maximumIndex) ? path.levels[index + 1] : null
-  const key = level.memberKeyFieldCode || level.dimensionFieldCode || 'OUT_DEPT_CODE'
+  const key = drillMemberField(path, level.levelCode)
+  if (!key || row.departmentCode == null || row.departmentCode === '') return null
   return {
     period: { periodStart: row.periodStart, periodEnd: row.periodEnd }, granularity,
     resultId: String(row.resultId || ''), pathCode: path.pathCode,
+    ...(row.snapshotId ? { snapshotId: String(row.snapshotId) } : {}),
+    ...(row.indicatorVersionId ? { indicatorVersionId: String(row.indicatorVersionId) } : {}),
     currentLevel: next?.levelCode || level.levelCode,
-    filters: { [key]: row.departmentCode },
-    parentKeys: { ...(row.parentKeys || {}), [key]: row.departmentCode }
+    ...drillScope({ filters: { [key]: row.departmentCode }, parentKeys: { ...(row.parentKeys || {}), [key]: row.departmentCode } }, path)
   }
 }

@@ -19,12 +19,15 @@
     <StatePanel v-else-if="!periodOptions.length" type="empty" :title="`暂无${granularityLabel}正式结果`" description="该粒度尚未生成正式计算结果。" />
     <DrillExplorer
       v-else-if="anchor.resultId" :key="`${granularity}:${selectedPeriod}:${entrySequence}`" ref="explorer"
-      :result-id="anchor.resultId" :path-result-ids="anchor.pathResultIds"
+      :result-id="anchor.resultId" :path-result-ids="anchor.pathResultIds" :enabled="enabled"
+      :indicator-version-id="indicatorVersionId"
+      :snapshot-id="useEntryContext ? entryContext.snapshotId || '' : ''"
+      :result-period="periodOptions.find(item => item.value === selectedPeriod) || {}"
       :indicator-name="indicatorName" :period="selectedPeriodLabel"
       :start-path-code="useEntryContext ? entryContext.pathCode : ''"
       :start-level="useEntryContext ? entryContext.currentLevel : useInitialContext ? startLevel : ''"
       :start-parent-keys="useEntryContext ? entryContext.parentKeys : useInitialContext ? startParentKeys : {}"
-      :start-filters="useEntryContext ? entryContext.filters || {} : {}"
+      :start-filters="{ ...filters, ...(useEntryContext ? entryContext.filters || {} : {}) }"
       :max-levels="maxLevels" :configured-paths="configuredPaths" embedded
     />
     <StatePanel v-else type="empty" title="该周期暂无可下钻结果" description="该周期未生成可用的下钻计算结果。" />
@@ -43,6 +46,7 @@ const props = defineProps({
   indicatorId: { type: [String, Number], required: true },
   indicatorVersionId: { type: [String, Number], default: '' },
   indicatorName: { type: String, default: '' },
+  filters: { type: Object, default: () => ({}) },
   enabled: { type: Boolean, default: false },
   configuredPaths: { type: Array, default: () => [] },
   maxLevels: { type: Object, default: () => ({}) },
@@ -71,7 +75,7 @@ const anchor = computed(() => {
 })
 function loadPeriods() { entryContext.value = null; return readPeriods() }
 function changePeriod() { entryContext.value = null; return loadSelectedPeriod() }
-watch(() => [props.indicatorId, props.indicatorVersionId], () => { entryContext.value = null })
+watch(() => [props.indicatorId, props.indicatorVersionId, JSON.stringify(props.filters)], () => { entryContext.value = null })
 
 function getReportSnapshot() {
   return explorer.value?.getReportSnapshot() || {

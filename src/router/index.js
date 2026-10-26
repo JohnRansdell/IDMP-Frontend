@@ -2,6 +2,9 @@ import { createRouter, createWebHistory } from 'vue-router'
 import IdmpLayout from '@/idmp/layout/IdmpLayout.vue'
 import { scrollBehavior } from './scrollBehavior'
 import { breadcrumbLinks as B } from './breadcrumbs'
+import { isMedicalSession, isMedicalDashboardSession } from '@/idmp/api/request'
+import { ensureAuthenticatedSession, invalidateSession, canNavigate, accessibleHome } from '@/idmp/auth/session'
+import { createAuthenticationGuard, safeLoginRedirect } from '@/idmp/auth/navigation.js'
 
 const routes = [
   {
@@ -9,6 +12,7 @@ const routes = [
     component: IdmpLayout,
     redirect: '/dashboard',
     children: [
+      { path: 'forbidden', component: () => import('@/idmp/views/AccessDenied.vue'), meta: { title: '无访问权限' } },
       {
         path: 'policies', name: 'PolicyFileManagement',
         component: () => import('@/idmp/views/PolicyFileManagement.vue'),
@@ -273,13 +277,45 @@ if (import.meta.env.DEV) {
     meta: { title: 'GridStack Dashboard PoC', breadcrumb: [B.home, 'GridStack Dashboard PoC'] }
   })
 }
-// 当前部署不启用统一登录入口；兼容旧书签并直接返回工作台。
-routes.splice(1, 0, { path: '/login', redirect: '/dashboard' })
+// Password login and medical SSO share session handling but have separate entry pages.
+routes.splice(1, 0,
+  { path: '/login', component: () => import('@/idmp/views/Login.vue') },
+  { path: '/auto-login', component: () => import('@/idmp/views/AutoLogin.vue') },
+  { path: '/medical-dashboard', component: () => import('@/idmp/views/MedicalDashboard.vue') })
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
   scrollBehavior
+})
+
+router.beforeEach(createAuthenticationGuard({
+  ensureSession: ensureAuthenticatedSession,
+  isMedicalDashboard: isMedicalDashboardSession,
+  isMedicalSession,
+  resolve: path => router.resolve(path),
+  canNavigate, accessibleHome
+}))
+
+function returnToLogin(event) {
+  invalidateSession()
+  const current = router.currentRoute.value
+  if (['/login', '/auto-login', '/medical-dashboard'].includes(current.path)) return
+  const redirect = safeLoginRedirect(current.fullPath, path => router.resolve(path))
+  void router.replace(event.type === 'idmp:logout' ? '/login' : { path: '/login', query: { redirect } })
+}
+function synchronizeLogout(event) {
+  if (event.key !== 'idmp_access_token' || isMedicalSession()) return
+  if (!event.newValue) returnToLogin({ type: 'idmp:logout' })
+  else window.location.reload()
+}
+window.addEventListener('idmp:unauthorized', returnToLogin)
+window.addEventListener('idmp:logout', returnToLogin)
+window.addEventListener('storage', synchronizeLogout)
+if (import.meta.hot) import.meta.hot.dispose(() => {
+  window.removeEventListener('idmp:unauthorized', returnToLogin)
+  window.removeEventListener('idmp:logout', returnToLogin)
+  window.removeEventListener('storage', synchronizeLogout)
 })
 
 export default router

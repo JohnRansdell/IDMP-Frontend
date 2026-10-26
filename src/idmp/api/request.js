@@ -1,4 +1,5 @@
-import { sanitizeResponseMessages, toUserMessage } from '../utils/userMessage.js'
+import { sanitizeResponseMessages } from '../utils/userMessage.js'
+import { formatApiError } from '../utils/apiError.js'
 
 export const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL || '/api/v1'
 const AUTH_TOKEN_STORAGE_KEY = 'idmp_access_token'
@@ -70,11 +71,32 @@ export function setSessionRecoveryHandler(handler) {
 }
 
 export function getAccessToken() {
+  if (isMedicalSession()) return sessionStorage.getItem('idmp_medical_access_token') || ''
   return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) || ''
+}
+
+export function isMedicalSession() {
+  return typeof sessionStorage !== 'undefined' && sessionStorage.getItem('idmp_medical_session') === '1'
+}
+
+export function isMedicalDashboardSession() {
+  return isMedicalSession() && sessionStorage.getItem('idmp_medical_entry') !== 'PLATFORM'
+}
+
+export function setMedicalAccessToken(token, entry = 'DASHBOARD') {
+  clearQueryCache()
+  sessionStorage.setItem('idmp_medical_session', '1')
+  sessionStorage.setItem('idmp_medical_access_token', token || '')
+  sessionStorage.setItem('idmp_medical_entry', entry === 'PLATFORM' ? 'PLATFORM' : 'DASHBOARD')
 }
 
 export function setAccessToken(token) {
   clearQueryCache()
+  if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.removeItem('idmp_medical_session')
+    sessionStorage.removeItem('idmp_medical_access_token')
+    sessionStorage.removeItem('idmp_medical_entry')
+  }
   if (token) {
     localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token)
   } else {
@@ -84,6 +106,10 @@ export function setAccessToken(token) {
 
 export function clearAccessToken() {
   clearQueryCache()
+  if (isMedicalSession()) {
+    sessionStorage.removeItem('idmp_medical_access_token')
+    return
+  }
   localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
 }
 
@@ -94,6 +120,7 @@ export async function requestJson(path, options = {}) {
     timeoutMs = 30000,
     signal: externalSignal,
     skipSessionRecovery = false,
+    notifyUnauthorized = !skipSessionRecovery,
     ...fetchOptions
   } = options
   const headers = {
@@ -105,7 +132,7 @@ export async function requestJson(path, options = {}) {
   const ttl = cacheTtl(path, method)
   const cacheable = ttl > 0 && !['no-store', 'reload'].includes(fetchOptions.cache)
     && !Object.keys(optionHeaders || {}).length
-  const cacheKey = cacheable ? `${method}:${path}:${fetchOptions.body || ''}` : ''
+  const cacheKey = cacheable ? `${token}:${method}:${path}:${fetchOptions.body || ''}` : ''
   if (cacheable && !externalSignal?.aborted) {
     const cached = readQueryCache(cacheKey)
     if (cached !== undefined) return cached
@@ -127,7 +154,7 @@ export async function requestJson(path, options = {}) {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...fetchOptions,
       headers,
-      credentials: fetchOptions.credentials || 'include',
+      credentials: path === '/auth/login' ? 'include' : isMedicalSession() ? 'omit' : fetchOptions.credentials || 'include',
       ...(controller ? { signal: controller.signal } : {})
     })
     // Keep the timeout active until the body has been fully received. Fetch
@@ -160,14 +187,17 @@ export async function requestJson(path, options = {}) {
     const error = createApiError(response.status, payload, path)
     if (response.status === 401) {
       const isAuthEndpoint = path.startsWith('/auth/')
+      if (!skipSessionRecovery && !isAuthEndpoint && token !== getAccessToken() && getAccessToken()) {
+        return requestJson(path, { ...options, skipSessionRecovery: true, notifyUnauthorized: true })
+      }
       if (!skipSessionRecovery && !isAuthEndpoint && sessionRecoveryHandler) {
         const recovered = await sessionRecoveryHandler()
         if (recovered && !(typeof FormData !== 'undefined' && options.body instanceof FormData)) {
-          return requestJson(path, { ...options, skipSessionRecovery: true })
+          return requestJson(path, { ...options, skipSessionRecovery: true, notifyUnauthorized: true })
         }
       }
       clearAccessToken()
-      if (!skipSessionRecovery && typeof window !== 'undefined') {
+      if (notifyUnauthorized && !isAuthEndpoint && typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('idmp:unauthorized', { detail: { path } }))
       }
     }
@@ -199,15 +229,8 @@ export async function requestJson(path, options = {}) {
 export function createApiError(status, payload = {}, path = '') {
   const serverMessage = typeof payload?.message === 'string' ? payload.message
     : typeof payload?.error === 'string' ? payload.error : ''
-  const fallback = status === 401 ? '登录状态已失效，请重新登录。'
-      : status === 413 ? '文件超过允许的大小，请选择较小文件。'
-      : status === 403 ? '当前账号没有权限执行此操作。'
-        : status === 404 ? '请求的内容不存在或已失效。'
-          : status === 408 || status === 504 ? '请求超时，请稍后重试。'
-            : status === 429 ? '请求过于频繁，请稍后重试。'
-              : status >= 500 ? '服务暂时不可用，请稍后重试。' : '请求未能完成，请检查输入后重试。'
   const traceId = payload?.traceId || payload?.traceID || payload?.requestId || ''
-  const error = new Error(toUserMessage(serverMessage, fallback))
+  const error = new Error(formatApiError({ status, message: serverMessage }))
   error.status = Number(status) || 0
   error.code = payload?.code
   error.traceId = traceId
@@ -217,14 +240,14 @@ export function createApiError(status, payload = {}, path = '') {
   return error
 }
 
-export async function requestPdf(path, body, { timeoutMs = 60000, skipSessionRecovery = false } = {}) {
+export async function requestPdf(path, body, { timeoutMs = 60000, skipSessionRecovery = false, notifyUnauthorized = !skipSessionRecovery } = {}) {
   const controller = new AbortController()
   let didTimeout = false
   const timer = setTimeout(() => { didTimeout = true; controller.abort() }, timeoutMs)
   try {
     const token = getAccessToken()
     const response = await fetch(`${API_BASE_URL}${path}`, {
-      method: 'POST', credentials: 'include', signal: controller.signal,
+      method: 'POST', credentials: isMedicalSession() ? 'omit' : 'include', signal: controller.signal,
       headers: { 'Content-Type': 'application/json', Accept: 'application/pdf', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify(body)
     })
@@ -236,10 +259,10 @@ export async function requestPdf(path, body, { timeoutMs = 60000, skipSessionRec
       }
       if (response.status === 401) {
         if (!skipSessionRecovery && sessionRecoveryHandler && await sessionRecoveryHandler()) {
-          return requestPdf(path, body, { timeoutMs, skipSessionRecovery: true })
+          return requestPdf(path, body, { timeoutMs, skipSessionRecovery: true, notifyUnauthorized: true })
         }
         clearAccessToken()
-        if (!skipSessionRecovery && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('idmp:unauthorized', { detail: { path } }))
+        if (notifyUnauthorized && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('idmp:unauthorized', { detail: { path } }))
       }
       throw createApiError(response.ok ? 422 : response.status, payload, path)
     }
@@ -255,7 +278,7 @@ export async function requestPdf(path, body, { timeoutMs = 60000, skipSessionRec
   } finally { clearTimeout(timer) }
 }
 
-export async function requestFile(path, { skipSessionRecovery = false, signal } = {}) {
+export async function requestFile(path, { skipSessionRecovery = false, notifyUnauthorized = !skipSessionRecovery, signal } = {}) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 60000)
   const cancel = () => controller.abort()
@@ -264,13 +287,17 @@ export async function requestFile(path, { skipSessionRecovery = false, signal } 
   try {
     const token = getAccessToken()
     const response = await fetch(`${API_BASE_URL}${path}`, {
-      credentials: 'include', signal: controller.signal,
+      credentials: isMedicalSession() ? 'omit' : 'include', signal: controller.signal,
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     })
     if (!response.ok) {
       const payload = parseJsonPreservingLargeIntegers(await response.text()) || {}
       if (response.status === 401 && !skipSessionRecovery && sessionRecoveryHandler && await sessionRecoveryHandler()) {
-        return requestFile(path, { skipSessionRecovery: true, signal })
+        return requestFile(path, { skipSessionRecovery: true, notifyUnauthorized: true, signal })
+      }
+      if (response.status === 401) {
+        clearAccessToken()
+        if (notifyUnauthorized && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('idmp:unauthorized', { detail: { path } }))
       }
       throw createApiError(response.status, payload, path)
     }

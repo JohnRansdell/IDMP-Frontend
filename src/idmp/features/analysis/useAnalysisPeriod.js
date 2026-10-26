@@ -1,11 +1,13 @@
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onActivated, onDeactivated, ref, shallowRef, watch } from 'vue'
+import { createRequestScope } from './useLatestResult.js'
 import { DRILL_GRANULARITIES, drillPeriodKey, drillPeriodOptions } from './drillPeriods.js'
+import { serializeAnalysisFilters, shiftReportDate } from './reportPeriod.js'
 
 export function useAnalysisPeriod(props, fetchIndicatorAnalysis) {
   const granularity = ref('MONTHLY')
   const selectedPeriod = ref('')
   const periodOptions = ref([])
-  const analysis = ref(null)
+  const analysis = shallowRef(null)
   const loading = ref(false)
   const errorMessage = ref('')
   const initialized = ref(false)
@@ -14,23 +16,31 @@ export function useAnalysisPeriod(props, fetchIndicatorAnalysis) {
   const periodPlaceholder = computed(() => DRILL_GRANULARITIES.find(item => item.value === granularity.value)?.placeholder)
   const selectedPeriodLabel = computed(() => periodOptions.value.find(item => item.value === selectedPeriod.value)?.label || '')
   let contextKey = ''
-  let requestId = 0
+  const scope = createRequestScope()
+  let inactive = false
+  let interrupted = false
   const cache = new Map()
 
-  async function fetchAnalysis(params) {
+  function begin() {
+    interrupted = false
+    return { ...scope.begin(), indicatorId: props.indicatorId, granularity: granularity.value,
+      initialGranularity: props.initialGranularity, initialPeriod: props.initialPeriod,
+      params: { ...(props.indicatorVersionId ? { indicatorVersionId: props.indicatorVersionId } : {}),
+        ...serializeAnalysisFilters(props.filters || {}) } }
+  }
+
+  async function fetchAnalysis(params, request) {
+    request.signal.throwIfAborted()
     const key = JSON.stringify(params)
     if (cache.has(key)) return cache.get(key)
-    const context = contextKey
-    const data = await fetchIndicatorAnalysis(props.indicatorId, {
-      ...params, ...(props.indicatorVersionId ? { indicatorVersionId: props.indicatorVersionId } : {})
-    })
-    if (context === contextKey) cache.set(key, data)
+    const data = await fetchIndicatorAnalysis(request.indicatorId, { ...params, ...request.params }, { signal: request.signal })
+    if (request.isCurrent()) cache.set(key, data)
     return data
   }
 
   async function loadPeriods(preferredPeriod = '', restoreContext = false) {
-    const currentRequest = ++requestId
-    const requestedGranularity = granularity.value
+    const currentRequest = begin()
+    const requestedGranularity = currentRequest.granularity
     loading.value = true
     errorMessage.value = ''
     analysis.value = null
@@ -38,11 +48,11 @@ export function useAnalysisPeriod(props, fetchIndicatorAnalysis) {
     selectedPeriod.value = ''
     useInitialContext.value = false
     try {
-      const data = await fetchAnalysis({ granularity: requestedGranularity })
-      if (currentRequest !== requestId) return
+      const data = await fetchAnalysis({ granularity: requestedGranularity }, currentRequest)
+      if (!currentRequest.isCurrent()) return
       periodOptions.value = drillPeriodOptions(data, requestedGranularity)
-      const initial = !initialized.value && requestedGranularity === props.initialGranularity
-        ? drillPeriodKey(props.initialPeriod) : ''
+      const initial = !initialized.value && requestedGranularity === currentRequest.initialGranularity
+        ? drillPeriodKey(currentRequest.initialPeriod) : ''
       const preferred = preferredPeriod || initial
       selectedPeriod.value = periodOptions.value.find(item => item.value === preferred)?.value
         || (preferredPeriod ? '' : periodOptions.value[0]?.value || '')
@@ -50,9 +60,9 @@ export function useAnalysisPeriod(props, fetchIndicatorAnalysis) {
       initialized.value = true
       await resolveSelectedPeriod(data, currentRequest)
     } catch (error) {
-      if (currentRequest === requestId) errorMessage.value = error?.message || '暂时无法读取正式结果，请稍后重试。'
+      if (currentRequest.isCurrent()) errorMessage.value = error?.message || '暂时无法读取正式结果，请稍后重试。'
     } finally {
-      if (currentRequest === requestId) loading.value = false
+      if (currentRequest.isCurrent()) loading.value = false
     }
   }
 
@@ -61,12 +71,12 @@ export function useAnalysisPeriod(props, fetchIndicatorAnalysis) {
     if (!selected) return
     // 多周期分析的维度结果只属于最新一期；旧周期必须重新定位正式结果。
     const data = drillPeriodKey(allPeriods?.overview) === selected.value ? allPeriods
-      : await fetchAnalysis({ granularity: granularity.value, periodStart: selected.periodStart, periodEnd: selected.periodEnd })
-    if (currentRequest === requestId) analysis.value = data
+      : await fetchAnalysis({ granularity: currentRequest.granularity, periodStart: selected.periodStart, periodEnd: shiftReportDate(selected.periodEnd, -1) }, currentRequest)
+    if (currentRequest.isCurrent()) analysis.value = data
   }
 
   async function loadSelectedPeriod() {
-    const currentRequest = ++requestId
+    const currentRequest = begin()
     loading.value = true
     analysis.value = null
     errorMessage.value = ''
@@ -74,9 +84,9 @@ export function useAnalysisPeriod(props, fetchIndicatorAnalysis) {
     try {
       await resolveSelectedPeriod(cache.get(JSON.stringify({ granularity: granularity.value })), currentRequest)
     } catch (error) {
-      if (currentRequest === requestId) errorMessage.value = error?.message || '暂时无法读取该周期结果，请稍后重试。'
+      if (currentRequest.isCurrent()) errorMessage.value = error?.message || '暂时无法读取该周期结果，请稍后重试。'
     } finally {
-      if (currentRequest === requestId) loading.value = false
+      if (currentRequest.isCurrent()) loading.value = false
     }
   }
 
@@ -89,10 +99,11 @@ export function useAnalysisPeriod(props, fetchIndicatorAnalysis) {
     return selectedPeriod.value ? loadSelectedPeriod() : loadPeriods()
   }
 
-  watch(() => [props.indicatorId, props.indicatorVersionId, props.enabled], () => {
-    const nextContext = `${props.indicatorId}:${props.indicatorVersionId}`
+  watch(() => [props.indicatorId, props.indicatorVersionId, props.enabled, JSON.stringify(props.filters || {})], () => {
+    const nextContext = `${props.indicatorId}:${props.indicatorVersionId}:${JSON.stringify(props.filters || {})}`
     if (nextContext !== contextKey) {
-      requestId += 1
+      scope.cancel()
+      interrupted = false
       contextKey = nextContext
       initialized.value = false
       cache.clear()
@@ -103,9 +114,21 @@ export function useAnalysisPeriod(props, fetchIndicatorAnalysis) {
       errorMessage.value = ''
       loading.value = false
     }
-    if (props.enabled && props.indicatorId && !initialized.value) loadPeriods()
+    if (!props.enabled) suspend()
+    else resume()
   }, { immediate: true })
-  onBeforeUnmount(() => { requestId += 1; contextKey = '' })
+  function suspend() {
+    interrupted = interrupted || loading.value
+    scope.cancel()
+    loading.value = false
+  }
+  function resume() {
+    if (inactive || !props.enabled || !props.indicatorId || loading.value) return
+    if (interrupted) loadPeriods(selectedPeriod.value, useInitialContext.value)
+    else if (!initialized.value) loadPeriods()
+  }
+  onDeactivated(() => { inactive = true; suspend() })
+  onActivated(() => { inactive = false; resume() })
 
   return { granularity, selectedPeriod, periodOptions, analysis, loading, errorMessage, initialized, useInitialContext,
     granularityLabel, periodPlaceholder, selectedPeriodLabel, loadPeriods, loadSelectedPeriod, focusPeriod, retryPeriod }

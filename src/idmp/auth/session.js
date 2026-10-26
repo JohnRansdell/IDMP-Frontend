@@ -1,9 +1,12 @@
 import { computed, reactive, readonly } from 'vue'
+import { canAccess, canVisit, firstAccessiblePath } from './permissions.js'
 import {
   clearAccessToken,
   getAccessToken,
   requestJson,
   setAccessToken,
+  isMedicalSession,
+  setMedicalAccessToken,
   setSessionRecoveryHandler
 } from '@/idmp/api/request'
 
@@ -14,54 +17,93 @@ const state = reactive({
   permissions: [],
   dataScopes: [],
   menus: [],
+  apiRules: [],
+  deniedPaths: [],
   expiresInSeconds: 0,
   csrfToken: ''
 })
 
 let refreshPromise = null
 let restorePromise = null
+let sessionRevision = 0
 
 export const sessionState = readonly(state)
 export const isAuthenticated = computed(() => state.status === 'authenticated' && Boolean(getAccessToken()))
 
 export function hasPermission(permissionCode) {
   if (!permissionCode) return true
-  return state.roles.includes('SYSTEM_ADMIN') || state.permissions.includes(permissionCode)
+  return state.roles.some(role => ['ADMIN', 'SYSTEM_ADMIN'].includes(role)) || state.permissions.includes(permissionCode)
 }
 
+export const canRequest = (method, path) => canAccess(state, method, path)
+export const canNavigate = target => canVisit(state, target)
+export const accessibleHome = () => firstAccessiblePath(state)
+
 export async function loginWithPassword(payload) {
+  const revision = ++sessionRevision
   const result = await requestJson('/auth/login', {
     method: 'POST',
     body: JSON.stringify(payload),
     skipSessionRecovery: true
   })
+  if (revision !== sessionRevision) throw new Error('登录状态已变更，请重新登录')
   applyLoginResult(result)
-  await hydrateCurrentUser().catch(() => null)
+  try { await hydrateCurrentUser() }
+  catch (error) { if (revision === sessionRevision) clearSession(); throw error }
+  if (revision !== sessionRevision) throw new Error('登录状态已变更，请重新登录')
+  return result
+}
+
+export async function loginWithMedicalToken(token, entry = 'PLATFORM') {
+  setMedicalAccessToken('', entry)
+  clearSession()
+  const revision = sessionRevision
+  const { exchangeMedicalToken } = await import('@/idmp/api/modules/medical')
+  const result = await exchangeMedicalToken(token, entry)
+  if (revision !== sessionRevision) throw new Error('登录状态已变更，请重新登录')
+  setMedicalAccessToken(result.session.accessToken, entry)
+  state.user = result.session.user
+  state.roles = asArray(result.session.user?.roles)
+  state.permissions = asArray(result.session.permissions)
+  state.expiresInSeconds = Number(result.session.expiresInSeconds || 0)
+  state.csrfToken = ''
+  state.status = 'authenticated'
+  if (entry === 'PLATFORM') {
+    try { await hydrateCurrentUser() }
+    catch (error) { if (revision === sessionRevision) clearSession(); throw error }
+    if (revision !== sessionRevision) throw new Error('登录状态已变更，请重新登录')
+  }
   return result
 }
 
 export async function hydrateCurrentUser() {
+  const revision = sessionRevision
   const result = await requestJson('/auth/me', { skipSessionRecovery: true })
-  applyCurrentUser(result)
+  if (revision === sessionRevision) applyCurrentUser(result)
   return result
 }
 
 export function refreshSession() {
+  if (isMedicalSession()) { clearSession(); return Promise.resolve(false) }
   if (refreshPromise) return refreshPromise
+  const revision = sessionRevision
   refreshPromise = (async () => {
+    await Promise.resolve()
     try {
       const csrfToken = readCsrfToken() || state.csrfToken
+      if (!csrfToken) { clearSession(); return false }
       const result = await requestJson('/auth/refresh', {
         method: 'POST',
         headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {},
         body: JSON.stringify({}),
         skipSessionRecovery: true
       })
+      if (revision !== sessionRevision) return false
       applyLoginResult(result)
-      await hydrateCurrentUser().catch(() => null)
-      return true
+      await hydrateCurrentUser()
+      return revision === sessionRevision && isAuthenticated.value
     } catch {
-      clearSession()
+      if (revision === sessionRevision) clearSession()
       return false
     } finally {
       refreshPromise = null
@@ -77,7 +119,7 @@ export function restoreSession() {
     try {
       if (getAccessToken()) {
         await hydrateCurrentUser()
-        return true
+        return isAuthenticated.value
       }
       return await refreshSession()
     } catch {
@@ -90,23 +132,36 @@ export function restoreSession() {
   return restorePromise
 }
 
+export function ensureAuthenticatedSession() {
+  if (isAuthenticated.value) return Promise.resolve(true)
+  if (state.status === 'anonymous') return Promise.resolve(false)
+  return restoreSession()
+}
+
+export function invalidateSession() { clearSession() }
+
 export async function logoutSession(allSessions = false) {
-  const csrfToken = readCsrfToken() || state.csrfToken
+  sessionRevision += 1
+  const medical = isMedicalSession()
+  const csrfToken = medical ? '' : readCsrfToken() || state.csrfToken
   try {
-    return await requestJson(allSessions ? '/auth/logout-all' : '/auth/logout', {
+    return await requestJson(medical ? '/medical/logout' : allSessions ? '/auth/logout-all' : '/auth/logout', {
       method: 'POST',
+      credentials: medical ? 'omit' : 'include',
       headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {},
       body: JSON.stringify({}),
       skipSessionRecovery: true
     })
   } finally {
     clearSession()
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('idmp:logout'))
   }
 }
 
 function applyLoginResult(result = {}) {
   setAccessToken(result.accessToken)
   state.user = result.user || state.user
+  state.roles = asArray(result.user?.roles)
   state.permissions = asArray(result.permissions)
   state.expiresInSeconds = Number(result.expiresInSeconds || 0)
   state.csrfToken = result.csrfToken || state.csrfToken
@@ -119,10 +174,13 @@ function applyCurrentUser(result = {}) {
   state.permissions = asArray(result.permissions)
   state.dataScopes = asArray(result.dataScopes)
   state.menus = asArray(result.menus)
+  state.apiRules = asArray(result.apiRules)
+  state.deniedPaths = asArray(result.deniedPaths)
   state.status = getAccessToken() ? 'authenticated' : 'anonymous'
 }
 
 function clearSession() {
+  sessionRevision += 1
   clearAccessToken()
   state.status = 'anonymous'
   state.user = null
@@ -130,6 +188,8 @@ function clearSession() {
   state.permissions = []
   state.dataScopes = []
   state.menus = []
+  state.apiRules = []
+  state.deniedPaths = []
   state.expiresInSeconds = 0
   state.csrfToken = ''
 }

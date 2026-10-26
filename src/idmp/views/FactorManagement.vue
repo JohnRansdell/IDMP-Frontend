@@ -13,17 +13,17 @@
       </template>
       <template #actions>
         <div class="page-toolbar">
-          <el-button type="primary" :icon="Plus" @click="openFactorEditor('new')">
+          <el-button v-access="['POST', '/factors']" type="primary" :icon="Plus" @click="openFactorEditor('new')">
             新建因子
           </el-button>
-          <el-button @click="router.push('/factor/templates')">
+          <el-button v-access="['GET', '/factor-templates']" @click="router.push('/factor/templates')">
             从模板创建因子
           </el-button>
-          <el-button v-if="canUseAdvancedCreation" @click="openAdvancedFactorEditor">
+          <el-button v-access="['POST', '/factors']" v-if="canUseAdvancedCreation" @click="openAdvancedFactorEditor">
             高级自定义创建
           </el-button>
-          <el-button @click="router.push('/factor/recycle-bin')">回收站</el-button>
-          <el-button :icon="Upload" @click="showUnavailable('批量导入')">批量导入</el-button>
+          <el-button v-access="['GET', '/factors/recycle-bin']" @click="router.push('/factor/recycle-bin')">回收站</el-button>
+          <el-button v-access="['POST', '/factors']" :icon="Upload" @click="showUnavailable('批量导入')">批量导入</el-button>
         </div>
       </template>
     </PageHeader>
@@ -93,7 +93,7 @@
       >
         <template #actions>
           <el-button @click="resetFilters">清除筛选</el-button>
-          <el-button type="primary" @click="openFactorEditor('new')">新建因子</el-button>
+          <el-button v-access="['POST', '/factors']" type="primary" @click="openFactorEditor('new')">新建因子</el-button>
         </template>
       </StatePanel>
       <div v-else class="table-scroll">
@@ -133,10 +133,10 @@
               <button class="action-link" type="button" @click="openFactorDetail(row)">
                 查看
               </button>
-               <button class="action-link" type="button" @click="openFactorEditor(row.id || row.code)">
+               <button v-access="['POST', '/factors']" class="action-link" type="button" @click="openFactorEditor(row.id || row.code)">
                  编辑
                </button>
-               <button v-if="row.id" class="action-link danger-link" type="button" @click="openDelete(row)">删除</button>
+               <button v-access="['DELETE', '/factors/1']" v-if="row.id" class="action-link danger-link" type="button" @click="openDelete(row)">删除</button>
             </template>
           </el-table-column>
         </el-table>
@@ -178,7 +178,7 @@ import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
 import { getStatusLabel } from '@/idmp/design/status'
 import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
 import { getFactorTypeLabel } from '@/idmp/utils/factorType'
-import { hasPermission, sessionState } from '@/idmp/auth/session'
+import { canRequest } from '@/idmp/auth/session'
 
 const router = useRouter()
 
@@ -200,10 +200,7 @@ const currentPage = ref(1)
 const pageSize = ref(9)
 const selectedRows = ref([])
 const deleteTarget = ref(null)
-const canUseAdvancedCreation = computed(() => {
-  const designerRoles = ['SYSTEM_ADMIN', 'DATA_ADMIN', 'IMPLEMENTATION_ENGINEER', 'SYSTEM_ARCHITECT']
-  return designerRoles.some(role => sessionState.roles.includes(role)) || hasPermission('factor:advanced:create') || hasPermission('factor:template:manage')
-})
+const canUseAdvancedCreation = computed(() => canRequest('POST', '/factors'))
 
 const sourceRows = computed(() => backendFactorRows.value)
 const categoryOptions = computed(() => [...new Set(sourceRows.value.map((item) => item.category).filter(Boolean))])

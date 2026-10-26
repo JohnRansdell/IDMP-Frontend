@@ -13,9 +13,10 @@ await page.route('**/api/v1/**', async route => {
   let data = []
   if (path === '/auth/me') data = { user: { id: '1', username: 'tester' }, roles: ['SYSTEM_ADMIN'], permissions: [], menus: [] }
   else if (path === '/indicator-versions') data = { records: [{ id: '101', indicatorName: '住院死亡率', versionNo: 'V1' }, { id: '102', indicatorName: '无分组测试指标', versionNo: 'V1' }], total: 2, pageNum: 1, pageSize: 200 }
-  else if (path === '/system/users') data = [{ id: '1', username: 'tester' }]
+  else if (path === '/analysis/warning-rules/recipient-options') data = [{ username: '00112', displayName: '验收医生' }]
   else if (path === '/analysis/warning-rules/scope-options') data = url.searchParams.get('indicatorVersionId') === '102' ? [] : [{ targetCode: 'BASE', label: '组合粒度', dimensions: ['DEPT_CODE'] }, { targetCode: 'DRILL:ORG:DEPT', label: '组织 / 科室', dimensions: ['DEPT_CODE', 'DEPT_NAME'] }]
   else if (path === '/analysis/warning-rules/member-options') data = { values: ['4101', '4102'], nextAfter: null }
+  else if (path === '/meta/departments') data = { records: [{ code: '4101', name: '内科' }, { code: '4102', name: '外科' }], total: '2', pageNum: 1, pageSize: 500 }
   else if (path === '/analysis/warning-rules' && req.method() === 'POST') {
     const payload = req.postDataJSON(); requests.push(payload)
     data = { id: '10', code: payload.code, name: payload.name, enableStatus: 'DISABLED', resourceVersion: 0, version: { ...payload, id: '11', publicationStatus: 'DRAFT', resourceVersion: 0 } }
@@ -25,7 +26,7 @@ await page.route('**/api/v1/**', async route => {
   await route.fulfill({ json: { code: '0', data } })
 })
 try {
-  await page.goto('http://127.0.0.1:5177/alerts')
+  await page.goto(`http://127.0.0.1:${process.env.WARNING_APP_PORT || 5176}/alerts`)
   await page.getByRole('tab', { name: '预警规则' }).click()
   await page.getByRole('button', { name: '创建预警规则' }).click()
   const dialog = page.getByRole('dialog', { name: '创建预警规则' })
@@ -55,7 +56,7 @@ try {
   await page.getByRole('option', { name: '组合粒度（DEPT_CODE）', exact: true }).click()
   for (const member of ['4101', '4102']) {
     await item('DEPT_CODE 成员').locator('.el-select').click()
-    await page.getByRole('option', { name: member, exact: true }).click()
+    await page.getByRole('option', { name: new RegExp(`（${member}）`) }).click()
     await page.keyboard.press('Escape')
   }
   const root = dialog.locator('.warning-editor > .warning-condition')
@@ -78,13 +79,15 @@ try {
   await nested.locator('input[aria-label="阈值"]').last().fill('0')
   assert.equal(await preview.innerText(), '（指标值 > 0.05 且 非（（指标值 > 0.01 或 指标值 > 0）））')
   await item('接收用户').locator('.el-select').click()
-  await page.getByRole('option', { name: /tester/ }).click()
+  await page.getByRole('option', { name: '验收医生 · 00112', exact: true }).click()
   await page.keyboard.press('Escape')
   await mkdir('.tmp/warning-nested', { recursive: true })
   await dialog.screenshot({ path: '.tmp/warning-nested/desktop.png' })
   await dialog.getByRole('button', { name: '创建草稿', exact: true }).click()
   await page.getByRole('dialog', { name: '预警规则', exact: true }).waitFor()
   assert.equal(requests.length, 1)
+  assert.deepEqual(requests[0].notificationPolicy.recipientUsernames, ['00112'])
+  assert.equal(Object.hasOwn(requests[0].notificationPolicy, 'recipientUserIds'), false)
   assert.equal(requests[0].condition.logic, 'AND')
   assert.equal(requests[0].condition.children[1].logic, 'NOT')
   assert.equal(requests[0].condition.children[1].children[0].logic, 'OR')
@@ -92,6 +95,7 @@ try {
   assert.equal(requests[0].scopePolicy.resultScope.targetCode, 'BASE')
   await page.setViewportSize({ width: 390, height: 844 })
   const saved = page.getByRole('dialog', { name: '预警规则', exact: true })
+  assert.match(await saved.locator('.el-select__tags-text').allTextContents().then(items => items.join(' ')), /验收医生 · 00112/)
   assert.equal(await saved.locator('output[aria-label="当前条件"]').innerText(), '（指标值 > 0.05 且 非（（指标值 > 0.01 或 指标值 > 0）））')
   await saved.locator('.warning-editor > .warning-condition').scrollIntoViewIfNeeded()
   await saved.screenshot({ path: '.tmp/warning-nested/mobile.png' })

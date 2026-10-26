@@ -111,6 +111,9 @@ export function normalizeDepartmentDataset(dataset, { paths = [], names = new Ma
 export function visibleDimensionName(row, dimension, dataset = {}) {
   const field = dimension.field
   const raw = dimensionFieldValue(row, field)
+  const labels = row.dimensionLabels || {}
+  const labelKey = Object.keys(labels).find(key => key.toLowerCase() === String(field).toLowerCase())
+  if (labelKey !== undefined) return labels[labelKey]
   const identity = departmentIdentity(row)
   if ([identity.field, identity.displayField].some(key => key && key.toLowerCase() === String(field).toLowerCase())) {
     const dictionaryName = dataset.departmentNames?.[identity.code]
@@ -133,6 +136,7 @@ export function visibleDimensionName(row, dimension, dataset = {}) {
 
 export function namedDrillRecord(row, level = {}, names = new Map()) {
   const code = text(row.dimensionKey ?? dimensionFieldValue(row, level.memberKeyFieldCode || level.dimensionFieldCode))
+  if (row.dimensionLabelSource === 'DICTIONARY') return { ...row, dimensionKey: code, dimensionLabel: text(row.dimensionName) || code }
   const name = [isDepartmentLevel(level) ? names.get(code) : '', dimensionFieldValue(row, level.displayFieldCode),
     row.dimensionName, row.dimensionLabel].find(name => isMemberName(name, code))
   return { ...row, dimensionKey: code, dimensionLabel: text(name) || `${level.levelName || (isDepartmentLevel(level) ? '科室' : '成员')}编码：${code}` }

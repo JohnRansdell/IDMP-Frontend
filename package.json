@@ -7,6 +7,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "test:e2e:auth-live": "node test/auth-login.live.e2e.mjs",
     "test:indicator-formula": "node --test test/formula-editor-alignment.test.js test/formula-links.test.js test/indicator-complex-formula.component.test.js test/indicator-adapter.test.js",
     "test:factor-query": "node --test test/factor-query-parity.test.js test/factor-query-parity.component.test.js test/factor-period.test.js test/cascade.test.js",
     "test:api-alignment": "node --test test/pagination.test.js test/drill-explorer.component.test.js test/indicator-scenario-links.component.test.js test/indicator-policy-references.component.test.js test/scenario-editor-entry.component.test.js test/scenario-adapter.test.js test/formula-editor-alignment.test.js test/trial-pagination-alignment.test.js test/department-ranking.test.js",
@@ -55,6 +56,7 @@
     "@dagrejs/dagre": "1.1.8",
     "@element-plus/icons-vue": "2.3.2",
     "@noble/hashes": "1.8.0",
+    "decimal.js": "10.6.0",
     "echarts": "5.6.0",
     "element-plus": "2.13.1",
     "gridstack": "13.2.0",

@@ -1,6 +1,10 @@
 import { requestJson } from '@/idmp/api/request'
 import { serializeWarningRulePayload } from '@/idmp/api/adapters/warning'
 
+export function fetchWarningRecipients() {
+  return requestJson('/analysis/warning-rules/recipient-options')
+}
+
 export function fetchWarningScopeOptions(indicatorVersionId) {
   return requestJson(withQuery('/analysis/warning-rules/scope-options', { indicatorVersionId }))
 }

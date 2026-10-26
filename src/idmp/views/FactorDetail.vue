@@ -7,7 +7,7 @@
       </template>
       <template #actions>
         <el-button @click="router.push('/factor')">返回因子目录</el-button>
-        <el-button v-if="factor" type="primary" @click="edit">编辑因子</el-button>
+        <el-button v-access="['POST', '/factors']" v-if="factor" type="primary" @click="edit">编辑因子</el-button>
       </template>
     </PageHeader>
     <StatePanel v-if="loading" type="loading" title="正在读取因子详情" />
@@ -31,8 +31,8 @@
         <el-alert v-if="versionError" :title="versionError" type="error" :closable="false"><el-button @click="load">重新读取版本</el-button></el-alert>
       </section>
       <div v-if="version" class="factor-workspace">
-        <FactorRuntimeQuery :key="`${selectedVersionId}-${artifactId}`" :version-id="selectedVersionId" :artifact-id="artifactId" :calculation-mode="mode" />
-        <FactorDependencyPanel :key="selectedVersionId" :version-id="selectedVersionId" :artifact-id="artifactId" />
+        <FactorRuntimeQuery v-if="$can('POST', '/factor-versions/1/query')" :key="`${selectedVersionId}-${artifactId}`" :version-id="selectedVersionId" :artifact-id="artifactId" :calculation-mode="mode" />
+        <FactorDependencyPanel v-if="$can('GET', '/factor-versions/1/dependency-graph')" :key="selectedVersionId" :version-id="selectedVersionId" :artifact-id="artifactId" />
       </div>
       <StatePanel v-else-if="!versionError" type="empty" title="该因子尚无版本" description="可进入编辑页创建版本；暂无可查询或查看依赖的版本。" />
     </template>

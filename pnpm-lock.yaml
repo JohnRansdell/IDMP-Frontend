@@ -17,6 +17,9 @@ importers:
       '@noble/hashes':
         specifier: 1.8.0
         version: 1.8.0
+      decimal.js:
+        specifier: 10.6.0
+        version: 10.6.0
       echarts:
         specifier: 5.6.0
         version: 5.6.0

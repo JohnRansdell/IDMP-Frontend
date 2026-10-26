@@ -24,6 +24,10 @@ export function fieldLabel(path = '') {
 export function toUserMessage(value, fallback = DEFAULT_ERROR_MESSAGE) {
   let text = String(value?.message ?? value ?? '').trim().replace(/\s*[（(]traceId\s*:\s*[^）)]+[）)]/gi, '')
   if (!text) return fallback
+  if (/Failed to fetch|NetworkError|ERR_NETWORK|ERR_CONNECTION|网络请求失败/i.test(text)) return '无法连接服务，请检查网络后重试。'
+  if (/Gateway Timeout|ETIMEDOUT|ECONNABORTED|(?:HTTP\s*[:：]?|status code)\s*(408|504)\b/i.test(text)) return '请求超时，请稍后重试。'
+  if (/Bad Gateway|Service Unavailable|(?:HTTP\s*[:：]?|status code)\s*5\d{2}\b/i.test(text)) return '服务暂时不可用，请稍后重试。'
+  if (/https?:\/\/|\/(?:api\/v\d+|analysis|auth|indicator-versions|factor-versions|indicators|factors|meta|calc|sql-imports|async-tasks|system)(?:\/|\?|\b)|(?:HTTP\s*[:：]?|status code)\s*\d{3}\b|<!doctype|<html\b|<head\b|<body\b|nginx\/|upstream|ECONNREFUSED|ENOTFOUND/i.test(text)) return fallback
   if (/SQLSTATE|bad SQL grammar|StatementCallback|jdbc:|Communications link failure|connection refused|access denied for user|unknown column|deadlock|Hikari|SQLException|DataAccessException/i.test(text)) return '数据读取或计算失败，请稍后重试；若持续失败，请联系管理员检查数据源。'
   if (/Encountered unexpected token|Was expecting one of|JSQLParser/i.test(text)) return 'SQL 语句格式有误，请检查语法后重试。'
   if (/Cron expression/i.test(text)) return '执行时间规则无效，请重新设置执行时间。'

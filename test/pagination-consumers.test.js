@@ -20,7 +20,7 @@ const indicatorAst = parseJs(indicatorSource, { sourceType: 'module' })
 const indicatorFunctions = ['fetchAllIndicators', 'fetchIndicators', 'withQuery'].map(name => sourceOf(indicatorAst, indicatorSource, name)).join('\n')
 const catalogLoader = sourceOf(ast, script, 'loadPublishedIndicatorCatalog')
 
-function catalog(total, { failPage, pageSize = 100 } = {}) {
+function catalog(total, { failPage, pageSize = 100, medical = false } = {}) {
   const requests = []
   const rows = Array.from({ length: total }, (_, index) => ({ id: String(102027642463173248n + BigInt(index)), code: `I_${index}`, status: 'PUBLISHED' }))
   const requestJson = async (path, options) => {
@@ -37,12 +37,19 @@ function catalog(total, { failPage, pageSize = 100 } = {}) {
     catalogIndicatorSources: shallowRef([]), remoteFieldCatalog: shallowRef({}), remoteSourcePeriodOptions: shallowRef({}),
     selectedDataCode: shallowRef(''), indicatorCatalogLoading: shallowRef(false), indicatorCatalogError: shallowRef('')
   }
-  const dependencies = { ...state, fetchAllIndicators, fetchDashboardDataSources: async () => rows,
+  const dependencies = { ...state, medicalMode: shallowRef(medical), fetchAllIndicators, fetchDashboardDataSources: async () => rows,
     currentPublishedDashboardDataSources: (sources, indicators) => { assert.deepEqual(indicators, rows); return sources },
     sortDashboardDataSourcesByIndicatorCreatedAt: sources => sources, dashboardDataSourceToFrontend: source => source }
   const load = Function(...Object.keys(dependencies), `let indicatorCatalogRequest = null; ${catalogLoader}; return loadPublishedIndicatorCatalog`)(...Object.values(dependencies))
   return { load, rows, requests, state }
 }
+
+test('scoped dashboard viewer never hydrates the ordinary indicator catalog', async () => {
+  const view = catalog(1000, { medical: true })
+  assert.equal(await view.load(), true)
+  assert.deepEqual(view.requests, [])
+  assert.deepEqual(view.state.catalogIndicatorSources.value, [])
+})
 
 for (const total of [0, 99, 100, 101, 205, 1000]) test(`actual dashboard catalog terminates with ${total} indicators without duplicates`, async () => {
   const view = catalog(total)

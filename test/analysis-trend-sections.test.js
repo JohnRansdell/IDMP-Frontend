@@ -13,12 +13,13 @@ const functions = names.map(name => {
   return descriptor.scriptSetup.content.slice(node.start, node.end)
 }).join('\n')
 
-function page(selection = {}) {
+function page(selection = {}, filters = {}) {
   return Function(`
     const currentIndicatorVersionId = { value: '22' };
     const backendAnalysisGranularity = { value: 'MONTHLY' };
     const isSourceDefaultTrendRange = { value: false };
     const analysisPeriodRange = { value: [] };
+    const reportFilterParams = { value: ${JSON.stringify(filters)} };
     const trendGrainFields = { value: Object.keys(${JSON.stringify(selection)}) };
     const trendGrainApplied = { value: ${JSON.stringify(selection)} };
     const isCompleteDateRange = range => range?.length === 2 && range.every(Boolean);
@@ -35,6 +36,13 @@ test('all trend granularities request only TREND without changing main analysis 
     })
     assert.equal(view.buildAnalysisParams([], '22', granularity).sections, undefined)
   }
+})
+
+test('both overview and trend preserve inherited dashboard filters', () => {
+  const filters = { 'filter.OUT_DEPT_CODE': ['15', '16'] }
+  const view = page({}, filters)
+  assert.deepEqual(view.buildAnalysisParams()['filter.OUT_DEPT_CODE'], ['15', '16'])
+  assert.deepEqual(view.buildTrendAnalysisParams([], '22', 'MONTHLY')['filter.OUT_DEPT_CODE'], ['15', '16'])
 })
 
 test('trend isolation preserves period boundaries and exact combination members', () => {

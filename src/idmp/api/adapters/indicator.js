@@ -1,4 +1,6 @@
 import { normalizeDimensionGrain, serializeDrillPaths } from '../../features/indicator/grouping.js'
+import { formulaChildren, arithmeticFormulaText } from '../../features/indicator/arithmeticFormula.js'
+import { normalizeResultMetrics } from './result.js'
 
 const runtimeEnv = typeof import.meta.env === 'object' && import.meta.env ? import.meta.env : {}
 
@@ -91,13 +93,17 @@ export function createIndicatorDataExplanation({ analysis = {}, overview = null,
   const display = formula?.display || {}
   const isRatio = String(root?.nodeType || '').toUpperCase() === 'BINARY' && String(root?.operator || '').toUpperCase() === 'DIV'
   const multiplier = String(display.multiplier || '')
+  const ids = collectFormulaFactorVersionIds(formula)
+  const factorLabels = ids.map(id => ({ versionId: id, name: resolveFactorVersionName(factorVersions?.[id], id, 'FACTOR') }))
+  const formulaText = root?.nodeType ? arithmeticFormulaText(root, factorLabels) +
+    (multiplier === '100' || String(display.format || '').toUpperCase() === 'PERCENT' ? ' × 100%' : multiplier && multiplier !== '1' ? ` × ${multiplier}` : '') : ''
 
   if (isRatio) {
     const numerator = createExplanationOperand('NUMERATOR', collectFormulaFactorIds(root.left), result, factorVersions)
     const denominator = createExplanationOperand('DENOMINATOR', collectFormulaFactorIds(root.right), result, factorVersions)
     return {
       type: 'RATIO',
-      formulaText: `${operandNames(numerator)} ÷ ${operandNames(denominator)}${multiplier === '100' || String(display.format || '').toUpperCase() === 'PERCENT' ? ' × 100%' : ''}`,
+      formulaText,
       operands: [numerator, denominator]
     }
   }
@@ -105,7 +111,7 @@ export function createIndicatorDataExplanation({ analysis = {}, overview = null,
   const factors = createExplanationOperand('FACTOR', collectFormulaFactorIds(root), result, factorVersions)
   return {
     type: 'FACTORS',
-    formulaText: factors.factorNames.length ? `参与因子：${factors.factorNames.join('、')}` : '当前指标版本未返回可解析的公式因子。',
+    formulaText: formulaText || (factors.factorNames.length ? `参与因子：${factors.factorNames.join('、')}` : '当前指标版本未返回可解析的公式因子。'),
     operands: factors.factorVersionIds.length ? [factors] : []
   }
 }
@@ -122,8 +128,7 @@ function collectFormulaFactorIds(node, ids = []) {
     const id = node.factorVersionId ?? node.versionId ?? node.refVersionId
     if (id !== undefined && id !== null && id !== '') ids.push(id)
   }
-  collectFormulaFactorIds(node.left, ids)
-  collectFormulaFactorIds(node.right, ids)
+  formulaChildren(node).forEach(child => collectFormulaFactorIds(child, ids))
   if (Array.isArray(node.children)) node.children.forEach((child) => collectFormulaFactorIds(child, ids))
   return ids
 }
@@ -140,10 +145,6 @@ function createExplanationOperand(role, ids, result, factorVersions) {
 function resolveFactorVersionName(factorVersion, versionId, role) {
   return factorVersion?.factorName || factorVersion?.name || factorVersion?.factor?.name || factorVersion?.factor?.factorName || factorVersion?.factorCode || factorVersion?.code ||
     `${role === 'NUMERATOR' ? '分子' : role === 'DENOMINATOR' ? '分母' : '参与'}因子（版本 ${versionId}）`
-}
-
-function operandNames(operand) {
-  return operand.factorNames.length ? operand.factorNames.join(' + ') : operand.role === 'NUMERATOR' ? '分子因子' : '分母因子'
 }
 
 export function normalizeIndicatorTrialResults(payload = {}) {
@@ -169,7 +170,7 @@ export function normalizeIndicatorTrialResults(payload = {}) {
 
 export function selectDefaultIndicatorTrialTarget(targets = []) {
   const list = Array.isArray(targets) ? targets : []
-  return list.find((target) => target.pathCode === 'TIME' && target.levelCode === 'MONTH')
+  return list.find((target) => target.targetCode === 'BASE')
     || [...list].sort((left, right) => right.grain.length - left.grain.length)[0]
     || null
 }
@@ -301,16 +302,18 @@ export function normalizeIndicatorAnalysisParams(params = {}) {
 export function normalizeIndicatorRangeSummaryParams(params = {}) {
   return normalizeIndicatorAnalysisParams({
     indicatorVersionId: params.indicatorVersionId,
+    ...(params.granularity ? { granularity: params.granularity } : {}),
     periodStart: params.periodStart,
-    periodEnd: params.periodEnd
+    periodEnd: params.periodEnd,
+    ...Object.fromEntries(Object.entries(params).filter(([key]) => key.startsWith('filter.')))
   })
 }
 
 export function normalizeIndicatorInstantSummary(result, periodStart, periodEnd) {
   if (result?.grainFieldCodes?.length || !Array.isArray(result?.rows) || result.rows.length > 1) {
-    throw new Error('即时查询未返回单条全院汇总结果')
+    throw new Error('即时查询未返回当前筛选范围的单条汇总结果')
   }
-  const row = result.rows[0]
+  const row = result.rows[0] && normalizeResultMetrics(result.rows[0])
   return {
     indicatorVersionId: result.indicatorVersionId,
     periodStart,
@@ -351,7 +354,7 @@ export function normalizeDrillPaths(payload, fallback = []) {
     pathVersionId: String(path?.pathVersionId || ''),
     ...(path?.pathName ? { pathName: path.pathName } : {}),
     ...(path?.levels?.length ? { levels: path.levels } : {})
-  })).filter((path) => path.pathCode && path.maxLevel)
+  })).filter((path) => path.pathCode && path.maxLevel && path.pathCode.trim().toUpperCase() !== 'TIME')
 }
 
 export function normalizeDrillConfig(payload, fallback = defaultDrillConfig) {
@@ -364,20 +367,17 @@ export function normalizeDrillConfig(payload, fallback = defaultDrillConfig) {
   }
 }
 
-export function buildIndicatorVersionPayload({ copyFromVersionId = '', drillConfig, drillPaths, formula, calculationMode, dimensionGrain, factorDimensionBindings } = {}) {
+export function buildIndicatorVersionPayload({ copyFromVersionId = '', drillConfig, drillPaths, formula, calculationMode, dimensionGrain, factorDimensionBindings, dataOwnership } = {}) {
   const normalizedPaths = Array.isArray(drillPaths)
     ? drillPaths
     : drillConfig ? [drillConfig] : []
-  if (new Set(normalizedPaths.map((path) => path.pathCode)).size !== normalizedPaths.length) {
-    throw new Error('同一下钻路径只能选择一次')
-  }
-
   return {
     ...(copyFromVersionId ? { copyFromVersionId: String(copyFromVersionId) } : {}),
     ...(formula ? { formula } : {}),
     ...(calculationMode ? { calculationMode: String(calculationMode).toUpperCase() } : {}),
     drillPaths: serializeDrillPaths(normalizedPaths),
     ...(factorDimensionBindings !== undefined ? { factorDimensionBindings } : {}),
+    ...(dataOwnership != null ? { dataOwnership: { ...dataOwnership } } : {}),
     ...(dimensionGrain !== undefined ? { dimensionGrain: normalizeDimensionGrain(dimensionGrain) } : {})
   }
 }
@@ -386,6 +386,9 @@ export function normalizeDrillCapabilities(payload = {}) {
   const data = payload?.data || payload || {}
   return {
     factorVersionIds: Array.isArray(data.factorVersionIds) ? data.factorVersionIds.map((id) => String(id)) : [],
+    defaultOrganizationPath: data.defaultOrganizationPath ? normalizeDrillPaths({ drillPaths: [data.defaultOrganizationPath] })[0] : null,
+    suggestedDataOwnership: data.suggestedDataOwnership ? { ...data.suggestedDataOwnership } : null,
+    configuredDataOwnership: data.configuredDataOwnership ? { ...data.configuredDataOwnership } : null,
     dimensionGrainOptions: Array.isArray(data.dimensionGrainOptions) ? data.dimensionGrainOptions.map(String) : [],
     fieldOptions: (data.fieldOptions || []).map(item => ({ ...item, factorVersionId: String(item.factorVersionId || ''), fields: (item.fields || []).map(field => ({ ...field, fieldId: String(field.fieldId || '') })) })),
     dimensions: Array.isArray(data.dimensions) ? data.dimensions.map((dimension) => ({
@@ -401,7 +404,7 @@ export function normalizeDrillCapabilities(payload = {}) {
         maxLevel: String(factor?.maxLevel || ''),
         reason: String(factor?.reason || '')
       })) : []
-    })).filter((dimension) => dimension.pathCode) : []
+    })).filter((dimension) => dimension.pathCode && dimension.pathCode.trim().toUpperCase() !== 'TIME') : []
   }
 }
 

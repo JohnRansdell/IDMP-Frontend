@@ -10,6 +10,17 @@ const monthly = month => resolveDashboardPeriod({ type: 'MONTHLY', month })
 const row = (period, value = .4) => ({ ...period, value, periodStart: `${period.periodStart}T00:00:00`, periodEnd: `${period.periodEnd}T00:00:00` })
 const comparable = { status: 'COMPARABLE', relativeChangePercent: 25 }
 
+test('empty filter matches stay empty rather than claiming the period must be recalculated', () => {
+  for (const period of [monthly('2026-03'), resolveDashboardPeriod({ type: 'CUSTOM', startMonth: '2026-03', endMonth: '2026-03' })]) {
+    const result = enforceDashboardResultPeriod({ status: 'EMPTY', rows: [], message: '当前统计周期与筛选条件下没有匹配的结果' }, period)
+    assert.equal(result.status, 'EMPTY')
+    assert.equal(result.drillContext, null)
+    const guidance = widgetEmptyGuidance({}, widgetResultToDataset(result))
+    assert.equal(guidance.title, '当前筛选条件下暂无数据')
+    assert.doesNotMatch(guidance.description, /请先计算|暂无完整结果/)
+  }
+})
+
 test('dashboard defaults to a single latest month, not a multi-month range with a last-month total', () => {
   const selected = defaultDashboardPeriod([{ value: '2026-03' }, { value: '2026-05' }])
   assert.deepEqual(resolveDashboardPeriod(selected), { periodStart: '2026-05-01', periodEnd: '2026-06-01', granularity: 'MONTHLY', selectionType: 'MONTHLY' })

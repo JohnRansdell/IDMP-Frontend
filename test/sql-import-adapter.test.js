@@ -262,6 +262,14 @@ test('SQL runtime parameter values preserve declared types and validate required
   }), { deptCode: '4', minimumHours: 48, ratio: 1.25, enabled: false })
 })
 
+test('SQL import service failures use friendly messages even when raw payloads contain Chinese and paths', () => {
+  for (const status of [502, 503]) {
+    const result = normalizeSqlImportOperationError({ status, payload: { message: '导入失败：/api/v1/sql-imports/example 服务异常', traceId: 'support-id' } })
+    assert.equal(result.message, '服务暂时不可用，请稍后重试。')
+    assert.equal(result.traceId, 'support-id')
+  }
+})
+
 test('SQL import hides parser internals and explains JSON pasted into the SQL editor', () => {
   const raw = 'SQL语法解析失败: Encountered unexpected token: "{" "{" at line 1, column 1. Was expecting one of: SELECT'
   const preview = normalizeSqlImportPreview({

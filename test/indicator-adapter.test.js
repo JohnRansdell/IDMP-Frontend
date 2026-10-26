@@ -1,5 +1,22 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+
+test('organization defaults and configured visibility survive API normalization and authoring', () => {
+  const path = { pathCode: 'ORGANIZATION', maxLevel: 'OUT_DEPT', levels: [{ levelCode: 'HOSPITAL' }, { levelCode: 'OUT_DEPT', dimensionFieldCode: '科室' }] }
+  const ownership = { mode: 'DEPARTMENT', departmentFieldCode: '科室' }
+  const publicOwnership = { mode: 'GLOBAL_PUBLIC', departmentFieldCode: null }
+  const result = normalizeDrillCapabilities({ defaultOrganizationPath: path, suggestedDataOwnership: ownership, configuredDataOwnership: publicOwnership })
+  assert.equal(result.defaultOrganizationPath.levels[1].dimensionFieldCode, '科室')
+  assert.deepEqual(result.suggestedDataOwnership, ownership)
+  assert.deepEqual(result.configuredDataOwnership, publicOwnership)
+  assert.notEqual(result.configuredDataOwnership, publicOwnership)
+  const payload = buildIndicatorVersionPayload({ drillPaths: [], dataOwnership: ownership })
+  assert.deepEqual(payload.drillPaths, [])
+  assert.deepEqual(payload.dataOwnership, ownership)
+  assert.notEqual(payload.dataOwnership, ownership)
+  assert.equal(normalizeDrillCapabilities({}).suggestedDataOwnership, null)
+  assert.equal(normalizeDrillCapabilities({}).configuredDataOwnership, null)
+})
 import {
   buildIndicatorVersionPayload,
   buildIndicatorDataSources,
@@ -39,7 +56,7 @@ test('range summary only sends inclusive dates and optional published version', 
     indicatorVersionId: '102027642461313071', granularity: 'MONTHLY'
   }), {
     periodStart: '2026-04-01', periodEnd: '2026-05-08',
-    indicatorVersionId: '102027642461313071'
+    indicatorVersionId: '102027642461313071', granularity: 'MONTHLY'
   })
 })
 
@@ -55,7 +72,7 @@ test('instant summary displays only an ungrouped source result for the exact sel
   })
   assert.throws(() => normalizeIndicatorInstantSummary({
     grainFieldCodes: ['OUT_DEPT_CODE'], rows: [{ value: 1 }]
-  }, '2026-02-05', '2026-03-05'), /单条全院汇总/)
+  }, '2026-02-05', '2026-03-05'), /当前筛选范围的单条汇总/)
 })
 
 test('indicator trial adapter keeps every returned time target and defaults to month', () => {
@@ -225,7 +242,7 @@ test('indicator version payload always includes the selected drill path', () => 
   })
 })
 
-test('indicator version payload supports multiple selected drill paths', () => {
+test('indicator version payload omits legacy time paths and validates business duplicates', () => {
   const payload = buildIndicatorVersionPayload({
     drillPaths: [
       { pathCode: 'ORGANIZATION', maxLevel: 'OUT_DEPT' },
@@ -234,13 +251,12 @@ test('indicator version payload supports multiple selected drill paths', () => {
   })
 
   assert.deepEqual(payload.drillPaths, [
-    { pathCode: 'ORGANIZATION', maxLevel: 'OUT_DEPT' },
-    { pathCode: 'TIME', maxLevel: 'MONTH' }
+    { pathCode: 'ORGANIZATION', maxLevel: 'OUT_DEPT' }
   ])
   assert.throws(() => buildIndicatorVersionPayload({
     drillPaths: [
-      { pathCode: 'TIME', maxLevel: 'MONTH' },
-      { pathCode: 'TIME', maxLevel: 'DAY' }
+      { pathCode: 'ORGANIZATION', maxLevel: 'OUT_DEPT' },
+      { pathCode: 'ORGANIZATION', maxLevel: 'ATTENDING_DOCTOR' }
     ]
   }), /只能选择一次/)
 })
@@ -253,7 +269,7 @@ test('indicator versions carry combination grain and preserve specific drill ver
   assert.equal(validateDrillSelection({}, []), '')
   assert.throws(() => buildIndicatorVersionPayload({ dimensionGrain: ['a', 'A'] }), /重复/)
   assert.throws(() => buildIndicatorVersionPayload({ dimensionGrain: ['v.dept_code'] }), /字母/)
-  assert.throws(() => buildIndicatorVersionPayload({ drillPaths: [{ pathCode: 'TIME' }] }), /最大层级/)
+  assert.deepEqual(buildIndicatorVersionPayload({ drillPaths: [{ pathCode: 'TIME' }] }).drillPaths, [])
   assert.deepEqual(normalizeDrillCapabilities({ dimensionGrainOptions: ['DEPT_CODE', 'DIAGNOSIS'] }).dimensionGrainOptions, ['DEPT_CODE', 'DIAGNOSIS'])
 })
 
@@ -276,12 +292,12 @@ test('drill capability adapter preserves bigint ids and validates selected level
   })
 
   assert.equal(capabilities.factorVersionIds[0], '102027642460282572')
+  assert.deepEqual(capabilities.dimensions.map(item => item.pathCode), ['ORGANIZATION'])
   assert.equal(capabilities.dimensions[0].limitingFactors[0].factorVersionId, '102027642460282572')
   assert.equal(validateDrillSelection(capabilities, [{ pathCode: 'ORGANIZATION', maxLevel: 'OUT_DEPT' }]), '')
   assert.match(validateDrillSelection(capabilities, [{ pathCode: 'ORGANIZATION', maxLevel: 'ATTENDING_DOCTOR' }]), /不支持层级/)
   assert.match(validateDrillSelection(capabilities, [{ pathCode: 'TIME', maxLevel: 'MONTH' }]), /不支持下钻/)
   assert.deepEqual(normalizeDrillPaths({ drillConfig: { drillPaths: [{ pathCode: 'TIME', maxLevel: 'MONTH' }, { pathCode: 'ORGANIZATION', maxLevel: 'OUT_DEPT' }] } }), [
-    { pathCode: 'TIME', maxLevel: 'MONTH', pathVersionId: '' },
     { pathCode: 'ORGANIZATION', maxLevel: 'OUT_DEPT', pathVersionId: '' }
   ])
 })
@@ -343,7 +359,7 @@ test('analysis explanation keeps ratio definitions separate from official result
   })
 
   assert.equal(explanation.type, 'RATIO')
-  assert.equal(explanation.formulaText, '男性出院病案人次 ÷ 全部出院病案人次 × 100%')
+  assert.equal(explanation.formulaText, '(男性出院病案人次 ÷ 全部出院病案人次) × 100%')
   assert.deepEqual(explanation.operands.map((item) => item.factorNames), [['男性出院病案人次'], ['全部出院病案人次']])
   assert.equal(explanation.operands[0].value, 0)
   assert.equal(explanation.operands[0].hasResultValue, true)
@@ -363,6 +379,6 @@ test('analysis explanation lists non-ratio factors and falls back to version ids
   assert.deepEqual(collectFormulaFactorVersionIds(formula), ['left-version', 'right-version'])
   assert.equal(explanation.type, 'FACTORS')
   assert.deepEqual(explanation.operands[0].factorVersionIds, ['left-version', 'right-version'])
-  assert.match(explanation.formulaText, /参与因子/)
+  assert.match(explanation.formulaText, /参与因子（版本 left-version） \+ 参与因子（版本 right-version）/)
   assert.match(explanation.operands[0].factorNames[0], /版本 left-version/)
 })

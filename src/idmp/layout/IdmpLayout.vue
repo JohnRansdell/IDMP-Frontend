@@ -1,7 +1,7 @@
 <template>
   <div class="idmp-shell" :class="{ 'is-designer-immersive': designerImmersive }">
     <aside v-if="!designerImmersive" class="idmp-sidebar">
-      <RouterLink to="/dashboard" class="idmp-brand" aria-label="返回指标总览">
+      <RouterLink :to="medicalViewer ? '/dashboard?medical=1' : accessibleHome()" class="idmp-brand" aria-label="返回首页">
         <span class="idmp-brand__mark">
           <el-icon :size="18"><DataAnalysis /></el-icon>
         </span>
@@ -22,7 +22,7 @@
           <template v-for="item in group.items" :key="item.path">
             <div class="idmp-nav__row" :class="{ 'has-children': Boolean(item.children), 'is-active': activePath === item.path }">
               <RouterLink
-                :to="item.path"
+                :to="medicalViewer ? { path: item.path, query: { medical: '1' } } : item.path"
                 class="idmp-nav__item"
                 :class="{ 'is-active': activePath === item.path }"
                 :aria-current="activePath === item.path ? 'page' : undefined"
@@ -45,7 +45,7 @@
               <RouterLink
                 v-for="child in item.children"
                 :key="child.id"
-                :to="{ path: '/dashboard', query: { id: child.id } }"
+                :to="{ path: '/dashboard', query: { id: child.id, ...(medicalViewer ? { medical: '1' } : {}) } }"
                 class="idmp-nav__subitem"
                 :class="{ 'is-active': route.path === '/dashboard' && String(route.query.id || dashboardRequestedId) === String(child.id) }"
                 :title="child.name"
@@ -73,7 +73,7 @@
             <el-option v-for="scene in currentSceneOptions" :key="scene.value" :label="scene.label" :value="scene.value" />
           </el-select>
         </div>
-        <el-tooltip content="查看预警中心" placement="bottom">
+        <el-tooltip v-if="!medicalViewer && canNavigate('/alerts')" content="查看预警中心" placement="bottom">
           <el-badge :value="unreadCount || undefined" :hidden="!unreadCount" class="notification-badge">
             <el-button text circle :aria-label="`查看 ${unreadCount} 条未读站内通知`" @click="router.push('/alerts')">
               <el-icon :size="19"><Bell /></el-icon>
@@ -87,13 +87,17 @@
             <span v-if="currentUserDepartment" class="idmp-user__role">{{ currentUserDepartment }}</span>
           </span>
         </div>
+        <el-tooltip content="退出登录" placement="bottom">
+          <el-button text circle :icon="SwitchButton" aria-label="退出登录" :loading="logoutLoading" @click="handleLogout" />
+        </el-tooltip>
       </div>
     </header>
 
     <main class="idmp-main">
-      <RouterView v-slot="{ Component, route: currentRoute }">
+      <StatePanel v-if="platformPermissionsMissing" type="empty" title="账号尚未配置平台权限" description="已登录，请联系管理员为当前账号分配平台角色和访问权限。" />
+      <RouterView v-else v-slot="{ Component, route: currentRoute }">
         <KeepAlive :include="['Dashboard', 'AlertCenter']" :max="2">
-          <component :is="Component" :key="currentRoute.path" />
+          <component :is="Component" :key="`${currentRoute.path}-${medicalViewer ? 'medical' : 'platform'}`" />
         </KeepAlive>
       </RouterView>
     </main>
@@ -118,17 +122,35 @@ import {
   List,
   Monitor,
   Setting,
-  TrendCharts
+  TrendCharts,
+  SwitchButton
 } from '@element-plus/icons-vue'
-import { sessionState } from '@/idmp/auth/session'
+import { logoutSession, sessionState, canNavigate, canRequest, accessibleHome } from '@/idmp/auth/session'
+import { isMedicalDashboardSession } from '@/idmp/api/request'
+import StatePanel from '@/idmp/components/StatePanel.vue'
+import { ElMessage } from '@/idmp/utils/message'
 import { fetchUnreadNotificationCount } from '@/idmp/api/modules/warnings'
 import { fetchDashboardCatalog } from '@/idmp/api/modules/analysisDashboard'
+import { fetchMedicalCatalog } from '@/idmp/api/modules/medical'
 import { dashboardSummaryToCatalogEntry } from '@/idmp/api/adapters/dashboard'
 import { readDashboardCatalog } from '@/idmp/features/dashboard/catalog.js'
 import { buildPageBreadcrumbs } from '@/router/breadcrumbs.js'
 
 const route = useRoute()
 const router = useRouter()
+const logoutLoading = ref(false)
+const medicalViewer = computed(() => isMedicalDashboardSession() || (route.path === '/dashboard' && route.query.medical === '1'))
+const platformPermissionsMissing = computed(() => sessionState.status === 'authenticated'
+  && !medicalViewer.value
+  && !sessionState.roles.some(role => ['ADMIN', 'SYSTEM_ADMIN'].includes(role))
+  && !sessionState.permissions.length)
+async function handleLogout() {
+  if (logoutLoading.value) return
+  logoutLoading.value = true
+  try { await logoutSession() }
+  catch { ElMessage.warning('本地已退出，服务端会话注销失败，请稍后重试') }
+  finally { logoutLoading.value = false; await router.replace('/login') }
+}
 const currentUserName = computed(() => sessionState.user?.displayName || sessionState.user?.nickname || sessionState.user?.username || '当前用户')
 const currentUserDepartment = computed(() => sessionState.user?.departmentName || sessionState.user?.deptName || '')
 const isDashboardRoute = computed(() => route.name === 'Dashboard')
@@ -141,6 +163,12 @@ const currentScene = computed({
 const unreadCount = ref(0)
 const dashboardMenuExpanded = ref(true)
 async function refreshRemoteDashboardOptions() {
+  if (medicalViewer.value) {
+    try { remoteDashboardOptions.value = (await fetchMedicalCatalog()).map(dashboardSummaryToCatalogEntry) }
+    catch { remoteDashboardOptions.value = [] }
+    return
+  }
+  if (platformPermissionsMissing.value || !canNavigate('/dashboard')) { remoteDashboardOptions.value = []; return }
   const localOptions = readDashboardCatalog(localStorage).map(item => ({ ...item, origin: 'local' }))
   try {
     const catalog = await fetchDashboardCatalog()
@@ -152,6 +180,8 @@ async function refreshRemoteDashboardOptions() {
 }
 let unreadRequestId = 0
 async function loadUnreadCount() {
+  if (medicalViewer.value) { unreadCount.value = 0; return }
+  if (platformPermissionsMissing.value || !canRequest('GET', '/me/notifications/unread-count')) { unreadCount.value = 0; return }
   const requestId = ++unreadRequestId
   try {
     const count = Number((await fetchUnreadNotificationCount())?.unreadCount || 0)
@@ -161,7 +191,9 @@ async function loadUnreadCount() {
   }
 }
 
-const navGroups = computed(() => [
+const navGroups = computed(() => medicalViewer.value ? [{ id: 'nav-overview', label: '总览与分析', items: [
+  { label: '看板总览', path: '/dashboard', icon: markRaw(Histogram), children: remoteDashboardOptions.value }
+] }] : [
   {
     id: 'nav-overview',
     label: '总览与分析',
@@ -207,12 +239,13 @@ const navGroups = computed(() => [
       { label: '系统管理', path: '/system', icon: markRaw(Setting) }
     ]
   }
-])
+].map(group => ({ ...group, items: group.items.filter(item => canNavigate(item.path)) })).filter(group => group.items.length))
 
 const activePath = computed(() => route.meta.activeMenu || route.path)
-const displayBreadcrumbs = computed(() => buildPageBreadcrumbs(route))
+const displayBreadcrumbs = computed(() => buildPageBreadcrumbs(route).map(item => item.to && !canNavigate(typeof item.to === 'string' ? item.to : router.resolve(item.to)) ? { ...item, to: undefined } : item))
 
 watch(dashboardCatalogRevision, () => { void refreshRemoteDashboardOptions() })
 watch(notificationReadRevision, () => { void loadUnreadCount() })
+watch(medicalViewer, () => { void refreshRemoteDashboardOptions(); void loadUnreadCount() })
 onMounted(() => { loadUnreadCount(); void refreshRemoteDashboardOptions() })
 </script>

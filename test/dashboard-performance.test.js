@@ -10,7 +10,19 @@ import { normalizeDepartmentDataset } from '../src/idmp/features/dashboard/dimen
 
 const apiSource = (await readFile(new URL('../src/idmp/api/modules/analysisDashboard.js', import.meta.url), 'utf8'))
   .replace(/^import .*$/gm, '').replace(/^export /gm, '')
-const loadApi = requestJson => Function('requestJson', 'expandDashboardResponse', `${apiSource}; return { queryDashboard, previewDashboardWidget }`)(requestJson, expandDashboardResponse)
+const loadApi = requestJson => Function('requestJson', 'expandDashboardResponse', `${apiSource}; return { queryDashboard, previewDashboardWidget, fetchDashboardDataSourceFields }`)(requestJson, expandDashboardResponse)
+
+test('field metadata requests preserve the component pinned indicator version', async () => {
+  const calls = []
+  const api = loadApi((url, options) => { calls.push({ url, options }); return [] })
+  const signal = new AbortController().signal
+  await api.fetchDashboardDataSourceFields('指标', { indicatorVersionId: '102027642460335206', signal })
+  await api.fetchDashboardDataSourceFields('指标', { signal })
+  assert.match(calls[0].url, /fields\?indicatorVersionId=102027642460335206$/)
+  assert.equal(calls[0].options.signal, signal)
+  assert.equal(calls[0].options.indicatorVersionId, undefined)
+  assert.match(calls[1].url, /\/fields$/)
+})
 
 const columns = (records, names) => ({ rowCount: records.length, columns: names.map(name => ({ name, values: records.map(row => row[name]), indices: null })) })
 function fixture() {

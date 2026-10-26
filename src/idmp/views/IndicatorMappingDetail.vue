@@ -7,11 +7,11 @@
       <template #actions>
         <div class="mapping-detail-actions">
         <el-button :icon="Back" @click="backToList">返回列表</el-button>
-        <el-button v-if="capabilities.canEdit" type="primary" :icon="Edit" @click="openEdit">编辑草稿</el-button>
-        <el-button v-if="capabilities.canSubmit" type="primary" :loading="mutating" @click="runCurrentAction('submit')">提交审核</el-button>
-        <el-button v-if="capabilities.canApprove" type="success" :loading="mutating" @click="reviewCurrentMapping('approve')">审核通过并发布</el-button>
-        <el-button v-if="capabilities.canReject" type="danger" plain :loading="mutating" @click="reviewCurrentMapping('reject')">驳回</el-button>
-        <el-button v-if="capabilities.canInvalidate" type="warning" :loading="mutating" @click="invalidateCurrentMapping">人工失效</el-button>
+        <el-button v-access="['PATCH', '/mappings/1']" v-if="capabilities.canEdit" type="primary" :icon="Edit" @click="openEdit">编辑草稿</el-button>
+        <el-button v-access="['POST', '/mappings/1/submit']" v-if="capabilities.canSubmit" type="primary" :loading="mutating" @click="runCurrentAction('submit')">提交审核</el-button>
+        <el-button v-access="['POST', '/mappings/1/approve']" v-if="capabilities.canApprove" type="success" :loading="mutating" @click="reviewCurrentMapping('approve')">审核通过并发布</el-button>
+        <el-button v-access="['POST', '/mappings/1/approve']" v-if="capabilities.canReject" type="danger" plain :loading="mutating" @click="reviewCurrentMapping('reject')">驳回</el-button>
+        <el-button v-access="['POST', '/mappings/1/invalidate']" v-if="capabilities.canInvalidate" type="warning" :loading="mutating" @click="invalidateCurrentMapping">人工失效</el-button>
         </div>
       </template>
     </PageHeader>
@@ -117,14 +117,14 @@
               <section v-for="side in policySides" :key="side.key" class="policy-panel">
                 <div class="policy-panel__head">
                   <div><h2>{{ side.label }}</h2><p>{{ policyLabel(side.indicator) }}</p></div>
-                  <el-button link type="primary" @click="togglePolicyForm(side.key)">{{ addingPolicySide === side.key ? '收起添加' : '添加引用' }}</el-button>
+                  <el-button v-access="['POST', '/mappings/indicator-versions/1/policy-references']" link type="primary" @click="togglePolicyForm(side.key)">{{ addingPolicySide === side.key ? '收起添加' : '添加引用' }}</el-button>
                 </div>
                 <el-form v-if="addingPolicySide === side.key" label-position="top" class="policy-form">
                   <el-form-item label="已发布政策版本"><PolicyVersionPicker v-model="policyForms[side.key].policyFileVersionId" clearable :disabled="mutating" /></el-form-item>
                   <el-form-item label="引用角色"><el-select v-model="policyForms[side.key].relationRole"><el-option v-for="item in POLICY_REFERENCE_ROLES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
                   <el-form-item label="出处"><el-input v-model="policyForms[side.key].citationLocation" /></el-form-item>
                   <el-form-item label="政策原文"><el-input v-model="policyForms[side.key].citationText" type="textarea" :rows="2" /></el-form-item>
-                  <el-button type="primary" :loading="mutating" @click="savePolicyReference(side.key)">保存引用</el-button>
+                  <el-button v-access="['POST', '/mappings/indicator-versions/1/policy-references']" type="primary" :loading="mutating" @click="savePolicyReference(side.key)">保存引用</el-button>
                 </el-form>
                 <div class="policy-table-scroll">
                   <div class="policy-table">
@@ -132,7 +132,7 @@
                       <el-table-column label="政策文件" min-width="180"><template #default="{ row }">{{ row.policyFileName || row.policyFileCode || `政策版本 ${row.policyFileVersionId}` }}</template></el-table-column>
                       <el-table-column label="引用角色" width="110"><template #default="{ row }">{{ policyReferenceRoleLabel(row.relationRole) }}</template></el-table-column>
                       <el-table-column prop="citationLocation" label="出处" min-width="150" show-overflow-tooltip />
-                      <el-table-column label="操作" width="76"><template #default="{ row }"><el-button link type="danger" @click="invalidatePolicyReference(row, side.key)">失效</el-button></template></el-table-column>
+                      <el-table-column label="操作" width="76"><template #default="{ row }"><el-button v-access="['POST', '/mappings/policy-references/1/invalidate']" link type="danger" @click="invalidatePolicyReference(row, side.key)">失效</el-button></template></el-table-column>
                     </el-table>
                   </div>
                 </div>

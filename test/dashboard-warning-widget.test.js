@@ -20,6 +20,19 @@ test('warning widget query and presentation preserve audited event fields', () =
   assert.equal(item.id, 'event-1')
   assert.equal(item.level, 'danger')
   assert.match(item.text, /死亡率阈值/)
-  assert.match(item.text, /当前值 0.85 \/ 阈值 0.8/)
+  assert.match(item.text, /当前值 0.85/)
+  assert.doesNotMatch(item.text, /阈值 0.8/)
   assert.equal(item.time, '2026-09-28 10:00:00')
+})
+
+test('warning widget handles nested conditions, zero values and missing values without a fictitious threshold', () => {
+  for (const [actualValue, display] of [[0.41924399, '0.41924399'], [0, '0'], [null, '-']]) {
+    const event = { warningType: 'THRESHOLD', actualValue, thresholdValue: null }
+    const item = warningEventToDashboardItem(event)
+    assert.equal(item.name, '阈值预警')
+    assert.equal(item.detail, `当前值 ${display}`)
+    assert.doesNotMatch(item.detail, /阈值/)
+    assert.deepEqual(event, { warningType: 'THRESHOLD', actualValue, thresholdValue: null })
+    assert.equal(warningEventToDashboardItem(event, { showValue: false }).detail, '')
+  }
 })

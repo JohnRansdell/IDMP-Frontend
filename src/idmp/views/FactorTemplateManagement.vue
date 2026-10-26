@@ -2,7 +2,7 @@
   <div class="idmp-page">
     <PageHeader title="因子模板管理" status="ENABLED" status-label="后端模板生命周期接口">
       <template #meta><span class="header-meta">模板、版本、校验、发布及实例化均直接调用 M1A 接口</span></template>
-      <template #actions><div class="page-toolbar"><el-button @click="load">刷新</el-button><el-button v-if="canManageTemplates" type="primary" @click="router.push('/factor/templates/new')">新建模板</el-button></div></template>
+      <template #actions><div class="page-toolbar"><el-button @click="load">刷新</el-button><el-button v-access="['POST', '/factor-templates']" v-if="canManageTemplates" type="primary" @click="router.push('/factor/templates/new')">新建模板</el-button></div></template>
     </PageHeader>
     <section class="surface-card filter-card template-filter" aria-label="因子模板筛选">
       <el-form :inline="true" @submit.prevent="load">
@@ -12,7 +12,7 @@
         <el-form-item><el-button type="primary" native-type="submit">查询</el-button></el-form-item>
       </el-form>
     </section>
-    <section class="surface-card table-card"><el-table v-loading="loading" :data="rows" empty-text="暂无模板"><el-table-column prop="name" label="模板名称" min-width="260"><template #default="{ row }"><CodeTooltip :code="row.code" label="模板编码"><span>{{ row.name }}</span></CodeTooltip></template></el-table-column><el-table-column prop="factorTypeScope" label="适用因子类型" min-width="140" /><el-table-column label="当前状态" width="120"><template #default="{ row }"><StatusBadge :status="row.publicationStatus || row.status" /></template></el-table-column><el-table-column label="校验状态" width="120"><template #default="{ row }">{{ row.validatedAt ? '已校验' : '-' }}</template></el-table-column><el-table-column prop="updatedAt" label="更新时间" min-width="170" /><el-table-column label="操作" width="200" fixed="right"><template #default="{ row }"><el-button v-if="row.currentPublishedVersionId" link type="primary" @click="instantiate(row)">创建因子</el-button><el-button link @click="open(row)">{{ row.currentPublishedVersionId ? '管理模板' : '管理草稿' }}</el-button></template></el-table-column></el-table></section>
+    <section class="surface-card table-card"><el-table v-loading="loading" :data="rows" empty-text="暂无模板"><el-table-column prop="name" label="模板名称" min-width="260"><template #default="{ row }"><CodeTooltip :code="row.code" label="模板编码"><span>{{ row.name }}</span></CodeTooltip></template></el-table-column><el-table-column prop="factorTypeScope" label="适用因子类型" min-width="140" /><el-table-column label="当前状态" width="120"><template #default="{ row }"><StatusBadge :status="row.publicationStatus || row.status" /></template></el-table-column><el-table-column label="校验状态" width="120"><template #default="{ row }">{{ row.validatedAt ? '已校验' : '-' }}</template></el-table-column><el-table-column prop="updatedAt" label="更新时间" min-width="170" /><el-table-column label="操作" width="200" fixed="right"><template #default="{ row }"><el-button v-access="['POST', '/factor-template-versions/1/instantiate']" v-if="row.currentPublishedVersionId" link type="primary" @click="instantiate(row)">创建因子</el-button><el-button v-access="['PATCH', '/factor-template-versions/1']" link @click="open(row)">{{ row.currentPublishedVersionId ? '管理模板' : '管理草稿' }}</el-button></template></el-table-column></el-table></section>
   </div>
 </template>
 <script setup>

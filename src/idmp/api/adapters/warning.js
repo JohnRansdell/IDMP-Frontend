@@ -63,7 +63,9 @@ export function warningRuleCapabilities(rule = {}) {
 }
 
 export function buildWarningRulePayload(form) {
-  const recipients = uniquePositiveIds(form.recipientUserIds)
+  const recipientPolicy = Array.isArray(form.recipientUsernames)
+    ? { recipientUsernames: uniqueUsernames(form.recipientUsernames) }
+    : { recipientUserIds: uniquePositiveIds(form.recipientUserIds) }
   const condition = {
     operator: form.operator,
     threshold: String(form.threshold || '').trim()
@@ -82,7 +84,7 @@ export function buildWarningRulePayload(form) {
     scopePolicy: { includeNoScenario: true, ...(form.resultScope ? { resultScope: form.resultScope } : {}) },
     condition: form.conditionTree ? cleanWarningCondition(form.conditionTree, form.warningType) : condition,
     dedupPolicy: { scope: 'PERIOD' },
-    notificationPolicy: { channels: ['IN_APP'], recipientUserIds: recipients },
+    notificationPolicy: { channels: ['IN_APP'], ...recipientPolicy },
     severity: form.severity,
     effectiveStartDate: form.effectiveStartDate || null,
     effectiveEndDate: form.effectiveEndDate || null
@@ -110,7 +112,9 @@ export function serializeWarningRulePayload(payload = {}) {
     },
     notificationPolicy: {
       ...(payload.notificationPolicy || {}),
-      recipientUserIds: (payload.notificationPolicy?.recipientUserIds || []).map(markJsonInteger)
+      ...(payload.notificationPolicy?.recipientUserIds
+        ? { recipientUserIds: payload.notificationPolicy.recipientUserIds.map(markJsonInteger) }
+        : {})
     }
   }
   return JSON.stringify(marked).replace(/"__IDMP_JSON_INTEGER__(\d+)"/g, '$1')
@@ -131,7 +135,7 @@ export function validateWarningRuleForm(form) {
   if (form.resultScope?.mode === 'GROUPED' && (!form.resultScope.dimensions?.length || !form.resultScope.targetCode)) return '请选择分组粒度'
   const conditionError = validateWarningCondition(form.conditionTree || { operator: form.operator, threshold: form.threshold, windowSize: form.windowSize }, form.warningType)
   if (conditionError) return conditionError
-  if (!uniquePositiveIds(form.recipientUserIds).length) return '请至少选择一位站内通知接收人'
+  if (!(Array.isArray(form.recipientUsernames) ? uniqueUsernames(form.recipientUsernames) : uniquePositiveIds(form.recipientUserIds)).length) return '请至少选择一位站内通知接收人'
   if (form.effectiveStartDate && form.effectiveEndDate && form.effectiveStartDate > form.effectiveEndDate) return '生效开始日期不能晚于结束日期'
   return ''
 }
@@ -181,4 +185,15 @@ function opaquePositiveId(value) {
 
 function uniquePositiveIds(values) {
   return [...new Set((Array.isArray(values) ? values : []).map(opaquePositiveId).filter(Boolean))]
+}
+
+function uniqueUsernames(values) {
+  return [...new Set((Array.isArray(values) ? values : []).map(value => String(value ?? '').trim())
+    .filter(value => /^[A-Za-z0-9_@.-]{1,64}$/.test(value)))]
+}
+
+export function warningRecipientLabel(user = {}) {
+  const name = String(user.displayName || '').trim()
+  const username = String(user.username || '').trim()
+  return name && username && name !== username ? `${name} · ${username}` : name || username || '未命名用户'
 }

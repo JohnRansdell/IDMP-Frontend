@@ -8,7 +8,7 @@ import {
 } from '@/idmp/auth/session'
 
 export function fetchHealth() {
-  return requestJson('/health')
+  return requestJson('/health', { cache: 'no-store' })
 }
 
 export const login = loginWithPassword
@@ -20,13 +20,23 @@ export function logout() { return logoutSession(false) }
 export function logoutAll() { return logoutSession(true) }
 
 export function fetchSystemUsers() {
-  return requestJson('/system/users')
+  return requestJson('/system/users', { cache: 'no-store' })
 }
 
-export function createSystemRole(payload) {
-  return requestJson('/system/roles', {
-    method: 'POST',
-    body: JSON.stringify(payload)
+export function fetchSystemRoles() {
+  return requestJson('/system/roles', { cache: 'no-store' })
+}
+
+export function fetchSystemUser(userId) {
+  return requestJson(`/system/users/${encodeURIComponent(userId)}`, { cache: 'no-store' })
+}
+
+export async function assignSystemUserRoles(userId, roleIds) {
+  // Read current profile fields so a role-only edit does not restore stale user details.
+  const detail = await fetchSystemUser(userId)
+  return requestJson(`/system/users/${encodeURIComponent(userId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ ...detail.user, roleIds })
   })
 }
 

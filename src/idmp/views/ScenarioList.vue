@@ -2,7 +2,7 @@
   <div class="idmp-page scenario-list">
     <PageHeader title="场景管理" status="ENABLED" status-label="接口数据">
       <template #actions>
-        <el-button type="primary" :icon="Plus" @click="createOpen = true">新建场景</el-button>
+        <el-button v-access="['POST', '/scenarios']" type="primary" :icon="Plus" @click="createOpen = true">新建场景</el-button>
       </template>
     </PageHeader>
 
@@ -31,7 +31,7 @@
         <el-table-column prop="indicatorCount" label="指标数" width="90" />
         <el-table-column label="状态" width="110"><template #default="{ row }"><StatusBadge :label="publicationStatusLabel(row.status)" :status="row.status" /></template></el-table-column>
         <el-table-column prop="updatedAt" label="更新时间" width="180" />
-        <el-table-column label="操作" width="110" fixed="right"><template #default="{ row }"><button class="action-link" type="button" @click="open(row)">查看/编辑</button></template></el-table-column>
+        <el-table-column label="操作" width="110" fixed="right"><template #default="{ row }"><button v-access="['POST', '/scenarios']" class="action-link" type="button" @click="open(row)">查看/编辑</button></template></el-table-column>
       </el-table>
       <div class="table-footer"><span>共 {{ total }} 条</span><el-pagination v-model:current-page="page" v-model:page-size="size" layout="prev, pager, next, sizes" :page-sizes="[10, 20, 50]" :total="total" @current-change="load" @size-change="load" /></div>
       </template>
@@ -46,7 +46,7 @@
         <el-form-item label="主管部门"><el-input v-model="form.governingOrgName" /></el-form-item>
         <el-form-item label="说明"><el-input v-model="form.description" type="textarea" :rows="3" /></el-form-item>
       </el-form>
-      <template #footer><el-button @click="createOpen = false">取消</el-button><el-button type="primary" :loading="saving" @click="create">创建并编辑</el-button></template>
+      <template #footer><el-button v-access="['POST', '/scenarios']" @click="createOpen = false">取消</el-button><el-button v-access="['POST', '/scenarios']" type="primary" :loading="saving" @click="create">创建并编辑</el-button></template>
     </el-dialog>
   </div>
 </template>

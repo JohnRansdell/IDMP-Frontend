@@ -1,12 +1,30 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildWarningRulePayload, normalizePage, normalizeWarningRule, serializeWarningRulePayload, validateWarningRuleForm, warningLabel, warningRuleCapabilities } from '../src/idmp/api/adapters/warning.js'
+import { buildWarningRulePayload, normalizePage, normalizeWarningRule, serializeWarningRulePayload, validateWarningRuleForm, warningLabel, warningRuleCapabilities, warningRecipientLabel } from '../src/idmp/api/adapters/warning.js'
 
 const validRule = () => ({
   code: 'MORTALITY_HIGH', name: '住院死亡率过高', description: '', warningType: 'THRESHOLD',
   indicatorVersionId: '102027642460303757', periodType: 'MONTHLY',
   operator: 'GT', threshold: '0.01', measure: 'DELTA', windowSize: 2, recipientUserIds: ['1'],
   severity: 'HIGH', effectiveStartDate: '', effectiveEndDate: ''
+})
+
+test('recipient labels use names and employee numbers, never internal IDs', () => {
+  assert.equal(warningRecipientLabel({ id: '9007199254740993', username: '00112', displayName: '张医生' }), '张医生 · 00112')
+  assert.equal(warningRecipientLabel({ id: '123', username: '00112' }), '00112')
+  assert.equal(warningRecipientLabel({ id: '123' }), '未命名用户')
+  assert.equal(warningRecipientLabel({ username: 'T', displayName: 'T' }), 'T')
+})
+
+test('employee-number recipient requests contain no internal user IDs', () => {
+  const rule = { ...validRule(), recipientUsernames: ['00112', 'T', '00112'] }
+  const payload = buildWarningRulePayload(rule)
+  assert.equal(validateWarningRuleForm(rule), '')
+  assert.deepEqual(payload.notificationPolicy, { channels: ['IN_APP'], recipientUsernames: ['00112', 'T'] })
+  const json = serializeWarningRulePayload(payload)
+  assert.doesNotMatch(json, /recipientUserIds/)
+  assert.deepEqual(JSON.parse(json).notificationPolicy.recipientUsernames, ['00112', 'T'])
+  assert.match(validateWarningRuleForm({ ...rule, recipientUsernames: [] }), /接收人/)
 })
 
 test('warning comparison operators use Chinese business labels', () => {

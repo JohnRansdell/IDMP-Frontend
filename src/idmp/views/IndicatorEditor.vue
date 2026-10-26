@@ -307,8 +307,10 @@
             </div>
             <section class="drill-capability-card" aria-label="指标版本下钻能力预检">
               <section class="grouping-section" aria-label="下钻配置">
+              <OrganizationDrillPathEditor v-model="selectedDrillPaths" :disabled="indicatorWorkflow.published" :legacy-isolation="legacyDepartmentIsolation" @update:model-value="invalidateGroupingConfiguration" />
+              <FactorDimensionBindingsEditor v-model="factorDimensionBindings" title="组织下钻字段映射" :table-selections="factorFieldTableSelections" :disabled="indicatorWorkflow.published" :fields="organizationMappingFields" :field-labels="organizationMappingLabels" :factors="dimensionBindingFactors" :field-options="factorFieldState.fieldOptions" :loading="factorFieldState.status === 'loading'" :error="factorFieldState.errorMessage" @retry="loadFactorFieldOptions" @update:model-value="invalidateGroupingConfiguration" />
               <CustomDrillPathEditor v-model="selectedDrillPaths" :disabled="indicatorWorkflow.published" @update:model-value="invalidateGroupingConfiguration" />
-              <FactorDimensionBindingsEditor v-model="factorDimensionBindings" title="下钻字段映射" class="drill-field-bindings" :table-selections="factorFieldTableSelections" :disabled="indicatorWorkflow.published" :fields="drillMappingFields" :factors="dimensionBindingFactors" :field-options="factorFieldState.fieldOptions" :loading="factorFieldState.status === 'loading'" :error="factorFieldState.errorMessage" @retry="loadFactorFieldOptions" @update:model-value="invalidateGroupingConfiguration" />
+              <FactorDimensionBindingsEditor v-model="factorDimensionBindings" title="业务下钻字段映射" class="drill-field-bindings" :table-selections="factorFieldTableSelections" :disabled="indicatorWorkflow.published" :fields="businessDrillMappingFields" :factors="dimensionBindingFactors" :field-options="factorFieldState.fieldOptions" :loading="factorFieldState.status === 'loading'" :error="factorFieldState.errorMessage" @retry="loadFactorFieldOptions" @update:model-value="invalidateGroupingConfiguration" />
                 <section v-if="hasCustomDrillPaths" class="custom-drill-validation" aria-label="自定义路径校验结果">
                   <div class="drill-config-card__heading">
                     <h4>自定义路径校验结果</h4>
@@ -333,23 +335,24 @@
               <DimensionGrainEditor v-model="indicatorDimensionGrain" :disabled="indicatorWorkflow.published" />
               <FactorDimensionBindingsEditor v-model="factorDimensionBindings" title="组合粒度字段映射" class="grain-field-bindings" :table-selections="factorFieldTableSelections" :disabled="indicatorWorkflow.published" :fields="grainMappingFields" :factors="dimensionBindingFactors" :field-options="factorFieldState.fieldOptions" :loading="factorFieldState.status === 'loading'" :error="factorFieldState.errorMessage" @retry="loadFactorFieldOptions" @update:model-value="invalidateGroupingConfiguration" />
               </section>
-              <section class="grouping-section" aria-label="系统默认下钻能力预检">
+              <section class="grouping-section" aria-label="下钻能力校验">
               <div class="drill-config-card__heading">
                 <div>
-                  <h3 class="grouping-section__title">系统默认下钻能力预检</h3>
+                  <h3 class="grouping-section__title">下钻能力校验</h3>
                 </div>
                 <el-tag :type="drillCapabilityTagType" size="small">{{ drillCapabilityTagText }}</el-tag>
               </div>
               <div class="business-action-bar drill-capability-actions">
-                <el-button type="primary" :disabled="!formulaValid" :loading="workflowLoading.capability" @click="runDrillCapabilityPreflight()">预检系统默认下钻能力</el-button>
+                <el-button type="primary" :disabled="!formulaValid" :loading="workflowLoading.capability" @click="runDrillCapabilityPreflight()">校验下钻能力</el-button>
               </div>
               <el-alert v-if="drillCapability.status === 'idle'" :title="`请按${activeMode.factorRequirement}选择因子后执行预检；修改因子会使已有预检结果失效。`" type="info" :closable="false" show-icon />
               <StatePanel v-else-if="drillCapability.status === 'loading'" type="loading" title="正在预检下钻能力" />
               <el-alert v-else-if="drillCapability.status === 'error'" :title="drillCapability.errorMessage || '下钻能力预检失败'" type="error" :closable="false" show-icon />
               <template v-else-if="['ready', 'stale'].includes(drillCapability.status)">
+                <el-alert v-if="organizationValidation" :title="organizationValidation.title" :type="organizationValidation.type" :closable="false" show-icon />
                 <p class="drill-capability-coverage">本次预检覆盖因子版本：{{ drillCapability.factorVersionIds.join('、') || '-' }}</p>
                 <el-table :data="defaultDrillDimensions" size="small" border class="drill-capability-table">
-                  <el-table-column label="启用" width="76"><template #default="{ row }"><el-checkbox :model-value="isDrillPathSelected(row.pathCode)" :disabled="indicatorWorkflow.published || row.pathCode.startsWith('CUSTOM_') || !row.supported || (isStaticIndicator && row.pathCode === 'TIME')" :aria-label="`启用${drillPathLabel(row.pathCode)}下钻路径`" @change="checked => toggleDrillPath(row, checked)" /></template></el-table-column>
+                  <el-table-column label="启用" width="76"><template #default="{ row }"><el-checkbox :model-value="isDrillPathSelected(row.pathCode)" :disabled="indicatorWorkflow.published || row.pathCode.startsWith('CUSTOM_') || !row.supported" :aria-label="`启用${drillPathLabel(row.pathCode)}下钻路径`" @change="checked => toggleDrillPath(row, checked)" /></template></el-table-column>
                   <el-table-column label="路径" min-width="145"><template #default="{ row }">{{ drillDimensionPathName(row) }}</template></el-table-column>
                   <el-table-column label="能力" min-width="120"><template #default="{ row }"><el-tag :type="row.supported ? 'success' : 'info'" size="small">{{ row.supported ? `最深到${drillDimensionLevelName(row)}` : '不支持' }}</el-tag></template></el-table-column>
                   <el-table-column label="本版本最大层级" min-width="210"><template #default="{ row }"><el-select :model-value="selectedDrillPathLevel(row.pathCode)" :disabled="indicatorWorkflow.published || row.pathCode.startsWith('CUSTOM_') || !row.supported || !isDrillPathSelected(row.pathCode)" placeholder="选择层级" @update:model-value="level => setDrillPathLevel(row.pathCode, level)"><el-option v-for="level in capabilityLevels(row)" :key="level.code" :label="drillLevelOptionLabel(level)" :value="level.code" /></el-select></template></el-table-column>
@@ -406,11 +409,11 @@
               <el-button :disabled="!indicatorWorkflow.formulaSaved" :loading="workflowLoading.compile" @click="compileIndicatorFormulaOnly">
                 公式校验
               </el-button>
-              <el-button type="primary" :disabled="!indicatorWorkflow.compiled || (!isStaticIndicator && !hasIndicatorTrialPeriod)" :loading="workflowLoading.trial || workflowLoading.result" @click="trialIndicatorAndLoadResult">
+              <el-button type="primary" :disabled="!indicatorWorkflow.compiled || (!isStaticIndicator && !hasIndicatorTrialPeriod)" :loading="workflowLoading.trial || workflowLoading.result" v-access="['POST', '/indicator-versions/1/trial']" @click="trialIndicatorAndLoadResult">
                 {{ indicatorTrialButtonLabel }}
               </el-button>
               <el-button type="success" plain @click="activeTab = 'publish'">前往第 6 页发布检查</el-button>
-              <el-button v-if="indicatorWorkflow.published && !isStaticIndicator && !hasTemporaryIndicatorRuntimeParameters" type="primary" plain :loading="workflowLoading.formal" @click="generateFormalResultAndOpenAnalysis">
+              <el-button v-if="indicatorWorkflow.published && !isStaticIndicator && !hasTemporaryIndicatorRuntimeParameters" type="primary" plain :loading="workflowLoading.formal" v-access="['POST', '/calc/batches']" @click="generateFormalResultAndOpenAnalysis">
                 生成正式结果并去指标分析
               </el-button>
             </div>
@@ -598,7 +601,7 @@
                 发布指标版本
               </el-button>
               <el-button v-if="indicatorWorkflow.published && (form.policyDrafts.length || policySourceState.error)" type="warning" :loading="policySourceState.saving" @click="retryPolicySources">重试保存政策来源</el-button>
-              <el-button v-if="indicatorWorkflow.published && !isStaticIndicator && !hasTemporaryIndicatorRuntimeParameters" plain :loading="workflowLoading.formal" @click="generateFormalResultAndOpenAnalysis">独立正式计算并查看结果</el-button>
+              <el-button v-if="indicatorWorkflow.published && !isStaticIndicator && !hasTemporaryIndicatorRuntimeParameters" plain :loading="workflowLoading.formal" v-access="['POST', '/calc/batches']" @click="generateFormalResultAndOpenAnalysis">独立正式计算并查看结果</el-button>
 
             </div>
           </article>
@@ -681,8 +684,10 @@ import { fetchFactorVersion, fetchPublishedFactorVersions } from '@/idmp/api/mod
 import RuntimeParameterFields from '@/idmp/components/RuntimeParameterFields.vue'
 import DimensionGrainEditor from '@/idmp/components/DimensionGrainEditor.vue'
 import CustomDrillPathEditor from '@/idmp/components/CustomDrillPathEditor.vue'
+import OrganizationDrillPathEditor from '@/idmp/components/OrganizationDrillPathEditor.vue'
+import { organizationConfigurationError, codeOnlyOrganizationPaths } from '@/idmp/features/indicator/organizationDrill.js'
 import FactorDimensionBindingsEditor from '@/idmp/components/FactorDimensionBindingsEditor.vue'
-import { serializeDrillPaths, sqlImportGroupingFields } from '@/idmp/features/indicator/grouping.js'
+import { serializeDrillPaths, sqlImportGroupingFields, sqlImportGroupingFieldLabels } from '@/idmp/features/indicator/grouping.js'
 import { normalizeDimensionGrain } from '@/idmp/features/indicator/grouping'
 import { buildSqlRuntimeParameterValues, collectSqlRuntimeParameters, validateSqlRuntimeParameterValues } from '@/idmp/api/adapters/sqlImport'
 
@@ -734,11 +739,16 @@ const indicatorTrialTargets = ref([])
 const selectedIndicatorTrialTargetKey = ref('')
 const indicatorTrialResultsLoaded = ref(false)
 const selectedDrillPaths = ref([])
+const dataOwnership = ref(null)
+const legacyDepartmentIsolation = computed(() => indicatorWorkflow.published && dataOwnership.value?.mode === 'DEPARTMENT')
 const factorDimensionBindings = ref({})
 const factorFieldTableSelections = reactive(new Map())
 const factorFieldState = reactive({ status: 'idle', factorVersionIds: [], fieldOptions: [], errorMessage: '' })
 const indicatorDimensionGrain = ref([])
-const drillMappingFields = computed(() => sqlImportGroupingFields(selectedDrillPaths.value.filter(path => path.pathCode.startsWith('CUSTOM_'))))
+const drillMappingFields = computed(() => sqlImportGroupingFields(selectedDrillPaths.value))
+const organizationMappingFields = computed(() => sqlImportGroupingFields(codeOnlyOrganizationPaths(selectedDrillPaths.value.filter(path => path.pathCode === 'ORGANIZATION'))))
+const organizationMappingLabels = computed(() => sqlImportGroupingFieldLabels(selectedDrillPaths.value.filter(path => path.pathCode === 'ORGANIZATION')))
+const businessDrillMappingFields = computed(() => sqlImportGroupingFields(selectedDrillPaths.value.filter(path => path.pathCode !== 'ORGANIZATION')))
 const grainMappingFields = computed(() => {
   try { return sqlImportGroupingFields([], indicatorDimensionGrain.value) } catch { return [] }
 })
@@ -750,6 +760,8 @@ const drillCapability = reactive({
   dimensions: [],
   fieldOptions: [],
   dimensionGrainOptions: [],
+  defaultOrganizationPath: null,
+  suggestedDataOwnership: null,
   errorMessage: ''
 })
 const workflowDebug = reactive({
@@ -1179,7 +1191,15 @@ const drillCapabilityTagType = computed(() => ({
 }[drillCapability.status] || 'info'))
 const hasCustomDrillPaths = computed(() => selectedDrillPaths.value.some(path => path.pathCode.startsWith('CUSTOM_')))
 const customDrillDimensions = computed(() => drillCapability.dimensions.filter(dimension => dimension.pathCode.startsWith('CUSTOM_')))
-const defaultDrillDimensions = computed(() => drillCapability.dimensions.filter(dimension => !dimension.pathCode.startsWith('CUSTOM_')))
+const defaultDrillDimensions = computed(() => drillCapability.dimensions.filter(dimension => !dimension.pathCode.startsWith('CUSTOM_') && dimension.pathCode !== 'ORGANIZATION'))
+const organizationValidation = computed(() => {
+  const path = selectedDrillPaths.value.find(item => item.pathCode === 'ORGANIZATION')
+  if (!path) return null
+  if (drillCapability.status === 'stale') return { type: 'warning', title: '组织下钻配置已变更，请重新校验' }
+  const dimension = drillCapability.dimensions.find(item => item.pathCode === 'ORGANIZATION')
+  if (!dimension?.supported || dimension.maxLevel !== path.maxLevel) return { type: 'error', title: limitingFactorText(dimension || { limitingFactors: [] }) || '组织下钻未完全支持，请检查层级和因子字段映射' }
+  return { type: 'success', title: '组织下钻校验通过' }
+})
 const customDrillValidationText = computed(() => ({ idle: '待校验', loading: '校验中', ready: '校验完成', stale: '待重新校验', error: '校验失败' }[drillCapability.status] || '待校验'))
 
 let drillCapabilityRequestId = 0
@@ -1249,7 +1269,7 @@ watch(() => dimensionBindingFactors.value.flatMap(factor => customGroupingFields
 })
 
 function formulaSignature(formula) {
-  return JSON.stringify({ formula, drillPaths: selectedDrillPaths.value, factorDimensionBindings: factorDimensionBindings.value, dimensionGrain: indicatorDimensionGrain.value })
+  return JSON.stringify({ formula, drillPaths: selectedDrillPaths.value, factorDimensionBindings: factorDimensionBindings.value, dimensionGrain: indicatorDimensionGrain.value, dataOwnership: dataOwnership.value })
 }
 
 function resetDrillCapability() {
@@ -1260,10 +1280,12 @@ function resetDrillCapability() {
     factorVersionIds: [],
     dimensions: [],
     dimensionGrainOptions: [],
+    defaultOrganizationPath: null,
+    suggestedDataOwnership: null,
     fieldOptions: [],
     errorMessage: ''
   })
-  selectedDrillPaths.value = selectedDrillPaths.value.filter(path => path.pathCode.startsWith('CUSTOM_'))
+  selectedDrillPaths.value = selectedDrillPaths.value.filter(path => path.pathCode.startsWith('CUSTOM_') || path.pathCode === 'ORGANIZATION')
 }
 
 function capabilityLevels(dimension) {
@@ -1298,7 +1320,7 @@ function selectedDrillPathLevel(pathCode) {
 
 function toggleDrillPath(dimension, checked) {
   const pathCode = String(dimension?.pathCode || '')
-  if (!pathCode || !dimension?.supported) return
+  if (!pathCode || pathCode === 'ORGANIZATION' || !dimension?.supported) return
   if (!checked) {
     selectedDrillPaths.value = selectedDrillPaths.value.filter((path) => path.pathCode !== pathCode)
     invalidateGroupingConfiguration()
@@ -1344,6 +1366,8 @@ async function runDrillCapabilityPreflight(providedFormula) {
   })
   workflowLoading.capability = true
   try {
+    const organizationError = organizationConfigurationError(selectedDrillPaths.value)
+    if (organizationError) throw new Error(organizationError)
     if (!await loadFactorFieldOptions()) throw new Error(factorFieldState.errorMessage || '物理字段尚未加载完成，请重试')
     if (requestId !== drillCapabilityRequestId) return false
     const paths = serializeDrillPaths(selectedDrillPaths.value)
@@ -1358,8 +1382,12 @@ async function runDrillCapabilityPreflight(providedFormula) {
       dimensions: capability.dimensions,
       fieldOptions: capability.fieldOptions,
       dimensionGrainOptions: capability.dimensionGrainOptions,
+      defaultOrganizationPath: capability.defaultOrganizationPath,
+      suggestedDataOwnership: capability.suggestedDataOwnership,
       errorMessage: ''
     })
+    if (!indicatorWorkflow.published) dataOwnership.value = capability.configuredDataOwnership
+      || { mode: 'UNCLASSIFIED', departmentFieldCode: null }
     drillCapability.formulaSignature = formulaSignature(formula)
     return true
   } catch (error) {
@@ -1382,10 +1410,6 @@ async function ensureFreshDrillCapability(formula) {
   if (drillCapability.status === 'ready' && drillCapability.formulaSignature === signature) return true
   return runDrillCapabilityPreflight(formula)
 }
-
-watch(isStaticIndicator, (isStatic) => {
-  if (isStatic) selectedDrillPaths.value = selectedDrillPaths.value.filter((path) => path.pathCode !== 'TIME')
-})
 
 watch(indicatorDimensionGrain, () => {
   if (indicatorWorkflow.versionId && !indicatorWorkflow.published) {
@@ -1591,7 +1615,8 @@ function hydrateIndicatorVersion(version) {
   const formula = extractFormula(version)
   resetDrillCapability()
   hydrateFormulaFactors(formula)
-  selectedDrillPaths.value = normalizeDrillPaths(version)
+  selectedDrillPaths.value = indicatorWorkflow.published ? normalizeDrillPaths(version) : codeOnlyOrganizationPaths(normalizeDrillPaths(version))
+  dataOwnership.value = version.dataOwnership ? { ...version.dataOwnership } : null
   factorDimensionBindings.value = version.factorDimensionBindings || version.drillConfig?.factorDimensionBindings || {}
   indicatorRuntimeParameterGroups.value = Array.isArray(version.factorRuntimeParameters) ? version.factorRuntimeParameters : []
   indicatorRuntimeParameterValues.value = {}
@@ -1864,7 +1889,7 @@ async function createIndicatorDraftVersion() {
     workflowLoading.version = true
     const copiedPolicySources = policyPanel.value?.copySourcesToDraft() || []
     const copyFromVersionId = indicatorWorkflow.versionId
-    const versionPayload = buildIndicatorVersionPayload({ copyFromVersionId, drillPaths: selectedDrillPaths.value, calculationMode: indicatorCalculationMode.value, dimensionGrain: indicatorDimensionGrain.value, factorDimensionBindings: activeFactorDimensionBindings() })
+    const versionPayload = buildIndicatorVersionPayload({ copyFromVersionId, drillPaths: selectedDrillPaths.value, calculationMode: indicatorCalculationMode.value, dimensionGrain: indicatorDimensionGrain.value, factorDimensionBindings: activeFactorDimensionBindings(), dataOwnership: dataOwnership.value })
     recordWorkflowRequest({
       step: '创建指标版本',
       endpoint: `/api/v1/indicators/${indicatorWorkflow.indicatorId}/versions`,
@@ -1983,7 +2008,8 @@ async function createFirstIndicatorVersionWithFormula(formula) {
     formula,
     calculationMode: indicatorCalculationMode.value,
     dimensionGrain: indicatorDimensionGrain.value,
-    factorDimensionBindings: activeFactorDimensionBindings()
+    factorDimensionBindings: activeFactorDimensionBindings(),
+    dataOwnership: dataOwnership.value
   })
   recordWorkflowRequest({
     step: '创建首个指标版本并保存公式',
@@ -2015,7 +2041,8 @@ async function createFirstIndicatorVersionWithFormula(formula) {
     initializationStatus: ''
   })
   resetIndicatorTrialResultCollection()
-  selectedDrillPaths.value = normalizeDrillPaths(version)
+  selectedDrillPaths.value = codeOnlyOrganizationPaths(normalizeDrillPaths(version))
+  dataOwnership.value = version.dataOwnership ? { ...version.dataOwnership } : null
   factorDimensionBindings.value = version.factorDimensionBindings || version.drillConfig?.factorDimensionBindings || {}
   rememberIndicatorEditorForm(indicatorWorkflow.indicatorId)
   recordWorkflowSuccess(`首个指标版本及公式已保存：${versionId}`)
@@ -2396,6 +2423,7 @@ async function persistIndicatorFormula() {
   formulaPayload.dimensionGrain = normalizeDimensionGrain(indicatorDimensionGrain.value)
   formulaPayload.drillPaths = serializeDrillPaths(selectedDrillPaths.value)
   formulaPayload.factorDimensionBindings = activeFactorDimensionBindings()
+  if (dataOwnership.value) formulaPayload.dataOwnership = { ...dataOwnership.value }
   recordWorkflowRequest({
     step: '保存公式',
     endpoint: `/api/v1/indicator-versions/${indicatorWorkflow.versionId}/formula`,
@@ -2408,7 +2436,8 @@ async function persistIndicatorFormula() {
     formulaPayload
   )
   indicatorWorkflow.resourceVersion = resolveResourceVersion(savedFormula, indicatorWorkflow.resourceVersion)
-  selectedDrillPaths.value = normalizeDrillPaths(savedFormula)
+  selectedDrillPaths.value = codeOnlyOrganizationPaths(normalizeDrillPaths(savedFormula))
+  dataOwnership.value = savedFormula.dataOwnership ? { ...savedFormula.dataOwnership } : null
   factorDimensionBindings.value = savedFormula.factorDimensionBindings || savedFormula.drillConfig?.factorDimensionBindings || {}
   indicatorWorkflow.formulaSaved = true
   indicatorWorkflow.compiled = false

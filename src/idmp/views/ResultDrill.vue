@@ -20,6 +20,7 @@
         v-if="!configurationLoading && !configurationError"
         :result-id="resultId"
         :snapshot-id="snapshotId"
+        :indicator-version-id="String(route.query.indicatorVersionId || '')"
         :indicator-name="indicatorName"
         :period="period"
         :start-level="currentLevel"

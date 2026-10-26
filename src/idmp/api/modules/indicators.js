@@ -3,7 +3,7 @@ import { normalizeIndicatorAnalysisParams, normalizeIndicatorRangeSummaryParams 
 import { fetchAllPages } from '../pagination.js'
 
 export const fetchAllIndicators = (params = {}, options = {}) => fetchAllPages(page => fetchIndicators(page, options), params)
-export const fetchAllIndicatorVersions = (params = {}) => fetchAllPages(fetchIndicatorVersionList, params)
+export const fetchAllIndicatorVersions = (params = {}, options = {}) => fetchAllPages(page => fetchIndicatorVersionList(page, options), params)
 export const fetchAllIndicatorScenarios = (id, params = {}) => fetchAllPages(page => fetchIndicatorScenarios(id, page), params)
 
 export function fetchIndicators(params = {}, options = {}) {
@@ -18,8 +18,8 @@ export function fetchIndicatorVersions(indicatorId, options = {}) {
   return requestJson(`/indicators/${indicatorId}/versions`, options)
 }
 
-export function fetchIndicatorVersionList(params = {}) {
-  return requestJson(withQuery('/indicator-versions', params))
+export function fetchIndicatorVersionList(params = {}, options = {}) {
+  return requestJson(withQuery('/indicator-versions', params), options)
 }
 
 export function fetchIndicatorVersion(versionId, options = {}) {
@@ -112,6 +112,12 @@ export function queryIndicatorVersion(versionId, payload, options = {}) {
   })
 }
 
+export function queryIndicatorSummary(versionId, payload, options = {}) {
+  return requestJson(`/analysis/indicator-versions/${encodeURIComponent(versionId)}/instant-summary`, {
+    ...options, method: 'POST', timeoutMs: 120000, body: JSON.stringify(payload)
+  })
+}
+
 export function publishIndicatorVersion(versionId, idempotencyKey) {
   return requestJson(`/indicator-versions/${versionId}/publish`, {
     method: 'POST',
@@ -129,8 +135,8 @@ export function fetchIndicatorScenarios(indicatorId, params = {}) {
   return requestJson(withQuery(`/indicators/${encodeURIComponent(indicatorId)}/scenarios`, params), { cache: 'no-store' })
 }
 
-export function fetchIndicatorAvailablePeriod(versionId) {
-  return requestJson(`/indicator-versions/${encodeURIComponent(versionId)}/available-period`)
+export function fetchIndicatorAvailablePeriod(versionId, options = {}) {
+  return requestJson(`/indicator-versions/${encodeURIComponent(versionId)}/available-period`, options)
 }
 
 export function fetchIndicatorAnalysis(indicatorId, params = {}, options = {}) {
@@ -151,11 +157,11 @@ export function fetchIndicatorGrainOptions(indicatorId, params = {}) {
   ))
 }
 
-export function fetchIndicatorRangeSummary(indicatorId, params = {}) {
+export function fetchIndicatorRangeSummary(indicatorId, params = {}, options = {}) {
   return requestJson(withQuery(
     `/analysis/indicators/${encodeURIComponent(indicatorId)}/range-summary`,
-    normalizeIndicatorRangeSummaryParams(params)
-  ))
+      normalizeIndicatorRangeSummaryParams(params)
+    ), options)
 }
 
 export function fetchIndicatorScenarioComparison(indicatorId, params = {}) {
