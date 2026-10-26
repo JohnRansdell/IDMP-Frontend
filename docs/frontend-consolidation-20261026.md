@@ -2,6 +2,8 @@
 
 ## 分支与工作区
 
+后续状态（2026-10-26）：看板状态修复 `a92cbda` 已部署并由用户验收，整理分支已改名为本地唯一分支 `main`，开发工作区仍为 `IDMP-Frontend-cleanup`。本次按用户要求将验收结果及开发日志同步至远程 `main`；以下分支说明和未推送记录描述的是首轮整理完成时的状态。最新部署与验收记录见 [开发日志](开发日志.md)。
+
 整理分支：`refactor/frontend-consolidation`。独立工作树为同级 `IDMP-Frontend-cleanup`，避免覆盖原 `main` 工作树尚未提交的开发日志及构建产物。
 
 从 `main`（`89178e3`）创建分支，正常合并 `feature/medical-sso-dashboard`（`2cb8309`），保留其 44 个独有提交及 `main` 的 README 更新，再按阶段提交整理改动。README 已对齐合并后的登录、权限与医疗看板行为。
