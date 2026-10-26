@@ -114,4 +114,3 @@ export function resolveCategoryPath(source, fallback = defaultCategoryPath) {
   const path = normalizeCategoryPath(source)
   return path.length ? path : [...fallback]
 }
-

@@ -133,4 +133,3 @@ export function normalizeSemanticField(item = {}) {
     conversionFormat: item.conversionFormat || ''
   }
 }
-

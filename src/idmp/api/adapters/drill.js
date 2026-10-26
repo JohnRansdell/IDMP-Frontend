@@ -289,4 +289,3 @@ function isPageNumber(value, minimum) {
   return (typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')) &&
     Number.isSafeInteger(Number(value)) && Number(value) >= minimum
 }
-
