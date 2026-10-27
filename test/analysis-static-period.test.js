@@ -5,6 +5,7 @@ import { parse, compileScript } from '@vue/compiler-sfc'
 import { formatPeriodLabel } from '../src/idmp/features/analysis/reportPeriod.js'
 import { formatResultPeriod } from '../src/idmp/utils/periodRange.js'
 import { formatTrendPeriodLabel } from '../src/idmp/features/analysis/trendPresentation.js'
+import { diagnosticResultLabel } from '../src/idmp/features/analysis/calculationDiagnostics.js'
 
 const source = await readFile(new URL('../src/idmp/views/IndicatorAnalysis.vue', import.meta.url), 'utf8')
 const { descriptor } = parse(source)
@@ -52,4 +53,44 @@ test('updated time cannot use a statistical period end as an activation timestam
   const code = descriptor.scriptSetup.content.slice(node.start, node.end)
   assert.doesNotMatch(code, /periodEnd/)
   assert.match(code, /context\.activatedAt/)
+})
+
+async function computedFromComponent(path, name, dependencies) {
+  const source = await readFile(new URL(path, import.meta.url), 'utf8')
+  const { descriptor } = parse(source)
+  const { scriptSetupAst } = compileScript(descriptor, { id: 'period-label-regression' })
+  const node = scriptSetupAst.find(node => node.type === 'VariableDeclaration' && node.declarations.some(item => item.id.name === name))
+  const code = descriptor.scriptSetup.content.slice(node.start, node.end)
+  const computed = read => ({ get value() { return read() } })
+  return Function('computed', ...Object.keys(dependencies), `${code}; return ${name}`)(computed, ...Object.values(dependencies))
+}
+
+for (const [name, granularity, period, expected] of [
+  ['静态占位周期', 'STATIC', { periodStart: '1000-01-01T00:00:00', periodEnd: '9999-12-31T23:59:59' }, '静态结果'],
+  ['静态无周期', 'STATIC', {}, '静态结果'],
+  ['月度闭区间', 'MONTHLY', { periodStart: '2026-03-01T00:00:00', periodEnd: '2026-04-01T00:00:00' }, '2026-03-01 至 2026-03-31']
+]) {
+  test(`trial footer and diagnostic selection/trace agree: ${name}`, async () => {
+    const row = { ...period, resultId: '123', value: 1 }
+    const label = await computedFromComponent('../src/idmp/views/IndicatorEditor.vue', 'indicatorTrialPeriodLabel', {
+      isStaticIndicator: { value: granularity === 'STATIC' }, selectedIndicatorTrialTarget: { value: period },
+      indicatorTrialResultSet: { value: {} }, formatResultPeriod
+    })
+    assert.equal(label.value, expected)
+    const trace = await computedFromComponent('../src/idmp/features/analysis/CalculationDiagnostics.vue', 'tracePeriod', {
+      props: { granularity }, trace: { value: { context: period } }, formatResultPeriod
+    })
+    assert.equal(trace.value, expected)
+    const options = await computedFromComponent('../src/idmp/features/analysis/CalculationDiagnostics.vue', 'options', {
+      props: { granularity }, results: { value: [row] }, diagnosticResultLabel
+    })
+    assert.equal(options.value[0].label, `${expected} · 汇总结果 · 1 · #123`)
+  })
+}
+
+test('SQL import period input and help text both declare inclusive endpoints', async () => {
+  const source = await readFile(new URL('../src/idmp/views/SqlIndicatorImport.vue', import.meta.url), 'utf8')
+  assert.match(source, /end-placeholder="结束时间（包含）"/)
+  assert.match(source, /开始时间和结束时间均包含/)
+  assert.doesNotMatch(source, /结束时间不包含/)
 })

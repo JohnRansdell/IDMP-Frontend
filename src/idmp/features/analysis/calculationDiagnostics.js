@@ -28,11 +28,11 @@ export function diagnosticResults(analysis, query) {
   return [...results.values()]
 }
 
-export function diagnosticResultLabel(row) {
+export function diagnosticResultLabel(row, granularity = 'MONTHLY') {
   const dimensions = row.dimensions || {}
   const names = Object.entries(dimensions).filter(([key, value]) => /name$/i.test(key) && value != null && value !== '').map(([, value]) => value)
   const members = names.length ? names.join(' / ') : Object.entries(dimensions).map(([key, value]) => `${key}：${value}`).join(' / ')
-  const period = row.periodStart ? formatResultPeriod(row.periodStart, row.periodEnd) : '静态结果'
+  const period = granularity === 'STATIC' || !row.periodStart ? '静态结果' : formatResultPeriod(row.periodStart, row.periodEnd)
   return `${period} · ${members || '汇总结果'} · ${row.displayValue ?? row.value ?? '-'} · #${String(row.resultId).slice(-6)}`
 }
 

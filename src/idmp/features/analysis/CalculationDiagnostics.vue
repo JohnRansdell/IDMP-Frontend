@@ -49,10 +49,10 @@ const emit = defineEmits(['open-batch'])
 const results = ref([]), selectedId = ref(''), trace = ref(null), batch = ref(null)
 const loading = ref(false), error = ref(''), emptyMessage = ref(''), traceLoading = ref(false), traceError = ref(''), batchError = ref('')
 let generation = 0, traceGeneration = 0, resultController, traceController
-const options = computed(() => results.value.map(row => ({ value: String(row.resultId), label: diagnosticResultLabel(row) })))
+const options = computed(() => results.value.map(row => ({ value: String(row.resultId), label: diagnosticResultLabel(row, props.granularity) })))
 const batchId = computed(() => String(trace.value?.context?.calculationBatchId || ''))
-const tracePeriod = computed(() => trace.value?.context?.periodStart
-  ? formatResultPeriod(trace.value.context.periodStart, trace.value.context.periodEnd) : '静态结果')
+const tracePeriod = computed(() => props.granularity === 'STATIC' || !trace.value?.context?.periodStart
+  ? '静态结果' : formatResultPeriod(trace.value.context.periodStart, trace.value.context.periodEnd))
 const valueText = value => value === null || value === undefined ? '未返回' : typeof value === 'object' ? JSON.stringify(value) : String(value)
 
 function clearTrace() {

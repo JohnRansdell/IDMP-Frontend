@@ -426,7 +426,7 @@
                   <el-table-column label="结果状态" width="120"><template #default="{ row }">{{ getStatusLabel(row.outcomeStatus || selectedIndicatorTrialTarget.outcomeStatus || '-') }}</template></el-table-column>
                 </el-table>
                 <div class="workflow-trial-results__footer">
-                  <span>{{ formatResultPeriod(selectedIndicatorTrialTarget.periodStart || indicatorTrialResultSet.periodStart, selectedIndicatorTrialTarget.periodEnd || indicatorTrialResultSet.periodEnd) }}</span>
+                  <span>{{ indicatorTrialPeriodLabel }}</span>
                   <el-pagination :current-page="selectedIndicatorTrialTarget.pageNum" :page-size="selectedIndicatorTrialTarget.pageSize" :total="selectedIndicatorTrialTarget.total" :disabled="workflowLoading.result" layout="total, prev, pager, next" @current-change="loadIndicatorTrialPage" />
                 </div>
               </template>
@@ -756,6 +756,10 @@ const isStaticIndicator = computed(() => indicatorCalculationMode.value === 'STA
 const selectedIndicatorTrialTarget = computed(() =>
   indicatorTrialTargets.value.find((target) => target.key === selectedIndicatorTrialTargetKey.value) || null
 )
+const indicatorTrialPeriodLabel = computed(() => isStaticIndicator.value ? '静态结果' : formatResultPeriod(
+  selectedIndicatorTrialTarget.value?.periodStart || indicatorTrialResultSet.value.periodStart,
+  selectedIndicatorTrialTarget.value?.periodEnd || indicatorTrialResultSet.value.periodEnd
+))
 const indicatorTrialRows = computed(() => selectedIndicatorTrialTarget.value?.records || [])
 const indicatorTrialResultCount = computed(() =>
   indicatorTrialTargets.value.reduce((total, target) => total + Number(target.total || 0), 0)

@@ -46,7 +46,7 @@
         <div v-if="hasTemporalFactors" class="runtime-period">
           <span class="runtime-period__label">统计周期</span>
           <el-date-picker v-model="trialPeriod" type="datetimerange" value-format="YYYY-MM-DDTHH:mm:ss" start-placeholder="开始时间（包含）" end-placeholder="结束时间（包含）" aria-label="试算统计周期" />
-          <small>开始时间包含，结束时间不包含</small>
+          <small>开始时间和结束时间均包含</small>
         </div>
         <div v-if="runtimeParameters.length" class="runtime-parameter-section">
           <div class="runtime-parameter-heading"><strong>SQL 运行参数</strong><small>SQL 自定义条件，与上方统计周期分别生效</small></div>
