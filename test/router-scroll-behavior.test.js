@@ -2,6 +2,12 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { scrollBehavior } from '../src/router/scrollBehavior.js'
 
+test('factor continuation lets the loaded editor position its workflow', () => {
+  const from = { path: '/factor/edit/new' }
+  assert.equal(scrollBehavior({ path: '/factor/edit/123', hash: '#factor-workflow' }, from), false)
+  assert.deepEqual(scrollBehavior({ path: '/factor/edit/123', hash: '' }, from), { top: 0 })
+})
+
 test('result lineage navigation locates the batch overview below the fixed topbar', () => {
   const from = { path: '/analysis', query: {} }
   assert.equal(scrollBehavior({ path: '/calc', hash: '#batch-overview', query: { batchId: '102027642463167129' } }, from), false)

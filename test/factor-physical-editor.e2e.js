@@ -130,6 +130,9 @@ function mockBackend() {
     else if (p === '/factors/5') data = { id: '5', code: 'DERIVED_TEST', name: '复合因子类别测试', draftVersionId: '7', status: 'DRAFT' }
     else if (p === '/factors/5/versions') data = [{ id: '7', versionNo: 1, publicationStatus: 'DRAFT' }]
     else if (p === '/factor-versions/7') data = { id: '7', publicationStatus: 'DRAFT', dsl: { schemaVersion: '1.1', dslType: 'FACTOR', definitionKind: 'DERIVED', calculationMode: 'STATIC', primaryDomain: { domainCode: 'VISIT' }, expression: { nodeType: 'BINARY', operator: 'ADD', left: { nodeType: 'FACTOR_REF', factorVersionId: '6', alignmentPolicy: 'STRICT_EQUAL' }, right: { nodeType: 'CONST', value: '1' } }, output: { valueType: 'DECIMAL', semanticKind: 'MEASURE', dimension: 'COUNT', unit: 'COUNT', grain: [] } } }
+    else if (p === '/factor-versions/3/compile') data = { artifactId: '23', status: 'VALID' }
+    else if (p === '/compile-artifacts/23') data = { logicalPlan: {}, parameters: [] }
+    else if (p === '/factor-versions/3/trial-period-recommendation') data = { availabilityStatus: 'AVAILABLE', recommendedPeriodStart: '2026-03-01T00:00:00', recommendedPeriodEnd: '2026-04-01T00:00:00' }
     else if (p === '/compile-artifacts/22') data = { logicalPlan: { periodBinding: { tableAlias: 'd', physicalTable: 'diagnosis', physicalColumn: 'diagnosis_time', expression: 'd.diagnosis_time' } } }
     else if (p === '/factor-versions/6/compile') data = { artifactId: '22', status: 'VALID' }
     else if (p === '/factor-versions/6/trial-period-recommendation') data = { availabilityStatus: 'NO_DATA' }
@@ -200,10 +203,10 @@ try {
   for (const [templateId, versionId] of [['', ''], ['', '3'], ['10', ''], ['10', '3']]) {
     await evaluate(`window.__factorFixture.template.templateId=${JSON.stringify(templateId)};window.__factorFixture.workflow.versionId=${JSON.stringify(versionId)}`)
     await delay(30)
-    const numbers = await evaluate(`Array.from(document.querySelectorAll('.factor-editor > .editor-section > .section-title > span:first-child')).map(el=>el.textContent.trim())`)
+    const numbers = await evaluate(`Array.from(document.querySelectorAll('.factor-editor .editor-section > .section-title > span:first-child')).map(el=>el.textContent.trim())`)
     assert.deepEqual(numbers, Array.from({ length: numbers.length }, (_, i) => String(i + 1)), `Section numbering: template=${templateId}, version=${versionId}`)
     const modeNumber = await evaluate(`Array.from(document.querySelectorAll('.factor-editor > .editor-section')).find(el=>el.querySelector('h2')?.textContent==='计算模式').querySelector('.section-title > span').textContent.trim()`)
-    assert.equal(modeNumber, String(5 + Number(Boolean(templateId)) + Number(Boolean(versionId))))
+    assert.equal(modeNumber, String(5 + Number(Boolean(templateId))))
   }
   await mkdir('.tmp/factor-physical-browser', { recursive: true })
   for (const viewport of [{ width: 1440, height: 1000, mobile: false }, { width: 390, height: 844, mobile: true }]) {
@@ -236,6 +239,7 @@ try {
   }
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false })
   await evaluate(`window.__factorFixture.template.templateId='';window.__factorFixture.workflow.versionId='';window.__factorFixture.workflow.status='DRAFT';window.__factorFixture.workflow.published=false`)
+  await click(`Array.from(document.querySelectorAll('[aria-label="取数方式"] .el-radio-button')).find(el=>el.textContent.trim()==='数据域取数')`)
   await choose(`document.querySelector('.form-block .el-select')`, '住院数据域')
   await choose(`document.querySelectorAll('.form-block .el-select')[1]`, '住院记录')
   await waitFor(()=>evaluate(`window.__factorFixture.fields.length===3`))
@@ -243,7 +247,7 @@ try {
   assert.deepEqual(await evaluate(`window.__factorFixture.fields.map(f=>[f.code,f.kind])`), [['in_date','DATETIME'],['dept_code','VALUE_SET'],['fee','NUMBER']])
   await choose(`document.querySelector('.time-binding .el-select')`, 'visit.in_date')
   await evaluate(`window.__factorFixture.basicForm.name='单表测试'`)
-  await click(button('保存因子定义'))
+  await click(button('保存草稿并继续'))
   await waitFor(()=>evaluate(`window.__factorRequests.some(r=>r.path==='/factors'&&r.method==='POST')`))
   const created = await evaluate(`window.__factorRequests.find(r=>r.path==='/factors'&&r.method==='POST').body.dsl`)
   assert.equal(await evaluate(`window.__factorRequests.find(r=>r.path==='/factors'&&r.method==='POST').body.code`), 'FACTOR_MANUAL_CODE')
@@ -253,6 +257,31 @@ try {
   await waitFor(()=>evaluate(`location.pathname==='/factor/edit/1'&&document.querySelector('.page-toolbar')?.textContent.includes('保存修改')`))
   await delay(300); await fixture()
   assert.equal(await evaluate(`document.querySelector('input[aria-label="因子编码"]').disabled`), true)
+  await waitFor(()=>evaluate(`document.activeElement?.id==='factor-workflow'`))
+  const continuation = await evaluate(`(() => {
+    const workflow=document.querySelector('#factor-workflow'), period=workflow.querySelector('.trial-period-card'), actions=workflow.querySelector('.workflow-actions');
+    const mode=[...document.querySelectorAll('.editor-section')].find(el=>el.querySelector('h2')?.textContent==='计算模式'), save=document.querySelector('.editor-actions-bar');
+    const rect=workflow.getBoundingClientRect(), button=actions.querySelector('button').getBoundingClientRect();
+    return { modeBeforeSave:!!(mode.compareDocumentPosition(save)&Node.DOCUMENT_POSITION_FOLLOWING), saveBeforeWorkflow:!!(save.compareDocumentPosition(workflow)&Node.DOCUMENT_POSITION_FOLLOWING), periodBeforeActions:!!(period.compareDocumentPosition(actions)&Node.DOCUMENT_POSITION_FOLLOWING), top:rect.top, buttonBottom:button.bottom, height:innerHeight };
+  })()`)
+  assert.equal(continuation.modeBeforeSave, true)
+  assert.equal(continuation.saveBeforeWorkflow, true)
+  assert.equal(continuation.periodBeforeActions, true)
+  assert.ok(continuation.top>=64 && continuation.top<continuation.height, JSON.stringify(continuation))
+  assert.ok(continuation.buttonBottom<continuation.height, JSON.stringify(continuation))
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width:390, height:844, deviceScaleFactor:1, mobile:true })
+  await evaluate(`window.scrollTo(0,0);window.__factorFixture.focusWorkflow()`)
+  await delay(100)
+  assert.equal(await evaluate(`(() => {const r=document.querySelector('.workflow-actions button').getBoundingClientRect();return r.top>=64&&r.bottom<=innerHeight})()`), true, '手机保存后编译按钮直接可见')
+  await writeFile('.tmp/factor-physical-browser/continue-mobile.png', Buffer.from((await cdp.send('Page.captureScreenshot', { format:'png' })).data,'base64'))
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width:1440, height:1000, deviceScaleFactor:1, mobile:false })
+  // A user-selected period must survive compilation and the backend recommendation.
+  await evaluate(`window.__factorFixture.trialPeriod=['2026-01-01T00:00:00','2026-02-01T00:00:00'];window.__factorFixture.onTrialPeriodChange(window.__factorFixture.trialPeriod)`)
+  await click(button('编译并校验'))
+  await waitFor(()=>evaluate(`window.__factorRequests.some(r=>r.path==='/factor-versions/3/trial-period-recommendation')`))
+  await waitFor(()=>evaluate(`!window.__factorFixture.loading.recommendation`))
+  assert.deepEqual(await evaluate(`Array.from(window.__factorFixture.trialPeriod)`), ['2026-01-01T00:00:00','2026-02-01T00:00:00'])
+  assert.equal(await evaluate(`window.__factorFixture.trialPeriodSource`), 'USER')
   await click(button('添加关联表'))
   await waitFor(()=>evaluate(`!!document.querySelector('.join-mode')`))
   assert.equal(await evaluate(`document.querySelector('.join-mode .is-checked').textContent`), '复用已有表关系')
@@ -382,17 +411,17 @@ try {
     await writeFile(`.tmp/factor-physical-browser/category-readonly-${viewport.mobile?'mobile':'desktop'}.png`,Buffer.from((await cdp.send('Page.captureScreenshot',{format:'png'})).data,'base64'))
   }
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${appPort}/factor/edit/3` })
-  await waitFor(()=>evaluate(`document.querySelector('.editor-alert')?.textContent.includes('该因子使用 SQL')`))
-  assert.equal(await evaluate(`Array.from(document.querySelectorAll('button')).find(el=>el.textContent.trim()==='保存修改').disabled`), true)
+  await waitFor(()=>evaluate(`!!document.querySelector('[aria-label="原始 SQL"]')`))
+  assert.equal(await evaluate(`Array.from(document.querySelectorAll('button')).find(el=>el.textContent.trim()==='保存修改').disabled`), false)
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${appPort}/factor/edit/4` })
-  await waitFor(()=>evaluate(`document.querySelector('.time-binding input')?.value==='diagnosis.diagnosis_time'`)); await fixture()
+  await waitFor(()=>evaluate(`document.querySelector('.time-binding strong')?.textContent==='diagnosis.diagnosis_time'`)); await fixture()
   assert.equal(await evaluate(`window.__factorFixture.dslForm.periodColumn`), 'd.diagnosis_time')
-  assert.equal(await evaluate(`document.querySelector('.time-binding input').readOnly`), true)
+  assert.equal(await evaluate(`!!document.querySelector('.time-binding input')`), false)
   assert.equal(await evaluate(`window.__factorRequests.filter(r=>r.path==='/compile-artifacts/22').length`), 1)
   await evaluate(`window.__factorFixture.nativePeriodBinding=null;window.__factorFixture.workflow.published=false`)
-  await waitFor(()=>evaluate(`document.querySelector('.time-binding input')?.value.includes('尚未确认物理表')`))
+  await waitFor(()=>evaluate(`document.querySelector('.time-binding strong')?.textContent.includes('尚未确认物理表')`))
   await evaluate(`window.__factorFixture.compileCurrentVersion()`)
-  assert.equal(await evaluate(`document.querySelector('.time-binding input').value`), 'diagnosis.diagnosis_time')
+  assert.equal(await evaluate(`document.querySelector('.time-binding strong').textContent`), 'diagnosis.diagnosis_time')
   assert.equal(await evaluate(`window.__factorFixture.dslForm.periodColumn`), 'd.diagnosis_time')
   for (const viewport of [{ width:1440,height:1000,mobile:false }, { width:390,height:844,mobile:true }]) {
     await cdp.send('Emulation.setDeviceMetricsOverride', { ...viewport, deviceScaleFactor:1 })
@@ -400,6 +429,7 @@ try {
     await delay(100)
     await writeFile(`.tmp/factor-physical-browser/sql-period-${viewport.mobile?'mobile':'desktop'}.png`, Buffer.from((await cdp.send('Page.captureScreenshot', {format:'png'})).data,'base64'))
   }
+  if (!process.env.FACTOR_EDITOR_ONLY) {
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${appPort}/indicator/edit/new` })
   await waitFor(()=>evaluate(`!!document.querySelector('.editor-page')`))
   await evaluate(`(() => {let c=document.querySelector('.editor-page').__vueParentComponent;while(c&&c.type.__name!=='IndicatorEditor')c=c.parent;window.__indicator=c.setupState;window.__indicator.numeratorFactors=[{code:'SQL_FACTOR',name:'SQL 因子',versionId:'10',dsl:{definitionType:'SQL',periodColumn:'b.in_date'}}];window.__indicator.indicatorWorkflow.versionId='11'})()`)
@@ -577,8 +607,9 @@ try {
   await waitFor(()=>evaluate(`(() => {let c=document.querySelector('.editor-page').__vueParentComponent;while(c&&c.type.__name!=='IndicatorEditor')c=c.parent;return c.setupState.indicatorWorkflow.indicatorId==='200'&&!c.setupState.editLoadState.loading})()`))
   assert.equal(await evaluate(`document.querySelector('input[aria-label="指标编码"]').value`), 'INDICATOR_MANUAL_CODE')
   assert.equal(await evaluate(`document.querySelector('input[aria-label="指标编码"]').disabled`), true)
+  }
   assert.deepEqual(cdp.errors, [])
-  console.log('PASS: physical table creation, field types, value sets, JOIN hydration/save, desktop/mobile screenshots; no legacy table APIs')
+  console.log('PASS: factor creation, configuration/save order, draft continuation on desktop/mobile, custom period preservation, JOIN hydration/save and SQL period display' + (process.env.FACTOR_EDITOR_ONLY ? '' : '; indicator integration'))
 } catch (error) {
   if (cdp) await writeFile('.tmp/factor-physical-browser/failure.png', Buffer.from((await cdp.send('Page.captureScreenshot', {format:'png'})).data,'base64'))
   if (cdp) console.error(await evaluate(`document.body.innerText`).catch(()=>''))
