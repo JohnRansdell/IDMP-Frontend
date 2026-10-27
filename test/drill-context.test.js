@@ -75,8 +75,19 @@ test('an unbound organization root enters departments without inventing a hospit
   }
 })
 
-test('the root exception never bypasses missing identities on custom or member levels', () => {
-  for (const [code, level] of [['CUSTOM_1', 'ROOT'], ['ORGANIZATION', 'DEPARTMENT'], ['CUSTOM_1', 'HOSPITAL']]) {
+test('an unbound configured custom root enters its business level without inventing a member filter', () => {
+  const custom = { pathCode: 'CUSTOM_DISEASE', levels: [{ levelCode: 'ROOT', levelName: '全部病种' },
+    { levelCode: 'DIAGNOSIS', memberKeyFieldCode: '病种' }] }
+  assert.deepEqual(nextDrillNavigation({ currentLevel: 'ROOT', parentKeys: {} }, { dimensionKey: 'ROOT' }, 'DIAGNOSIS', custom), {
+    currentLevel: 'DIAGNOSIS', parentKeys: {}, label: '全部病种'
+  })
+  assert.equal(nextDrillNavigation({ currentLevel: 'ROOT' }, {}, '', custom), null)
+  const bound = { ...custom, levels: [{ levelCode: 'ROOT', memberKeyFieldCode: '院区' }, custom.levels[1]] }
+  assert.deepEqual(nextDrillNavigation({ currentLevel: 'ROOT' }, { dimensionKey: '院区甲' }, 'DIAGNOSIS', bound).parentKeys, { 院区: '院区甲' })
+})
+
+test('the root exception never bypasses missing identities on member levels', () => {
+  for (const [code, level] of [['CUSTOM_1', 'DEPT'], ['ORGANIZATION', 'DEPARTMENT'], ['CUSTOM_1', 'HOSPITAL']]) {
     const configured = { pathCode: code, levels: [{ levelCode: level }, { levelCode: 'DOCTOR' }] }
     assert.equal(nextDrillNavigation({ currentLevel: level }, { dimensionKey: '15' }, 'DOCTOR', configured), null)
   }

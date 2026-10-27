@@ -607,7 +607,7 @@ const drillResultId = computed(() => String(
   route.query.drillResultId ||
   (backendIndicatorVersion.value?.drillConfig?.drillPaths || [])
     .map(path => drillPathResultIds.value[path.pathCode]).find(Boolean) ||
-  drillPathResultIds.value.ORGANIZATION || drillPathResultIds.value.DISEASE ||
+  drillPathResultIds.value.ORGANIZATION ||
   backendAnalysis.value?.overview?.resultId || backendAnalysis.value?.resultContext?.resultId || ''
 ))
 const drillPeriod = computed(() => String(

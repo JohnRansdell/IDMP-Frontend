@@ -51,8 +51,7 @@ const parentKeyWhitelist = new Set([
   'OUT_DEPT_CODE',
   'DEPARTMENT_CODE',
   'MEDICAL_GROUP_CODE',
-  'ATTENDING_DOCTOR_CODE',
-  'SINGLE_DISEASE_CODE'
+  'ATTENDING_DOCTOR_CODE'
 ])
 const currentLevel = ref(String(route.query.currentLevel || 'HOSPITAL'))
 const parentKeys = ref(readParentKeys())

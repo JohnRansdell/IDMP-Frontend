@@ -17,7 +17,7 @@ export function drillScope(context, path) {
   const parentKeys = { ...context.parentKeys }
   const filters = Object.fromEntries(Object.entries(context.filters || {}).map(([key, value]) => [key, Array.isArray(value) ? [...value] : value]))
   const levels = path?.levels?.length ? path.levels.map(normalizeDrillLevelDefinition)
-    : ['HOSPITAL', 'OUT_DEPT', 'DEPARTMENT', 'MEDICAL_GROUP', 'ATTENDING_DOCTOR', 'DOCTOR', 'SINGLE_DISEASE'].map(legacyDrillLevelDefinition)
+    : ['HOSPITAL', 'OUT_DEPT', 'DEPARTMENT', 'MEDICAL_GROUP', 'ATTENDING_DOCTOR', 'DOCTOR'].map(legacyDrillLevelDefinition)
   for (const level of levels) {
     const identity = level.memberKeyFieldCode || level.dimensionFieldCode
     const display = level.displayFieldCode
@@ -53,12 +53,12 @@ export function buildDrillRequest(context, { path, pageNum = 1, pageSize = 20, s
 
 export function nextDrillNavigation(context, row, nextLevel, path) {
   const field = drillMemberField(path, context.currentLevel)
-  const virtualOrganizationRoot = path?.pathCode === 'ORGANIZATION'
-    && path.levels?.[0]?.levelCode === context.currentLevel
-    && ['HOSPITAL', 'ROOT'].includes(context.currentLevel)
-  if (!field && virtualOrganizationRoot && nextLevel) {
+  const virtualRoot = path?.levels?.[0]?.levelCode === context.currentLevel
+    && ((path?.pathCode === 'ORGANIZATION' && ['HOSPITAL', 'ROOT'].includes(context.currentLevel))
+      || (path?.pathCode?.startsWith('CUSTOM_') && context.currentLevel === 'ROOT'))
+  if (!field && virtualRoot && nextLevel) {
     return { currentLevel: nextLevel, parentKeys: drillScope(context, path).parentKeys,
-      label: row?.dimensionLabel || row?.dimensionName || '医院' }
+      label: row?.dimensionLabel || row?.dimensionName || path.levels[0].levelName || '全院' }
   }
   if (!field || !hasValue(row?.dimensionKey) || !nextLevel) return null
   return { currentLevel: nextLevel, parentKeys: { ...drillScope(context, path).parentKeys, [field]: String(row.dimensionKey) },

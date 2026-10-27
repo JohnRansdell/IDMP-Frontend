@@ -2,6 +2,7 @@ import { toOpaqueId } from '../../utils/resourceId.js'
 import { normalizeDimensionGrain, serializeDrillPaths } from '../../features/indicator/grouping.js'
 import { formulaChildren, arithmeticFormulaText } from '../../features/indicator/arithmeticFormula.js'
 import { normalizeResultMetrics } from './result.js'
+import { isRetiredDrillPath } from '../../features/indicator/drillPathPolicy.js'
 
 const runtimeEnv = typeof import.meta.env === 'object' && import.meta.env ? import.meta.env : {}
 
@@ -25,8 +26,6 @@ export function buildIndicatorDataSources(selection = [], savedSources = []) {
 
 const DRILL_PATH_LABELS = {
   ORGANIZATION: '组织维度',
-  DISEASE: '病种维度',
-  TIME: '时间维度',
   FACTOR: '因子维度',
   SCENARIO: '场景维度'
 }
@@ -352,7 +351,7 @@ export function normalizeDrillPaths(payload, fallback = []) {
     pathVersionId: String(path?.pathVersionId || ''),
     ...(path?.pathName ? { pathName: path.pathName } : {}),
     ...(path?.levels?.length ? { levels: path.levels } : {})
-  })).filter((path) => path.pathCode && path.maxLevel && path.pathCode.trim().toUpperCase() !== 'TIME')
+  })).filter((path) => path.pathCode && path.maxLevel && !isRetiredDrillPath(path.pathCode))
 }
 
 export function normalizeDrillConfig(payload, fallback = defaultDrillConfig) {
@@ -402,7 +401,7 @@ export function normalizeDrillCapabilities(payload = {}) {
         maxLevel: String(factor?.maxLevel || ''),
         reason: String(factor?.reason || '')
       })) : []
-    })).filter((dimension) => dimension.pathCode && dimension.pathCode.trim().toUpperCase() !== 'TIME') : []
+    })).filter((dimension) => dimension.pathCode && !isRetiredDrillPath(dimension.pathCode)) : []
   }
 }
 

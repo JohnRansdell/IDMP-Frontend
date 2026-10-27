@@ -44,7 +44,7 @@ export function drillPeriodAnchor(analysis, selectedPeriod, configuredPaths = []
   }
   const pathResultIds = deriveDrillPathResultIds(scoped, configuredPaths)
   const resultId = configuredPaths.map(path => pathResultIds[path.pathCode]).find(Boolean)
-    || pathResultIds.ORGANIZATION || pathResultIds.DISEASE
+    || pathResultIds.ORGANIZATION
     || scoped.overview?.resultId || scoped.resultContext?.resultId || ''
   return { pathResultIds, resultId: String(resultId) }
 }
