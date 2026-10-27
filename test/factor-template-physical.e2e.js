@@ -27,7 +27,7 @@ function fixture() {
     let data = {}
     if (path === '/auth/me') data = { user: { id: '1', username: 'test' }, roles: ['SYSTEM_ADMIN'], menus: [], permissions: [] }
     else if (path === '/meta/data-domains') data = [{ id: '1', code: 'SURGERY', name: '手术数据域', status: 'PUBLISHED' }]
-    else if (path.endsWith('/physical-tables')) data = [{ id: '2', tableName: 'surgery', tableComment: '手术记录', defaultTimeSemanticFieldCode: 'OPERATION_TIME', status: 'PUBLISHED' }]
+    else if (path.endsWith('/physical-tables') || path === '/meta/source-tables') data = [{ id: '2', tableName: 'surgery', tableComment: '手术记录', defaultTimeSemanticFieldCode: 'OPERATION_TIME', status: 'PUBLISHED' }]
     else if (path.endsWith('/semantic-fields')) data = [{ id: '3', code: 'OPERATION_TIME', name: '手术时间', sourceFieldName: 'operation_date', dataType: 'STRING' }, { id: '4', code: 'LEVEL', name: '手术级别', sourceFieldName: 'surgery_level', dataType: 'STRING' }]
     else if (path.endsWith('/fields')) data = [{ columnName: 'operation_date', columnType: 'datetime', comment: '手术时间' }, { columnName: 'surgery_level', columnType: 'varchar(20)', comment: '手术级别' }]
     else if (path === '/factor-templates') data = { template: { id: '10' }, version: { id: '11' } }
@@ -47,23 +47,23 @@ try {
   await send('Page.addScriptToEvaluateOnNewDocument', { source: `(${fixture.toString()})()` })
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false })
   await send('Page.navigate', { url: `http://127.0.0.1:${port}/factor/templates/new` })
-  await until(() => evaluate(`!!document.querySelector('.editor-card')`))
-  await evaluate(`(() => {let c=document.querySelector('.editor-card').__vueParentComponent;while(c&&c.type.__name!=='FactorTemplateEditor')c=c.parent;window.__editor=c.setupState})()`)
+  await until(() => evaluate(`!!document.querySelector('.factor-editor')`))
+  await evaluate(`(() => {let c=document.querySelector('.factor-editor').__vueParentComponent;while(c&&c.type.__name!=='FactorEditor')c=c.parent;window.__editor=c.setupState;let p=c.parent;while(p&&p.type.__name!=='FactorTemplateEditor')p=p.parent;window.__template=p.setupState})()`)
   await until(() => evaluate('window.__editor.domains.length === 1'))
-  await evaluate(`window.__editor.designer.domainCode='SURGERY';window.__editor.handleDomainChange('SURGERY')`)
+  await evaluate(`window.__editor.sourceMode='DOMAIN';window.__editor.dslForm.domainCode='SURGERY';window.__editor.handleDomainChange('SURGERY')`)
   await until(() => evaluate('window.__editor.tables.length === 1'))
-  await evaluate(`window.__editor.designer.tableName='surgery';window.__editor.handleTableChange()`)
+  await evaluate(`window.__editor.dslForm.tableName='surgery';window.__editor.handleTableChange()`)
   await until(() => evaluate('window.__editor.fields.length === 2'))
   assert.deepEqual(await evaluate('window.__editor.fields.map(f=>f.code)'), ['operation_date', 'surgery_level'])
-  assert.equal(await evaluate('window.__editor.designer.periodFieldCode'), '')
-  await evaluate(`window.__editor.designer.periodFieldCode='operation_date';window.__editor.form.code='TEMPLATE_TEST';window.__editor.form.name='手术计数模板';window.__editor.designer.drillPathVersionIds=['102027642461473150'];window.__editor.addParameter();Object.assign(window.__editor.designer.parameters[0],{code:'LEVEL',displayName:'手术级别',dataType:'STRING',defaultValue:'3'});window.__editor.designer.scopeMode='FILTERED';window.__editor.designer.filters={nodeType:'PREDICATE',fieldCode:'surgery_level',operator:'EQ',value:{parameterRef:'LEVEL'}};window.__editor.save()`)
+  assert.equal(await evaluate('window.__editor.dslForm.periodColumn'), '')
+  await evaluate(`window.__editor.dslForm.periodColumn='operation_date';window.__template.form.name='手术计数模板';window.__template.addParameter();Object.assign(window.__template.parameters[0],{code:'LEVEL',displayName:'手术级别',dataType:'STRING',defaultValue:'3'});window.__editor.scopeMode='FILTERED';Object.assign(window.__editor.filters,{nodeType:'PREDICATE',fieldCode:'surgery_level',operator:'EQ',value:{parameterRef:'LEVEL'}});window.__template.save()`)
   await until(() => evaluate(`window.__requests.some(r=>r.path==='/factor-templates')`))
   const payload = await evaluate(`window.__requests.find(r=>r.path==='/factor-templates').body`)
   assert.equal(payload.templateDefinition.primaryDomain.tableName, 'surgery')
   assert.equal(payload.templateDefinition.calculationMode, 'TEMPORAL')
   assert.equal(payload.templateDefinition.periodColumn, 'operation_date')
   assert.equal(payload.templateDefinition.filters.fieldCode, 'surgery_level')
-  assert.deepEqual(payload.templateDefinition.drillPathVersionIds, ['102027642461473150'])
+  assert.equal(payload.templateDefinition.drillPathVersionIds, undefined)
   assert.equal('enum' in payload.parameters[0].validation, false)
   assert.equal(await evaluate(`window.__requests.some(r=>r.path.includes('/semantic-tables'))`), false)
   await until(() => evaluate(`location.pathname.endsWith('/versions/11')`))

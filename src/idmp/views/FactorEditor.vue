@@ -1,8 +1,8 @@
 <template>
-  <div class="idmp-page factor-editor">
-  <PageHeader :title="pageTitle"><template #actions><div class="page-toolbar"><el-button :icon="ArrowLeft" @click="router.push('/factor')">返回列表</el-button><el-button type="primary" :loading="loading.save" :disabled="workflow.published || (!!unsupportedDsl && !isNativeSql) || !!periodConfigurationError || joins.some(item=>item.saving||item.configuring)" @click="saveFactor">{{ isCreate ? '保存因子定义' : '保存修改' }}</el-button></div></template></PageHeader>
+  <div class="idmp-page factor-editor" :class="{ 'definition-only': definitionOnly }" :inert="definitionOnly && disabled">
+  <PageHeader v-if="!definitionOnly" :title="pageTitle"><template #actions><div class="page-toolbar"><el-button :icon="ArrowLeft" @click="router.push('/factor')">返回列表</el-button><el-button type="primary" :loading="loading.save" :disabled="workflow.published || (!!unsupportedDsl && !isNativeSql) || !!periodConfigurationError || joins.some(item=>item.saving||item.configuring)" @click="saveFactor">{{ isCreate ? '保存因子定义' : '保存修改' }}</el-button></div></template></PageHeader>
   <el-alert v-if="periodConfigurationError" type="error" :closable="false" :title="periodConfigurationError" /><el-alert v-if="!isCreate" class="editor-alert" :type="unsupportedDsl && !isNativeSql ? 'warning' : 'info'" show-icon :closable="false" :title="workflow.published ? '当前版本已发布，计算口径只读。' : unsupportedDsl && !isNativeSql ? '该因子使用暂不支持的高级表达式，计算口径只读。' : workflow.message || '保存草稿后可继续完成编译、试算和发布。'" />
-    <section class="surface-card editor-section">
+    <section v-if="!definitionOnly" class="surface-card editor-section">
       <div class="section-title"><span class="section-number">1</span><div><h2>基础信息</h2><p>填写因子的名称和业务说明，保存后会生成可继续校验的因子草稿。</p></div></div>
       <el-form ref="basicFormRef" :model="basicForm" :rules="basicRules" :disabled="workflow.published || loading.save || loading.compile" label-width="88px">
         <el-row :gutter="16"><el-col :xs="24" :md="8"><el-form-item label="因子名称" prop="name"><el-input v-model.trim="basicForm.name" placeholder="请输入因子名称" /></el-form-item></el-col><el-col :xs="24" :md="8"><el-form-item label="业务分类"><el-input v-model.trim="basicForm.category" placeholder="如：医疗质量" /></el-form-item></el-col></el-row>
@@ -17,7 +17,8 @@
       </el-form>
       <div v-if="workflow.factorId || workflow.versionId" class="saved-summary"><span>因子 ID：<strong>{{ workflow.factorId || '-' }}</strong></span><span>版本 ID：<strong>{{ workflow.versionId || '-' }}</strong></span><span>保存状态：<strong>{{ getStatusLabel(workflow.status || 'DRAFT') }}</strong></span></div>
     </section>
-    <DerivedFactorEditor v-if="isDerived" ref="derivedEditorRef" v-model="derivedDsl" :domains="domains" :disabled="workflow.published || loading.save || loading.compile" />
+    <section v-if="definitionOnly" class="editor-section definition-kind-field"><el-radio-group v-model="definitionKind" aria-label="因子定义方式" :disabled="disabled"><el-radio-button label="SOURCE">原子因子</el-radio-button><el-radio-button label="DERIVED">复合因子</el-radio-button></el-radio-group></section>
+    <DerivedFactorEditor v-if="isDerived" ref="derivedEditorRef" v-model="derivedDsl" :domains="domains" :disabled="disabled || workflow.published || loading.save || loading.compile" />
     <section v-if="isNativeSql" class="surface-card editor-section" aria-label="SQL 计算口径">
       <div class="section-title"><span class="section-number">2</span><div><h2>SQL 计算口径</h2></div></div>
       <el-input v-model="unsupportedDsl.sqlTemplate" type="textarea" :rows="14" :readonly="workflow.published || loading.save || loading.compile" aria-label="原始 SQL" spellcheck="false" />
@@ -69,12 +70,12 @@
       <div class="measure-cards"><button v-for="item in aggregationOptions" :key="item.value" type="button" class="measure-card" :class="{ active: dslForm.aggregation === item.value }" @click="selectAggregation(item.value)"><strong>{{ item.label }}</strong><span>{{ item.description }}</span></button></div>
       <el-form label-width="88px" class="measure-field">
         <el-form-item label="统计对象"><el-radio-group :model-value="aggregateExpression ? 'EXPRESSION' : 'FIELD'" @update:model-value="aggregateExpression = $event === 'EXPRESSION' ? { expressionType: 'FIELD', fieldCode: dslForm.fieldCode } : null"><el-radio label="FIELD">物理字段</el-radio><el-radio label="EXPRESSION">字段表达式</el-radio></el-radio-group></el-form-item>
-        <el-form-item v-if="aggregateExpression" label="统计表达式"><FactorExpressionEditor v-model="aggregateExpression" :fields="fields" /></el-form-item>
-        <el-form-item v-else :label="dslForm.aggregation === 'COUNT' ? '计数字段' : '统计字段'"><el-select v-model="dslForm.fieldCode" filterable clearable :placeholder="dslForm.aggregation === 'COUNT' ? '不选则统计全部记录；选择后仅统计该字段非空的记录' : '选择要聚合的数值或业务键'"><el-option v-for="field in aggregatableFields" :key="field.code" :label="fieldOptionLabel(field)" :value="field.code" /></el-select></el-form-item>
+        <el-form-item v-if="aggregateExpression" label="统计表达式"><FactorExpressionEditor v-model="aggregateExpression" :fields="fields" :template-parameters="templateParameters" /></el-form-item>
+        <el-form-item v-else :label="dslForm.aggregation === 'COUNT' ? '计数字段' : '统计字段'"><el-select v-model="dslForm.fieldCode" filterable clearable :placeholder="dslForm.aggregation === 'COUNT' ? '不选则统计全部记录；选择后仅统计该字段非空的记录' : '选择要聚合的数值或业务键'"><el-option v-for="field in aggregatableFields" :key="field.code" :label="fieldOptionLabel(field)" :value="field.code" /><el-option v-for="item in templateParameters.filter(parameter=>parameter.dataType==='FIELD_REF' && parameter.code)" :key="'parameter:'+item.code" :label="'参数：'+(item.displayName || item.code)" :value="'${'+item.code+'}'" /></el-select></el-form-item>
       </el-form>
       <el-form label-width="88px" class="group-by-form"><el-form-item label="分组维度"><el-select v-model="dslForm.groupBy" multiple collapse-tags filterable clearable :disabled="!dslForm.tableName" placeholder="不选表示统计总体"><el-option v-for="field in dimensionFields" :key="field.code" :label="fieldOptionLabel(field)" :value="field.code" /></el-select></el-form-item></el-form><div class="grain-hint">当前结果粒度：{{ grainDescription }}</div>
     </section>
-    <section class="surface-card editor-section"><div class="section-title"><span class="section-number">4</span><div><h2>筛选范围</h2></div></div><div class="scope-mode"><el-radio-group v-model="scopeMode"><el-radio label="ALL">全部记录</el-radio><el-radio label="FILTERED" :disabled="!supportedFilterFields.length">显式筛选条件</el-radio></el-radio-group></div><FactorRuleBuilder v-if="scopeMode === 'FILTERED'" :model-value="filters" :fields="supportedFilterFields" @update="ruleVersion++" /><div class="rule-explanation"><strong>口径预览</strong><span>{{ filterPreview }}</span></div><div class="section-footer"><el-button link type="primary" @click="showDsl=true">查看技术配置</el-button></div></section>
+    <section class="surface-card editor-section"><div class="section-title"><span class="section-number">4</span><div><h2>筛选范围</h2></div></div><div class="scope-mode"><el-radio-group v-model="scopeMode"><el-radio label="ALL">全部记录</el-radio><el-radio label="FILTERED" :disabled="!supportedFilterFields.length">显式筛选条件</el-radio></el-radio-group></div><FactorRuleBuilder v-if="scopeMode === 'FILTERED'" :model-value="filters" :fields="supportedFilterFields" :template-parameters="templateParameters" @update="ruleVersion++" /><div class="rule-explanation"><strong>口径预览</strong><span>{{ filterPreview }}</span></div><div class="section-footer"><el-button link type="primary" @click="showDsl=true">查看技术配置</el-button></div></section>
     </div>
     <section v-if="template.templateId" class="surface-card editor-section"><div class="section-title"><span class="section-number">5</span><div><h2>模板参数</h2><p>模板参数仅作为业务输入，保存时由后端实例化为最终 DSL。</p></div></div><el-form label-position="top"><el-form-item v-for="item in parameters" :key="item.code" :label="item.displayName || item.code"><el-date-picker v-if="String(item.dataType || item.type).includes('DATETIME')" v-model="parameterValues[item.code]" type="datetimerange" unlink-panels value-format="YYYY-MM-DDTHH:mm:ss" /><el-select v-else-if="item.valueSourceType === 'ENUM' || item.valueSourceType === 'VALUE_SET'" v-model="parameterValues[item.code]" filterable><el-option v-for="option in item.options || []" :key="option.value || option.code || option" :label="option.label || option.name || option" :value="option.value || option.code || option" /></el-select><el-input v-else v-model="parameterValues[item.code]" /></el-form-item></el-form></section>
     <section v-if="workflow.versionId" ref="workflowSectionRef" class="surface-card editor-section workflow-section"><div class="section-title"><span class="section-number">{{ template.templateId ? 6 : 5 }}</span><div><h2>编译、试算与发布</h2><p>编译通过后会自动推荐真实数据周期；可直接试算，也可调整为自定义周期。</p></div><el-tag :type="workflow.published ? 'success' : 'info'">{{ getStatusLabel(workflow.status || 'DRAFT') }}</el-tag></div><div class="workflow-identity"><div><span>因子 ID</span><strong>{{ workflow.factorId }}</strong></div><div><span>版本 ID</span><strong>{{ workflow.versionId }}</strong></div><div><span>编译产物</span><strong>{{ workflow.artifactId || '-' }}</strong></div><div><span>试算批次</span><strong>{{ workflow.batchId || '-' }}</strong></div></div><el-steps :active="workflowActiveStep" finish-status="success" simple class="workflow-steps"><el-step title="保存草稿" /><el-step title="编译校验" /><el-step title="试算验证" /><el-step title="版本发布" /></el-steps><div class="workflow-actions"><el-button type="primary" :loading="loading.compile" :disabled="workflow.published" @click="compileCurrentVersion">编译并校验</el-button><el-button :loading="loading.trial || loading.result || loading.recommendation" :disabled="!workflow.compiled || workflow.published || loading.recommendation || runtimeSchemaLoading || !!runtimeSchemaError" v-access="'factorVersion.trial'" @click="trialCurrentVersion">{{ trialButtonLabel }}</el-button><el-button type="success" :loading="loading.publish" :disabled="!canPublish" v-access="'factorVersion.publish'" @click="publishCurrentVersion">发布因子版本</el-button></div><div v-if="workflow.taskId" class="workflow-feedback"><span>任务 ID：{{ workflow.taskId }}</span><span>任务状态：<el-tag size="small">{{ getStatusLabel(workflow.taskStatus || 'QUEUED') }}</el-tag></span><el-button v-if="!isTerminalTask" link type="primary" :loading="loading.status" @click="refreshTrialStatus">刷新状态</el-button></div><el-alert v-if="workflow.message" :title="workflow.message" :type="workflow.messageType" :closable="false" show-icon class="workflow-alert" /><div v-if="trialRows.length" class="trial-results"><div class="result-head"><h3>试算结果</h3><span>共 {{ trialPagination.total }} 条</span></div><el-table :data="trialRows" size="small" border><el-table-column type="index" label="#" width="54" /><el-table-column label="维度" min-width="220"><template #default="{ row }"><span class="mono-data">{{ formatDimensions(row) }}</span></template></el-table-column><el-table-column label="结果值" min-width="130"><template #default="{ row }">{{ resultValue(row) }}</template></el-table-column><el-table-column label="质量状态" width="120"><template #default="{ row }">{{ (row.qualityStatus || workflow.qualityStatus) ? getStatusLabel(row.qualityStatus || workflow.qualityStatus) : '-' }}</template></el-table-column></el-table><el-pagination :current-page="trialPagination.page" :page-size="trialPagination.size" :total="trialPagination.total" :disabled="loading.result" layout="total, prev, pager, next" @current-change="loadTrialResults" /></div><div v-if="workflow.published" class="published-next"><strong>因子版本已发布，可以进入下一步。</strong><span>后续创建指标时，请引用因子版本 ID {{ workflow.versionId }}。</span><el-button type="primary" v-access="'indicator.create'" @click="openIndicatorEditor">创建指标</el-button><el-button @click="router.push('/factor')">返回因子目录</el-button></div></section>
@@ -87,7 +88,7 @@
       <el-table v-if="queryRows.length" :data="queryRows"><el-table-column label="维度" min-width="200"><template #default="{row}">{{ formatDimensions(row) }}</template></el-table-column><el-table-column label="结果值"><template #default="{row}">{{ resultValue(row) }}</template></el-table-column></el-table>
     </section>
     <FactorDependencyPanel v-if="workflow.versionId && workflow.compiled" :version-id="workflow.versionId" :artifact-id="workflow.artifactId" />
-    <div class="editor-actions-bar"><span v-if="workflow.message">{{ workflow.message }}</span><span v-else>请完成配置后保存草稿，继续进入编译、试算与发布。</span><el-button :loading="loading.save" :disabled="workflow.published || (!!unsupportedDsl && !isNativeSql)" @click="saveFactor">{{ isCreate ? '保存草稿并继续' : '保存修改并重新校验' }}</el-button></div>
+    <div v-if="!definitionOnly" class="editor-actions-bar"><span v-if="workflow.message">{{ workflow.message }}</span><span v-else>请完成配置后保存草稿，继续进入编译、试算与发布。</span><el-button :loading="loading.save" :disabled="workflow.published || (!!unsupportedDsl && !isNativeSql)" @click="saveFactor">{{ isCreate ? '保存草稿并继续' : '保存修改并重新校验' }}</el-button></div>
     <DslPreview v-model="showDsl" :dsl="currentDsl" />
     <section class="surface-card editor-section"><div class="section-title"><span class="section-number">{{ 5 + (template.templateId ? 1 : 0) + (workflow.versionId ? 1 : 0) }}</span><div><h2>计算模式</h2><p>时序因子按业务时间持续计算；静态因子只进行一次全量计算。</p></div></div><el-radio-group v-model="dslForm.calculationMode" :disabled="workflow.published || isNativeSql || loading.save || loading.compile"><el-radio label="TEMPORAL">时序</el-radio><el-radio label="STATIC">静态</el-radio></el-radio-group><el-alert v-if="dslForm.calculationMode === 'STATIC'" type="info" :closable="false" title="静态因子试算不传周期，发布后只创建一次全量初始化计算。" /></section>
   </div>
@@ -98,6 +99,9 @@ import { toOpaqueId } from '@/idmp/utils/resourceId.js'
 
 import { canRequest } from '@/idmp/auth/session'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { validateTemplateConditions, describeTemplateConditions, templateDefinitionFromFactor } from '@/idmp/utils/factorTemplateDefinition.js'
+const props = defineProps({ definitionOnly: Boolean, disabled: Boolean, initialDefinition: { type: Object, default: null }, templateParameters: { type: Array, default: () => [] } })
+const definitionReady = ref(false)
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
@@ -202,9 +206,60 @@ async function loadNativePeriodBinding() {
 }
 const supportedFilterFields=computed(()=>filterFields.value)
 function filterChildren(node) { return node?.nodeType === 'NOT' ? filterChildren(node.child) : node?.children || [] }
-const filterPreview=computed(()=>{ruleVersion.value;if(scopeMode.value==='ALL')return '统计当前物理表中的全部记录（无筛选条件）';if(!filterChildren(filters).length)return '请添加一条筛选条件';const errors=validateFilterNode(filters,[],fields.value);return errors[0]||describeNode(filters)})
+const filterPreview=computed(()=>{ruleVersion.value;if(scopeMode.value==='ALL')return '统计当前物理表中的全部记录（无筛选条件）';if(!filterChildren(filters).length)return '请添加一条筛选条件';const errors=validateFilterNode(filters,[],fields.value);return errors[0]||(props.definitionOnly ? describeTemplateConditions(filters,fields.value,props.templateParameters) : describeNode(filters))})
 const caliberDescription=computed(()=>{const aggregation=aggregationOptions.find(item=>item.value===dslForm.aggregation)?.label||'未选择统计方式';const selectedField=fieldByCode(fields.value,dslForm.fieldCode);const expression=aggregateExpression.value?describeFieldExpression(aggregateExpression.value,fields.value):'';const object=expression||selectedField?.label;const target=dslForm.aggregation==='COUNT'?(object?`${object}的非空值`:'全部记录'):object||'未选择统计字段';const scope=scopeMode.value==='ALL'?'全部记录':filterPreview.value;const joined=joins.value.filter(isJoinComplete).map(item=>item.targetTableName||item.tableName).join('、');const domain=dslForm.domainCode?`“${currentDomainName.value}”的`:'';return `从${domain}“${currentTableName.value||'未选择物理表'}”中${joined?`关联“${joined}”后`:''}，按${aggregation}统计${target}；业务范围：${scope}；结果粒度：${grainDescription.value}。`})
-onMounted(async()=>{await loadDomains();if(template.templateId)await loadParameterSchema();if(!isCreate.value)await loadExisting()})
+onMounted(async()=>{await loadDomains();if(props.definitionOnly){await loadDefinition(props.initialDefinition);return}if(template.templateId)await loadParameterSchema();if(!isCreate.value)await loadExisting()})
+
+async function loadDefinition(dsl) {
+  definitionReady.value = false
+  try {
+    if (!dsl) { await loadTables(); return }
+    existingDslMissingRowPolicy.value = dsl.missingRowPolicy ?? null
+    existingRuntimeParameters.value = dsl.parameters || []
+    aggregateExpression.value = dsl.aggregation?.fieldExpression ? JSON.parse(JSON.stringify(dsl.aggregation.fieldExpression)) : null
+    definitionKind.value = dsl.definitionKind === 'DERIVED' ? 'DERIVED' : 'SOURCE'
+    dslForm.calculationMode = factorCalculationMode(dsl)
+    if (isDerived.value) { derivedDsl.value = JSON.parse(JSON.stringify(dsl)); return }
+    unsupportedDsl.value = hasUnsupportedFactorDslExpressions(dsl) ? dsl : null
+    dslForm.periodColumn = factorPeriodColumn(dsl)
+    dslForm.domainCode = dsl.primaryDomain?.domainCode || ''
+    sourceMode.value = dslForm.domainCode ? 'DOMAIN' : 'PHYSICAL'
+    dslForm.tableName = dsl.primaryDomain?.tableName || dsl.primaryDomain?.semanticTableCode || ''
+    dslForm.baseAlias = dsl.primaryDomain?.sourceAlias || 'base'
+    joins.value = (dsl.joins || []).map((item,index)=>({...item,inline:!item.relationId&&!!item.tableName,
+      relationId:toOpaqueId(item.relationId),fromAlias:item.fromAlias||dslForm.baseAlias,sourceAlias:item.sourceAlias||`join${index+1}`,fields:[]}))
+    dslForm.aggregation = dsl.aggregation?.function || 'COUNT'
+    const aggregateField = dsl.aggregation?.fieldRef || dsl.aggregation?.fieldCode
+    dslForm.fieldCode = aggregateField?.parameterRef ? '${' + aggregateField.parameterRef + '}' : fieldKey(aggregateField)
+    dslForm.groupBy = (dsl.groupBy || []).map(fieldKey)
+    Object.keys(filters).forEach(key=>delete filters[key])
+    Object.assign(filters,toEditableFilterRoot(withoutLegacyPeriod(dsl.filters)))
+    scopeMode.value = filters.children?.length ? 'FILTERED' : 'ALL'
+    await loadTables(true)
+  } finally { definitionReady.value = true }
+}
+
+function getDefinition(validate = true) {
+  if (!definitionReady.value || sourceTablesLoading.value || joins.value.some(item=>item.saving)) throw new Error('请等待计算定义加载完成')
+  if (validate) {
+    if (unsupportedDsl.value) throw new Error('当前定义包含尚不支持编辑的表达式，请通过高级配置调整')
+    if (isDerived.value) derivedEditorRef.value.validate()
+    else {
+      if (sourceMode.value === 'DOMAIN' && !dslForm.domainCode) throw new Error('请选择数据域，或改为物理表取数')
+      if (!dslForm.tableName) throw new Error('请选择物理表')
+      if (joins.value.some(item=>!isJoinComplete(item)||item.configuring)) throw new Error('请完成关联表配置')
+      if (dslForm.calculationMode === 'TEMPORAL' && !periodFields.value.some(field=>field.code===dslForm.periodColumn)) throw new Error('请选择有效的统计周期字段')
+      if (dslForm.aggregation !== 'COUNT' && !dslForm.fieldCode && !aggregateExpression.value) throw new Error('请选择统计字段')
+      if (dslForm.fieldCode.startsWith('${') && !props.templateParameters.some(item=>item.dataType==='FIELD_REF' && '${'+item.code+'}'===dslForm.fieldCode)) throw new Error('请选择已声明的字段引用参数')
+      const errors = validateTemplateConditions({filters,scopeMode:scopeMode.value,fieldExpression:aggregateExpression.value,parameters:props.templateParameters}, fields.value)
+      if(errors.length)throw new Error(errors[0])
+    }
+  }
+  const dsl = currentDsl.value
+  return templateDefinitionFromFactor(dsl, props.initialDefinition)
+}
+watch(()=>props.initialDefinition,async value=>{if(props.definitionOnly&&definitionReady.value)await loadDefinition(value)})
+defineExpose({ getDefinition, loadDefinition, definitionReady })
 async function loadExisting() {
   try {
     const factor = await fetchFactor(route.params.id)
@@ -443,7 +498,7 @@ function restorePhysicalFieldReferences(){
   const visit=node=>{if(!node)return;if(node.nodeType==='PREDICATE'){node.fieldCode=resolve(node.fieldCode);expression(node.left);expression(node.right)};(node.children||[]).forEach(visit);visit(node.child)}
   visit(filters)
 }
-function pruneFieldReferences(){const valid=new Set(fields.value.map(x=>x.code));if(!valid.has(dslForm.periodColumn))dslForm.periodColumn='';if(!valid.has(dslForm.fieldCode))dslForm.fieldCode='';dslForm.groupBy=dslForm.groupBy.filter(code=>valid.has(code));pruneFilterNode(filters,valid)}
+function pruneFieldReferences(){const valid=new Set(fields.value.map(x=>x.code));if(!valid.has(dslForm.periodColumn))dslForm.periodColumn='';const fieldParameters=props.templateParameters.filter(item=>item.dataType==='FIELD_REF').map(item=>'${'+item.code+'}');if(!valid.has(dslForm.fieldCode)&&!fieldParameters.includes(dslForm.fieldCode))dslForm.fieldCode='';dslForm.groupBy=dslForm.groupBy.filter(code=>valid.has(code));pruneFilterNode(filters,valid)}
 function pruneFilterNode(node,valid){if(!node)return;if(node.nodeType==='PREDICATE'&&!node.left&&!valid.has(node.fieldCode)){node.fieldCode='';node.value='';node.itemCodes=[];node.operator=''};(node.children||[]).forEach(child=>pruneFilterNode(child,valid));if(node.child)pruneFilterNode(node.child,valid)}
 async function loadParameterSchema(){if(!template.templateId)return;loading.template=true;try{const data=await fetchFactorTemplateParameterSchema(template.templateId);parameters.value=normalize(data?.parameters??data);parameters.value.forEach(x=>{if(!(x.code in parameterValues))parameterValues[x.code]=x.defaultValue??''})}catch(e){ElMessage.error(e?.message||'模板参数读取失败')}finally{loading.template=false}}
 function selectAggregation(value){dslForm.aggregation=value;if(value!=='COUNT'&&!aggregatableFields.value.some(field=>field.code===dslForm.fieldCode))dslForm.fieldCode=''}
@@ -577,6 +632,7 @@ async function queryCurrentVersion() {
   finally { queryLoading.value = false }
 }
 watch(() => [route.params.id, route.query.factorVersionId], async ([id]) => {
+  if (props.definitionOnly) return
   if (!id || id === 'new') return
   savedDefinition.value = ''
   resetWorkflowAfterDefinitionChange()

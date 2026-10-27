@@ -1,17 +1,32 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildFactorTemplateDefinition, templatePeriodField, validateTemplateConditions, describeTemplateConditions } from '../src/idmp/utils/factorTemplateDefinition.js'
-import { editableFilterTree } from '../src/idmp/utils/dslBuilder.js'
+import { templatePeriodField, validateTemplateConditions, describeTemplateConditions, templateDefinitionFromFactor } from '../src/idmp/utils/factorTemplateDefinition.js'
+import { buildFactorDsl, editableFilterTree } from '../src/idmp/utils/dslBuilder.js'
+import { withoutLegacyPeriod } from '../src/idmp/utils/factorPeriod.js'
+
+function buildFactorTemplateDefinition(form, fields=[]) {
+  return templateDefinitionFromFactor(buildFactorDsl({...form,fields,sourceAlias:form.primaryOptions?.sourceAlias,periodColumn:form.periodFieldCode,joins:form.extraDefinition?.joins,fieldCode:form.fieldCode||form.extraDefinition?.aggregationField?.fieldCode,filters:form.scopeMode==='ALL'?{nodeType:'TRUE'}:withoutLegacyPeriod(form.filters)}), {output:form.output})
+}
+
+test('shared factor definition drops obsolete template settings without restoring stale source or grain', () => {
+  const original = { definitionKind:'DERIVED', expression:{ nodeType:'FACTOR' }, drillPathVersionIds:['1'], allowedGrains:['YEARLY'], output:{ dimension:'COUNT',grain:['old'],unit:'人',scale:0 } }
+  const definition = { dslType:'FACTOR', primaryDomain:{tableName:'surgery'},aggregation:{function:'SUM'},groupBy:['dept'],output:{dimension:'SUM'} }
+  const result = templateDefinitionFromFactor(definition, original)
+  assert.deepEqual(result, {...definition,output:{dimension:'SUM',unit:'人',scale:0}})
+  assert.equal(result.primaryDomain.domainCode,undefined)
+  result.groupBy.push('doctor')
+  assert.deepEqual(definition.groupBy,['dept'])
+})
 
 function designer() {
   return { domainCode: 'SURGERY', tableName: 'vmq_surgeryinfo', calculationMode: 'STATIC', periodFieldCode: 'operation_date', aggregation: 'COUNT', fieldCode: '', output: { valueType: 'DECIMAL', unit: 'COUNT', scale: 0 }, allowedGrains: ['MONTHLY'], drillPathVersionIds: ['102027642461473150'], filters: { nodeType: 'PREDICATE', fieldCode: 'surgery_level', operator: 'EQ', value: { parameterRef: 'LEVEL' } }, parameters: [{ code: 'LEVEL', displayName: '手术级别', dataType: 'INTEGER' }], extraDefinition: {} }
 }
-test('templates emit physical table and fields, preserve bigint ids and zero scale', () => {
+test('templates emit the shared factor source and fields, preserve zero scale without obsolete drill settings', () => {
   const dsl = buildFactorTemplateDefinition(designer())
   assert.deepEqual(dsl.primaryDomain, { domainCode: 'SURGERY', tableName: 'vmq_surgeryinfo' })
   assert.equal(dsl.filters.fieldCode, 'surgery_level')
   assert.deepEqual(dsl.filters.value, { parameterRef: 'LEVEL' })
-  assert.deepEqual(dsl.drillPathVersionIds, ['102027642461473150'])
+  assert.equal(dsl.drillPathVersionIds, undefined)
   assert.equal(dsl.output.scale, 0)
   assert.equal(templatePeriodField(dsl.filters), '')
 })
@@ -92,7 +107,7 @@ test('advanced definition retains governed join aliases, grouping, and parameter
   const dsl = buildFactorTemplateDefinition(form)
   assert.equal(dsl.primaryDomain.sourceAlias, 'source')
   assert.deepEqual(dsl.groupBy, ['surgery_level'])
-  assert.deepEqual(dsl.aggregation.fieldCode, { parameterRef: 'FIELD' })
+  assert.deepEqual(dsl.aggregation.fieldRef, { parameterRef: 'FIELD' })
   assert.equal(dsl.joins[0].relationId, '100')
   assert.equal('aggregationField' in dsl, false)
 })

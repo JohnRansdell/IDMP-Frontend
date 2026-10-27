@@ -1,35 +1,16 @@
-import { factorPeriodColumn, withoutLegacyPeriod } from './factorPeriod.js'
-import { collectParameters, serializeExpression, serializeFilterNode, validateExpression, validateFilterNode, describeFieldExpression } from './dslBuilder.js'
+import { factorPeriodColumn } from './factorPeriod.js'
+import { validateExpression, validateFilterNode, describeFieldExpression } from './dslBuilder.js'
+
+export function templateDefinitionFromFactor(dsl, original) {
+  const output = { ...dsl.output }
+  for (const key of ['unit', 'precision', 'scale']) {
+    if (original?.output?.[key] != null) output[key] = original.output[key]
+  }
+  return JSON.parse(JSON.stringify({ ...dsl, output }))
+}
 
 export function templatePeriodField(definition) {
   return definition?.nodeType ? factorPeriodColumn({ filters: definition }) : factorPeriodColumn(definition)
-}
-
-export function buildFactorTemplateDefinition(designer, fields = []) {
-  const mode = designer.calculationMode || 'TEMPORAL'
-  const primaryDomain = { ...designer.primaryOptions, domainCode: designer.domainCode, tableName: designer.tableName }
-  const aggregation = { function: designer.aggregation }
-  if (designer.fieldExpression) aggregation.fieldExpression = serializeExpression(designer.fieldExpression)
-  else if (designer.fieldCode) aggregation.fieldCode = designer.fieldCode
-  else if (designer.extraDefinition?.aggregationField) Object.assign(aggregation, designer.extraDefinition.aggregationField)
-  const filter = designer.scopeMode === 'ALL' ? { nodeType: 'TRUE' } : designer.filters || { nodeType: 'TRUE' }
-  const filters = serializeFilterNode(withoutLegacyPeriod(filter), fields)
-  const parameters = [...(designer.runtimeParameters || [])]
-  for (const parameter of collectParameters(filter, [], fields)) {
-    const index = parameters.findIndex(item => item.code === parameter.code)
-    if (index < 0) parameters.push(parameter)
-    else parameters[index] = parameter
-  }
-  const { aggregationField, periodColumn, ...extra } = designer.extraDefinition || {}
-  return {
-    ...extra, schemaVersion: '1.0', dslType: 'FACTOR', calculationMode: mode, primaryDomain,
-    ...(mode === 'TEMPORAL' && designer.periodFieldCode ? { periodColumn: designer.periodFieldCode } : {}),
-    filters, aggregation, groupBy: designer.groupBy || [], parameters,
-    output: { valueType: designer.output.valueType, semanticKind: 'MEASURE', dimension: designer.aggregation === 'COUNT' ? 'COUNT' : 'VALUE', unit: designer.output.unit, nullable: false, precision: Number(designer.output.precision || 30), scale: Number(designer.output.scale ?? 10), grain: [] },
-    applicableDomains: designer.domainCode ? [{ domainCode: designer.domainCode }] : [],
-    allowedGrains: designer.allowedGrains,
-    drillPathVersionIds: designer.drillPathVersionIds.map(String).filter(id => /^\d+$/.test(id))
-  }
 }
 
 export function validateTemplateConditions(designer, fields = []) {
