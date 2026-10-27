@@ -12,7 +12,7 @@ Never enable the Spring mock controller on a public server.
 Forward the loopback service to the workstation:
 
 ```powershell
-ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:5180:127.0.0.1:18086 lab-server
+ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:5180:127.0.0.1:18086 70374090
 ```
 
 Open `http://127.0.0.1:5180/`. Configure `testOrigins` to match the local portal
@@ -26,8 +26,13 @@ field. The simulator accepts only that configured dashboard and frontend origin;
 it rejects extra identity parameters, duplicate IDs and other destinations. Each
 data source must have an explicit department field mapping. Unsupported sources
 and warning widgets fail closed, never fall back to hospital-wide results.
-The two demo identities
-are synthetic; their departments use real calculated results. Token-only entry
+The current acceptance identity is the existing employee account `300112`
+(杜琴), with source department code `15` (骨科). The private simulator configuration
+contains only this identity; the previous synthetic identities are no longer offered.
+Before using an existing employee account, explicitly bind the verified external
+subject to that account in `sys_medical_identity`; do not create another account or
+change its password or roles. The external token verifier is still simulated.
+Token-only entry
 opens the ordinary platform homepage using that user's configured platform roles.
 Accounts without permissions see an authorization notice; SSO never assigns an
 administrator role. Signed entry explicitly requests `entry: "DASHBOARD"` from
