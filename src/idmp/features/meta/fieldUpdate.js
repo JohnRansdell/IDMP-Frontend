@@ -1,6 +1,6 @@
 export function buildSemanticFieldUpdate(detail, changes) {
   if (detail?.resourceVersion == null || typeof detail.nullable !== 'boolean') {
-    throw new Error('后端未返回编辑所需的版本号或可空信息，映射尚未保存。')
+    throw new Error('字段信息不完整，映射尚未保存，请刷新字段信息后重试。')
   }
 
   return {

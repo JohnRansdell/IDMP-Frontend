@@ -2,7 +2,7 @@
   <section class="calculation-diagnostics" aria-label="当前指标计算链路">
     <div class="diagnostic-head"><h3>当前结果计算链路</h3><el-button size="small" link type="primary" :loading="loading" :disabled="pending" @click="loadResults">刷新</el-button></div>
     <p class="diagnostic-hint">仅追溯当前指标版本、报告期内的正式结果；每条结果沿用其计算时的冻结快照。</p>
-    <p v-if="instantResult?.executionMode === 'AD_HOC_SOURCE'" class="diagnostic-hint">当前即时查询结果尚未入库。{{ hasRuntimeParameters ? '不能用未核实业务参数的正式结果代替其计算链路。' : '以下正式结果链路独立展示，不代表即时汇总值的计算过程。' }}</p>
+    <p v-if="instantResult?.executionMode === 'AD_HOC_SOURCE'" class="diagnostic-hint">本次为即时计算，未保存正式结果。{{ hasRuntimeParameters ? '暂无与本次参数对应的正式追溯记录。' : '以下链路仅对应已保存的正式结果。' }}</p>
     <p v-if="pending || loading" role="status">正在读取当前版本和报告期的结果…</p>
     <div v-else-if="error" role="status" class="diagnostic-error"><span>{{ error }}</span><el-button link type="primary" @click="loadResults">重试</el-button></div>
     <p v-else-if="!results.length" role="status">{{ emptyMessage }}</p>
@@ -14,13 +14,15 @@
       <div v-else-if="traceError" class="diagnostic-error" role="status"><span>{{ traceError }}</span><el-button link type="primary" @click="loadTrace">重试</el-button></div>
       <template v-else-if="trace">
         <dl class="diagnostic-context">
-          <div><dt>指标版本</dt><dd>{{ trace.context.indicatorVersionId }}</dd></div>
           <div><dt>结果周期</dt><dd>{{ tracePeriod }}</dd></div>
-          <div><dt>结果 ID</dt><dd>{{ trace.context.resultId }}</dd></div>
-          <div><dt>冻结快照</dt><dd>{{ trace.context.configSnapshotId || '-' }}</dd></div>
-          <div><dt>计算批次</dt><dd><el-button v-if="batchId" link type="primary" @click="emit('open-batch', batchId)">{{ batchId }}</el-button><template v-else>后端未返回</template></dd></div>
-          <div><dt>批次状态</dt><dd>{{ batch ? getStatusLabel(batch.batchStatus || batch.status) : batchError || '后端未返回' }}</dd></div>
+          <div><dt>计算批次</dt><dd><el-button v-if="batchId" link type="primary" @click="emit('open-batch', batchId)">查看批次</el-button><template v-else>暂不可用</template></dd></div>
+          <div><dt>批次状态</dt><dd>{{ batch ? getStatusLabel(batch.batchStatus || batch.status) : batchError || '暂不可用' }}</dd></div>
         </dl>
+        <details v-if="$can('GET', '/system/health')"><summary>查看高级诊断</summary><dl class="diagnostic-context">
+          <div><dt>指标版本标识</dt><dd>{{ trace.context.indicatorVersionId }}</dd></div>
+          <div><dt>结果标识</dt><dd>{{ trace.context.resultId }}</dd></div>
+          <div><dt>计算快照</dt><dd>{{ trace.context.configSnapshotId || '-' }}</dd></div>
+        </dl></details>
         <p v-if="trace.formula?.displayText">计算公式：{{ trace.formula.displayText }}</p>
         <div class="diagnostic-values"><span v-for="operand in operandColumns" :key="operand.field">{{ operand.label }}：{{ valueText(operandValue(trace.indicatorResult, operand)) }}</span><strong>指标值：{{ trace.indicatorResult?.displayValue ?? valueText(trace.indicatorResult?.value) }}</strong></div>
         <FactorTraceTree v-if="trace.factors?.length" :key="selectedId" :result-id="selectedId" :factors="trace.factors" />
@@ -72,14 +74,14 @@ async function loadResults() {
   if (!query) { emptyMessage.value = '请选择完整报告期后查看计算链路。'; return }
   // The analysis API has no business-parameter snapshot matching contract.
   // A parameterized instantaneous result cannot be traced through unrelated saved rows.
-  if (props.hasRuntimeParameters) { emptyMessage.value = '当前指标使用业务运行参数，分析接口未提供与本次参数快照匹配的正式结果 ID。可查看下方计算口径和本次查询明细，暂不展示结果级链路。'; return }
+  if (props.hasRuntimeParameters) { emptyMessage.value = '当前参数暂无对应的正式追溯记录，可查看计算口径和本次查询明细。'; return }
   resultController = new AbortController()
   loading.value = true
   try {
     const analysis = await fetchIndicatorAnalysis(props.indicatorId, query, { signal: resultController.signal })
     if (token !== generation) return
     results.value = diagnosticResults(analysis, query)
-    emptyMessage.value = '当前版本、报告期未返回可追溯的正式结果 ID。聚合值或未入库的即时结果不能替代正式结果链路。'
+    emptyMessage.value = '当前版本和报告期暂无正式追溯记录。'
     // Only select a true overview automatically. Dimension results require an
     // explicit selection so a department/case is never shown as the hospital total.
     if (analysis.overview?.resultId && results.value.some(row => String(row.resultId) === String(analysis.overview.resultId))) {

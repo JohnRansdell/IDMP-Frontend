@@ -16,7 +16,7 @@
       <section class="surface-card factor-basic" aria-label="因子基本信息">
         <dl class="identity-grid" aria-label="因子标识信息">
           <div><dt>因子名称</dt><dd class="identity-name">{{ factor.name || factor.factorName || '—' }}</dd></div>
-          <div><dt>因子 ID</dt><dd class="identity-id mono-data">{{ factor.id || factor.factorId || '—' }}</dd></div>
+
           <div>
             <dt>当前版本</dt>
             <dd>
@@ -24,7 +24,7 @@
                 <el-option v-for="item in versions" :key="factorVersionId(item)" :value="factorVersionId(item)" :label="`版本 ${item.versionNo || '-'} · ${getStatusLabel(item.publicationStatus || item.status)}`" />
               </el-select>
               <span v-else class="current-version">{{ selectedVersionLabel }}</span>
-              <small class="version-id-text">版本 ID：<span class="mono-data">{{ selectedVersionId || '—' }}</span></small>
+
             </dd>
           </div>
         </dl>

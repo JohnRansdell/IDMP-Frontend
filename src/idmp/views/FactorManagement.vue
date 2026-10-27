@@ -2,12 +2,11 @@
   <div class="idmp-page factor-management">
     <PageHeader
       title="因子管理"
-      status-label="后端联调"
       status-tone="info"
     >
       <template #meta>
         <span class="data-source-badge" :class="{ 'is-live': sourceMode === 'live' }">
-          {{ tableLoading ? '正在加载' : loadError ? '加载失败' : '接口数据' }}
+          {{ tableLoading ? '正在加载' : loadError ? '加载失败' : '已加载' }}
         </span>
         <span>共 {{ filteredRows.length }} 条</span>
       </template>
@@ -246,7 +245,7 @@ const openAdvancedFactorEditor = () => {
 }
 
 const showUnavailable = (capability) => {
-  ElMessage.info(`${capability}尚未接入接口，暂不可使用。`)
+  ElMessage.info(`${capability}暂不可用。`)
 }
 
 const openDelete = row => { deleteTarget.value = row }

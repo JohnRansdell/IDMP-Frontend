@@ -43,7 +43,7 @@ export function saveDashboardToCatalog(schema, storage = globalThis.localStorage
   return writeDashboardCatalog([...readDashboardCatalog(storage).filter(item => item.id !== entry.id), entry], storage)
 }
 export function removeLocalDashboard(id, storage = globalThis.localStorage) {
-  if (BUILT_IN_DASHBOARD_IDS.has(id)) throw new Error('内建演示看板不能删除')
+  if (BUILT_IN_DASHBOARD_IDS.has(id)) throw new Error('系统内置看板不可删除')
   storage.removeItem(getDashboardSchemaStorageKey(id))
   return writeDashboardCatalog(readDashboardCatalog(storage).filter(item => item.id !== id), storage)
 }

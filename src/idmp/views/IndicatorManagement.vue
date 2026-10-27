@@ -5,7 +5,7 @@
     >
       <template #meta>
         <span class="data-source-badge" :class="{ 'is-live': sourceMode === 'live' }">
-          {{ tableLoading ? '正在加载' : loadError ? '加载失败' : '接口数据' }}
+          {{ tableLoading ? '正在加载' : loadError ? '加载失败' : '已加载' }}
         </span>
         <span>共 {{ filteredRows.length }} 条</span>
       </template>
@@ -13,11 +13,11 @@
         <el-button v-access="'indicator.create'" type="primary" :icon="Plus" @click="openEditor('new')">新增指标</el-button>
         <el-button v-access="'indicator.recycleBin.read'" @click="router.push('/indicator/recycle-bin')">回收站</el-button>
         <el-button v-access="'sqlImport.create'" :icon="Upload" @click="router.push('/indicator/import/sql')">SQL 导入</el-button>
-        <el-tooltip content="大导出任务接口尚未接入">
+        <el-tooltip content="暂不支持批量导出">
           <span
             class="disabled-tooltip-trigger"
             tabindex="0"
-            aria-label="批量导出不可用：大导出任务接口尚未接入"
+            aria-label="批量导出不可用：暂不支持批量导出"
           >
             <el-button :icon="Download" disabled>批量导出</el-button>
           </span>
@@ -313,7 +313,7 @@ const loadBackendIndicators = async () => {
   } catch (error) {
     backendIndicatorRows.value = []
     sourceMode.value = 'error'
-    loadError.value = error?.message || '指标目录接口暂不可用。'
+    loadError.value = error?.message || '指标目录加载失败，请重试。'
   } finally {
     tableLoading.value = false
   }

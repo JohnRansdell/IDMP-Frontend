@@ -17,14 +17,14 @@
     </nav>
 
     <div class="pie-context" role="status" aria-live="polite">
-      <span :class="{ 'is-demo': source === 'mock' }">{{ source === 'mock' ? '演示数据' : '正式接口数据' }}</span>
+
       <span>{{ levelLabel }} · {{ measure.label }}</span>
       <span v-if="result?.context.period">结果期间：{{ result.context.period }}</span>
       <span v-if="isLeaf && !loading && !error">已到末级</span>
     </div>
 
     <StatePanel v-if="disabled" type="unavailable" title="编辑模式" description="保存或取消编辑后可下钻。" />
-    <StatePanel v-else-if="loading" type="loading" title="正在加载当前层" description="正在校验完整分布与结果快照。" />
+    <StatePanel v-else-if="loading" type="loading" title="正在加载当前层" description="正在加载当前层级结果。" />
     <StatePanel
       v-else-if="error"
       :type="error.status === 403 ? 'permission' : 'error'"
@@ -153,7 +153,7 @@ const resultMetadata = computed(() => {
     `版本：${context.indicatorVersionId || '未提供'}`,
     context.batchId && `批次：${context.batchId}`,
     context.dataWatermark && `水位：${context.dataWatermark}`,
-    `更新：${context.updatedAt || result.value?.updatedAt || '接口未提供'}`
+    `更新：${context.updatedAt || result.value?.updatedAt || '暂不可用'}`
   ].filter(Boolean).join(' · ')
 })
 const rawChartOption = computed(() => ({

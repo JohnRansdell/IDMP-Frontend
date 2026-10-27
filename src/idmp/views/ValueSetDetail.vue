@@ -1,7 +1,7 @@
 <template>
   <div class="idmp-page value-set-detail-page">
     <PageHeader :title="valueSet?.name || '值集详情'">
-      <template #meta><span class="data-source-badge is-live">真实接口</span></template>
+      <template #meta></template>
       <template #actions><el-button @click="router.push({ name: 'ValueSetManagement' })">返回值集列表</el-button><el-button :loading="loading" @click="loadAll">刷新</el-button></template>
     </PageHeader>
     <StatePanel v-if="error" type="error" title="值集详情加载失败" :description="error" />
@@ -67,7 +67,7 @@ async function loadVersion(versionId = selectedVersionId.value) {
 }
 function selectVersion(row) { loadVersion(row.id) }
 function editVersion() { router.push({ name: 'ValueSetVersionEditor', params: { versionId: selectedVersionId.value }, query: { valueSetId: route.params.valueSetId } }) }
-async function createVersion() { if (!valueSet.value?.id || creating.value) return; creating.value = true; try { const data = await createValueSetVersion(valueSet.value.id, selectedVersionId.value ? { copyFromVersionId: selectedVersionId.value } : {}); const next = data?.version || data; if (!next?.id) throw new Error('后端未返回新版本 ID'); ElMessage.success('已创建新草稿版本'); router.push({ name: 'ValueSetVersionEditor', params: { versionId: String(next.id) }, query: { valueSetId: valueSet.value.id } }) } catch (err) { ElMessage.error(err?.message || '创建新版本失败') } finally { creating.value = false } }
+async function createVersion() { if (!valueSet.value?.id || creating.value) return; creating.value = true; try { const data = await createValueSetVersion(valueSet.value.id, selectedVersionId.value ? { copyFromVersionId: selectedVersionId.value } : {}); const next = data?.version || data; if (!next?.id) throw new Error('新版本创建失败，请刷新后重试'); ElMessage.success('已创建新草稿版本'); router.push({ name: 'ValueSetVersionEditor', params: { versionId: String(next.id) }, query: { valueSetId: valueSet.value.id } }) } catch (err) { ElMessage.error(err?.message || '创建新版本失败') } finally { creating.value = false } }
 onMounted(loadAll)
 </script>
 

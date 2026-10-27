@@ -90,8 +90,8 @@ export function createOverviewPresentation({ report, formal, selected, unit, dis
       const metrics = []
       if (!formal.analysis) {
         return [
-          { label: '分析状态', value: formal.loading || report.loading ? '正在读取' : '暂无正式结果', description: formal.error || '后端尚未返回可展示的指标结果' },
-          { label: '维度分析', value: '-', description: '后端维度结果未返回' }
+          { label: '分析状态', value: formal.loading || report.loading ? '正在读取' : '暂无正式结果', description: formal.error || '暂无可展示的指标结果' },
+          { label: '维度分析', value: '-', description: '暂无维度结果' }
         ]
       }
       metrics.push(...operandMetrics(formal.overview))

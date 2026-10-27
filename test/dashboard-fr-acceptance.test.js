@@ -34,7 +34,7 @@ test('FR-M8 acceptance: create, template, rename and protection keep schema/cata
   assert.equal(validateDashboardSchema(templated).valid, true); assert.ok(templated.widgets.length)
   renameLocalDashboard('topic', '专题 B', local)
   assert.equal(JSON.parse(local.getItem('idmp:dashboard-schema:v1:topic')).name, '专题 B'); assert.equal(readDashboardCatalog(local).find(item => item.id === 'topic').name, '专题 B')
-  assert.throws(() => removeLocalDashboard('quality-overview', local), /不能删除/)
+  assert.throws(() => removeLocalDashboard('quality-overview', local), /不可删除/)
 })
 test('FR-M8 acceptance: fixed KPI, monthly, series, dual-axis and sort results are reproducible', () => {
   assert.deepEqual(dashboardAcceptanceKpis.map(item => item.trendDirection), ['up', 'down', 'flat'])
@@ -93,7 +93,7 @@ test('FR-M8 acceptance: UAT sources are visible, unique and expose their exact b
 test('FR-M8 acceptance: visible Studio command model maps to protected local-dashboard operations', () => {
   assert.deepEqual(DASHBOARD_STUDIO_MENU_COMMANDS.map(item => item.id), ['create-blank', 'create-template', 'rename', 'copy', 'delete'])
   assert.equal(DASHBOARD_STUDIO_MENU_COMMANDS.find(item => item.id === 'delete').destructive, true)
-  assert.throws(() => removeLocalDashboard('quality-overview', storage()), /不能删除/)
+  assert.throws(() => removeLocalDashboard('quality-overview', storage()), /不可删除/)
 })
 test('FR-M8 acceptance: selector joins system scenes and local catalog with one canonical id', () => {
   const local = storage()

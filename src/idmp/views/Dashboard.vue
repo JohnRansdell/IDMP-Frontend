@@ -31,8 +31,8 @@
     <StatePanel
       v-else-if="!isEditing && ['error', 'legacy-mock', 'no-dashboards'].includes(dashboardStatus)"
       :type="dashboardStatus === 'error' ? 'error' : 'empty'"
-      :title="dashboardStatus === 'legacy-mock' ? '旧演示看板需要重新配置' : dashboardStatus === 'no-dashboards' ? '暂无服务端看板' : '质量看板加载失败'"
-      :description="dashboardLoadMessage || '请检查看板配置和接口状态后重试。'"
+      :title="dashboardStatus === 'legacy-mock' ? '看板配置需更新' : dashboardStatus === 'no-dashboards' ? '暂无看板' : '质量看板加载失败'"
+      :description="dashboardLoadMessage || '请刷新重试；若持续失败，请联系管理员。'"
     >
       <template #actions>
         <el-button type="primary" @click="retryRemoteDashboardCatalog">重新加载</el-button>
@@ -198,7 +198,7 @@
       </aside>
       <div class="studio-pane-resizer" role="separator" aria-label="调整组件库宽度" aria-orientation="vertical" tabindex="0" title="拖动调整组件库宽度，双击恢复默认" @pointerdown="startStudioPaneResize($event, 'library')" @pointermove="moveStudioPaneResize" @pointerup="stopStudioPaneResize" @pointercancel="stopStudioPaneResize" @dblclick="resetStudioPaneResize('library')" @keydown="onStudioPaneResizeKeydown($event, 'library')"></div>
       <main class="studio-workspace">
-        <div class="studio-canvas-heading"><span>画布</span><span>{{ drawPlacementMode ? '点击空白处放置 · Esc 取消' : `${editingDashboardSchema?.layout?.columns || 24} 列 · Clinical Light` }}</span></div>
+        <div class="studio-canvas-heading"><span>画布</span><span>{{ drawPlacementMode ? '点击空白处放置 · Esc 取消' : `${editingDashboardSchema?.layout?.columns || 24} 列 · 浅色主题` }}</span></div>
         <div class="studio-canvas-scroll">
         <div class="dashboard-designer-period" aria-label="画布统计周期">
           <DashboardPeriodPicker :selection="remotePeriodSelection" :loading="remoteQueryLoading" @apply="applyRemotePeriodSelection" />
@@ -271,7 +271,7 @@
         <template v-if="!selectedWidgetIds.length">
           <section class="dashboard-settings-inspector"><h3>看板设置</h3><label>名称<input :value="editingDashboardSchema?.name" @change="updateDashboardMetadata('name', $event.target.value)" /></label><label>描述<textarea :value="editingDashboardSchema?.description" @change="updateDashboardMetadata('description', $event.target.value)" /></label><label>类型<select :value="editingDashboardSchema?.dashboardType" @change="updateDashboardMetadata('dashboardType', $event.target.value)"><option value="hospital-overview">全院概览</option><option value="topic">专题看板</option><option value="scene">场景看板</option><option value="department">科室看板</option><option value="custom">自定义看板</option></select><small>定义业务用途与入口类型，不直接改变组件数据。</small></label><label>分类<input :value="editingDashboardSchema?.category" @change="updateDashboardMetadata('category', $event.target.value)" /><small>用于看板分类和检索，不直接影响图表数据。</small></label><label>范围<select :value="editingDashboardSchema?.scope" @change="updateDashboardMetadata('scope', $event.target.value)"><option value="hospital">全院</option><option value="department">科室</option><option value="personal">个人</option></select><small>定义适用业务范围；实际权限由服务端控制。</small></label><label>背景预设<select :value="editingDashboardSchema?.appearance?.background?.value || '#ffffff'" @change="updateDashboardBackground($event.target.value)"><option value="#ffffff">临床白</option><option value="#eaf5ff">雾蓝</option><option value="#eaf8f6">浅青医疗</option><option value="linear-gradient(135deg,#d9efff 0%,#f7fbff 52%,#e5f6ef 100%)">蓝青渐变</option><option value="linear-gradient(135deg,#0f4c81 0%,#1261a6 52%,#1f7f91 100%)">深海蓝</option><option value="linear-gradient(135deg,#e8f0ff 0%,#f7f4ff 52%,#f0fbf7 100%)">清透渐变</option></select><small>编辑画布与预览会同步显示该背景。</small></label><BackgroundAssetPicker :model-value="editingDashboardSchema?.appearance?.background?.assetKey || ''" @update:model-value="updateDashboardBuiltinBackground" /><label>图片适配<select :value="editingDashboardSchema?.appearance?.background?.size || 'cover'" @change="updateDashboardBackgroundOption('size', $event.target.value)"><option value="cover">覆盖</option><option value="contain">包含</option><option value="auto">原始尺寸</option></select></label><label>图片位置<select :value="editingDashboardSchema?.appearance?.background?.position || 'center'" @change="updateDashboardBackgroundOption('position', $event.target.value)"><option value="center">居中</option><option value="top">顶部</option><option value="bottom">底部</option></select></label><label>背景叠层<input type="range" min="0" max="0.8" step="0.05" :value="editingDashboardSchema?.appearance?.background?.overlay || 0" @input="updateDashboardBackgroundOption('overlay', Number($event.target.value))" /></label><label>背景强度 <output>{{ dashboardBackgroundIntensity }}%</output><input type="range" min="35" max="100" step="5" :value="dashboardBackgroundIntensity" @input="updateDashboardBackgroundIntensity($event.target.value)" /></label><small>降低强度可柔化渐变；深色背景会保留浅色卡片对比度。</small></section>
           <CardSurfaceControls @apply="applyDashboardCardSurface" />
-          <section class="dashboard-settings-inspector"><h3>网格</h3><label>Grid Columns<select :value="editingDashboardSchema?.layout?.columns || 24" @change="changeDesignerGridColumns($event.target.value)"><option :value="24">24 列</option><option :value="12">12 列</option></select></label><small>切换将安全重排组件；Viewer 保持自动响应式，不提供平板或手机配置。</small></section>
+          <section class="dashboard-settings-inspector"><h3>网格</h3><label>布局列数<select :value="editingDashboardSchema?.layout?.columns || 24" @change="changeDesignerGridColumns($event.target.value)"><option :value="24">24 列</option><option :value="12">12 列</option></select></label><small>切换后自动调整组件布局，查看时适配屏幕尺寸。</small></section>
           <section class="dashboard-settings-inspector dashboard-global-filter-settings" data-testid="dashboard-global-filter-settings"><h3>全局筛选（{{ globalFilterDefinitions.length }}）</h3><GlobalFilterDesigner :definitions="globalFilterDefinitions" :catalog="filterCatalog" :option-sources="globalFilterOptionSources" :widgets="designerWidgets" :compatible-widget-ids-by-filter="compatibleWidgetIdsByGlobalFilter" @change="updateGlobalFilters" @delete="deleteGlobalFilter" @scope-change="updateGlobalFilterScope" /></section>
         </template>
         <section v-else-if="selectedWidgetIds.length > 1" class="dashboard-multi-inspector" aria-label="多组件布局操作">
@@ -1404,8 +1404,8 @@ function libraryReadiness(type) {
 const dashboardSourceLabel = computed(() => ({
   select: '尚未选择看板',
   loading: '正在加载正式数据',
-  ready: '正式接口数据',
-  empty: '正式接口数据（暂无结果）',
+  ready: '计算结果',
+  empty: '暂无结果',
   'legacy-mock': '需要重新配置',
   'no-dashboards': '暂无看板',
   error: '看板数据加载失败'
@@ -2202,7 +2202,7 @@ async function startDashboardEdit() {
     if (remoteDashboardIsMock.value) {
       // Keep server identity and appearance; never carry fixture bindings into real queries.
       beginDashboardEdit(dashboardDetailToEditableSchema(workingDetail))
-      ElMessage.info('旧演示组件已从本次编辑中清空，请添加真实指标组件，保存并发布后生效。')
+      ElMessage.info('旧版组件已清空，请重新配置指标组件，保存并发布后生效。')
     } else beginDashboardEdit(applyDefaultDashboardBindings(schema, remoteFieldCatalog.value))
   } catch (error) {
     ElMessage.error(`读取看板草稿失败：${error.message || '未知错误'}`)
@@ -2930,7 +2930,7 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
       dashboardSchema.value = rawSchema
       dashboardDefinition.value = detail
       dashboardStatus.value = 'legacy-mock'
-      dashboardLoadMessage.value = '该看板使用旧演示配置，已停止展示固定数据。请进入编辑，重新绑定真实指标后保存并发布，或新建正式看板。'
+      dashboardLoadMessage.value = '该看板配置需更新，请编辑并重新绑定指标，保存发布后查看。'
       return
     }
     const requiresSourceCatalog = rawSchema.widgets.some(widget => normalizeIndicatorBindings(widget.config?.indicatorBindings, widget).length > 1)

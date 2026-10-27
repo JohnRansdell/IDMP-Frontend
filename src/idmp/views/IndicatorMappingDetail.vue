@@ -71,7 +71,7 @@
         <el-tabs v-model="activeTab">
           <el-tab-pane label="口径差异" name="difference">
             <div class="difference-toolbar">
-              <div><h2>口径差异对比</h2><p>默认只显示存在差异的项目；复杂结构不直接输出原始英文 JSON。</p></div>
+              <div><h2>口径差异对比</h2><p>默认只显示存在差异的项目；。</p></div>
               <el-switch v-model="onlyDifferences" active-text="仅看差异" />
             </div>
             <div class="difference-scroll">

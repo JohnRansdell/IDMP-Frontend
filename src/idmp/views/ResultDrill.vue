@@ -75,7 +75,7 @@ const indicatorName = computed(() => String(route.query.indicatorName || '指标
 const period = computed(() => String(route.query.period || ''))
 const source = 'live'
 const fromDashboard = computed(() => route.query.from === 'dashboard')
-const dataSourceLabel = '真实接口'
+const dataSourceLabel = '计算结果'
 const configuredPaths = ref([])
 const configurationLoading = ref(false)
 const configurationError = ref('')
@@ -86,7 +86,7 @@ async function loadConfiguration() {
   configurationError.value = ''
   configurationLoading.value = false
   if (route.query.source === 'mock') {
-    configurationError.value = '演示下钻入口已停用，请从真实计算结果重新进入。'
+    configurationError.value = '下钻入口已失效，请从指标结果重新进入。'
     return
   }
   if (!resultId.value || !snapshotId.value || !route.query.indicatorVersionId) {

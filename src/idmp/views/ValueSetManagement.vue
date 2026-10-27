@@ -1,7 +1,7 @@
 <template>
   <div class="idmp-page value-set-page">
     <PageHeader title="值集管理">
-      <template #meta><span class="data-source-badge is-live">真实接口</span><span class="header-meta">维护指标计算使用的标准枚举和值集版本</span></template>
+      <template #meta><span class="header-meta">维护指标计算使用的标准枚举和值集版本</span></template>
       <template #actions><el-button :loading="loading" @click="loadValueSets">刷新</el-button><el-button v-access="'valueSet.create'" type="primary" @click="router.push({ name: 'ValueSetCreate' })">新建值集</el-button></template>
     </PageHeader>
 

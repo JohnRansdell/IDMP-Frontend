@@ -13,9 +13,9 @@
         <el-form-item label="说明"><el-input v-model.trim="form.description" type="textarea" :rows="2" placeholder="说明值集的业务用途和使用范围" /></el-form-item>
 
         <el-divider />
-        <div class="section-title"><span>2</span><div><h2>数据组织方式</h2><p>选择最符合业务数据形态的方式；系统会自动提交对应的接口匹配模式。</p></div></div>
+        <div class="section-title"><span>2</span><div><h2>数据组织方式</h2><p>选择符合业务数据形态的组织方式。</p></div></div>
         <div class="mode-grid" role="radiogroup" aria-label="数据组织方式">
-          <button v-for="mode in modes" :key="mode.value" type="button" class="mode-card" :class="{ 'is-selected': form.matchMode === mode.value }" @click="selectMode(mode.value)"><strong>{{ mode.title }}</strong><span>{{ mode.description }}</span><small>接口模式：{{ mode.value }}</small></button>
+          <button v-for="mode in modes" :key="mode.value" type="button" class="mode-card" :class="{ 'is-selected': form.matchMode === mode.value }" @click="selectMode(mode.value)"><strong>{{ mode.title }}</strong><span>{{ mode.description }}</span></button>
         </div>
 
         <section class="mode-config">
@@ -32,7 +32,7 @@
           </template>
         </section>
 
-        <div class="create-summary"><span>即将创建</span><strong>{{ selectedMode.title }}</strong><span>值类型：{{ dataTypeText }}</span><span>接口匹配模式：{{ form.matchMode }}</span></div>
+        <div class="create-summary"><span>即将创建</span><strong>{{ selectedMode.title }}</strong><span>值类型：{{ dataTypeText }}</span></div>
         <div class="create-actions"><el-button @click="cancel">取消</el-button><el-button type="primary" :loading="creating" @click="submit">{{ submitLabel }}</el-button></div>
       </el-form>
     </section>

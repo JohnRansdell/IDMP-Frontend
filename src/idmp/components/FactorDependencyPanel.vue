@@ -5,7 +5,7 @@
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <el-table v-loading="loading" :data="rows" :max-height="compact ? 220 : undefined" :size="compact ? 'small' : 'default'" empty-text="暂无依赖关系">
       <el-table-column prop="factorName" label="因子" :min-width="compact ? 140 : 200" show-overflow-tooltip />
-      <el-table-column v-if="!compact" prop="factorVersionId" label="版本 ID" min-width="180" />
+
       <el-table-column label="关系" :width="compact ? 90 : 120"><template #default="{row}">{{ relation(row) }}</template></el-table-column>
       <el-table-column v-if="!compact" label="状态" width="110"><template #default="{ row }">{{ getStatusLabel(row.status || row.publicationStatus) }}</template></el-table-column>
       <el-table-column label="操作" :width="compact ? 80 : 110"><template #default="{ row }"><el-button link type="primary" @click="open(row)">查看因子</el-button></template></el-table-column>

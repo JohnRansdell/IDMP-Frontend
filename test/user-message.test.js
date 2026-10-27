@@ -4,6 +4,14 @@ import { fieldLabel, toUserMessage, sanitizeResponseMessages } from '../src/idmp
 import { formatApiError } from '../src/idmp/utils/apiError.js'
 import { normalizeMessageOptions } from '../src/idmp/utils/message.js'
 
+test('missing implementation contracts remain errors without exposing integration status', () => {
+  for (const message of ['后端未返回指标版本 ID', '接口尚未提供参数类型', '后端列表暂不可用']) {
+    assert.equal(toUserMessage(message, '查询失败，请重试。'), '查询失败，请重试。')
+  }
+  assert.equal(toUserMessage('政策来源仅保存在当前浏览器，发布后才保存'), '政策来源仅保存在当前浏览器，发布后才保存')
+  assert.equal(toUserMessage('当前账号没有权限访问患者记录'), '当前账号没有权限访问患者记录')
+})
+
 test('mixed Chinese transport diagnostics do not expose routes, hosts, status codes or gateway pages', () => {
   for (const raw of [
     '正式看板请求失败：/analysis/dashboard-data-sources/DASHBOARD_INPATIENT_MORTALITY_20260928/available-periods（HTTP 502）。服务暂时不可用',

@@ -179,7 +179,7 @@ test('missing or mixed response contexts are errors and never leak into fallback
     const { search } = pagedSearch([{ ...rows(1)[0], ...change }])
     await assert.rejects(loadPieDrillLevel(search, root, navigation), { code: 'DRILL_CONTEXT_CONFLICT' })
   }
-  await assert.rejects(loadPieDrillLevel(pagedSearch(rows(1), (result) => ({ ...result, dataSource: 'mock' })).search, root, navigation), /演示/)
+  await assert.rejects(loadPieDrillLevel(pagedSearch(rows(1), (result) => ({ ...result, dataSource: 'mock' })).search, root, navigation), /结果来源不一致/)
 })
 
 test('contract may omit context indicatorId and rows may identify their own child results', async () => {

@@ -118,10 +118,8 @@
                 class="scene-version-select"
                 filterable
                 clearable
-                allow-create
-                default-first-option
                 :loading="sceneOptionsLoading"
-                placeholder="选择关联场景；也可输入已发布场景版本 ID"
+                placeholder="请选择已发布的关联场景"
                 @visible-change="handleScenarioSelectVisible"
               >
                 <el-option
@@ -308,7 +306,7 @@
         v-else-if="!flatNodes.length"
         type="empty"
         title="当前批次没有节点数据"
-        description="后端已返回批次，但未返回可展示的目标节点。"
+        description="当前批次暂无目标节点，请稍后刷新。"
       >
         <template #actions>
           <el-button @click="loadBatch">重新读取批次</el-button>
@@ -618,7 +616,7 @@ async function loadSceneOptions() {
   try {
     const version = await fetchIndicatorVersion(versionId, { cache: 'no-store' })
     const indicatorId = toOpaqueId(version?.indicatorId || version?.indicator?.id)
-    if (!indicatorId) throw new Error('后端未返回该指标版本所属的指标 ID')
+    if (!indicatorId) throw new Error('指标信息读取失败，请刷新后重试')
     const options = normalizeScenarioOptions(await fetchIndicatorScenarios(indicatorId, { page: 1, size: 200 }))
     if (revision !== sceneRequest || versionId !== createForm.ownerVersionId) return
     sceneOptions.value = options
@@ -749,7 +747,7 @@ async function createSelectedBatch() {
   createFeedback.value = {
     status: 'RUNNING',
     label: '正在提交',
-    message: '正在向后端创建计算批次。'
+    message: '正在创建计算批次。'
   }
   try {
     const suffix = new Date().toISOString().replace(/\D/g, '').slice(0, 14)
@@ -822,7 +820,7 @@ async function cancelBatch() {
   if (!batchId || !canCancelBatch.value) return
   try {
     await ElMessageBox.confirm(
-      `确认向后端提交批次 ${batchId} 的取消请求？已完成的节点不会被回滚。`,
+      `确认取消批次 ${batchId}？已完成的节点不会被回滚。`,
       '确认取消计算批次',
       {
         confirmButtonText: '确认取消',
@@ -845,7 +843,7 @@ async function cancelBatch() {
     batchActionFeedback.value = {
       status: 'CANCELLING',
       label: '取消请求已提交',
-      message: '最终状态以后端下一次批次查询结果为准。'
+      message: '正在取消，请刷新查看最终状态。'
     }
     ElMessage.success('取消请求已提交')
     await loadBatch()
@@ -894,7 +892,7 @@ async function retryNode(row) {
       status: 'QUEUED',
       label: '重试请求已提交',
       tone: 'info',
-      message: '节点是否重新执行以及最终结果以后端批次状态为准。'
+      message: '重试已提交，请在批次详情查看执行结果。'
     }
     ElMessage.success('节点重试请求已提交')
     await loadBatch()

@@ -30,7 +30,7 @@ test('duplicate server tuples fail rather than summing numerator/denominator or 
   const data = dataset([{ dept: 'A', value: 0.5, numeratorValue: 1, denominatorValue: 2 }, { dept: 'A', value: 0.1, numeratorValue: 1, denominatorValue: 10 }])
   const model = compileWidgetData('pie', binding, data)
   assert.equal(model.status, 'invalid')
-  assert.match(model.message, /唯一粒度/)
+  assert.match(model.message, /维度存在重复结果/)
   assert.equal(compileWidgetData('pie', { ...binding, measures: [{ field: 'value', aggregation: 'sum' }] }, data).status, 'invalid')
 })
 
@@ -69,7 +69,7 @@ test('historical department aliases retain separate exact results after dictiona
 test('server identity metadata must include the actual member code', () => {
   const model = compileWidgetData('pie', binding, dataset([{ dept: 'A', value: 0.2, dimensionIdentityFields: { dept: 'code' } }]))
   assert.equal(model.status, 'invalid')
-  assert.match(model.message, /缺少成员编码/)
+  assert.match(model.message, /缺少维度成员信息/)
 })
 
 test('series pivot preserves sparse cells and unassigned dimensions without aggregation', () => {
@@ -135,7 +135,7 @@ test('drill uses exact department parents instead of remerging BASE rows for red
 test('missing backend dimension fields do not silently become an unassigned category', () => {
   const model = compileWidgetData('bar', binding, dataset([{ value: 2 }]))
   assert.equal(model.status, 'invalid')
-  assert.match(model.message, /缺少组件维度/)
+  assert.match(model.message, /缺少组件所需维度/)
 })
 
 test('projected department names use configured custom levels and the returned snapshot', async () => {

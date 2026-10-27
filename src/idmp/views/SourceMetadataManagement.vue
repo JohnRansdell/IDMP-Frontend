@@ -2,7 +2,7 @@
   <div class="idmp-page source-metadata-page">
     <PageHeader title="数据源管理">
       <template #meta>
-        <span class="data-source-badge is-live">真实接口</span>
+
         <span class="header-meta">查看已接入系统的来源结构，并将其交给标准数据模型使用</span>
       </template>
       <template #actions>
@@ -108,7 +108,7 @@
         v-else-if="!sourceTables.length"
         type="empty"
         title="暂无数据表或视图"
-        description="请先同步数据结构，或确认后端远程数据源配置。"
+        description="尚未同步数据结构，请先同步；若失败，请检查数据源连接。"
       />
       <StatePanel
         v-else-if="!filteredTables.length"
@@ -168,7 +168,7 @@
         v-else-if="!sourceFields.length"
         type="empty"
         title="当前对象没有字段"
-        description="接口返回了空字段列表，请确认数据结构已经同步。"
+        description="暂无字段，请确认数据结构已同步。"
       />
       <StatePanel v-else-if="!filteredSourceFields.length" type="empty" title="没有匹配的字段" description="请更换关键词，或清空搜索查看全部字段。">
         <template #actions><el-button @click="fieldSearch = ''">清空搜索</el-button></template>

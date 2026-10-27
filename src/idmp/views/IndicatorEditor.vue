@@ -8,7 +8,7 @@
       <template #meta>
         <span>{{ isNew ? '新建模式' : '编辑模式' }}</span>
 
-        <span class="mono-data">版本 ID：{{ indicatorWorkflow.versionId || '尚未创建' }}</span>
+        <span>{{ indicatorWorkflow.versionId ? '版本已创建' : '尚未创建版本' }}</span>
       </template>
       <template #actions>
         <el-button @click="router.push('/indicator')">返回指标目录</el-button>
@@ -20,8 +20,8 @@
     <div class="notice-strip is-warning editor-contract-note">
       <el-icon><InfoFilled /></el-icon>
       <span>
-        公式、试算、独立正式计算和场景配置均使用真实接口。统一在第 6 页发布；政策来源必选，依据说明选填，场景关联可选。
-        草稿政策选择仅在当前浏览器暂存，发布后自动绑定；指标级排除规则尚无对应保存接口。
+        政策来源必选，依据说明和场景关联选填。请在第 6 页确认发布。
+        草稿政策来源仅保存在当前浏览器，发布后才正式保存。指标级排除规则暂不支持保存。
       </span>
     </div>
 
@@ -121,7 +121,7 @@
                 {{
                   isNew
                     ? (indicatorWorkflow.indicatorId ? `已保存指标 ${indicatorWorkflow.indicatorId}` : '先保存基本信息，再选择公式并创建版本')
-                    : (indicatorWorkflow.indicatorId ? `正在编辑指标 ${indicatorWorkflow.indicatorId}，可创建新的草稿版本` : '等待指标目录摘要或详情接口回填')
+                    : (indicatorWorkflow.indicatorId ? `正在编辑指标 ${indicatorWorkflow.indicatorId}，可创建新的草稿版本` : '正在加载指标信息')
                 }}
               </small>
             </div>
@@ -278,11 +278,11 @@
             </div>
             <div v-if="activeMode.kind !== 'advanced'" class="factor-library__footer">
               <el-button :icon="Plus" @click="router.push('/factor')">前往因子管理</el-button>
-              <el-tooltip content="当前后端尚未提供因子导入接口">
+              <el-tooltip content="暂不支持导入因子">
                 <span
                   class="disabled-tooltip-trigger"
                   tabindex="0"
-                  aria-label="导入因子不可用：当前后端尚未提供因子导入接口"
+                  aria-label="导入因子不可用：暂不支持导入因子"
                 >
                   <el-button :icon="Upload" disabled>导入因子</el-button>
                 </span>
@@ -411,7 +411,7 @@
                   </el-radio-button>
                 </el-radio-group>
               </div>
-              <StatePanel v-if="!selectedIndicatorTrialTarget || !indicatorTrialRows.length" type="empty" title="当前粒度暂无试算结果" description="后端已完成试算，但该目标没有返回结果记录。" />
+              <StatePanel v-if="!selectedIndicatorTrialTarget || !indicatorTrialRows.length" type="empty" title="当前粒度暂无试算结果" description="当前目标暂无可展示的试算记录，请查看试算状态。" />
               <template v-else>
                 <el-table :data="indicatorTrialRows" size="small" border table-layout="fixed" class="indicator-trial-result-table">
                   <el-table-column label="时间" min-width="140"><template #default="{ row }"><span class="mono-data">{{ formatIndicatorTrialPeriod(row, selectedIndicatorTrialTarget) }}</span></template></el-table-column>
@@ -432,9 +432,10 @@
               :availability="indicatorWorkflow.trialAvailability"
               @open-batch="batchId => router.push({ path: '/calc', query: { batchId } })"
             />
-            <div v-if="workflowDebug.step" class="workflow-debug">
+            <details v-if="workflowDebug.step && $can('GET', '/system/health')" class="workflow-debug">
+              <summary>查看高级诊断</summary>
               <div>
-                <span>最近一次后端请求</span>
+                <span>高级诊断</span>
                 <strong>{{ workflowDebug.step }}</strong>
               </div>
               <dl>
@@ -482,7 +483,7 @@
                 </template>
               </dl>
               <pre v-if="workflowDebug.requestBody">{{ workflowDebug.requestBody }}</pre>
-            </div>
+            </details>
           </div>
 
           <div class="formula-preview">
@@ -1272,7 +1273,7 @@ async function loadPublishedFactorVersions() {
     refreshSelectedFactorReferences()
   } catch (error) {
     backendEditorFactors.value = []
-    ElMessage.warning(error?.message || '已发布因子版本接口暂不可用，无法配置真实指标公式')
+    ElMessage.warning(error?.message || '已发布因子加载失败，请重试')
   } finally {
     workflowLoading.factors = false
   }
@@ -1463,17 +1464,17 @@ async function loadIndicatorForEdit() {
       editLoadState.loadedFromList = true
       editLoadState.detailReady = Boolean(indicatorWorkflow.versionId)
       editLoadState.message = indicatorWorkflow.versionId
-        ? '已从指标详情与版本接口回填当前指标配置。'
-        : '已从指标详情接口回填基础信息，当前指标尚未返回版本定义。'
+        ? '指标配置已加载。'
+        : '基础信息已加载，当前暂无版本定义。'
     } else {
       editLoadState.loadedFromList = false
       editLoadState.detailReady = false
-      editLoadState.message = `未在指标目录接口中找到 ${routeIndicatorKey.value}，页面不会填充演示数据。`
+      editLoadState.message = `未找到该指标，请返回目录刷新后重试。`
     }
   } catch (error) {
     editLoadState.loadedFromList = false
     editLoadState.detailReady = false
-    editLoadState.message = error?.message || '指标详情接口尚未接入，且目录接口读取失败。'
+    editLoadState.message = error?.message || '指标详情加载失败，请重试。'
   } finally {
     editLoadState.loading = false
   }
@@ -1571,7 +1572,7 @@ async function saveIndicatorBasicInfo() {
     })
     const indicatorId = resolveIndicatorId(indicator)
     if (!indicatorId) {
-      throw new Error('后端未返回指标 ID，无法继续创建指标版本')
+      throw new Error('指标创建失败，请刷新后重试')
     }
     resetIndicatorWorkflowAfterBasic(
       indicatorId,
@@ -1672,7 +1673,7 @@ async function createIndicatorDraftVersion() {
     )
     const versionId = resolveIndicatorVersionId(version)
     if (!versionId) {
-      throw new Error('后端未返回指标版本 ID，无法保存公式')
+      throw new Error('指标版本保存失败，请刷新后重试')
     }
     Object.assign(indicatorWorkflow, {
       versionId,
@@ -1789,7 +1790,7 @@ async function createFirstIndicatorVersionWithFormula(formula) {
   })
   const version = await createIndicatorVersion(indicatorWorkflow.indicatorId, versionPayload)
   const versionId = resolveIndicatorVersionId(version)
-  if (!versionId) throw new Error('后端未返回指标版本 ID，无法继续公式流程')
+  if (!versionId) throw new Error('指标版本读取失败，请刷新后重试')
 
   Object.assign(indicatorWorkflow, {
     versionId,
@@ -1906,7 +1907,7 @@ async function trialIndicatorOnly() {
     indicatorWorkflow.taskId = resolveTaskId(trial)
     indicatorWorkflow.batchId = resolveBatchId(trial)
     if (!indicatorWorkflow.taskId || !indicatorWorkflow.batchId) {
-      throw new Error('后端未返回试算任务 ID 或批次 ID，无法继续读取结果')
+      throw new Error('试算提交异常，请检查计算记录后重试')
     }
     recordWorkflowSuccess(`试算已提交，任务 ${indicatorWorkflow.taskId}，批次 ${indicatorWorkflow.batchId}`)
     ElMessage.success('指标试算已提交，可以稍后查看结果')
@@ -2024,7 +2025,7 @@ async function generateFormalResultAndOpenAnalysis() {
     })
     const accepted = await createCalcBatch(payload, idempotencyKey)
     const batchId = resolveBatchId(accepted)
-    if (!batchId) throw new Error('后端未返回正式计算批次 ID')
+    if (!batchId) throw new Error('计算提交异常，请检查计算记录后重试')
     indicatorWorkflow.formalBatchId = batchId
     const batch = await pollBackendBatch(batchId)
     const status = batch.status || batch.batchStatus

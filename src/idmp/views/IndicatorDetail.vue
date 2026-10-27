@@ -15,7 +15,7 @@
       <article class="surface-card formula-definition" aria-label="指标公式">
         <dl class="identity-grid" aria-label="指标标识信息">
           <div><dt>指标名称</dt><dd class="identity-name">{{ indicatorName }}</dd></div>
-          <div><dt>指标 ID</dt><dd class="identity-id mono-data">{{ detail.id || '—' }}</dd></div>
+
           <div>
             <dt>当前版本</dt>
             <dd>
@@ -23,7 +23,7 @@
                 <el-option v-for="version in versionRows" :key="resolveIndicatorVersionId(version)" :value="resolveIndicatorVersionId(version)" :label="`V${version.versionNo || '-'} · ${getStatusLabel(version.publicationStatus || version.status)}`" />
               </el-select>
               <span v-else class="current-version">{{ selectedVersionLabel }}</span>
-              <small class="version-id-text">版本 ID：<span class="mono-data">{{ selectedVersionId || '—' }}</span></small>
+
             </dd>
           </div>
         </dl>
@@ -172,7 +172,7 @@ const formulaFactorVersionRequests = new Map()
 function factorVersionTooltip(versionId) {
   const id = String(versionId)
   const version = formulaFactorVersions[id]
-  const lines = [`版本 ID：${id}`]
+  const lines = []
   if (version) {
     lines.unshift(version.versionNo == null ? '版本号暂未提供' : `版本：V${version.versionNo}`)
     const status = version.publicationStatus || version.status
@@ -229,7 +229,7 @@ function openIndicatorEditor() {
   // 不能作为路由主键，否则编辑页还要依赖列表接口二次反查。
   const indicatorId = detail.id || (/^\d+$/.test(routeIndicatorKey.value) ? routeIndicatorKey.value : '')
   if (!indicatorId) {
-    loadError.value = '未获取到指标 ID，暂时无法进入编辑页；请刷新详情后重试。'
+    loadError.value = '指标信息不完整，请刷新详情后重试。'
     return
   }
   router.push({ name: 'IndicatorEditor', params: { id: indicatorId } })
@@ -294,7 +294,7 @@ async function loadRelatedScenarios() {
     scenarioRows.value = normalizeList(page)
   } catch (error) {
     scenarioRows.value = []
-    scenarioError.value = error?.message || '关联场景接口暂不可用。'
+    scenarioError.value = error?.message || '关联场景加载失败，请重试。'
   } finally {
     scenarioLoading.value = false
   }

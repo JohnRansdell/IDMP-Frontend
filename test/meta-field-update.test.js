@@ -23,7 +23,7 @@ test('editing an existing time field uses the semantic-field PATCH contract and 
 })
 
 test('field edit requires versioned detail and maps an unchecked sensitive flag to NONE', () => {
-  assert.throws(() => buildSemanticFieldUpdate({}, { name: '出院时间' }), /版本号或可空信息/)
+  assert.throws(() => buildSemanticFieldUpdate({}, { name: '出院时间' }), /字段信息不完整.*尚未保存/)
   assert.deepEqual(buildSemanticFieldUpdate(
     { resourceVersion: 0, nullable: true, sensitivityLevel: 'MEDIUM' },
     { name: '出院时间', dataType: 'DATETIME', semanticKind: 'TIME', sensitive: false }

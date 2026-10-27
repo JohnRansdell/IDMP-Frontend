@@ -279,7 +279,7 @@ async function handleLogout() {
   sessionFeedback.value = {
     status: 'RUNNING',
     label: '正在退出',
-    message: '正在通知后端结束当前会话。'
+    message: '正在退出登录。'
   }
   try {
     await logout()

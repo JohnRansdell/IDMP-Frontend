@@ -3,8 +3,8 @@
     <article class="surface-card publish-gates">
       <div class="section-title">
         <div>
-          <h2>发布门禁</h2>
-          <p class="section-title__description">仅展示当前前端能够判断的状态，不替代后端最终校验</p>
+          <h2>发布检查</h2>
+          <p class="section-title__description">提交发布时将核验当前配置及试算结果</p>
         </div>
       </div>
       <ul>
@@ -22,7 +22,7 @@
       <div class="section-title">
         <div>
           <h2>发布指标版本</h2>
-          <p class="section-title__description">调用当前后端接口发布已编译并试算通过的指标版本。</p>
+          <p class="section-title__description">发布已完成校验和试算的指标版本。</p>
         </div>
       </div>
       <div class="publish-action-content">
@@ -35,7 +35,7 @@
       <div class="business-action-bar publish-actions">
         <div>
           <span>当前指标版本</span>
-          <small class="mono-data">{{ workflow.versionId || '尚未创建' }}</small>
+          <small>{{ workflow.published ? '已发布' : workflow.versionId ? '草稿' : '尚未创建' }}</small>
         </div>
         <el-button
           type="primary"

@@ -14,13 +14,14 @@
       <label>组织编码<input :value="join(query.organizationScope?.ids)" placeholder="多个编码用逗号分隔" @change="patchOrganization({ ids: split($event.target.value) })" /></label>
     </template>
     <label>应用场景<select :value="scenarioMode" @change="setScenarioMode($event.target.value)"><option value="INHERIT">继承看板场景</option><option value="FIXED">指定场景版本</option></select></label>
-    <label v-if="scenarioMode === 'FIXED'">场景版本 ID<input :value="join(query.scenarioVersionIds)" placeholder="多个 ID 用逗号分隔" @change="patch({ scenarioVersionIds: split($event.target.value) })" /></label>
+    <label v-if="scenarioMode === 'FIXED'">场景版本<ResourceReferenceSelect :model-value="query.scenarioVersionIds || []" kind="SCENARIO_VERSION" multiple placeholder="请选择场景版本" @update:model-value="value => patch({ scenarioVersionIds: value })" /></label>
     <p v-if="validation" class="component-scope__error">{{ validation }}</p>
   </section>
 </template>
 
 <script setup>
 import { computed } from 'vue'
+import ResourceReferenceSelect from '@/idmp/components/ResourceReferenceSelect.vue'
 const props = defineProps({ modelValue: { type: Object, default: () => ({}) } })
 const emit = defineEmits(['change'])
 const query = computed(() => props.modelValue || {})
@@ -31,7 +32,7 @@ const validation = computed(() => {
   if (periodMode.value !== 'INHERIT' && (!query.value.periodStart || !query.value.periodEnd)) return '组件周期必须同时填写开始日期和结束日期。'
   if (query.value.periodStart && query.value.periodEnd && query.value.periodStart > query.value.periodEnd) return '开始日期不能晚于结束日期。'
   if (organizationMode.value === 'FIXED' && !query.value.organizationScope?.ids?.length && query.value.organizationScope?.level !== 'HOSPITAL') return '指定组织时请填写至少一个组织编码。'
-  if (scenarioMode.value === 'FIXED' && !query.value.scenarioVersionIds?.length) return '指定场景时请填写至少一个场景版本 ID。'
+  if (scenarioMode.value === 'FIXED' && !query.value.scenarioVersionIds?.length) return '请至少选择一个场景版本。'
   return ''
 })
 function patch(value) { emit('change', { ...query.value, ...value }) }

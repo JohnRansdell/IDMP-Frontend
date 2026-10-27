@@ -1,7 +1,7 @@
 <template>
   <section class="map-config" aria-label="地图配置">
     <h3>地图边界</h3>
-    <p>地图使用标准行政区划编码匹配数据。边界 GeoJSON 由组件查询接口返回，前端不再使用柱状图模拟地图。</p>
+    <p>地图按标准行政区划编码匹配，数据须包含对应区域的地图边界。</p>
     <label>地图层级<select :value="modelValue?.boundaryLevel || 'PROVINCE'" @change="patch({ boundaryLevel: $event.target.value })"><option value="COUNTRY">全国</option><option value="PROVINCE">省级</option><option value="CITY">市级</option><option value="DISTRICT">区县</option></select></label>
     <label>父级行政区划编码<input :value="modelValue?.parentRegionCode || ''" placeholder="例如 330000；全国可留空" @input="patch({ parentRegionCode: $event.target.value.trim() })" /></label>
     <label>区域字段编码<input :value="modelValue?.regionCodeField || 'regionCode'" @input="patch({ regionCodeField: $event.target.value.trim() })" /></label>

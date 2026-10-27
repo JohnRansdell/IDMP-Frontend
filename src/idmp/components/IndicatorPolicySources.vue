@@ -1,6 +1,6 @@
 <template>
   <div class="indicator-policy-sources">
-    <el-alert :title="published ? '政策来源通过现有引用接口保存；依据说明选填。' : '政策来源必选，可在第 5 页补充选填的政策依据。草稿选择暂存在当前浏览器，发布后自动绑定；发布前不会写入政策引用。'" type="info" :closable="false" show-icon />
+    <el-alert :title="published ? '政策来源已保存；依据说明选填。' : '政策来源必选，可在第 5 页补充选填的政策依据。草稿选择暂存在当前浏览器，发布后自动绑定；发布前不会写入政策引用。'" type="info" :closable="false" show-icon />
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <div class="source-toolbar"><strong>已选政策来源</strong><el-button :loading="loading" :disabled="saving" @click="loadReferences">刷新已保存来源</el-button></div>
     <el-select ref="sourceSelect" :model-value="pendingIds" multiple filterable remote :remote-method="search" :loading="searching" :disabled="saving" aria-label="政策文件来源" placeholder="搜索并选择来源政策，可多选" @update:model-value="selectSources" @visible-change="visible => visible && search('')">
@@ -15,7 +15,7 @@
     </el-table>
     <article v-for="row in modelValue" :key="row.policyFileVersionId" class="pending-source">
       <div class="source-toolbar"><strong>{{ row.policyFileName }} · 版本 {{ row.versionNo }}</strong><el-button link type="danger" :disabled="saving" @click="selectSources(pendingIds.filter(id => id !== row.policyFileVersionId))">移除待绑定来源</el-button></div>
-      <p>文号：{{ row.documentNumber || '未提供' }} · {{ published ? '待保存到后端' : '本地待绑定' }} <el-button link type="primary" @click="viewerId = row.policyFileVersionId">查看文件</el-button></p>
+      <p>文号：{{ row.documentNumber || '未提供' }} · {{ published ? '待保存' : '仅当前浏览器暂存，发布后保存' }} <el-button link type="primary" @click="viewerId = row.policyFileVersionId">查看文件</el-button></p>
     </article>
     <el-button v-if="published && modelValue.length" type="primary" :loading="saving" @click="savePending">保存待绑定政策来源</el-button>
     <PolicyFileViewer :version-id="viewerId" @close="viewerId = ''" />

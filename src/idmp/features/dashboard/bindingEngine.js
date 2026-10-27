@@ -158,14 +158,14 @@ function projectedWidgetRows(rows, binding, dataset) {
   const categories = new Map(), groups = new Map(), splits = new Map()
   for (const row of rows) {
     for (const item of [...binding.dimensions, ...binding.series]) if (!Object.hasOwn(row, item.field)) {
-      throw new Error(`后端结果缺少组件维度字段：${item.field}`)
+      throw new Error(`结果缺少组件所需维度字段，请检查配置：${item.field}`)
     }
     const tuple = binding.dimensions.map(item => dimensionValue(row[item.field]))
     const split = binding.series.length ? dimensionValue(row[binding.series[0].field]) : ''
     const identities = row.dimensionIdentityFields || {}
     const identityValue = item => {
       const identity = identities[item.field]
-      if (identity && !Object.hasOwn(row, identity)) throw new Error(`后端结果缺少成员编码字段：${identity}`)
+      if (identity && !Object.hasOwn(row, identity)) throw new Error(`结果缺少维度成员信息，请检查配置：${identity}`)
       return dimensionValue(row[identity || item.field])
     }
     const identityValues = Object.fromEntries(binding.dimensions
@@ -173,7 +173,7 @@ function projectedWidgetRows(rows, binding, dataset) {
     const categoryKey = JSON.stringify([tuple, binding.dimensions.map(identityValue)])
     const splitKey = JSON.stringify([split, binding.series.length ? identityValue(binding.series[0]) : ''])
     const key = JSON.stringify([categoryKey, splitKey])
-    if (groups.has(key)) throw new Error('后端未返回当前组件的唯一粒度结果，请计算对应粒度或检查组件维度配置')
+    if (groups.has(key)) throw new Error('当前维度存在重复结果，请检查组件维度配置；若持续出现，请联系管理员')
     categories.set(categoryKey, { raw: tuple, identityValues, visible: binding.dimensions.map(item =>
       row[item.field] === null || row[item.field] === undefined || row[item.field] === '' ? '未分配' : visibleDimensionName(row, item, dataset)) })
     splits.set(splitKey, split ?? '未分配')
@@ -204,7 +204,7 @@ export function compileWidgetData(kind, binding, dataset) {
   try {
     const serverCalculated = dataset.serverCalculated === true || dataset.rowMode === 'PROJECTED'
     if (serverCalculated && binding.measures.some(measure => measure.aggregation !== 'direct')) {
-      throw new Error('正式指标结果由后端计算，组件度量请选择指标结果值，不支持前端二次聚合')
+      throw new Error('组件度量请选择指标结果值，不支持对正式结果再次聚合')
     }
     const { categories, groups, splits } = serverCalculated
       ? projectedWidgetRows(rows, binding, dataset) : groupWidgetRows(rows, binding, dataset)

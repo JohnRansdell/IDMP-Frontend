@@ -11,7 +11,7 @@
       <label>系列名称<input :value="item.alias" @input="patch(item.sourceCode, { alias: $event.target.value })" /></label>
       <label v-if="dualAxis">坐标轴<select :value="item.axis" @change="patch(item.sourceCode, { axis: $event.target.value })"><option value="left">左 Y 轴</option><option value="right">右 Y 轴</option></select></label>
     </article>
-    <p v-if="bindings.length > 1" class="multi-indicator-inspector__notice">已启用多指标模式。字段绑定将切换到“多指标组合”数据集；没有共同维度的记录不会被前端猜测或补零。</p>
+    <p v-if="bindings.length > 1" class="multi-indicator-inspector__notice">已启用多指标模式。字段绑定将切换到“多指标组合”数据集；仅比较具有共同维度的结果，缺失值不补零。</p>
   </section>
 </template>
 

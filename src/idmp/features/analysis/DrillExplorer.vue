@@ -6,7 +6,7 @@
           <el-option v-for="path in availablePaths" :key="path.pathCode" :label="path.pathName || (path.pathCode === 'ORGANIZATION' ? '组织维度' : '自定义路径')" :value="path.pathCode" />
         </el-select>
         <span class="drill-context-bar__period">统计周期：{{ resolvedPeriod }}</span>
-        <span class="drill-context-bar__source">真实接口</span>
+
         <el-button v-access="'result.factor.read'" v-if="source !== 'mock' && !isFactorTraceMode" size="small" @click="showFactorTrace">
           {{ factorTrace ? '刷新因子追溯' : '查看因子追溯' }}
         </el-button>
@@ -36,7 +36,7 @@
     <div class="drill-table-heading">
       <div>
         <h3>当前层：{{ currentLevelLabel }}</h3>
-        <p>下一层入口由下钻配置和接口返回的可用层级决定。</p>
+        <p>按已配置的路径查看下一层结果。</p>
       </div>
       <span class="drill-table-heading__count">{{ result.pageInfo.total || 0 }} 条</span>
     </div>
@@ -96,7 +96,7 @@
     </div>
 
     <div v-if="currentLevel === 'DOCTOR' || currentLevel === 'CASE'" class="drill-access-hint">
-      患者或业务记录级访问需要后端数据范围、脱敏、访问目的和审计能力；当前页面先展示后端返回的受控结果。
+      患者或业务记录仅在授权范围内提供，访问须遵守脱敏和审计要求。
     </div>
     </template>
 

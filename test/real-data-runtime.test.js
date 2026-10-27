@@ -50,7 +50,7 @@ test('drill API blocks obsolete mock links and missing result IDs without making
   const module = Function('requestJson', 'adaptDrillResult', source.replace(/^import[^\n]*\n/gm, '').replaceAll('export ', '') + '\nreturn { searchResultDrill }')(
     async (...args) => { requests.push(args); return { dataSource: 'live', records: [] } }, value => value
   )
-  await assert.rejects(module.searchResultDrill('MOCK', {}, { source: 'mock' }), /入口已停用/)
+  await assert.rejects(module.searchResultDrill('MOCK', {}, { source: 'mock' }), /入口已失效/)
   await assert.rejects(module.searchResultDrill(''), /缺少真实结果/)
   assert.equal(requests.length, 0)
   const payload = { currentLevel: 'HOSPITAL' }

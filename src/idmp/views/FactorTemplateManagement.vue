@@ -1,7 +1,7 @@
 <template>
   <div class="idmp-page">
-    <PageHeader title="因子模板管理" status="ENABLED" status-label="后端模板生命周期接口">
-      <template #meta><span class="header-meta">模板、版本、校验、发布及实例化均直接调用 M1A 接口</span></template>
+    <PageHeader title="因子模板管理">
+
       <template #actions><div class="page-toolbar"><el-button @click="load">刷新</el-button><el-button v-access="'factorTemplate.create'" v-if="canManageTemplates" type="primary" @click="router.push('/factor/templates/new')">新建模板</el-button></div></template>
     </PageHeader>
     <section class="surface-card filter-card template-filter" aria-label="因子模板筛选">
@@ -27,8 +27,8 @@ const router = useRouter(); const loading = ref(false); const rows = ref([]); co
 // 当前为产品演示环境：开放模板生命周期入口，服务端仍负责最终权限校验。
 const canManageTemplates = computed(() => true)
 async function load() { loading.value = true; try { const result = await fetchFactorTemplates({ ...filters, page: 1, size: 100 }); rows.value = list(result) } catch (error) { rows.value = []; ElMessage.error(error?.message || '模板目录读取失败') } finally { loading.value = false } }
-async function open(row) { const templateId = row.id || row.templateId; if (!templateId) return ElMessage.error('接口未返回模板 ID'); try { const versions = list(await fetchFactorTemplateVersions(templateId)); const version = canManageTemplates.value ? versions.find(item => item.publicationStatus !== 'PUBLISHED') || versions[0] : versions.find(item => item.publicationStatus === 'PUBLISHED'); if (!version) return ElMessage.info(canManageTemplates.value ? '该模板尚无版本，请先创建首个草稿' : '该模板尚未发布，暂不能用于创建因子'); router.push(`/factor/templates/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(version.id || version.versionId)}`) } catch (error) { ElMessage.error(error?.message || '模板版本读取失败') } }
-function instantiate(row) { const templateId = row.id || row.templateId; const versionId = row.currentPublishedVersionId; if (!templateId || !versionId) return ElMessage.error('接口未返回已发布模板版本 ID'); router.push(`/factor/templates/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(versionId)}/instantiate`) }
+async function open(row) { const templateId = row.id || row.templateId; if (!templateId) return ElMessage.error('模板读取失败，请刷新后重试'); try { const versions = list(await fetchFactorTemplateVersions(templateId)); const version = canManageTemplates.value ? versions.find(item => item.publicationStatus !== 'PUBLISHED') || versions[0] : versions.find(item => item.publicationStatus === 'PUBLISHED'); if (!version) return ElMessage.info(canManageTemplates.value ? '该模板尚无版本，请先创建首个草稿' : '该模板尚未发布，暂不能用于创建因子'); router.push(`/factor/templates/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(version.id || version.versionId)}`) } catch (error) { ElMessage.error(error?.message || '模板版本读取失败') } }
+function instantiate(row) { const templateId = row.id || row.templateId; const versionId = row.currentPublishedVersionId; if (!templateId || !versionId) return ElMessage.error('已发布模板版本读取失败，请刷新后重试'); router.push(`/factor/templates/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(versionId)}/instantiate`) }
 function list(value) { return Array.isArray(value) ? value : value?.records || value?.items || value?.list || [] }
 onMounted(load)
 </script>

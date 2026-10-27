@@ -2,7 +2,7 @@
   <div class="idmp-page data-domain-page">
     <PageHeader title="数据域管理">
       <template #meta>
-        <span class="data-source-badge is-live">真实接口</span>
+
         <span class="header-meta">按业务主题管理数据域及其物理表</span>
       </template>
       <template #actions>
@@ -52,7 +52,7 @@
         v-else-if="!domains.length"
         type="empty"
         title="暂无数据域"
-        description="当前接口没有返回数据域记录，可以创建一个新的数据域。"
+        description="暂无数据域。"
       >
         <template #actions>
           <el-button v-access="'domain.create'" type="primary" @click="openCreateDialog">新建数据域</el-button>

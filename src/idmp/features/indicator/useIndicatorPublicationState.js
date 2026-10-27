@@ -10,13 +10,13 @@ export function useIndicatorPublicationState({ indicatorWorkflow, policySourceSt
 
   const publishPanelDescription = computed(() => {
     if (indicatorWorkflow.published) {
-      return `后端已返回发布结果，版本 ${indicatorWorkflow.publishedVersionId || indicatorWorkflow.versionId} 可用于分析查询。`
+      return '指标版本已发布，可用于分析查询。'
     }
     if (!indicatorWorkflow.versionId) return '请先创建指标版本。'
     if (!policySourceState.count) return '请先在第 1 页选择政策文件来源；依据说明选填，场景关联可跳过。'
     if (!indicatorWorkflow.compiled) return '发布时会对当前公式执行编译校验，失败时保留草稿。'
-    if (!hasIndicatorTrialResults.value) return '发布前需要成功试算；提交发布时会补齐校验，并以后端最终校验为准。'
-    return '发布接口已就绪，点击按钮会写入后端发布状态。'
+    if (!hasIndicatorTrialResults.value) return '发布前需要成功试算；提交发布时将再次校验。'
+    return '当前版本已完成试算，可提交发布校验。'
   })
 
   const workflowSteps = computed(() => [
@@ -33,29 +33,29 @@ export function useIndicatorPublicationState({ indicatorWorkflow, policySourceSt
     { label: '场景关联（可选）', description: '无需关联场景即可发布并生成独立正式结果', state: 'pass', stateLabel: '可跳过' },
     {
       label: '稳定指标与草稿版本',
-      description: indicatorWorkflow.versionId ? `版本 ${indicatorWorkflow.versionId}` : '尚未创建可发布的草稿版本',
+      description: indicatorWorkflow.versionId ? '草稿版本已创建' : '尚未创建可发布的草稿版本',
       state: indicatorWorkflow.versionId ? 'pass' : 'pending',
       stateLabel: indicatorWorkflow.versionId ? '已具备' : '待完成'
     },
     {
-      label: 'Formula AST 服务端编译',
-      description: indicatorWorkflow.compiled ? '服务端编译校验已通过' : '尚未取得有效编译产物',
+      label: '计算公式校验',
+      description: indicatorWorkflow.compiled ? '公式编译校验已通过' : '尚未完成公式编译校验',
       state: indicatorWorkflow.compiled ? 'pass' : 'pending',
       stateLabel: indicatorWorkflow.compiled ? '已通过' : '待完成'
     },
     {
       label: '试算结果与配置一致性',
       description: hasIndicatorTrialResults.value
-        ? '已读取试算结果，但当前接口未返回配置 Hash'
+        ? '试算结果已读取，发布时将核验与当前配置的一致性'
         : '尚未取得可核验的试算结果',
       state: hasIndicatorTrialResults.value ? 'warning' : 'pending',
-      stateLabel: hasIndicatorTrialResults.value ? '需核验 Hash' : '待完成'
+      stateLabel: hasIndicatorTrialResults.value ? '待发布核验' : '待完成'
     },
     {
       label: '质量、下钻与隐私',
-      description: indicatorWorkflow.published ? '发布接口已由后端完成最终校验' : '发布时由后端执行最终门禁校验',
+      description: indicatorWorkflow.published ? '发布校验已通过' : '发布时校验数据质量、下钻及隐私要求',
       state: indicatorWorkflow.published ? 'pass' : canPublishIndicatorVersion.value ? 'warning' : 'pending',
-      stateLabel: indicatorWorkflow.published ? '已发布' : canPublishIndicatorVersion.value ? '后端校验' : '待发布'
+      stateLabel: indicatorWorkflow.published ? '已发布' : canPublishIndicatorVersion.value ? '待发布校验' : '待发布'
     }
   ])
   return { canPublishIndicatorVersion, publishPanelDescription, workflowSteps, publishGates }

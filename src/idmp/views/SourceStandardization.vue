@@ -1,7 +1,7 @@
 <template>
   <div class="idmp-page standardization-page">
     <PageHeader title="源值标准化">
-      <template #meta><span class="data-source-badge is-live">真实接口</span><span class="header-meta">{{ sourceField || `映射 ${mappingId}` }}</span></template>
+      <template #meta><span class="header-meta">{{ sourceField || `映射 ${mappingId}` }}</span></template>
       <template #actions><el-button @click="router.push({ name: 'DataDomainManagement' })">返回数据模型</el-button><el-button :loading="loading" @click="loadAll">刷新</el-button></template>
     </PageHeader>
 
@@ -9,7 +9,7 @@
     <template v-else>
       <section class="profile-grid"><article v-for="item in profileCards" :key="item.label" class="surface-card profile-card"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></article></section>
 
-      <section class="surface-card table-card"><div class="section-title"><div><h2>源字段值画像</h2><p class="section-title__description">读取真实源字段离散值和出现频次，不修改源数据。</p></div></div><el-table v-if="profileItems.length" :data="profileItems"><el-table-column prop="value" label="源值" min-width="180"><template #default="{ row }">{{ row.nullValue ? '空值' : row.value }}</template></el-table-column><el-table-column prop="count" label="记录数" width="140" /><el-table-column prop="percentage" label="占比" width="140"><template #default="{ row }">{{ row.percentage == null ? '—' : `${Number(row.percentage).toFixed(2)}%` }}</template></el-table-column></el-table><StatePanel v-else type="empty" title="暂无源值画像" description="当前映射没有返回离散值。" /></section>
+      <section class="surface-card table-card"><div class="section-title"><div><h2>源字段值画像</h2><p class="section-title__description">读取源字段离散值和出现频次，不修改源数据。</p></div></div><el-table v-if="profileItems.length" :data="profileItems"><el-table-column prop="value" label="源值" min-width="180"><template #default="{ row }">{{ row.nullValue ? '空值' : row.value }}</template></el-table-column><el-table-column prop="count" label="记录数" width="140" /><el-table-column prop="percentage" label="占比" width="140"><template #default="{ row }">{{ row.percentage == null ? '—' : `${Number(row.percentage).toFixed(2)}%` }}</template></el-table-column></el-table><StatePanel v-else type="empty" title="暂无源值画像" description="当前映射没有返回离散值。" /></section>
 
       <section class="surface-card table-card">
         <div class="section-title section-title--toolbar"><div><h2>转换规则</h2><p class="section-title__description">{{ rule?.name || '尚未配置转换规则' }} · 资源版本 {{ ruleVersion?.resourceVersion ?? '—' }}</p></div><div><el-button v-if="versionId" :loading="previewLoading" @click="loadPreview">执行预览</el-button><el-button v-if="versionId" type="primary" :loading="validating" @click="validate">校验</el-button><el-button v-if="versionId" type="success" :loading="publishing" :disabled="!canPublish" @click="publish">发布</el-button><el-button v-if="!versionId" type="primary" :loading="creating" @click="createRule">创建规则</el-button></div></div>

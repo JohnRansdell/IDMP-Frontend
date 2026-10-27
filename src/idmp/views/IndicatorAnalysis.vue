@@ -594,9 +594,9 @@ const analysisMetadata = computed(() => {
   }
 })
 const analysisUpdatedAt = computed(() => {
-  if (rangeSummary.value) return '后端未返回更新时间'
+  if (rangeSummary.value) return '更新时间暂不可用'
   const context = backendAnalysis.value?.resultContext || {}
-  return hasBackendAnalysisData.value ? firstPresent(context.activatedAt, '后端未返回更新时间') : '-'
+  return hasBackendAnalysisData.value ? firstPresent(context.activatedAt, '更新时间暂不可用') : '-'
 })
 const drillPathResultIds = computed(() => {
   const derived = deriveDrillPathResultIds(
@@ -886,7 +886,7 @@ async function loadBackendAnalysisIndicators() {
   } catch {
     if (!request.isCurrent()) return
     backendIndicators.value = []
-    ElMessage.warning('后端已发布指标列表暂不可用，当前没有可选指标')
+    ElMessage.warning('指标列表加载失败，请重试')
   } finally {
     if (request.isCurrent()) indicatorOptionsLoading.value = false
   }
@@ -900,7 +900,7 @@ function createBackendAnalysisOptions(indicators) {
       code: key,
       name: item.name || '未命名指标',
       backendCode: item.code,
-      source: '后端指标',
+      source: '指标',
       backendId: item.id || item.indicatorId || key,
       disabled: false
     }

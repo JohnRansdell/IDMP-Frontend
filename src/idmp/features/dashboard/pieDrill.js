@@ -118,7 +118,7 @@ function validateContext(result, root, currentLevel, parentKeys, snapshotId) {
   if (['resultId', 'indicatorVersionId'].some((key) => !context[key] || context[key] !== root.target[key]) || (context.indicatorId && context.indicatorId !== root.target.indicatorId)) throw contextError('返回结果与指标版本不一致，请重新加载')
   if (!context.snapshotId || (snapshotId && context.snapshotId !== snapshotId)) throw contextError('快照缺失或已变化，请重新加载')
   if (normalizeOrganizationDrillLevel(context.currentLevel) !== currentLevel) throw contextError('返回的组织层级不一致')
-  if (root.source !== 'mock' && result.dataSource === 'mock') throw contextError('正式下钻不能使用演示数据')
+  if (root.source !== 'mock' && result.dataSource === 'mock') throw contextError('结果来源不一致，请重新查询')
   for (const [field, value] of Object.entries(parentKeys)) {
     const candidates = [context.parentKeys?.[field], ...(result.breadcrumb || [])
       .filter((crumb) => PARENT_FIELDS[normalizeOrganizationDrillLevel(crumb.level)] === field)

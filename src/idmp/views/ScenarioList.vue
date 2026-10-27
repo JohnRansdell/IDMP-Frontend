@@ -1,6 +1,6 @@
 <template>
   <div class="idmp-page scenario-list">
-    <PageHeader title="场景管理" status="ENABLED" status-label="接口数据">
+    <PageHeader title="场景管理">
       <template #actions>
         <el-button v-access="'scenario.create'" type="primary" :icon="Plus" @click="createOpen = true">新建场景</el-button>
       </template>

@@ -74,10 +74,10 @@ async function loadTrendGrainSnapshotNames({ analysis, paths, field, versionId, 
   const rootPayload = { pathCode: path.pathCode, currentLevel: rootLevel.levelCode, parentKeys: {}, filters: {}, pageNum: 1, pageSize: 200 }
   const first = await search(anchor, rootPayload, { source: 'live', signal })
   const rootId = first.records.find(row => row.levelCode === rootLevel.levelCode && row.resultId)?.resultId || first.context?.resultId
-  if (!rootId) throw new Error('名称下钻未返回根结果 ID')
+  if (!rootId) throw new Error('维度名称加载失败，请重新查询')
   const root = String(rootId) === String(anchor) ? first : await search(rootId, rootPayload, { source: 'live', signal })
   if (String(root.context?.indicatorVersionId) !== String(versionId) || !root.context?.snapshotId || root.context?.currentLevel !== rootLevel.levelCode
-    || (root.context.pathCode && root.context.pathCode !== path.pathCode) || root.dataSource === 'mock') throw new Error('名称下钻版本或快照不一致')
+    || (root.context.pathCode && root.context.pathCode !== path.pathCode) || root.dataSource === 'mock') throw new Error('数据上下文已更新，请重新查询')
   const parentKeys = {}
   for (const parent of levels.slice(0, index)) {
     const key = parent.memberKeyFieldCode || parent.dimensionFieldCode
@@ -92,7 +92,7 @@ async function loadTrendGrainSnapshotNames({ analysis, paths, field, versionId, 
       filters: {}, pageNum, pageSize: 200, snapshotId: root.context.snapshotId }, { source: 'live', signal })
     if (String(result.context?.indicatorVersionId) !== String(versionId) || String(result.context?.snapshotId) !== String(root.context.snapshotId)
       || result.context.currentLevel !== level.levelCode || (result.context.pathCode && result.context.pathCode !== path.pathCode)
-      || result.dataSource === 'mock') throw new Error('名称下钻上下文已变化，请重试')
+      || result.dataSource === 'mock') throw new Error('数据上下文已更新，请重新查询')
     for (const row of result.records) {
       const code = String(row.dimensionKey ?? dimensionFieldValue(row, field.code) ?? '')
       const name = [dimensionFieldValue(row, field.displayField), row.dimensionName, row.dimensionLabel].find(name => isMemberName(name, code))

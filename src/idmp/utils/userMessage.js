@@ -41,6 +41,7 @@ export function toUserMessage(value, fallback = DEFAULT_ERROR_MESSAGE) {
   if (/SQL import task not found/i.test(text)) return '导入会话不存在或已失效，请重新导入 SQL。'
   if (!hasChinese(text)) return fallback
   if (/JSON\s*序列化失败/.test(text)) return '配置信息暂时无法保存，请稍后重试。'
+  if (/(?:后端|接口)(?:未|尚未)(?:返回|提供|接入)|(?:后端|接口).*暂不可用/.test(text)) return fallback
   for (const [token, label] of Object.entries({ ...labels, ...modes })) text = text.replace(tokenPattern(token), label)
   return text.replace(/请求超时[（(]\d+ms[）)]/, '请求超时，请稍后重试。')
 }

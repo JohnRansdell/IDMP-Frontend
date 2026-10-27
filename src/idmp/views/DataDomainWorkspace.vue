@@ -1,7 +1,7 @@
 <template>
   <div class="idmp-page data-domain-workspace">
     <PageHeader title="数据域工作台">
-      <template #meta><span class="data-source-badge is-live">真实接口</span></template>
+      <template #meta></template>
       <template #actions>
         <el-button :icon="ArrowLeft" @click="router.push({ name: 'DataDomainManagement' })">返回目录</el-button>
         <el-button :icon="Refresh" :loading="loading" @click="loadWorkspace">刷新</el-button>
@@ -404,7 +404,7 @@ async function submitMapping() {
     if (fieldError.value) throw new Error('映射已提交，但字段回读失败；请重新进入物理表核对保存结果。')
     const saved = mappedFields.value.find(field => field.code === fieldCode && field.sourceFieldName === sourceFieldName)
     if (!saved || String(saved.dataType).toUpperCase() !== mappingForm.dataType || saved.semanticKind !== mappingForm.semanticKind || saved.name !== mappingForm.name) {
-      throw new Error('映射接口已响应，但重新读取的字段配置与保存内容不一致；请检查后端字段详情与列表接口。')
+      throw new Error('字段配置保存后核对失败，请刷新确认；若持续失败，请联系管理员。')
     }
     mappingDialogVisible.value = false
     ElMessage.success('字段映射已保存')

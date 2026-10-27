@@ -6,7 +6,7 @@
       </el-select>
       <template v-if="node.nodeType === 'FACTOR_REF'">
         <el-select :model-value="String(node.factorVersionId || '')" filterable :disabled="disabled" aria-label="引用因子版本" placeholder="选择已发布因子版本" @update:model-value="value => update('factorVersionId', value)">
-          <el-option v-for="item in versions" :key="item.id" :value="String(item.id)" :label="`${item.factorName || '未命名因子'} · V${item.versionNo} · ${item.id}`" />
+          <el-option v-for="item in versions" :key="item.id" :value="String(item.id)" :label="`${item.factorName || '未命名因子'} · V${item.versionNo}`" />
         </el-select>
         <el-select :model-value="node.alignmentPolicy || 'STRICT_EQUAL'" :disabled="disabled" aria-label="粒度对齐" @update:model-value="value => update('alignmentPolicy', value)">
           <el-option label="相同分组粒度" value="STRICT_EQUAL" /><el-option label="总体值广播" value="SCALAR_BROADCAST" />

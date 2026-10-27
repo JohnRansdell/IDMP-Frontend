@@ -34,7 +34,7 @@ export function useFactorVersionWorkflow({ workflow, loading, trialRows, trialPa
       workflow.compiled = ['VALID', 'VALID_WITH_WARNINGS', 'VALIDATED', 'SUCCEEDED', 'SUCCESS'].includes(status)
       workflow.status = detail?.status ?? (workflow.compiled ? 'VALIDATED' : workflow.status)
       workflow.message = workflow.compiled ? `编译校验通过${workflow.artifactId ? `，产物 ID：${workflow.artifactId}` : ''}。`
-        : `编译未通过：${formatDiagnostics(result?.diagnostics) || status || '请查看后端诊断信息'}`
+        : `编译未通过：${formatDiagnostics(result?.diagnostics) || status || '请查看校验详情'}`
       workflow.messageType = workflow.compiled ? 'success' : 'warning'
       if (workflow.compiled) { notify.success('编译校验通过'); await onCompiled?.() }
       else notify.warning(workflow.message)
@@ -120,7 +120,7 @@ export function useFactorVersionWorkflow({ workflow, loading, trialRows, trialPa
       workflow.taskId = toOpaqueId(accepted?.taskId ?? accepted?.asyncTaskId)
       workflow.batchId = toOpaqueId(accepted?.batchId)
       workflow.taskStatus = String(accepted?.status ?? 'QUEUED').toUpperCase()
-      workflow.message = `试算任务已提交，批次 ID：${workflow.batchId || '-'}。正在等待后端完成。`
+      workflow.message = `试算任务已提交，正在等待计算完成。`
       workflow.messageType = 'info'
       notify.success('试算任务已提交')
       if (workflow.taskId) await pollTrialTask(version, token)
