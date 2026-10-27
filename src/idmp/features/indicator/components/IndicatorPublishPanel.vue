@@ -3,8 +3,8 @@
     <article class="surface-card publish-gates">
       <div class="section-title">
         <div>
-          <h2>发布门禁</h2>
-          <p class="section-title__description">仅展示当前前端能够判断的状态，不替代后端最终校验</p>
+          <h2>发布前检查</h2>
+          <p class="section-title__description">查看已完成事项，通过下方入口补充配置。发布时系统会执行最终检查。</p>
         </div>
       </div>
       <ul>
@@ -13,6 +13,7 @@
           <div>
             <strong>{{ gate.label }}</strong>
             <p>{{ gate.description }}</p>
+            <el-button v-if="gate.targetTab" link type="primary" :disabled="loading.publish" @click="emit('navigate', { tab: gate.targetTab, section: gate.targetSection })">{{ gate.actionLabel }}</el-button>
           </div>
           <span>{{ gate.stateLabel }}</span>
         </li>
@@ -22,13 +23,13 @@
       <div class="section-title">
         <div>
           <h2>发布指标版本</h2>
-          <p class="section-title__description">调用当前后端接口发布已编译并试算通过的指标版本。</p>
+          <p class="section-title__description">确认公式和试算结果符合业务预期后发布；未通过检查会提示具体原因。</p>
         </div>
       </div>
       <div class="publish-action-content">
         <StatePanel
-          :type="workflow.published ? 'empty' : 'permission'"
-          :title="workflow.published ? '指标版本已发布' : '等待发布条件'"
+          type="empty"
+          :title="workflow.published ? '指标版本已发布' : '确认并发布'"
           :description="description"
         />
       </div>
@@ -57,7 +58,7 @@ import StatePanel from '../../../components/StatePanel.vue'
 defineProps({ workflow: { type: Object, required: true }, loading: { type: Object, required: true },
   policyState: { type: Object, required: true }, policyDrafts: { type: Array, default: () => [] },
   isStatic: Boolean, temporaryParameters: Boolean, description: String, gates: { type: Array, required: true } })
-const emit = defineEmits(['publish', 'retry-policy', 'formal-result'])
+const emit = defineEmits(['publish', 'retry-policy', 'formal-result', 'navigate'])
 </script>
 <style scoped lang="scss">
 .publish-layout {
@@ -121,7 +122,11 @@ const emit = defineEmits(['publish', 'retry-policy', 'formal-result'])
     margin: 2px 0 0;
     color: var(--idmp-text-helper);
     font-size: 11px;
+    line-height: 1.7;
   }
+
+  > div { min-width: 0; overflow-wrap: anywhere; }
+  .el-button { height: auto; margin-top: 5px; white-space: normal; text-align: left; }
 
   > span:last-child {
     color: var(--idmp-text-secondary);
@@ -147,6 +152,7 @@ const emit = defineEmits(['publish', 'retry-policy', 'formal-result'])
 
 .business-action-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;

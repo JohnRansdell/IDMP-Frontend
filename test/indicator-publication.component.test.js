@@ -67,3 +67,34 @@ test('publication status follows policy loading and completed workflow without m
   assert.equal(state.canPublishIndicatorVersion.value, false)
   assert.equal(state.publishGates.value.at(-1).state, 'pass')
 })
+
+test('readiness distinguishes acquired results from business confirmation and resets when results are invalidated', () => {
+  const workflow = vue.reactive({ versionId: 'draft', compiled: false, published: false })
+  const policy = vue.reactive({ count: 1, pending: 0, error: '' })
+  const hasResults = vue.ref(false)
+  const state = useIndicatorPublicationState({ indicatorWorkflow: workflow, policySourceState: policy, hasIndicatorTrialResults: hasResults })
+  const gate = label => state.publishGates.value.find(row => row.label === label)
+  assert.equal(state.workflowSteps.value[2].state, 'optional')
+  assert.match(state.workflowSteps.value[2].description, /无需操作/)
+  assert.equal(gate('公式校验').state, 'pending')
+  assert.equal(gate('试算结果').stateLabel, '待试算')
+  workflow.compiled = true; hasResults.value = true
+  assert.equal(gate('公式校验').state, 'pass')
+  assert.equal(gate('试算结果').stateLabel, '已取得结果')
+  assert.match(gate('试算结果').description, /核对数值是否符合业务预期/)
+  assert.equal(gate('发布确认').state, 'pending')
+  assert.doesNotMatch(JSON.stringify(state.publishGates.value), /Hash|AST|一致性.*通过/)
+  hasResults.value = false; workflow.compiled = false
+  assert.equal(gate('试算结果').state, 'pending')
+  assert.equal(gate('公式校验').state, 'pending')
+})
+
+test('checklist navigation returns to the relevant configuration without publishing', async () => {
+  const wrapper = panel({ gates: [{ label: '试算结果', description: '请核对结果', state:'pass', stateLabel:'已取得结果', targetTab:'formula', targetSection:'trial', actionLabel:'查看试算结果' }] })
+  await wrapper.findAll('button').find(button => button.text() === '查看试算结果').trigger('click')
+  assert.deepEqual(wrapper.emitted('navigate')[0], [{ tab:'formula', section:'trial' }])
+  assert.equal(wrapper.emitted('publish'), undefined)
+  await wrapper.setProps({ loading:{ publish:true } })
+  assert.equal(wrapper.findAll('button').find(button => button.text() === '查看试算结果').element.disabled, true)
+  wrapper.unmount()
+})

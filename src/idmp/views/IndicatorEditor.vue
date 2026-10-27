@@ -17,11 +17,11 @@
 
     <IndicatorWorkflowOverview :steps="workflowSteps" />
 
-    <div class="notice-strip is-warning editor-contract-note">
+    <div class="notice-strip editor-contract-note">
       <el-icon><InfoFilled /></el-icon>
       <span>
-        公式、试算、独立正式计算和场景配置均使用真实接口。统一在第 6 页发布；政策来源必选，依据说明选填，场景关联可选。
-        草稿政策选择仅在当前浏览器暂存，发布后自动绑定；指标级排除规则尚无对应保存接口。
+        先填写基本信息和政策来源，再配置公式并核对试算结果，最后到第 6 页发布。第 3 页无需填写，场景关联和依据说明可跳过。
+        草稿中的政策选择仅保存在当前浏览器，发布后保存到指标版本。
       </span>
     </div>
 
@@ -32,7 +32,7 @@
 
     <el-tabs v-model="activeTab" class="idmp-tabs editor-tabs">
       <el-tab-pane label="1 基础与版本" name="basic">
-        <section class="surface-card form-card">
+        <section ref="basicSectionRef" tabindex="-1" class="surface-card form-card publication-navigation-target">
           <el-form ref="formRef" :model="form" :rules="rules" label-width="108px" status-icon>
             <div class="form-grid">
               <el-form-item label="指标编码" prop="code">
@@ -166,11 +166,20 @@
             <span>{{ activeMode.description }}</span>
           </div>
 
+          <section class="formula-preview" aria-label="公式预览">
+            <div>
+              <span>公式预览</span>
+              <IndicatorFormulaExpression v-if="advancedFormulaValid" :formula="advancedFormulaPayload" :factors="advancedFactorOptions" />
+              <strong v-else>指标值 = {{ formulaPreview }}</strong>
+            </div>
+            <div class="validation-state" :class="{ 'is-invalid': !formulaValid }">
+              <el-icon><CircleCheckFilled v-if="formulaValid" /><CircleCloseFilled v-else /></el-icon>
+              <span>{{ formulaValid ? '本地结构检查通过；类型、单位和依赖仍须服务端校验' : (activeMode.kind === 'advanced' ? advancedFormulaError : '本地结构检查未通过：请补充公式因子') }}</span>
+            </div>
+          </section>
+
           <h2 class="formula-section-title">公式编辑器</h2>
           <div v-if="activeMode.kind === 'advanced'" class="formula-builder advanced-formula-builder">
-            <div class="advanced-formula-preview" aria-label="实时公式预览">
-              <span>指标值</span><strong>{{ formulaPreview }}</strong>
-            </div>
             <IndicatorFormulaComposer v-model="advancedFormulaRoot" :factors="advancedFactorOptions" :disabled="indicatorWorkflow.published" :loading="workflowLoading.factors" />
           </div>
           <div v-else class="formula-builder">
@@ -246,6 +255,26 @@
               </el-select>
             </div>
           </div>
+
+          <section class="formula-preview-settings" aria-label="公式展示与异常处理">
+            <h3>展示与异常处理</h3>
+            <div v-if="activeMode.kind === 'advanced'" class="advanced-display-settings" role="group" aria-label="公式展示设置">
+              <label>展示格式<el-select :model-value="advancedFormulaPayload.display.format" :disabled="indicatorWorkflow.published" aria-label="嵌套公式展示格式" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, format: $event }"><el-option label="数值" value="NUMBER" /><el-option label="百分比" value="PERCENT" /><el-option v-if="savedFormulaDisplay?.format === 'DECIMAL'" label="数值" value="DECIMAL" /></el-select></label>
+              <label>展示乘数<el-input :model-value="String(advancedFormulaPayload.display.multiplier ?? '1')" :disabled="indicatorWorkflow.published" aria-label="展示乘数" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, multiplier: $event }" /></label>
+              <label>小数位数<el-input-number :model-value="advancedFormulaPayload.display.scale ?? 2" :disabled="indicatorWorkflow.published" :min="0" :max="12" :precision="0" aria-label="展示小数位数" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, scale: $event }" /></label>
+              <label>舍入方式<el-select :model-value="advancedFormulaPayload.display.roundingMode || 'HALF_UP'" :disabled="indicatorWorkflow.published" aria-label="展示舍入方式" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, roundingMode: $event }"><el-option v-for="[code, label] in roundingModes" :key="code" :value="code" :label="label" /></el-select></label>
+            </div>
+            <div v-else class="formula-settings">
+              <label>分母为零策略</label>
+              <el-select v-model="zeroStrategy" aria-label="分母为零策略">
+                <el-option label="返回空值" value="返回 NULL" />
+                <el-option label="返回 0" value="返回 0" />
+                <el-option label="标记异常" value="标记异常" />
+              </el-select>
+              <label>展示格式</label>
+              <span>{{ activeMode.multiplier ? '百分比' : '数值' }}</span><i /> <span>乘数：{{ activeMode.multiplier ? 100 : 1 }}</span><i /> <span>精度：{{ savedFormulaDisplay?.scale ?? 2 }}位</span>
+            </div>
+          </section>
 
           <div class="factor-library">
             <div v-if="activeMode.kind !== 'advanced'" class="factor-library__head">
@@ -376,7 +405,7 @@
               show-icon
               :title="`静态初始化批次 ${indicatorWorkflow.initializationBatchId}：${getStatusLabel(indicatorWorkflow.initializationStatus || 'RUNNING')}`"
             />
-            <div class="business-action-bar formula-actions">
+            <div ref="formulaActionsRef" tabindex="-1" class="business-action-bar formula-actions publication-navigation-target">
               <div>
                 <span>公式与试算操作</span>
                 <small>{{ indicatorWorkflow.versionId ? `当前版本 ${indicatorWorkflow.versionId}` : (indicatorWorkflow.indicatorId ? '选择分子、分母后首次保存将创建指标版本' : '请先保存指标基本信息') }}</small>
@@ -404,7 +433,7 @@
                 生成正式结果并去指标分析
               </el-button>
             </div>
-            <section v-if="indicatorTrialResultsLoaded" class="workflow-trial-results" aria-label="指标试算多粒度结果">
+            <section v-if="indicatorTrialResultsLoaded" ref="trialResultsRef" tabindex="-1" class="workflow-trial-results publication-navigation-target" aria-label="指标试算多粒度结果">
               <div class="workflow-trial-results__head">
                 <div>
                   <strong>试算结果</strong>
@@ -490,42 +519,26 @@
             </div>
           </div>
 
-          <div class="formula-preview">
-            <div>
-              <span>公式预览</span>
-              <IndicatorFormulaExpression v-if="advancedFormulaValid" :formula="advancedFormulaPayload" :factors="advancedFactorOptions" />
-              <strong v-else>指标值 = {{ formulaPreview }}</strong>
-            </div>
-            <div class="validation-state" :class="{ 'is-invalid': !formulaValid }">
-              <el-icon><CircleCheckFilled v-if="formulaValid" /><CircleCloseFilled v-else /></el-icon>
-              <span>{{ formulaValid ? '本地结构检查通过；类型、单位和依赖仍须服务端校验' : (activeMode.kind === 'advanced' ? advancedFormulaError : '本地结构检查未通过：请补充公式因子') }}</span>
-            </div>
-            <div v-if="activeMode.kind === 'advanced'" class="advanced-display-settings" role="group" aria-label="公式展示设置">
-              <label>展示格式<el-select :model-value="advancedFormulaPayload.display.format" :disabled="indicatorWorkflow.published" aria-label="嵌套公式展示格式" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, format: $event }"><el-option label="数值" value="NUMBER" /><el-option label="百分比" value="PERCENT" /><el-option v-if="savedFormulaDisplay?.format === 'DECIMAL'" label="数值" value="DECIMAL" /></el-select></label>
-              <label>展示乘数<el-input :model-value="String(advancedFormulaPayload.display.multiplier ?? '1')" :disabled="indicatorWorkflow.published" aria-label="展示乘数" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, multiplier: $event }" /></label>
-              <label>小数位数<el-input-number :model-value="advancedFormulaPayload.display.scale ?? 2" :disabled="indicatorWorkflow.published" :min="0" :max="12" :precision="0" aria-label="展示小数位数" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, scale: $event }" /></label>
-              <label>舍入方式<el-select :model-value="advancedFormulaPayload.display.roundingMode || 'HALF_UP'" :disabled="indicatorWorkflow.published" aria-label="展示舍入方式" @update:model-value="savedFormulaDisplay = { ...advancedFormulaPayload.display, roundingMode: $event }"><el-option v-for="[code, label] in roundingModes" :key="code" :value="code" :label="label" /></el-select></label>
-            </div>
-            <div v-else class="formula-settings">
-              <label>分母为零策略</label>
-              <el-select v-model="zeroStrategy" aria-label="分母为零策略">
-                <el-option label="返回空值" value="返回 NULL" />
-                <el-option label="返回 0" value="返回 0" />
-                <el-option label="标记异常" value="标记异常" />
-              </el-select>
-              <label>展示格式</label>
-              <span>{{ activeMode.multiplier ? '百分比' : '数值' }}</span><i /> <span>乘数：{{ activeMode.multiplier ? 100 : 1 }}</span><i /> <span>精度：{{ savedFormulaDisplay?.scale ?? 2 }}位</span>
-            </div>
-          </div>
         </section>
       </el-tab-pane>
 
-      <el-tab-pane label="3 规则与排除" name="exclusion">
+      <el-tab-pane label="3 统计范围说明（无需操作）" name="exclusion">
         <section class="surface-card exclusion-card">
-          <h2>规则与排除</h2>
-          <el-alert title="指标版本级默认排除条件暂不支持在此保存。因子过滤条件请到因子编辑页配置；仅特定场景适用的排除条件请到场景编辑页配置。" type="info" :closable="false" show-icon />
-          <p>因子过滤、指标默认排除、场景覆盖的作用范围不同。此处不再展示不会保存或执行的模拟条件。</p>
-          <el-button @click="activeTab = 'formula'">查看公式及引用因子</el-button><el-button @click="activeTab = 'scene'">查看可选场景配置</el-button>
+          <h2>统计范围说明</h2>
+          <el-alert title="本页无需填写或保存，可以直接跳过，不影响指标发布。" type="info" :closable="false" show-icon />
+          <h3>哪些数据会参与统计？</h3>
+          <p>统计范围由公式引用的因子及其筛选条件决定。例如，因子中设置了“仅统计有效记录”，指标计算就会使用该因子定义的范围。</p>
+          <p>可打开下方引用因子的对应版本，核对统计字段、筛选条件及计算口径；如需调整，请在因子管理中维护，再回到第 2 页引用正确的已发布版本。</p>
+          <ul v-if="selectedFormulaFactors.length" class="scope-factor-list" aria-label="引用因子的统计范围">
+            <li v-for="factor in selectedFormulaFactors" :key="factor.versionId">
+              <div><strong>{{ factor.name || factor.code }}</strong><small>因子版本：{{ factor.versionId }}</small></div>
+              <el-button link type="primary" @click="editFactor(factor)">查看统计条件（新窗口）</el-button>
+            </li>
+          </ul>
+          <p v-else>尚未选择因子，请先到第 2 页配置公式。</p>
+          <h3>能否在这里统一排除数据？</h3>
+          <p>当前不支持在指标层面另外保存一套默认排除条件。本页不会额外改变参与统计的数据，也无需为此配置场景。</p>
+          <div class="scope-explanation-actions"><el-button @click="activeTab = 'formula'">返回第 2 页查看公式</el-button><el-button type="primary" @click="activeTab = 'publish'">前往第 6 页发布检查</el-button></div>
         </section>
       </el-tab-pane>
 
@@ -543,7 +556,7 @@
       <el-tab-pane label="6 发布检查" name="publish">
         <IndicatorPublishPanel :workflow="indicatorWorkflow" :loading="workflowLoading" :policy-state="policySourceState"
           :policy-drafts="form.policyDrafts" :is-static="isStaticIndicator" :temporary-parameters="hasTemporaryIndicatorRuntimeParameters"
-          :description="publishPanelDescription" :gates="publishGates" @publish="publishIndicatorVersionOnly"
+          :description="publishPanelDescription" :gates="publishGates" @publish="publishIndicatorVersionOnly" @navigate="navigatePublishCheck"
           @retry-policy="retryPolicySources" @formal-result="generateFormalResultAndOpenAnalysis" />
       </el-tab-pane>
     </el-tabs>
@@ -769,6 +782,19 @@ const indicatorTrialHasNumerator = computed(() =>
 const indicatorTrialHasDenominator = computed(() =>
   indicatorTrialRows.value.some((row) => row.denominatorValue !== null && row.denominatorValue !== undefined)
 )
+const basicSectionRef = ref(null)
+const formulaActionsRef = ref(null)
+const trialResultsRef = ref(null)
+async function navigatePublishCheck({ tab, section }) {
+  if (!['basic', 'formula'].includes(tab)) return
+  if (tab === 'basic' && section === 'policy') return focusPolicySource()
+  activeTab.value = tab
+  await nextTick()
+  const target = tab === 'basic' ? basicSectionRef.value
+    : section === 'trial' ? trialResultsRef.value || formulaActionsRef.value : formulaActionsRef.value
+  target?.focus({ preventScroll: true })
+  target?.scrollIntoView({ block: 'start', behavior: 'instant' })
+}
 const { canPublishIndicatorVersion, publishPanelDescription, workflowSteps, publishGates } = useIndicatorPublicationState({
   indicatorWorkflow, policySourceState, hasIndicatorTrialResults
 })
@@ -3146,7 +3172,8 @@ onMounted(async () => {
 }
 
 .formula-preview {
-  margin-top: 16px;
+  min-width: 0;
+  margin: 16px 0 20px;
   padding: 16px;
   border: 1px solid var(--idmp-support-success);
   border-radius: 8px;
@@ -3159,21 +3186,32 @@ onMounted(async () => {
     gap: 14px;
 
     span { color: var(--idmp-text-helper); }
-    strong { color: var(--idmp-text-primary); }
+    strong { min-width: 0; max-width: 100%; overflow-wrap: anywhere; color: var(--idmp-text-primary); }
   }
 }
 
-.advanced-formula-preview {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  margin-bottom: 18px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--idmp-border-soft);
-  font-size: 13px;
-  span { color: var(--idmp-text-helper); }
-  strong { min-width: 0; font-weight: 500; overflow-wrap: anywhere; color: var(--idmp-text-primary); }
+// 仅吸顶公式摘要，避免展示设置遮挡正在编辑的公式。
+@media (min-width: 901px) {
+  .formula-preview {
+    position: sticky;
+    top: calc(var(--idmp-topbar-height, 64px) + 12px);
+    z-index: 4;
+    max-height: min(240px, 30vh);
+    overflow: auto;
+    box-shadow: 0 3px 8px #0000000a;
+  }
+}
+
+.formula-preview-settings {
+  min-width: 0;
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--idmp-border-soft);
+  border-radius: 8px;
+  background: var(--idmp-layer-01);
+
+  h3 { margin: 0 0 14px; font-size: 14px; color: var(--idmp-text-primary); }
+  > .advanced-display-settings, > .formula-settings { margin-top: 0; padding-top: 0; border-top: 0; }
 }
 
 .advanced-display-settings {
@@ -3222,9 +3260,27 @@ onMounted(async () => {
   }
 }
 
+.publication-navigation-target { scroll-margin-top: calc(var(--idmp-topbar-height, 64px) + 12px); }
+.publication-navigation-target:focus-visible { outline: 2px solid var(--idmp-interactive); outline-offset: 3px; }
+@media (min-width: 901px) {
+  .formula-actions.publication-navigation-target, .workflow-trial-results.publication-navigation-target {
+    scroll-margin-top: calc(var(--idmp-topbar-height, 64px) + min(240px, 30vh) + 24px);
+  }
+}
+
 .exclusion-card {
   padding: 22px;
+  h3 { margin: 22px 0 8px; font-size: 15px; }
+  p { color: var(--idmp-text-secondary); line-height: 1.8; }
 }
+
+.scope-factor-list {
+  margin: 16px 0; padding: 0; list-style: none;
+  li { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; padding: 12px 0; border-bottom: 1px solid var(--idmp-border-soft); }
+  li > div { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+  small { color: var(--idmp-text-helper); }
+}
+.scope-explanation-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; .el-button { margin-left: 0; } }
 
 .logic-row {
   display: flex;

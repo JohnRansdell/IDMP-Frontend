@@ -1,6 +1,6 @@
 <template>
   <section class="surface-card table-card">
-    <div class="section-title"><div><h2>场景关联（可选）</h2><p>不关联场景也可试算、即时运行和生成独立正式结果。场景用于额外的参数、排除规则和上报要求。</p></div><el-button :disabled="loading || saving" @click="loadLinks">刷新</el-button></div>
+    <div class="section-title"><div><h2>场景关联（可选）</h2><p>不关联场景也可试算、即时运行和生成独立正式结果。场景用于按业务用途组织指标和上报要求。</p></div><el-button :disabled="loading || saving" @click="loadLinks">刷新</el-button></div>
     <el-alert v-if="!published" title="指标版本发布后可以加入场景；无需先关联场景再发布指标。" type="info" :closable="false" />
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <el-alert v-if="savedVersionId" title="已加入场景草稿。请进入场景编辑页核对覆盖规则、校验并发布，场景计算才会使用该配置。" type="success" :closable="false" />
