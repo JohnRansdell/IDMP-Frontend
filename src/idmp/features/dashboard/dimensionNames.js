@@ -143,6 +143,8 @@ export function visibleDimensionName(row, dimension, dataset = {}) {
     if (label) return label
   }
   if (identity.code === text(raw) && identity.name) return identity.name
+  // Unconfigured generic dimensions can hold names directly instead of member codes.
+  if (department && !configured && !/code|(?:^|_)id$|编码/i.test(String(field)) && isMemberName(raw, '')) return raw
   if (department || configured?.displayFieldCode && configured.displayFieldCode.toLowerCase() !== String(field).toLowerCase()) return unknownMemberName(level, raw)
   return raw
 }

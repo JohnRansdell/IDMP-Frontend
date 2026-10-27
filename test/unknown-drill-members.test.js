@@ -47,3 +47,10 @@ test('server fallback labels are not overwritten by stale display fields', () =>
   const row = { dimensionKey: '009', dimensionName: '未知医生（009）', dimensionLabelSource: 'FALLBACK', dimensions: { doctorName: '旧姓名' } }
   assert.equal(namedDrillRecord(row, { levelCode: 'DOCTOR', displayFieldCode: 'doctorName' }).dimensionLabel, '未知医生（009）')
 })
+
+test('generic name-valued chart dimensions remain distinct from configured member codes', () => {
+  assert.equal(visibleDimensionName({ department: '内科' }, { field: 'department' }), '内科')
+  assert.equal(visibleDimensionName({ DEPARTMENT_CODE: 'D009' }, { field: 'DEPARTMENT_CODE' }), '未知科室（D009）')
+  const configured = { dimensionLevels: { department: { levelCode: 'DEPARTMENT' } } }
+  assert.equal(visibleDimensionName({ department: 'D009' }, { field: 'department' }, configured), '未知科室（D009）')
+})

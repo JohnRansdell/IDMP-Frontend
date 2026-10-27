@@ -78,7 +78,7 @@ test('already scaled percent, zero and missing values retain their distinct mean
   const definition = widget('table')
   definition.config.dataBinding.measures = [{ field: 'value', aggregation: 'direct' }]
   const wrapper = create(definition, source)
-  assert.deepEqual(cells(wrapper), [['未知科室（one）', '0.23%'], ['未知科室（zero）', '0.00%'], ['未知科室（missing）', '—']])
+  assert.deepEqual(cells(wrapper), [['one', '0.23%'], ['zero', '0.00%'], ['missing', '—']])
   wrapper.unmount()
 })
 

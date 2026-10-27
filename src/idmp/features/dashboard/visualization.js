@@ -1,5 +1,5 @@
 import { IDMP_CHART_COLORS } from '../../charts/theme.js'
-import { departmentIdentity, normalizeDepartmentDataset } from './dimensionNames.js'
+import { departmentIdentity, normalizeDepartmentDataset, visibleDimensionName } from './dimensionNames.js'
 import { normalizeResultMetrics } from '../../api/adapters/result.js'
 import { formatResultValue, hasResultDisplay, resultChartNumber, resultNumber, resultUnit } from '../shared/resultPresentation.js'
 
@@ -184,7 +184,8 @@ export function applyIndicatorAnalysisToSource(source, payload = {}, departmentN
   const departmentData = comparisons
     .map((item) => {
       const identity = departmentIdentity(item, paths)
-      return { name: identity.name || (identity.code ? `科室编码：${identity.code}` : ''), value: normalizeAnalysisNumber(item?.value, unit) }
+      const field = identity.field || Object.keys(item.dimensions || {}).find(key => named.departmentFields.some(field => field.toLowerCase() === key.toLowerCase()))
+      return { name: field ? visibleDimensionName(item, { field }, named) : '', value: normalizeAnalysisNumber(item?.value, unit) }
     })
     .filter((item) => item.name && item.value !== null)
   const bindingRows = payload?.dataAvailable

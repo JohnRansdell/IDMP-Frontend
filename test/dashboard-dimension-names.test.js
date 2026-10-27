@@ -70,6 +70,17 @@ test('analysis presets and bound datasets share resolved department names', () =
   assert.equal(payload.dimensionComparison[0].dimensions.科室名称, undefined, 'source response is not mutated')
 })
 
+test('analysis presets keep missing departments and share unknown labels with bound charts', () => {
+  const payload = { dataAvailable: true, overview: { value: 0.2 }, dimensionComparison: [
+    { value: 0.2, dimensions: { 科室: '009' } }, { value: 0.1, dimensions: { 科室: null } },
+    { value: 0.3, dimensions: { 类别: '甲类' } }
+  ] }
+  const hydrated = applyIndicatorAnalysisToSource({ unit: '%' }, payload, {}, [path])
+  assert.deepEqual(hydrated.pieData.map(item => item.name), ['未知科室（009）', '未知科室'])
+  assert.deepEqual(hydrated.pieData.map(item => item.value), [20, 10])
+  assert.equal(payload.dimensionComparison[1].dimensions.科室, null)
+})
+
 test('viewer and preview normalization preserve codes and expose missing-name diagnostics', () => {
   const raw = dataset([{ 科室: '791', value: 12 }])
   for (const id of ['viewer', 'preview']) {
