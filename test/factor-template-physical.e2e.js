@@ -56,7 +56,7 @@ try {
   await until(() => evaluate('window.__editor.fields.length === 2'))
   assert.deepEqual(await evaluate('window.__editor.fields.map(f=>f.code)'), ['operation_date', 'surgery_level'])
   assert.equal(await evaluate('window.__editor.designer.periodFieldCode'), '')
-  await evaluate(`window.__editor.designer.periodFieldCode='operation_date';window.__editor.form.code='TEMPLATE_TEST';window.__editor.form.name='手术计数模板';window.__editor.designer.drillPathVersionIds=['102027642461473150'];window.__editor.addParameter();Object.assign(window.__editor.designer.parameters[0],{code:'LEVEL',displayName:'手术级别',dataType:'STRING',defaultValue:'3'});Object.assign(window.__editor.designer.templateFilter,{enabled:true,fieldCode:'surgery_level',parameterCode:'LEVEL'});window.__editor.save()`)
+  await evaluate(`window.__editor.designer.periodFieldCode='operation_date';window.__editor.form.code='TEMPLATE_TEST';window.__editor.form.name='手术计数模板';window.__editor.designer.drillPathVersionIds=['102027642461473150'];window.__editor.addParameter();Object.assign(window.__editor.designer.parameters[0],{code:'LEVEL',displayName:'手术级别',dataType:'STRING',defaultValue:'3'});window.__editor.designer.scopeMode='FILTERED';window.__editor.designer.filters={nodeType:'PREDICATE',fieldCode:'surgery_level',operator:'EQ',value:{parameterRef:'LEVEL'}};window.__editor.save()`)
   await until(() => evaluate(`window.__requests.some(r=>r.path==='/factor-templates')`))
   const payload = await evaluate(`window.__requests.find(r=>r.path==='/factor-templates').body`)
   assert.equal(payload.templateDefinition.primaryDomain.tableName, 'surgery')

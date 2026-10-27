@@ -32,6 +32,34 @@ const global = { components: { ElSelect: Select, ElInput: Input, ElButton: Butto
 const fields = [{ code: 'age', dataType: 'INTEGER', kind: 'NUMBER' }]
 const select = (wrapper, name) => wrapper.findAllComponents(Select).find(item => item.attributes('aria-label') === name)
 
+test('template conditions select declared parameters and keep them distinct from runtime parameters', async () => {
+  const condition = vue.reactive({ nodeType: 'PREDICATE', fieldCode: 'age', operator: 'GTE', value: 18 })
+  const wrapper = mount(Predicate, { props: { condition, fields, templateParameters: [{ code: 'AGE', displayName: '年龄下限', dataType: 'INTEGER' }] }, global })
+  select(wrapper, '条件值来源').vm.$emit('update:modelValue', 'TEMPLATE')
+  await vue.nextTick()
+  select(wrapper, '模板参数').vm.$emit('update:modelValue', 'AGE')
+  await vue.nextTick()
+  assert.deepEqual(condition.value, { parameterRef: 'AGE' })
+  assert.equal(condition.parameter, undefined)
+  assert.equal(select(wrapper, '条件值来源').props('modelValue'), 'TEMPLATE')
+  select(wrapper, '条件值来源').vm.$emit('update:modelValue', 'PARAMETER')
+  await vue.nextTick()
+  assert.equal(condition.value, '')
+  assert.equal(condition.parameter, 'businessValue')
+  wrapper.unmount()
+})
+
+test('expression comparisons bind typed template constants and restore without displaying objects', async () => {
+  const condition = vue.reactive({ nodeType: 'PREDICATE', left: { expressionType: 'FIELD', fieldCode: 'age' }, operator: 'GTE', right: { expressionType: 'LITERAL', dataType: 'INTEGER', value: { parameterRef: 'AGE' } } })
+  const wrapper = mount(Predicate, { props: { condition, fields, templateParameters: [{ code: 'AGE', displayName: '年龄下限', dataType: 'INTEGER' }] }, global })
+  assert.equal(select(wrapper, '条件值来源').props('modelValue'), 'TEMPLATE')
+  select(wrapper, '模板参数').vm.$emit('update:modelValue', 'AGE')
+  await vue.nextTick()
+  assert.deepEqual(condition.right, { expressionType: 'LITERAL', dataType: 'INTEGER', value: { parameterRef: 'AGE' } })
+  assert.doesNotMatch(wrapper.text(), /\[object Object\]/)
+  wrapper.unmount()
+})
+
 async function mountSourceEditor(overrides = {}) {
   const { descriptor } = parse(await readFile(new URL('../src/idmp/views/FactorEditor.vue', import.meta.url), 'utf8'))
   const script = compileScript(descriptor, { id: 'factor-source-modes' })

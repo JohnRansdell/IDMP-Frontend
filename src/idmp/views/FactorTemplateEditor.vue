@@ -32,7 +32,9 @@
           <el-form-item label="物理表" required><el-select v-model="designer.tableName" filterable :disabled="!designer.domainCode" :loading="loading.tables" placeholder="请选择数据域中的物理表" @change="handleTableChange"><el-option v-for="table in tables" :key="table.tableName" :label="optionLabel({ name: table.tableComment, code: table.tableName })" :value="table.tableName" /></el-select></el-form-item>
           <el-form-item label="聚合方式" prop="aggregation"><el-select v-model="designer.aggregation"><el-option v-for="item in aggregationOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
         </div>
-        <el-form-item label="聚合字段"><el-select v-model="designer.fieldCode" filterable clearable :disabled="!designer.tableName" placeholder="COUNT 可留空统计记录数；其他聚合方式需选择字段"><el-option v-for="field in aggregatableFields" :key="field.code" :label="optionLabel({ name: field.label, code: field.code })" :value="field.code" /></el-select></el-form-item>
+        <el-form-item label="统计对象"><el-radio-group :model-value="designer.fieldExpression ? 'EXPRESSION' : 'FIELD'" @update:model-value="designer.fieldExpression = $event === 'EXPRESSION' ? { expressionType: 'FIELD', fieldCode: designer.fieldCode } : null"><el-radio value="FIELD">物理字段</el-radio><el-radio value="EXPRESSION">字段表达式</el-radio></el-radio-group></el-form-item>
+        <el-form-item v-if="designer.fieldExpression" label="统计表达式"><FactorExpressionEditor v-model="designer.fieldExpression" :fields="fields" :template-parameters="designer.parameters" /></el-form-item>
+        <el-form-item v-else label="聚合字段"><el-select v-model="designer.fieldCode" filterable clearable :disabled="!designer.tableName" placeholder="COUNT 可留空统计记录数；其他聚合方式需选择字段"><el-option v-for="field in aggregatableFields" :key="field.code" :label="optionLabel({ name: field.label, code: field.code })" :value="field.code" /></el-select></el-form-item>
         <div class="grid">
           <el-form-item label="计算模式"><el-radio-group v-model="designer.calculationMode"><el-radio value="TEMPORAL">时序</el-radio><el-radio value="STATIC">静态</el-radio></el-radio-group></el-form-item>
           <el-form-item v-if="designer.calculationMode === 'TEMPORAL'" label="周期时间字段" required><el-select v-model="designer.periodFieldCode" filterable :disabled="!designer.tableName" placeholder="请选择本模板的周期时间字段"><el-option v-for="field in timeFields" :key="field.code" :label="optionLabel({ name: field.label, code: field.code })" :value="field.code" /></el-select><small>按模板的统计口径选择，实例化因子将使用此字段。</small></el-form-item>
@@ -63,19 +65,18 @@
         </el-table>
 
         <el-divider />
-        <div class="step-title"><span>5</span><div><h2>参数化筛选条件</h2></div></div>
-        <el-switch v-model="designer.templateFilter.enabled" active-text="使用参数化筛选条件" inactive-text="不设置筛选条件" />
-        <div v-if="designer.templateFilter.enabled" class="grid filter-grid">
-          <el-form-item label="筛选物理字段"><el-select v-model="designer.templateFilter.fieldCode" filterable :disabled="!designer.tableName" placeholder="请选择物理字段"><el-option v-for="field in fields" :key="field.code" :label="optionLabel({ name: field.label, code: field.code })" :value="field.code" /></el-select></el-form-item>
-          <el-form-item label="判断方式"><el-select v-model="designer.templateFilter.operator"><el-option label="等于（EQ）" value="EQ" /></el-select></el-form-item>
-          <el-form-item label="值来自模板参数"><el-select v-model="designer.templateFilter.parameterCode" placeholder="请选择上方定义的参数"><el-option v-for="parameter in designer.parameters" :key="parameter.code" :label="parameter.displayName ? `${parameter.displayName}（${parameter.code}）` : parameter.code" :value="parameter.code" /></el-select></el-form-item>
+        <div class="step-title"><span>5</span><div><h2>筛选范围</h2></div></div>
+        <el-alert v-if="unsupportedDefinition" title="此定义包含当前编辑器尚不支持的表达式，请在高级配置中修改后再保存。" type="warning" :closable="false" />
+        <div :inert="!editable || unsupportedDefinition">
+          <el-radio-group v-model="designer.scopeMode"><el-radio value="ALL">全部记录</el-radio><el-radio value="FILTERED" :disabled="!fields.length">显式筛选条件</el-radio></el-radio-group>
+          <FactorRuleBuilder v-if="designer.scopeMode === 'FILTERED'" :model-value="designer.filters" :fields="fields.filter(field => field.filterable !== false)" :template-parameters="designer.parameters" />
         </div>
-        <el-alert v-if="designer.templateFilter.enabled" type="info" :closable="false" title="保存时自动生成 parameterRef；实例化用户只能提交该参数的标准值编码。" />
+        <div class="condition-preview" aria-label="筛选口径预览"><strong>口径预览</strong><span>{{ conditionPreview }}</span></div>
 
         <el-divider />
         <el-collapse v-if="canManageTemplates" v-model="openPanels" class="advanced-panel">
           <el-collapse-item name="advanced">
-            <template #title>高级 JSON（仅用于导入历史模板或处理当前表单未覆盖的复杂筛选条件）</template>
+            <template #title>高级配置</template>
             <el-alert title="正常新建模板不需要填写 JSON。点击“从当前表单生成”可查看系统自动生成的定义；手工修改后请点击“导入到表单”，并重新校验。" type="warning" :closable="false" />
             <div class="advanced-actions"><el-button @click="refreshAdvancedJson">从当前表单生成</el-button><el-button type="primary" @click="applyAdvancedJson">导入到表单</el-button></div>
             <el-input v-model="advancedJson" type="textarea" :rows="16" class="mono" />
@@ -111,14 +112,18 @@ import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
 import { useRoute, useRouter } from 'vue-router'
 import PageHeader from '@/idmp/components/PageHeader.vue'
+import FactorRuleBuilder from '@/idmp/components/FactorRuleBuilder.vue'
+import FactorExpressionEditor from '@/idmp/components/FactorExpressionEditor.vue'
+import { editableFilterTree, hasUnsupportedFactorDslExpressions } from '@/idmp/utils/dslBuilder'
+import { withoutLegacyPeriod } from '@/idmp/utils/factorPeriod'
 import { fieldLabel, toUserMessage } from '@/idmp/utils/userMessage.js'
-import { fetchDataDomains, fetchPhysicalTableFields, fetchPhysicalTables, fetchSourceTableFields } from '@/idmp/api/modules/meta'
+import { fetchDataDomains, fetchPhysicalTableFields, fetchPhysicalTables, fetchSourceTableFields, fetchSourceTimeFieldOptions } from '@/idmp/api/modules/meta'
 import { adaptPhysicalTableList, adaptSemanticFieldList, adaptSourceFieldList } from '@/idmp/api/adapters/meta'
-import { adaptFactorPhysicalFields } from '@/idmp/api/adapters/factorMetadata'
-import { buildFactorTemplateDefinition, templatePeriodField } from '@/idmp/utils/factorTemplateDefinition'
+import { adaptFactorPhysicalFields, isFactorPeriodField } from '@/idmp/api/adapters/factorMetadata'
+import { buildFactorTemplateDefinition, templatePeriodField, validateTemplateConditions, describeTemplateConditions } from '@/idmp/utils/factorTemplateDefinition'
 import { createFactorTemplate, createFactorTemplateVersion, fetchAllFactorTemplateInstances as fetchFactorTemplateInstances, fetchFactorTemplateVersion, publishFactorTemplateVersion, updateFactorTemplateVersion, validateFactorTemplateVersion } from '@/idmp/api/modules/factors'
 
-import { fetchValueSets } from '@/idmp/api/modules/valueSets'
+import { fetchValueSets, fetchValueSetItems, fetchSemanticFieldValueSet } from '@/idmp/api/modules/valueSets'
 import { fetchAllPages } from '@/idmp/api/pagination.js'
 const valueSets = ref([])
 async function loadValueSets() { try { valueSets.value = await fetchAllPages(fetchValueSets, { status: 'PUBLISHED', size: 100 }) } catch (error) { ElMessage.error(error?.message || '值集读取失败') } }
@@ -144,7 +149,7 @@ const domains = ref([])
 const tables = ref([])
 const fields = ref([])
 const form = reactive({ code: '', name: '', description: '', factorTypeScope: 'AGGREGATE' })
-const designer = reactive({ domainCode: '', domainId: '', tableName: '', primaryOptions: {}, calculationMode: 'TEMPORAL', periodFieldCode: '', aggregation: 'COUNT', fieldCode: '', groupBy: [], runtimeParameters: [], output: { valueType: 'DECIMAL', unit: 'PERSON_TIME', precision: 30, scale: 10 }, allowedGrains: ['MONTHLY', 'YEARLY'], drillPathVersionIds: [], parameters: [], filters: { nodeType: 'TRUE' }, templateFilter: { enabled: false, fieldCode: '', operator: 'EQ', parameterCode: '' }, extraDefinition: {} })
+const designer = reactive({ domainCode: '', domainId: '', tableName: '', primaryOptions: {}, calculationMode: 'TEMPORAL', periodFieldCode: '', aggregation: 'COUNT', fieldCode: '', fieldExpression: null, groupBy: [], runtimeParameters: [], output: { valueType: 'DECIMAL', unit: 'PERSON_TIME', precision: 30, scale: 10 }, allowedGrains: ['MONTHLY', 'YEARLY'], drillPathVersionIds: [], parameters: [], filters: { nodeType: 'AND', children: [] }, scopeMode: 'ALL', extraDefinition: {} })
 let metadataRequestVersion = 0
 const rules = { name: [{ required: true, message: '请输入模板名称', trigger: 'blur' }], factorTypeScope: [{ required: true, message: '请选择因子类型范围', trigger: 'change' }] }
 const aggregationOptions = [{ value: 'COUNT', label: '记录计数' }, { value: 'COUNT_DISTINCT', label: '去重计数' }, { value: 'SUM', label: '数值求和' }, { value: 'AVG', label: '平均值' }, { value: 'MIN', label: '最小值' }, { value: 'MAX', label: '最大值' }]
@@ -152,7 +157,9 @@ const editable = computed(() => isCreate.value || (version.publicationStatus || 
 // 当前为产品演示环境：开放模板生命周期入口，服务端仍负责最终权限校验。
 const canManageTemplates = computed(() => true)
 const aggregatableFields = computed(() => fields.value.filter(field => field.aggregatable !== false))
-const timeFields = computed(() => fields.value.filter(field => ['DATE', 'DATETIME'].includes(field.dataType)))
+const timeFields = computed(() => fields.value.filter(isFactorPeriodField))
+const unsupportedDefinition = ref(false)
+const conditionPreview = computed(() => designer.scopeMode === 'ALL' ? '全部记录' : describeTemplateConditions(designer.filters, fields.value, designer.parameters))
 
 onMounted(async () => { await Promise.all([loadDomains(), loadValueSets()]); if (!isCreate.value) await load() })
 watch(() => route.params.versionId, (id, previous) => { if (id && id !== previous) load() })
@@ -179,7 +186,7 @@ async function handleDomainChange(code) {
   designer.tableName = ''
   designer.fieldCode = ''
   designer.periodFieldCode = ''
-  designer.templateFilter.fieldCode = ''
+  resetConditions()
   fields.value = []
   await loadTables()
 }
@@ -189,25 +196,49 @@ async function loadTables() {
   const requestId = ++metadataRequestVersion
   try { const result = adaptPhysicalTableList(await fetchPhysicalTables(designer.domainId)); if (requestId === metadataRequestVersion) tables.value = result.filter(table => !table.status || table.status === 'PUBLISHED') } catch (error) { if (requestId === metadataRequestVersion) ElMessage.error(error?.message || '物理表读取失败') } finally { if (requestId === metadataRequestVersion) loading.tables = false }
 }
-async function handleTableChange() { designer.fieldCode = ''; designer.periodFieldCode = ''; designer.templateFilter.fieldCode = ''; await loadFields() }
+function resetConditions() { designer.fieldExpression = null; designer.filters = { nodeType: 'AND', children: [] }; designer.scopeMode = 'ALL'; designer.groupBy = []; designer.extraDefinition = {}; designer.primaryOptions = {}; unsupportedDefinition.value = false }
+async function handleTableChange() { designer.fieldCode = ''; designer.periodFieldCode = ''; resetConditions(); await loadFields() }
 async function loadFields() {
   fields.value = []
   if (!designer.domainId || !designer.tableName) return
   loading.fields = true
   const requestId = ++metadataRequestVersion
   try {
-    const [mapped, source] = await Promise.all([fetchPhysicalTableFields(designer.domainId, designer.tableName), fetchSourceTableFields(designer.tableName)])
+    const [mapped, source, timeOptions] = await Promise.all([fetchPhysicalTableFields(designer.domainId, designer.tableName), fetchSourceTableFields(designer.tableName), fetchSourceTimeFieldOptions(designer.tableName)])
     if (requestId !== metadataRequestVersion) return
-    fields.value = adaptFactorPhysicalFields(adaptSemanticFieldList(mapped), adaptSourceFieldList(source), { isBase: true })
+    const loaded = adaptFactorPhysicalFields(adaptSemanticFieldList(mapped), adaptSourceFieldList(source), { isBase: true, timeFieldOptions: normalizeList(timeOptions) })
+    await Promise.all(loaded.map(async field => {
+      if (!field.id) return
+      const binding = await fetchSemanticFieldValueSet(field.id)
+      const published = binding?.publishedVersion
+      if (!binding?.bound || !published?.id) return
+      field.valueSetVersionId = String(published.id)
+      field.valueSetMatchMode = String(published.matchMode || binding.valueSet?.matchMode || '').toUpperCase()
+      if (field.valueSetMatchMode === 'CONTINUOUS') {
+        field.continuousSpec = published.continuousSpec || {}
+        field.valueSetBinding = { matchMode: 'CONTINUOUS', valueSetVersionId: field.valueSetVersionId, continuousSpec: field.continuousSpec }
+      } else {
+        field.options = published.items || await fetchValueSetItems(published.id)
+        if (field.options.length) field.kind = 'VALUE_SET'
+      }
+    }))
+    if (requestId !== metadataRequestVersion) return
+    fields.value = loaded
     const physicalCode = code => fields.value.find(field => field.code === code || field.semanticFieldCode === code)?.code || code
     designer.fieldCode = physicalCode(designer.fieldCode)
-    designer.templateFilter.fieldCode = physicalCode(designer.templateFilter.fieldCode)
+    const restore = node => {
+      if (!node || typeof node !== 'object') return
+      if (typeof node.fieldCode === 'string') node.fieldCode = physicalCode(node.fieldCode)
+      Object.values(node).forEach(restore)
+    }
+    restore(designer.filters)
+    restore(designer.fieldExpression)
     designer.periodFieldCode = physicalCode(designer.periodFieldCode)
   } catch (error) { if (requestId === metadataRequestVersion) ElMessage.error(error?.message || '物理字段读取失败') } finally { if (requestId === metadataRequestVersion) loading.fields = false }
 }
 function addParameter() { designer.parameters.push({ code: '', displayName: '', dataType: 'CODE', required: false, exposed: true, defaultValue: '', valueSourceType: 'FIXED', valueSourceRef: '', validation: { enum: [] }, displayOrder: designer.parameters.length }) }
 function buildDefinition() {
-  return buildFactorTemplateDefinition(designer)
+  return buildFactorTemplateDefinition(designer, fields.value)
 }
 function applyDefinition(definition, parameters) {
   const primary = definition.primaryDomain || {}
@@ -222,15 +253,13 @@ function applyDefinition(definition, parameters) {
   designer.runtimeParameters = definition.parameters || []
   designer.aggregation = definition.aggregation?.function || 'COUNT'
   designer.fieldCode = typeof definition.aggregation?.fieldCode === 'string' ? definition.aggregation.fieldCode : ''
+  designer.fieldExpression = definition.aggregation?.fieldExpression ? structuredClone(definition.aggregation.fieldExpression) : null
+  unsupportedDefinition.value = hasUnsupportedFactorDslExpressions(definition)
   designer.output = { valueType: definition.output?.valueType || 'DECIMAL', unit: definition.output?.unit || 'PERSON_TIME', precision: definition.output?.precision || 30, scale: definition.output?.scale ?? 10 }
   designer.allowedGrains = definition.allowedGrains || []
   designer.drillPathVersionIds = (definition.drillPathVersionIds || []).map(String)
-  designer.filters = definition.filters || { nodeType: 'TRUE' }
-  const children = definition.filters?.children || []
-  const businessChildren = children.filter(node => node.nodeType !== 'TRUE' && node.parameter !== 'period')
-  const predicate = definition.filters?.nodeType === 'PREDICATE' ? definition.filters : businessChildren.length === 1 ? businessChildren[0] : null
-  const parameterRef = predicate?.value?.parameterRef
-  designer.templateFilter = { enabled: Boolean(predicate && parameterRef), fieldCode: predicate?.fieldCode || '', operator: predicate?.operator || 'EQ', parameterCode: parameterRef || '' }
+  designer.filters = editableFilterTree(withoutLegacyPeriod(definition.filters), definition.parameters || [])
+  designer.scopeMode = designer.filters.children.length ? 'FILTERED' : 'ALL'
   designer.parameters = parameters.map((item, index) => ({ ...item, required: Boolean(item.required), exposed: item.exposed !== false, displayOrder: item.displayOrder ?? index, validation: { ...(item.validation || {}), enum: Array.isArray(item.validation?.enum) ? item.validation.enum : [] } }))
   const { schemaVersion, dslType, calculationMode, primaryDomain, filters, aggregation, groupBy, parameters: ignored, output, applicableDomains, allowedGrains, drillPathVersionIds, ...extra } = definition
   designer.extraDefinition = { ...extra, aggregationField: typeof aggregation?.fieldCode === 'object' ? { fieldCode: aggregation.fieldCode } : aggregation?.fieldRef ? { fieldRef: aggregation.fieldRef } : undefined }
@@ -238,27 +267,30 @@ function applyDefinition(definition, parameters) {
 }
 function refreshAdvancedJson() { advancedJson.value = json(buildDefinition()); ElMessage.success('已从表单生成 JSON 预览') }
 function applyAdvancedJson() { try { const definition = JSON.parse(advancedJson.value); applyDefinition(definition, designer.parameters); ElMessage.success('JSON 已导入到表单，请检查并保存') } catch { ElMessage.error('JSON 格式无效，无法导入') } }
-async function payload(includeCode = false) {
+async function payload() {
   if (!(await formRef.value?.validate().catch(() => false))) return null
+  if (unsupportedDefinition.value) { ElMessage.warning('当前定义包含不支持的表达式，不能覆盖保存'); return null }
+  if (loading.fields) { ElMessage.warning('请等待字段加载完成'); return null }
   if (!designer.domainCode) { ElMessage.warning('请选择主数据域'); return null }
   if (!designer.tableName) { ElMessage.warning('请选择物理表'); return null }
   if (designer.calculationMode === 'TEMPORAL' && !timeFields.value.some(field => field.code === designer.periodFieldCode)) { ElMessage.warning('请选择有效的周期时间字段'); return null }
-  if (designer.aggregation !== 'COUNT' && !designer.fieldCode && !designer.extraDefinition.aggregationField) { ElMessage.warning('请选择聚合字段'); return null }
+  if (designer.aggregation !== 'COUNT' && !designer.fieldExpression && !designer.fieldCode && !designer.extraDefinition.aggregationField) { ElMessage.warning('请选择聚合字段'); return null }
   const duplicate = designer.parameters.find((item, index) => !item.code || designer.parameters.some((other, otherIndex) => otherIndex < index && other.code === item.code))
   if (duplicate) { ElMessage.warning('模板参数编码不能为空且不能重复'); return null }
   const invalidDefault = designer.parameters.find(item => Array.isArray(item.validation?.enum) && item.validation.enum.length && item.defaultValue !== '' && item.defaultValue != null && !item.validation.enum.includes(item.defaultValue))
   if (invalidDefault) { ElMessage.warning(`参数“${invalidDefault.displayName || invalidDefault.code}”的默认值必须属于可选标准值`); return null }
-  if (designer.templateFilter.enabled && (!designer.templateFilter.fieldCode || !designer.templateFilter.parameterCode)) { ElMessage.warning('请完整选择参数化筛选字段和对应模板参数'); return null }
+  const conditionErrors = validateTemplateConditions(designer, fields.value)
+  if (conditionErrors.length) { ElMessage.warning(conditionErrors[0]); return null }
   const parameters = designer.parameters.map((item, index) => {
     const validation = { ...item.validation }
     if (!validation.enum?.length) delete validation.enum
     return { ...item, validation, displayOrder: index, defaultValue: item.defaultValue === '' ? null : item.defaultValue, valueSourceRef: item.valueSourceRef || null }
   })
   const data = { resourceVersion: version.resourceVersion, name: form.name, description: form.description, factorTypeScope: form.factorTypeScope, templateDefinition: buildDefinition(), outputDescriptor: { valueType: designer.output.valueType, unit: designer.output.unit }, parameters }
-  return includeCode ? { code: form.code, ...data } : data
+  return data
 }
 async function save() {
-  const data = await payload(isCreate.value)
+  const data = await payload()
   if (!data || saving.value) return
   saving.value = true
   try {
@@ -281,5 +313,5 @@ function listDiagnostics(value) { return Array.isArray(value) ? value.map(item =
 </script>
 
 <style scoped lang="scss">
-.editor-card { padding:20px; }.page-toolbar,.inline-fields,.advanced-actions { display:flex; align-items:center; gap:10px; }.step-title { display:flex; align-items:flex-start; gap:12px; margin:20px 0 14px; }.step-title > span { display:flex; align-items:center; justify-content:center; width:28px; height:28px; flex:0 0 auto; color:#fff; background:#1890ff; border-radius:50%; font-weight:600; }.step-title > div { flex:1; }.step-title h2 { margin:0 0 4px; font-size:16px; }.step-title p,.help { margin:0; color:#8c8c8c; font-size:13px; }.grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }.inline-fields :deep(.el-input-number) { width:50%; }.source-ref { margin-top:6px; }.advanced-panel { margin-top:20px; }.advanced-actions { margin:12px 0; }.editor-actions-bar { position:sticky; bottom:16px; z-index:5; display:flex; align-items:center; justify-content:space-between; gap:16px; margin-top:20px; padding:14px 16px; background:#fff; border:1px solid #91caff; border-radius:8px; box-shadow:0 6px 18px rgba(22,119,255,.12); }.editor-actions-bar > span { color:#595959; font-size:13px; }.mono :deep(textarea) { font-family:Consolas,monospace; font-size:12px; line-height:1.5; }.diagnostics { margin-top:16px; } @media(max-width:900px){.grid{grid-template-columns:1fr}.editor-actions-bar{align-items:flex-start;flex-direction:column}.editor-actions-bar .page-toolbar{flex-wrap:wrap}}
+.condition-preview { display:flex; gap:12px; padding:12px 0; font-size:13px; line-height:1.6; overflow-wrap:anywhere; }.condition-preview strong { flex-shrink:0; }.editor-card { padding:20px; }.page-toolbar,.inline-fields,.advanced-actions { display:flex; align-items:center; gap:10px; }.step-title { display:flex; align-items:flex-start; gap:12px; margin:20px 0 14px; }.step-title > span { display:flex; align-items:center; justify-content:center; width:28px; height:28px; flex:0 0 auto; color:#fff; background:#1890ff; border-radius:50%; font-weight:600; }.step-title > div { flex:1; }.step-title h2 { margin:0 0 4px; font-size:16px; }.step-title p,.help { margin:0; color:#8c8c8c; font-size:13px; }.grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }.inline-fields :deep(.el-input-number) { width:50%; }.source-ref { margin-top:6px; }.advanced-panel { margin-top:20px; }.advanced-actions { margin:12px 0; }.editor-actions-bar { position:sticky; bottom:16px; z-index:5; display:flex; align-items:center; justify-content:space-between; gap:16px; margin-top:20px; padding:14px 16px; background:#fff; border:1px solid #91caff; border-radius:8px; box-shadow:0 6px 18px rgba(22,119,255,.12); }.editor-actions-bar > span { color:#595959; font-size:13px; }.mono :deep(textarea) { font-family:Consolas,monospace; font-size:12px; line-height:1.5; }.diagnostics { margin-top:16px; } @media(max-width:900px){.grid{grid-template-columns:1fr}.editor-actions-bar{align-items:flex-start;flex-direction:column}.editor-actions-bar .page-toolbar{flex-wrap:wrap}}
 </style>

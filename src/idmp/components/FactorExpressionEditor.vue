@@ -6,23 +6,25 @@
     <SemanticFieldSelector v-if="modelValue?.expressionType === 'FIELD'" :model-value="referenceCode" :fields="fields" @update:model-value="patch({ fieldCode: $event, fieldRef: undefined })" />
     <template v-else-if="modelValue?.expressionType === 'LITERAL'">
       <el-select :model-value="modelValue.dataType" aria-label="常量类型" @update:model-value="patch({ dataType: $event, value: '' })"><el-option v-for="item in literalTypes" :key="item[0]" :value="item[0]" :label="item[1]" /></el-select>
-      <el-date-picker v-if="['DATE', 'DATETIME'].includes(modelValue.dataType)" :model-value="modelValue.value" :type="modelValue.dataType === 'DATE' ? 'date' : 'datetime'" :value-format="modelValue.dataType === 'DATE' ? 'YYYY-MM-DD' : 'YYYY-MM-DDTHH:mm:ss'" aria-label="常量值" @update:model-value="patch({ value: $event })" />
+      <el-select v-if="templateParameters !== null" :model-value="modelValue.value?.parameterRef !== undefined ? 'TEMPLATE' : 'FIXED'" aria-label="常量来源" @update:model-value="patch({ value: $event === 'TEMPLATE' ? { parameterRef: '' } : '' })"><el-option label="固定值" value="FIXED" /><el-option label="模板参数" value="TEMPLATE" /></el-select>
+      <el-select v-if="modelValue.value?.parameterRef !== undefined" :model-value="modelValue.value.parameterRef" aria-label="表达式模板参数" @update:model-value="patch({ value: { parameterRef: $event } })"><el-option v-for="item in templateParameters || []" :key="item.code" :value="item.code" :label="item.displayName || item.code" /></el-select>
+      <el-date-picker v-else-if="['DATE', 'DATETIME'].includes(modelValue.dataType)" :model-value="modelValue.value" :type="modelValue.dataType === 'DATE' ? 'date' : 'datetime'" :value-format="modelValue.dataType === 'DATE' ? 'YYYY-MM-DD' : 'YYYY-MM-DDTHH:mm:ss'" aria-label="常量值" @update:model-value="patch({ value: $event })" />
       <el-select v-else-if="modelValue.dataType === 'BOOLEAN'" :model-value="String(modelValue.value)" aria-label="布尔常量" @update:model-value="patch({ value: $event === 'true' })"><el-option label="是" value="true" /><el-option label="否" value="false" /></el-select>
       <el-input v-else :model-value="modelValue.value" aria-label="常量值" placeholder="常量值" @update:model-value="patch({ value: $event })" />
       <el-select v-if="modelValue.dataType === 'DURATION'" :model-value="modelValue.unit || 'HOUR'" aria-label="时长单位" @update:model-value="patch({ unit: $event })"><el-option v-for="item in durationUnits" :key="item[0]" :value="item[0]" :label="item[1]" /></el-select>
     </template>
     <template v-else-if="modelValue?.expressionType === 'BINARY'">
       <el-select :model-value="modelValue.operator" aria-label="算术运算" @update:model-value="patch({ operator: $event })"><el-option v-for="item in arithmetic" :key="item[0]" :value="item[0]" :label="item[1]" /></el-select>
-      <div class="expression-operands"><FactorExpressionEditor :model-value="modelValue.left" :fields="fields" :depth="depth + 1" @update:model-value="patch({ left: $event })" /><FactorExpressionEditor :model-value="modelValue.right" :fields="fields" :depth="depth + 1" @update:model-value="patch({ right: $event })" /></div>
+      <div class="expression-operands"><FactorExpressionEditor :model-value="modelValue.left" :fields="fields" :template-parameters="templateParameters" :depth="depth + 1" @update:model-value="patch({ left: $event })" /><FactorExpressionEditor :model-value="modelValue.right" :fields="fields" :template-parameters="templateParameters" :depth="depth + 1" @update:model-value="patch({ right: $event })" /></div>
     </template>
     <template v-else-if="modelValue?.expressionType === 'FUNCTION'">
       <el-select :model-value="modelValue.function" aria-label="文本函数" @update:model-value="changeFunction"><el-option v-for="item in functions" :key="item[0]" :value="item[0]" :label="item[1]" /></el-select>
-      <div class="expression-operands"><FactorExpressionEditor v-for="(argument, index) in modelValue.arguments" :key="index" :model-value="argument" :fields="fields" :depth="depth + 1" @update:model-value="updateArgument(index, $event)" /></div>
+      <div class="expression-operands"><FactorExpressionEditor v-for="(argument, index) in modelValue.arguments" :key="index" :model-value="argument" :fields="fields" :template-parameters="templateParameters" :depth="depth + 1" @update:model-value="updateArgument(index, $event)" /></div>
       <el-checkbox v-if="modelValue.function === 'SUBSTRING'" :model-value="modelValue.arguments.length === 3" @update:model-value="patch({ arguments: $event ? [...modelValue.arguments, literal('INTEGER', 1)] : modelValue.arguments.slice(0, 2) })">指定截取长度</el-checkbox>
     </template>
     <template v-else-if="modelValue?.expressionType === 'RANGE'">
       <el-select :model-value="modelValue.bounds || 'CLOSED'" aria-label="范围边界" @update:model-value="patch({ bounds: $event })"><el-option label="包含两端 [开始, 结束]" value="CLOSED" /><el-option label="不含结束 [开始, 结束)" value="HALF_OPEN" /><el-option label="不含开始 (开始, 结束]" value="HALF_CLOSED" /><el-option label="不含两端 (开始, 结束)" value="OPEN" /></el-select>
-      <div class="expression-operands"><FactorExpressionEditor :model-value="modelValue.start" :fields="fields" :depth="depth + 1" @update:model-value="patch({ start: $event })" /><FactorExpressionEditor :model-value="modelValue.end" :fields="fields" :depth="depth + 1" @update:model-value="patch({ end: $event })" /></div>
+      <div class="expression-operands"><FactorExpressionEditor :model-value="modelValue.start" :fields="fields" :template-parameters="templateParameters" :depth="depth + 1" @update:model-value="patch({ start: $event })" /><FactorExpressionEditor :model-value="modelValue.end" :fields="fields" :template-parameters="templateParameters" :depth="depth + 1" @update:model-value="patch({ end: $event })" /></div>
     </template>
   </div>
 </template>
@@ -30,7 +32,7 @@
 import { computed } from 'vue'
 import SemanticFieldSelector from './SemanticFieldSelector.vue'
 defineOptions({ name: 'FactorExpressionEditor' })
-const props = defineProps({ modelValue: Object, fields: { type: Array, default: () => [] }, depth: { type: Number, default: 0 }, allowRange: Boolean, rangeOnly: Boolean })
+const props = defineProps({ modelValue: Object, fields: { type: Array, default: () => [] }, depth: { type: Number, default: 0 }, allowRange: Boolean, rangeOnly: Boolean, templateParameters: { type: Array, default: null } })
 const emit = defineEmits(['update:modelValue'])
 const literalTypes = [['STRING', '文本'], ['CODE', '编码'], ['INTEGER', '整数'], ['DECIMAL', '小数'], ['BOOLEAN', '布尔值'], ['DATE', '日期'], ['DATETIME', '日期时间'], ['DURATION', '时长']]
 const durationUnits = [['SECOND', '秒'], ['MINUTE', '分钟'], ['HOUR', '小时'], ['DAY', '天']]

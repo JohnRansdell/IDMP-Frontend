@@ -5,11 +5,12 @@
       <SemanticFieldSelector v-if="!condition.left" :model-value="condition.fieldCode" :fields="fields" @update:model-value="changeField" />
       <el-select :model-value="condition.operator" aria-label="判断方式" @update:model-value="changeOperator"><el-option v-for="option in operators" :key="option[0]" :value="option[0]" :label="option[1]" /></el-select>
     </div>
-    <FactorExpressionEditor v-if="condition.left" :model-value="condition.left" :fields="fields" @update:model-value="set({ left: $event })" />
+    <FactorExpressionEditor v-if="condition.left" :model-value="condition.left" :fields="fields" :template-parameters="templateParameters" @update:model-value="set({ left: $event })" />
     <template v-if="!nullOperator">
       <div class="predicate-line">
-        <el-select v-if="!governedOperator && condition.operator !== 'BETWEEN'" :model-value="valueMode" aria-label="条件值来源" @update:model-value="changeValueMode"><el-option label="固定值" value="FIXED" /><el-option label="字段 / 表达式" value="EXPRESSION" /><el-option label="运行参数" value="PARAMETER" /></el-select>
+        <el-select v-if="!governedOperator && condition.operator !== 'BETWEEN'" :model-value="valueMode" aria-label="条件值来源" @update:model-value="changeValueMode"><el-option label="固定值" value="FIXED" /><el-option label="字段 / 表达式" value="EXPRESSION" /><el-option label="运行参数" value="PARAMETER" /><el-option v-if="templateParameters !== null" label="模板参数" value="TEMPLATE" /></el-select>
         <RuleValueEditor v-if="valueMode === 'FIXED' && !condition.right" :field="selectedField" :operator="condition.operator" :use-value-set="condition.operator === 'IN_VALUE_SET'" :model-value="condition.operator === 'IN_VALUE_SET' ? condition.itemCodes : condition.value" @update:model-value="changeValue" />
+        <el-select v-if="valueMode === 'TEMPLATE'" :model-value="templateParameter" aria-label="模板参数" placeholder="选择模板参数" @update:model-value="changeTemplateParameter"><el-option v-for="item in templateParameters || []" :key="item.code" :value="item.code" :label="item.displayName || item.code" /></el-select>
         <template v-if="valueMode === 'PARAMETER'">
           <el-input :model-value="condition.parameter" aria-label="运行参数名称" placeholder="参数名，如 minAge" maxlength="64" @update:model-value="set({ parameter: $event.trim() })" />
           <el-select :model-value="definition.type" aria-label="运行参数类型" @update:model-value="setDefinition({ type: $event })"><el-option v-for="item in parameterTypes" :key="item[0]" :value="item[0]" :label="item[1]" /></el-select>
@@ -17,7 +18,7 @@
           <el-select :model-value="definition.parameterMode" aria-label="参数用途" @update:model-value="setDefinition({ parameterMode: $event })"><el-option label="临时筛选" value="TEMPORARY" /><el-option label="维度条件" value="DIMENSION" /></el-select>
         </template>
       </div>
-      <FactorExpressionEditor v-if="condition.right" :model-value="condition.right" :fields="fields" :range-only="condition.operator === 'BETWEEN'" @update:model-value="set({ right: $event })" />
+      <FactorExpressionEditor v-if="condition.right && valueMode !== 'TEMPLATE'" :model-value="condition.right" :fields="fields" :template-parameters="templateParameters" :range-only="condition.operator === 'BETWEEN'" @update:model-value="set({ right: $event })" />
     </template>
   </div>
 </template>
@@ -27,13 +28,14 @@ import SemanticFieldSelector from './SemanticFieldSelector.vue'
 import RuleValueEditor from './RuleValueEditor.vue'
 import FactorExpressionEditor from './FactorExpressionEditor.vue'
 import { runtimeParameterDefinition } from '../utils/dslBuilder.js'
-const props = defineProps({ condition: { type: Object, required: true }, fields: { type: Array, default: () => [] } })
+const props = defineProps({ condition: { type: Object, required: true }, fields: { type: Array, default: () => [] }, templateParameters: { type: Array, default: null } })
 const emit = defineEmits(['update'])
 const selectedField = computed(() => props.fields.find(item => item.code === props.condition.fieldCode))
 const continuous = computed(() => String(selectedField.value?.valueSetMatchMode || selectedField.value?.valueSetBinding?.matchMode || '').toUpperCase() === 'CONTINUOUS')
 const nullOperator = computed(() => ['IS_NULL', 'IS_NOT_NULL'].includes(props.condition.operator))
 const governedOperator = computed(() => props.condition.operator === 'IN_VALUE_SET' || props.condition.operator === 'BETWEEN' && continuous.value && !props.condition.left)
-const valueMode = computed(() => props.condition.valueSource === 'PARAMETER' || props.condition.parameter ? 'PARAMETER' : props.condition.right && props.condition.right.expressionType !== 'LITERAL' ? 'EXPRESSION' : 'FIXED')
+const templateParameter = computed(() => props.condition.value?.parameterRef ?? props.condition.right?.value?.parameterRef)
+const valueMode = computed(() => templateParameter.value !== undefined ? 'TEMPLATE' : props.condition.valueSource === 'PARAMETER' || props.condition.parameter ? 'PARAMETER' : props.condition.right && props.condition.right.expressionType !== 'LITERAL' ? 'EXPRESSION' : 'FIXED')
 const definition = computed(() => runtimeParameterDefinition(props.condition, props.fields))
 const parameterTypes = [['STRING', '文本'], ['INTEGER', '整数'], ['DECIMAL', '小数'], ['BOOLEAN', '布尔值'], ['DATE', '日期'], ['DATETIME', '日期时间']]
 const operators = computed(() => {
@@ -56,10 +58,16 @@ function changeOperator(operator) {
 }
 function changeValueMode(mode) {
   clearValue()
-  if (mode === 'PARAMETER') set({ valueSource: 'PARAMETER', parameter: 'businessValue', parameterDefinition: { type: definition.value.type, required: false, parameterMode: 'TEMPORARY' } })
+  if (mode === 'TEMPLATE') changeTemplateParameter('')
+  else if (mode === 'PARAMETER') set({ valueSource: 'PARAMETER', parameter: 'businessValue', parameterDefinition: { type: definition.value.type, required: false, parameterMode: 'TEMPORARY' } })
   else if (mode === 'EXPRESSION') set({ right: { expressionType: 'FIELD', fieldCode: '' } })
   else if (props.condition.left) set({ right: { expressionType: 'LITERAL', dataType: selectedField.value?.dataType || 'DECIMAL', value: '' } })
   else emit('update')
+}
+function changeTemplateParameter(code) {
+  const parameter = props.templateParameters?.find(item => item.code === code)
+  const dataType = ['CODE', 'FIELD_REF', 'VALUE_SET'].includes(parameter?.dataType) ? 'STRING' : parameter?.dataType || 'STRING'
+  set(props.condition.left ? { right: { expressionType: 'LITERAL', dataType, value: { parameterRef: code } } } : { value: { parameterRef: code } })
 }
 function changeValue(value) { set(props.condition.operator === 'IN_VALUE_SET' ? { itemCodes: Array.isArray(value) ? value : [] } : { value }) }
 </script>

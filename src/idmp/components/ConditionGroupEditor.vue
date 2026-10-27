@@ -11,9 +11,9 @@
         <el-button link type="danger" :aria-label="`删除${childLabel(child, index)}`" @click="removeChild(index)">{{ isGroup(child) ? '删除条件组' : '删除条件' }}</el-button>
       </div>
       <div v-if="isExpanded(child)" class="rule-row__body" role="region" :aria-label="childLabel(child, index)">
-        <FactorPredicateEditor v-if="child.nodeType === 'PREDICATE'" :condition="child" :fields="fields" @update="emitUpdate" />
+        <FactorPredicateEditor v-if="child.nodeType === 'PREDICATE'" :condition="child" :fields="fields" :template-parameters="templateParameters" @update="emitUpdate" />
         <span v-else-if="child.nodeType === 'TRUE'">全部记录</span>
-        <ConditionGroupEditor v-else :node="child" :fields="fields" :depth="depth + 1" @update="emitUpdate" />
+        <ConditionGroupEditor v-else :node="child" :fields="fields" :template-parameters="templateParameters" :depth="depth + 1" @update="emitUpdate" />
       </div>
     </div>
     <div class="rule-actions"><el-button link type="primary" @click="addPredicate">添加条件</el-button><el-button link :disabled="depth >= 10" @click="addGroup">添加条件组</el-button></div>
@@ -24,7 +24,7 @@ import { computed, shallowRef } from 'vue'
 import { ArrowRight } from '@element-plus/icons-vue'
 import FactorPredicateEditor from './FactorPredicateEditor.vue'
 defineOptions({ name: 'ConditionGroupEditor' })
-const props = defineProps({ node: { type: Object, required: true }, fields: { type: Array, default: () => [] }, depth: { type: Number, default: 0 } })
+const props = defineProps({ node: { type: Object, required: true }, fields: { type: Array, default: () => [] }, depth: { type: Number, default: 0 }, templateParameters: { type: Array, default: null } })
 const emit = defineEmits(['update'])
 const contentNode = computed(() => props.node.nodeType === 'NOT' ? props.node.child : props.node)
 const combinationMode = computed(() => props.node.nodeType === 'NOT' ? `NOT_${contentNode.value.nodeType}` : props.node.nodeType)
