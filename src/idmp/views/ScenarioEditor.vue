@@ -35,7 +35,7 @@
         </div>
         <el-table :data="boundIndicators" row-key="indicatorVersionId" table-layout="fixed" max-height="420" :empty-text="capabilities.canEdit ? '暂未关联指标，请选择已发布指标版本后添加。' : '当前场景暂无关联指标'">
           <el-table-column label="指标名称" min-width="220"><template #default="{ row }"><span class="indicator-name">{{ row.indicatorName || '未命名指标' }}</span></template></el-table-column>
-          <el-table-column label="版本" width="100"><template #default="{ row }"><CodeTooltip :code="row.indicatorVersionId" label="指标版本 ID"><span>{{ row.indicatorVersionNo ? `V${row.indicatorVersionNo}` : '版本号未提供' }}</span></CodeTooltip></template></el-table-column>
+          <el-table-column label="版本" width="100"><template #default="{ row }"><span>{{ row.indicatorVersionNo ? `V${row.indicatorVersionNo}` : '版本号未提供' }}</span></template></el-table-column>
           <el-table-column label="必选" width="90"><template #default="{ row }"><el-switch v-if="capabilities.canEdit" v-model="row.required" :disabled="!editable" :aria-label="`${row.indicatorName || '未命名指标'}是否必选`" /><span v-else>{{ row.required ? '必选' : '可选' }}</span></template></el-table-column>
           <el-table-column label="上报要求" min-width="240"><template #default="{ row }"><el-input v-if="capabilities.canEdit" v-model="row.reportRequirementText" :disabled="!editable" placeholder="填写上报要求（可选）" /><span v-else class="report-text">{{ row.reportRequirementText || '—' }}</span></template></el-table-column>
           <el-table-column label="操作" :width="capabilities.canEdit ? 140 : 80" fixed="right"><template #default="{ row }"><el-button link type="primary" :loading="openingIndicatorId === row.indicatorVersionId" @click="openIndicator(row)">查看</el-button><el-button v-if="capabilities.canEdit" link type="danger" :disabled="!editable" :aria-label="`移除${row.indicatorName || '未命名指标'}`" @click="removeIndicator(row.indicatorVersionId)">移除</el-button></template></el-table-column>
@@ -51,7 +51,6 @@ import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
 import { useRoute, useRouter } from 'vue-router'
 import PageHeader from '@/idmp/components/PageHeader.vue'
-import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
 import { fetchIndicatorVersion, fetchAllIndicatorVersions } from '@/idmp/api/modules/indicators'
 import { createScenarioVersion, fetchScenarioVersion, fetchScenarioVersions, publishScenarioVersion, replaceScenarioIndicators, updateScenarioVersion, validateScenarioVersion } from '@/idmp/api/modules/scenarios'
 import { normalizeResourceId, PERIOD_TYPES, publicationStatusLabel, SCENARIO_TYPES, scenarioDetailToForm, scenarioFormToPatch, scenarioVersionCapabilities, toIndicatorBinding } from '@/idmp/api/adapters/scenario'
@@ -66,7 +65,7 @@ const indicatorOptions = ref([])
 const pendingIndicatorId = ref('')
 const openingIndicatorId = ref('')
 let loadRevision = 0
-const form = reactive({ scenarioId: '', versionId: '', code: '', name: '', type: 'CUSTOM', description: '', governingOrgName: '', defaultPeriodType: 'MONTHLY', defaultParameters: {}, defaultDataSourcePriority: {}, displayText: '', effectiveStartDate: '', effectiveEndDate: '', effectiveRange: [], resourceVersion: 0, publicationStatus: 'UNKNOWN', versionNo: '-', indicators: [] })
+const form = reactive({ scenarioId: '', versionId: '', name: '', type: 'CUSTOM', description: '', governingOrgName: '', defaultPeriodType: 'MONTHLY', defaultParameters: {}, defaultDataSourcePriority: {}, displayText: '', effectiveStartDate: '', effectiveEndDate: '', effectiveRange: [], resourceVersion: 0, publicationStatus: 'UNKNOWN', versionNo: '-', indicators: [] })
 const capabilities = computed(() => scenarioVersionCapabilities(form.publicationStatus))
 const editable = computed(() => capabilities.value.canEdit && !saving.value && !publishing.value)
 const readOnlyMessage = computed(() => ({

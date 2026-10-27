@@ -1283,7 +1283,7 @@ function toEditorFactor(item) {
   const domain = item.dsl?.primaryDomain?.domainCode || item.domainCode || item.domain || '-'
   return {
     code: item.factorCode || item.code || `FV-${item.id}`,
-    name: item.factorName || item.name || item.factorCode || item.code || `因子版本 ${item.id}`,
+    name: item.factorName || item.name || '未命名因子',
     aggregation,
     category: item.category || (item.status ? getStatusLabel(item.status) : '已发布版本'),
     domain,

@@ -70,7 +70,7 @@
           <div v-if="current.nodeType === 'FACTOR_REF'" class="scalar-factor-row">
             <div class="formula-dropzone scalar-factor" :class="{ 'is-selected': samePath(selectedPath, activePath), 'is-drop-target': dropTarget === keyOf(activePath) }" :data-drop-path="keyOf(activePath)" role="button" tabindex="0" aria-label="当前因子槽位" :aria-pressed="samePath(selectedPath, activePath)" @click="selectSlot(activePath)" @keydown.enter.prevent="selectSlot(activePath)" @keydown.space.prevent="selectSlot(activePath)">
               <el-icon><Tickets /></el-icon>
-              <span class="slot-piece"><strong>{{ pieceLabel(current) }}</strong><small>{{ currentFactor?.code || current.factorVersionId }} | {{ getAggregationLabel(currentFactor?.aggregation) }} | {{ currentFactor?.domain || '-' }}</small></span>
+              <span class="slot-piece"><strong>{{ pieceLabel(current) }}</strong><small>{{ getAggregationLabel(currentFactor?.aggregation) }} | {{ currentFactor?.domain || '-' }}</small></span>
             </div>
             <el-tooltip content="更换因子"><el-button text :icon="RefreshRight" :disabled="disabled" aria-label="更换因子" @click="selectSlot(activePath)" /></el-tooltip>
           </div>
@@ -99,7 +99,7 @@
       <div class="composer-factors" aria-label="可拖入因子" v-loading="loading">
         <button v-for="factor in filteredFactors" :key="factor.versionId" type="button" class="factor-piece" :disabled="disabled" :draggable="false" :data-factor-version="String(factor.versionId)" :aria-label="`添加因子 ${factor.name}`" @pointerdown="startPointerDrag($event, { kind: 'factor', versionId: String(factor.versionId) })" @dragstart="startDrag($event, { kind: 'factor', versionId: String(factor.versionId) })" @dragend="finishDrag" @click="clickItem({ kind: 'factor', versionId: String(factor.versionId) })">
           <el-icon><Tickets /></el-icon>
-          <span class="factor-details"><strong>{{ factor.name }}</strong><small>{{ factor.code || factor.versionId }} | {{ getAggregationLabel(factor.aggregation) }} | {{ factor.domain || '-' }}</small></span>
+          <span class="factor-details"><strong>{{ factor.name }}</strong><small>{{ getAggregationLabel(factor.aggregation) }} | {{ factor.domain || '-' }}</small></span>
           <span class="factor-add">添加</span>
         </button>
         <el-empty v-if="!loading && !filteredFactors.length" :image-size="40" :description="search ? '没有匹配的因子' : '暂无可选因子'" />

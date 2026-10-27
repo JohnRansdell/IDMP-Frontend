@@ -10,7 +10,7 @@ export function resolveAnalysisPerformanceTarget(versionId, ...analyses) {
 }
 
 export function createAnalysisProfile(indicator, performanceTarget, display) {
-  const name = indicator?.name || indicator?.code || '未命名指标'
+  const name = indicator?.name || '未命名指标'
   const unit = display?.format === 'PERCENT' ? '%' : resultUnit(indicator?.unit || indicator?.displayUnit || '')
   const targetValue = resultNumber(performanceTarget?.targetValue) !== null
     && String(performanceTarget.targetValue).trim() !== ''

@@ -111,7 +111,6 @@ export function scenarioDetailToForm(detail) {
   return {
     scenarioId: scenario.id,
     versionId: version.id,
-    code: scenario.code || '',
     name: scenario.name || '',
     type: scenario.type || 'CUSTOM',
     description: scenario.description || '',

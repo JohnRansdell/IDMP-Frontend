@@ -23,7 +23,7 @@ import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import { fetchAllFactorTemplates as fetchFactorTemplates, fetchFactorTemplateVersions } from '@/idmp/api/modules/factors'
 import { computed } from 'vue'
-const router = useRouter(); const loading = ref(false); const rows = ref([]); const filters = reactive({ code: '', name: '', publicationStatus: '' })
+const router = useRouter(); const loading = ref(false); const rows = ref([]); const filters = reactive({ name: '', publicationStatus: '' })
 // 当前为产品演示环境：开放模板生命周期入口，服务端仍负责最终权限校验。
 const canManageTemplates = computed(() => true)
 async function load() { loading.value = true; try { const result = await fetchFactorTemplates({ ...filters, page: 1, size: 100 }); rows.value = list(result) } catch (error) { rows.value = []; ElMessage.error(error?.message || '模板目录读取失败') } finally { loading.value = false } }
@@ -37,7 +37,7 @@ onMounted(load)
   :deep(.el-form) { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px; }
   :deep(.el-form-item) { margin: 0; }
 }
-.filter-code { width: 140px; }
+
 .filter-name { width: 200px; }
 .filter-select { width: 156px; }
 .filter-select--small { width: 112px; }

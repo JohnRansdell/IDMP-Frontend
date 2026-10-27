@@ -72,8 +72,8 @@ const loadError = ref('')
 const saving = ref(false)
 const createOpen = ref(false)
 const formRef = ref()
-const filters = reactive({ code: '', name: '', type: '', publicationStatus: '' })
-const form = reactive({ code: '', name: '', type: 'CUSTOM', defaultPeriodType: 'MONTHLY', governingOrgName: '', description: '' })
+const filters = reactive({ name: '', type: '', publicationStatus: '' })
+const form = reactive({ name: '', type: 'CUSTOM', defaultPeriodType: 'MONTHLY', governingOrgName: '', description: '' })
 const rules = { name: [{ required: true, message: '请输入场景名称' }], type: [{ required: true, message: '请选择场景类型' }], defaultPeriodType: [{ required: true, message: '请选择默认周期' }] }
 
 async function load() {
@@ -90,7 +90,7 @@ async function load() {
   } finally { loading.value = false }
 }
 
-function reset() { Object.assign(filters, { code: '', name: '', type: '', publicationStatus: '' }); page.value = 1; load() }
+function reset() { Object.assign(filters, { name: '', type: '', publicationStatus: '' }); page.value = 1; load() }
 async function open(row) {
   try {
     let versions = []
@@ -121,7 +121,7 @@ onMounted(load)
 .scenario-list { min-width: 0; }
 .scenario-filter :deep(.el-form) { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px; }
 .scenario-filter :deep(.el-form-item) { margin: 0; }
-.filter-code { width: 140px; }
+
 .filter-name { width: 200px; }
 .filter-select { width: 156px; }
 .filter-select--small { width: 112px; }

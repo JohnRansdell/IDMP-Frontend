@@ -426,7 +426,7 @@ test('a factor selected before any mode uses a selectable factor item and can be
   await w.get('[data-factor-version="11"]').trigger('click')
   const slot = w.get('[aria-label="当前因子槽位"]')
   assert.equal(slot.get('strong').text(), '出院总费用')
-  assert.equal(slot.get('small').text(), 'TOTAL_COST | 数值求和 | 住院病案')
+  assert.equal(slot.get('small').text(), '数值求和 | 住院病案')
   assert.equal(w.find('.scalar-piece').exists(), false)
   await w.get('[aria-label="更换因子"]').trigger('click')
   assert.equal(slot.attributes('aria-pressed'), 'true')
@@ -463,13 +463,13 @@ test('a constant selected before any mode has a compact value field and grouped 
   w.unmount()
 })
 
-test('nested factor cards use the standard name, code, aggregation and domain format with an add action', async () => {
+test('nested factor cards show name, aggregation and domain without exposing resource codes', async () => {
   const w = mountEditor(undefined, { factors: [{ versionId: '11', name: '总费用', code: 'TOTAL_COST', aggregation: 'SUM', domain: '住院病案' }, { versionId: '12', name: '旧因子' }] })
   const cards = w.findAll('.factor-piece')
   assert.equal(cards[0].get('strong').text(), '总费用')
-  assert.equal(cards[0].get('small').text(), 'TOTAL_COST | 数值求和 | 住院病案')
+  assert.equal(cards[0].get('small').text(), '数值求和 | 住院病案')
   assert.equal(cards[0].get('.factor-add').text(), '添加')
-  assert.equal(cards[1].get('small').text(), '12 | - | -')
+  assert.equal(cards[1].get('small').text(), '- | -')
   await w.get('[data-mode="QUOTIENT"]').trigger('click')
   await cards[0].get('.factor-add').trigger('click')
   assert.equal(latest(w).left.factorVersionId, '11')

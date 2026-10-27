@@ -1,7 +1,7 @@
 <template>
   <div class="idmp-page value-set-detail-page">
     <PageHeader :title="valueSet?.name || '值集详情'">
-      <template #meta><span class="data-source-badge is-live">真实接口</span><span class="header-meta">{{ valueSet?.code || '—' }}</span></template>
+      <template #meta><span class="data-source-badge is-live">真实接口</span></template>
       <template #actions><el-button @click="router.push({ name: 'ValueSetManagement' })">返回值集列表</el-button><el-button :loading="loading" @click="loadAll">刷新</el-button></template>
     </PageHeader>
     <StatePanel v-if="error" type="error" title="值集详情加载失败" :description="error" />

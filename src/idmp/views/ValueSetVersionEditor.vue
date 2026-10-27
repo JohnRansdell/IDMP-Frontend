@@ -1,7 +1,7 @@
 <template>
   <div class="idmp-page value-set-editor-page">
     <PageHeader :title="`值集版本 ${version?.versionNo ? `V${version.versionNo}` : '编辑'}`">
-      <template #meta><span class="data-source-badge is-live">真实接口</span><span class="header-meta">{{ valueSet?.code || '—' }} · {{ version?.publicationStatus ? getStatusLabel(version.publicationStatus) : '加载中' }}</span></template>
+      <template #meta><span class="data-source-badge is-live">真实接口</span><span class="header-meta">{{ version?.publicationStatus ? getStatusLabel(version.publicationStatus) : '加载中' }}</span></template>
       <template #actions><el-button @click="back">返回详情</el-button><el-button :loading="loading" @click="load">刷新</el-button></template>
     </PageHeader>
 

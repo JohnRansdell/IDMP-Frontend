@@ -15,6 +15,7 @@ test('所有页面与公共组件均不提供资源编码控件或列，业务�
     const { descriptor, errors } = parse(fs.readFileSync(file, 'utf8'))
     assert.deepEqual(errors, [], file)
     const visit = node => {
+      if (node.type === 5) assert.doesNotMatch(node.content.content, /\b(?:valueSet|template|scenario|factor|indicator|dashboard|mapping|policy|dataDomain)\??\.(?:code|factorCode|indicatorCode)\b/, `${file}: ${node.content.content}`)
       if (['el-form-item', 'el-table-column', 'el-descriptions-item', 'CodeTooltip'].includes(node.tag)) {
         const label = node.props?.find(prop => prop.type === 6 && prop.name === 'label')?.value?.content || ''
         assert.equal(forbidden.test(label), false, `${file}: ${label}`)
@@ -24,6 +25,13 @@ test('所有页面与公共组件均不提供资源编码控件或列，业务�
     }
     if (descriptor.template?.ast) visit(descriptor.template.ast)
     assert.doesNotMatch(descriptor.scriptSetup?.content || '', /请输入(?:指标|因子|模板|场景|值集|数据域|规则|映射|政策文件)编码/, file)
+  }
+})
+
+test('资源名称缺失时也不回退显示资源编码', () => {
+  for (const relative of ['views/IndicatorEditor.vue', 'features/analysis/overviewPresentation.js', 'api/adapters/indicator.js', 'api/adapters/scenario.js', 'features/mapping/presentation.js']) {
+    const source = fs.readFileSync(path.join(root, relative), 'utf8')
+    assert.doesNotMatch(source, /(?:name|Name)\s*\|\|\s*(?:item|indicator|factor|scenario|mapping)\??\.(?:code|factorCode|indicatorCode)/, relative)
   }
 })
 
