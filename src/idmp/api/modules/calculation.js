@@ -1,10 +1,11 @@
 import { requestJson } from '@/idmp/api/request'
+import { closedPeriodToQuery } from '../../utils/periodRange.js'
 
 export function createCalcBatch(payload, idempotencyKey) {
   return requestJson('/calc/batches', {
     method: 'POST',
     headers: idempotencyKey ? { 'X-Idempotency-Key': idempotencyKey } : undefined,
-    body: JSON.stringify(payload)
+    body: JSON.stringify(closedPeriodToQuery(payload))
   })
 }
 

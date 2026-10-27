@@ -3,6 +3,7 @@ import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import { JSDOM } from 'jsdom'
+import { formatResultPeriod } from '../src/idmp/utils/periodRange.js'
 import { canonicalDrillRootResultId } from '../src/idmp/api/adapters/drill.js'
 import { formatResultNumber, formatResultValue } from '../src/idmp/features/shared/resultPresentation.js'
 import { assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation } from '../src/idmp/features/analysis/drillContext.js'
@@ -29,8 +30,8 @@ const Button = vue.defineComponent({ setup: (_, { slots }) => () => vue.h('butto
 
 function create(fetchResultFactors = async () => ({ context: {}, factors: [] }), props = {}, drillResponse = {}, interactive = false) {
   const requests = []
-  const component = Function('vue', 'deps', `const { createRequestScope, useRoute, useRouter, StatePanel, FactorTraceTree, searchResultDrill, fetchResultFactors, limitDrillNextLevels, isStatusRecord, getStatusLabel, fetchDepartmentNames, isDepartmentLevel, namedDrillRecord, canonicalDrillRootResultId, assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation, formatResultNumber, formatResultValue } = deps;\n${bindings}\n${code}`)(vue, {
-    createRequestScope, formatResultNumber, formatResultValue,
+  const component = Function('vue', 'deps', `const { createRequestScope, useRoute, useRouter, StatePanel, FactorTraceTree, searchResultDrill, fetchResultFactors, limitDrillNextLevels, isStatusRecord, getStatusLabel, fetchDepartmentNames, isDepartmentLevel, namedDrillRecord, canonicalDrillRootResultId, assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation, formatResultNumber, formatResultValue, formatResultPeriod } = deps;\n${bindings}\n${code}`)(vue, {
+    createRequestScope, formatResultNumber, formatResultValue, formatResultPeriod,
     canonicalDrillRootResultId, assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation,
     useRoute: () => ({ query: {} }), useRouter: () => ({ push() {}, replace() {} }),
     StatePanel: vue.defineComponent({ props: ['title'], setup: props => () => vue.h('div', props.title) }),
@@ -59,6 +60,16 @@ function create(fetchResultFactors = async () => ({ context: {}, factors: [] }),
   return { wrapper, requests }
 }
 function button(wrapper, text) { return wrapper.findAll('button').find(item => item.text() === text) }
+
+test('drill banner and exported report both show the inclusive final date', async () => {
+  const { wrapper } = create(undefined, {}, {
+    context: { periodStart: '2026-03-01T00:00:00', periodEnd: '2026-04-01T00:00:00' }
+  })
+  await flushPromises()
+  assert.equal(wrapper.find('.drill-context-bar__period').text(), '统计周期：2026-03-01 至 2026-03-31')
+  assert.match(wrapper.vm.getReportSnapshot().section.description, /^2026-03-01 至 2026-03-31；/)
+  wrapper.unmount()
+})
 
 test('organization clicks use each selected result anchor and restore the hospital when navigating back', async () => {
   const { wrapper, requests } = create(undefined, {

@@ -5,7 +5,7 @@ import { dashboardDetailToSchema } from '../src/idmp/api/adapters/dashboard.js'
 
 test('published dashboard widgets query their persisted indicator version for the selected month', () => {
   assert.deepEqual(buildPublishedIndicatorAnalysisQuery({ analysisIndicatorVersionId: '102027642460303757' }, '2025-12'), {
-    indicatorVersionId: '102027642460303757', granularity: 'MONTHLY', periodStart: '2025-12-01', periodEnd: '2026-01-01'
+    indicatorVersionId: '102027642460303757', granularity: 'MONTHLY', periodStart: '2025-12-01', periodEnd: '2025-12-31'
   })
 })
 
@@ -22,14 +22,14 @@ test('published dashboard widgets support a bounded inclusive month range', () =
     periodStart: '2025-09-01', periodEnd: '2026-05-01'
   })
   assert.deepEqual(buildPublishedIndicatorAnalysisQuery({ analysisIndicatorVersionId: '102027642460303757' }, ['2025-09', '2026-04']), {
-    indicatorVersionId: '102027642460303757', granularity: 'MONTHLY', periodStart: '2025-09-01', periodEnd: '2026-05-01'
+    indicatorVersionId: '102027642460303757', granularity: 'MONTHLY', periodStart: '2025-09-01', periodEnd: '2026-04-30'
   })
 })
 
-test('a newly added source outside the dashboard range gets its latest month as a half-open period', () => {
+test('a newly added source outside the dashboard range gets its latest month as a closed period', () => {
   const options = [{ value: '2026-09' }, { value: '2026-08' }]
   assert.deepEqual(suggestIndependentWidgetPeriod(options, ['2026-01', '2026-03']), {
-    periodMode: 'INDEPENDENT', periodStart: '2026-09-01', periodEnd: '2026-10-01', granularity: 'MONTHLY'
+    periodMode: 'INDEPENDENT', periodStart: '2026-09-01', periodEnd: '2026-09-30', granularity: 'MONTHLY'
   })
   assert.equal(suggestIndependentWidgetPeriod(options, ['2026-08', '2026-10']), null)
   assert.equal(suggestIndependentWidgetPeriod([], ['2026-01', '2026-03']), null)

@@ -351,7 +351,6 @@
             <div v-if="!isStaticIndicator" class="indicator-trial-period">
               <div>
                 <strong>本次试算周期</strong>
-                <small>仅作为本次运行参数，按半开区间 [开始时间，结束时间) 同时传给分子和分母因子。</small>
               </div>
               <el-date-picker
                 v-model="indicatorTrialPeriod"
@@ -427,7 +426,7 @@
                   <el-table-column label="结果状态" width="120"><template #default="{ row }">{{ getStatusLabel(row.outcomeStatus || selectedIndicatorTrialTarget.outcomeStatus || '-') }}</template></el-table-column>
                 </el-table>
                 <div class="workflow-trial-results__footer">
-                  <span>{{ selectedIndicatorTrialTarget.periodStart || indicatorTrialResultSet.periodStart || '-' }} 至 {{ selectedIndicatorTrialTarget.periodEnd || indicatorTrialResultSet.periodEnd || '-' }}</span>
+                  <span>{{ formatResultPeriod(selectedIndicatorTrialTarget.periodStart || indicatorTrialResultSet.periodStart, selectedIndicatorTrialTarget.periodEnd || indicatorTrialResultSet.periodEnd) }}</span>
                   <el-pagination :current-page="selectedIndicatorTrialTarget.pageNum" :page-size="selectedIndicatorTrialTarget.pageSize" :total="selectedIndicatorTrialTarget.total" :disabled="workflowLoading.result" layout="total, prev, pager, next" @current-change="loadIndicatorTrialPage" />
                 </div>
               </template>
@@ -551,6 +550,7 @@
 </template>
 
 <script setup>
+import { formatResultPeriod } from '@/idmp/utils/periodRange.js'
 import IndicatorWorkflowOverview from '@/idmp/features/indicator/components/IndicatorWorkflowOverview.vue'
 import IndicatorPublishPanel from '@/idmp/features/indicator/components/IndicatorPublishPanel.vue'
 import { useIndicatorPublicationState } from '@/idmp/features/indicator/useIndicatorPublicationState.js'

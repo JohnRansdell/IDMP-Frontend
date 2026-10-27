@@ -1,6 +1,7 @@
 import { IDMP_CHART_COLORS } from '../../charts/theme.js'
 import { formatResultValue, hasResultDisplay, resultChartNumber, resultUnit } from '../shared/resultPresentation.js'
 import { formatPeriodLabel } from './reportPeriod.js'
+import { formatResultPeriod } from '../../utils/periodRange.js'
 
 const isChartNumber = value => value !== null && value !== '' && Number.isFinite(Number(value))
 const isCompleteDateRange = range => Array.isArray(range) && Boolean(range[0] && range[1])
@@ -23,7 +24,7 @@ export function formatTrendPeriodLabel(item, granularity) {
     const month = Number(start.slice(5, 7))
     return `${start.slice(0, 4)}-Q${Math.ceil(month / 3)}`
   }
-  return formatPeriodLabel(item?.periodStart, item?.periodEnd)
+  return formatResultPeriod(item?.periodStart, item?.periodEnd)
 }
 
 function createTrendFromBackendAnalysis(payload, { unit, display, granularity, range, sourceDefaultRange }) {

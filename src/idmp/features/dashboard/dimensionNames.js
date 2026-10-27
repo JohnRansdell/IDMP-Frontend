@@ -1,4 +1,5 @@
 import { transformResultRows } from './resultRows.js'
+import { formatResultPeriodField } from '../../utils/periodRange.js'
 
 // Member codes remain query keys. Display fields and labels never replace them.
 export const DEPARTMENT_FIELD_PAIRS = [
@@ -120,6 +121,7 @@ export function normalizeDepartmentDataset(dataset, { paths = [], names = new Ma
 export function visibleDimensionName(row, dimension, dataset = {}) {
   const field = dimension.field
   const raw = dimensionFieldValue(row, field)
+  if (['periodstart', 'periodend'].includes(String(field).replaceAll('_', '').toLowerCase())) return formatResultPeriodField(field, raw)
   const configured = Object.entries(dataset.dimensionLevels || {}).find(([key]) => key.toLowerCase() === String(field).toLowerCase())?.[1]
   const department = (dataset.departmentFields || []).some(key => key.toLowerCase() === String(field).toLowerCase())
     || departmentPairs.some(pair => pair.some(key => key.toLowerCase() === String(field).toLowerCase()))

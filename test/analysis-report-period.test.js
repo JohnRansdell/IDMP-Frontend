@@ -88,7 +88,7 @@ test('formal request owns its version, inclusive dates and prefixed filters, not
   }
 })
 
-test('legacy exclusive dates are decoded once then survive route and request round trips', () => {
+test('closed custom dates survive route and request round trips without losing a day', () => {
   const legacy = { granularity: 'CUSTOM', periodStart: '2024-02-01', periodEnd: '2024-03-01', 'filter.OUT_DEPT_CODE': ['15', '16'] }
   const context = analysisReportContext(legacy)
   const route = { ...legacy, ...reportPeriodQuery(context) }
@@ -96,7 +96,7 @@ test('legacy exclusive dates are decoded once then survive route and request rou
   assert.deepEqual(restored, context)
   const request = buildReportSummaryRequest({ indicatorId: '11', versionId: '22', range: restored.range,
     granularity: restored.summaryGranularity, filters: analysisFilters(route) })
-  assert.equal(request.payload.periodEnd, '2024-03-01T00:00:00')
+  assert.equal(request.payload.periodEnd, '2024-03-02T00:00:00')
   assert.equal(request.mode, 'INSTANT')
   assert.deepEqual(request.payload.filters, { OUT_DEPT_CODE: ['15', '16'] })
 })

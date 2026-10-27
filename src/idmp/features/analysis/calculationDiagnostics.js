@@ -1,3 +1,5 @@
+import { closedPeriodToQuery, formatResultPeriod } from '../../utils/periodRange.js'
+
 export function diagnosticPeriodQuery(versionId, periodRange = [], granularity = 'MONTHLY') {
   const query = { indicatorVersionId: String(versionId), granularity }
   if (granularity === 'STATIC') return query
@@ -5,7 +7,7 @@ export function diagnosticPeriodQuery(versionId, periodRange = [], granularity =
   if (!/^\d{4}-\d{2}-\d{2}$/.test(start || '') || !/^\d{4}-\d{2}-\d{2}$/.test(end || '') || start > end) return null
   if (![start, end].every(value => Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value)) return null
   query.periodStart = start
-  query.periodEnd = new Date(Date.parse(`${end}T00:00:00Z`) + 86400000).toISOString().slice(0, 10)
+  query.periodEnd = end
   return query
 }
 
@@ -18,7 +20,8 @@ export function diagnosticResults(analysis, query) {
     if (query.granularity !== 'STATIC') {
       const start = String(row.periodStart || '').slice(0, 10)
       const end = String(row.periodEnd || '').slice(0, 10)
-      if (!start || !end || start < query.periodStart || start >= query.periodEnd || end <= start || end > query.periodEnd) continue
+      const exclusiveEnd = closedPeriodToQuery(query).periodEnd.slice(0, 10)
+      if (!start || !end || start < query.periodStart || start >= exclusiveEnd || end <= start || end > exclusiveEnd) continue
     }
     results.set(String(row.resultId), row)
   }
@@ -29,7 +32,7 @@ export function diagnosticResultLabel(row) {
   const dimensions = row.dimensions || {}
   const names = Object.entries(dimensions).filter(([key, value]) => /name$/i.test(key) && value != null && value !== '').map(([, value]) => value)
   const members = names.length ? names.join(' / ') : Object.entries(dimensions).map(([key, value]) => `${key}：${value}`).join(' / ')
-  const period = row.periodStart ? String(row.periodStart).slice(0, 10) : '静态结果'
+  const period = row.periodStart ? formatResultPeriod(row.periodStart, row.periodEnd) : '静态结果'
   return `${period} · ${members || '汇总结果'} · ${row.displayValue ?? row.value ?? '-'} · #${String(row.resultId).slice(-6)}`
 }
 

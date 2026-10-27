@@ -1,4 +1,5 @@
 import { requestJson } from '@/idmp/api/request'
+import { closedPeriodToQuery } from '../../utils/periodRange.js'
 
 export function createSqlImport(payload, idempotencyKey, options = {}) {
   return requestJson('/sql-imports', {
@@ -21,7 +22,7 @@ export function trialSqlImport(importId, payload, idempotencyKey) {
   return requestJson(`/sql-imports/${encodeURIComponent(importId)}/trial`, {
     method: 'POST',
     headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
-    body: JSON.stringify(payload)
+    body: JSON.stringify(closedPeriodToQuery(payload))
   })
 }
 

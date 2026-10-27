@@ -1,4 +1,5 @@
 import { describeWarningCondition } from '../../api/adapters/warning.js'
+import { formatResultPeriod } from '../../utils/periodRange.js'
 import { isDepartmentCodeField } from '../shared/departmentDictionary.js'
 
 const TIME_KEYS = new Set(['time_year', 'time_quarter', 'time_month', 'time_day', 'time_week'])
@@ -36,10 +37,10 @@ export function warningEventScope(event) {
 }
 
 export function warningEventPeriod(event) {
+  if (event.comparisonContext?.periodType === 'STATIC') return '静态结果'
   if (!event.periodStart || !event.periodEnd) return '未记录统计周期'
-  const format = value => String(value).replace('T', ' ')
   const label = PERIOD_LABELS[event.comparisonContext?.periodType]
-  return `${label ? `${label} · ` : ''}${format(event.periodStart)} ～ ${format(event.periodEnd)}（不含结束时刻）`
+  return `${label ? `${label} · ` : ''}${formatResultPeriod(event.periodStart, event.periodEnd)}`
 }
 
 export function warningEventCondition(event) {

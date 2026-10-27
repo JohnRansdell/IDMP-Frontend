@@ -1,4 +1,5 @@
 import { numericValue } from './fieldCatalog.js'
+import { formatResultPeriodField } from '../../utils/periodRange.js'
 import { visibleDimensionName } from './dimensionNames.js'
 import { chartColorKey } from './visualStyle.js'
 import { toUserMessage } from '../../utils/userMessage.js'
@@ -118,10 +119,10 @@ export function formatDashboardKpiMetric(value, { unit = '', displayValue } = {}
   }
   return { value: formatDashboardMetric(value), unit: visibleUnit }
 }
-export function formatDashboardTableMetric(value, { unit = '', aggregation, semanticType = 'measure', displayValue } = {}) {
+export function formatDashboardTableMetric(value, { id, unit = '', aggregation, semanticType = 'measure', displayValue } = {}) {
   if (semanticType === 'measure' && aggregation !== 'count' && hasResultDisplay(displayValue)) return String(displayValue).trim()
   if (value === null || value === undefined) return '—'
-  if (semanticType !== 'measure') return String(value)
+  if (semanticType !== 'measure') return String(formatResultPeriodField(id, value))
   if (typeof value === 'string' && /^[+-]?(?:\d+\.?\d*|\.\d+)\s*%$/.test(value.trim())) return value.trim()
   if (numericValue(value) === null) return '—'
   if (aggregation !== 'count' && normalizeDashboardMetricUnit(unit) === '%') {

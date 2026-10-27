@@ -27,7 +27,7 @@ test('all non-time dimensions and exact member values remain visible with option
 })
 
 test('period uses the frozen bounds, not the much later warning trigger date', () => {
-  assert.equal(warningEventPeriod(event()), '月度 · 2026-04-01 00:00:00 ～ 2026-05-01 00:00:00（不含结束时刻）')
+  assert.equal(warningEventPeriod(event()), '月度 · 2026-04-01 至 2026-04-30')
   assert.equal(warningEventPeriod({ triggerTime: event().triggerTime }), '未记录统计周期')
   assert.equal(warningEventPeriod({ ...event(), periodEnd: null }), '未记录统计周期')
 })

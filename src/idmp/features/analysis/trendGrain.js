@@ -1,5 +1,6 @@
 import { dimensionDisplayFields, dimensionFieldValue, isMemberName } from '../dashboard/dimensionNames.js'
 import { deriveDrillPathResultIds } from '../../api/adapters/drill.js'
+import { resultPeriodToClosedRange } from '../../utils/periodRange.js'
 
 export function trendGrainField(code, paths = []) {
   const level = paths.flatMap(path => path.levels || []).find(level =>
@@ -52,7 +53,7 @@ export async function loadTrendGrainMemberNames(options) {
     visited.add(String(period.periodStart))
     signal?.throwIfAborted()
     const current = await loadAnalysis({ indicatorVersionId: options.versionId, granularity: analysis.granularity || 'MONTHLY',
-      periodStart: String(period.periodStart).slice(0, 10), periodEnd: String(period.periodEnd).slice(0, 10) })
+      periodStart: String(period.periodStart).slice(0, 10), periodEnd: resultPeriodToClosedRange(period.periodStart, period.periodEnd, { dates: true })[1] })
     if (String(current?.indicatorVersionId || '') !== String(options.versionId)) continue
     const additional = await loadTrendGrainSnapshotNames({ ...options, analysis: current, requiredCodes: requiredCodes.filter(code => !names.has(String(code))) })
     for (const [code, name] of additional) names.set(code, name)

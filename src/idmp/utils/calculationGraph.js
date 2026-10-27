@@ -1,4 +1,5 @@
 import dagre from '@dagrejs/dagre'
+import { formatResultPeriod } from './periodRange.js'
 
 export const NODE_LABELS = { FACTOR: '原子因子', DERIVED_FACTOR: '复合因子', FORMULA: '指标公式', INDICATOR: '指标公式', QUALITY_CHECK: '质量校验' }
 const PERIOD_LABELS = { YEAR: '年度', YEARLY: '年度', QUARTER: '季度', QUARTERLY: '季度', MONTH: '月度', MONTHLY: '月度', DAY: '日度', DAILY: '日度', STATIC: '静态' }
@@ -14,7 +15,8 @@ export function targetTitle(target, index = 0) {
 }
 
 export function targetPeriod(target) {
-  return [PERIOD_LABELS[target.periodType] || '', target.periodStart && target.periodEnd ? `${target.periodStart} 至 ${target.periodEnd}（不含）` : ''].filter(Boolean).join(' · ')
+  if (target.periodType === 'STATIC') return '静态'
+  return [PERIOD_LABELS[target.periodType] || '', target.periodStart && target.periodEnd ? formatResultPeriod(target.periodStart, target.periodEnd) : ''].filter(Boolean).join(' · ')
 }
 
 export function layoutCalculationGraph(input = []) {

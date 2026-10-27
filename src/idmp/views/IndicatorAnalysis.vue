@@ -92,7 +92,7 @@
           <el-collapse-item name="results" :title="`查询结果明细（${runtimeQueryRows.length} 条）`">
             <el-table :data="runtimeQueryRows" border max-height="420" empty-text="当前条件没有结果">
               <el-table-column v-for="column in runtimeQueryColumns" :key="column" :prop="column" :label="column" min-width="140">
-                <template #default="{ row }">{{ formatRuntimeQueryCell(row[column]) }}</template>
+                <template #default="{ row }">{{ formatRuntimeQueryCell(formatResultPeriodField(column, row[column])) }}</template>
               </el-table-column>
             </el-table>
           </el-collapse-item>
@@ -276,6 +276,7 @@ import { buildSqlRuntimeParameterValues, collectSqlRuntimeParameters, validateSq
 import { exportIndicatorAnalysisPdf } from '@/idmp/api/modules/indicators'
 import { analysisPdfFilename, buildAnalysisPdfReport, downloadAnalysisPdf, renderAnalysisChartPng } from '@/idmp/features/analysis/pdfReport'
 import { formatPeriodLabel, analysisReportContext, resolveReportPeriod, reportPeriodQuery, normalizeAnalysisGranularity, shiftReportDate, analysisFilterParams, analysisFilters, analysisRouteKey } from '@/idmp/features/analysis/reportPeriod.js'
+import { formatResultPeriod, formatResultPeriodField } from '@/idmp/utils/periodRange.js'
 import { buildReportSummaryRequest } from '@/idmp/features/analysis/reportQuery.js'
 import { createRequestScope, useLatestResult } from '@/idmp/features/analysis/useLatestResult.js'
 import { useReportSummary } from '@/idmp/features/analysis/useReportSummary.js'
@@ -1237,7 +1238,7 @@ function rememberAnalysisPeriod(indicatorId, versionId, range) {
 function formatAnalysisPeriod(result) {
   if (backendAnalysisGranularity.value === 'STATIC') return '静态结果'
   if (!result?.periodStart || !result?.periodEnd) return ''
-  return `${String(result.periodStart).slice(0, 10)} ～ ${String(result.periodEnd).slice(0, 10)}`
+  return formatResultPeriod(result.periodStart, result.periodEnd)
 }
 
 function formatRange(range) {

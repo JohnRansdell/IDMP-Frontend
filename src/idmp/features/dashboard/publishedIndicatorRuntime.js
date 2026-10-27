@@ -1,3 +1,5 @@
+import { resultPeriodToClosedRange } from '../../utils/periodRange.js'
+
 function dateRangeForMonth(value) {
   const match = /^(\d{4})-(\d{2})$/.exec(String(value || ''))
   if (!match) return {}
@@ -43,16 +45,18 @@ export function suggestIndependentWidgetPeriod(options = [], dashboardRange = []
   return {
     periodMode: 'INDEPENDENT',
     periodStart: `${month}-01`,
-    periodEnd: nextMonthStart(month),
+    periodEnd: resultPeriodToClosedRange(`${month}-01`, nextMonthStart(month), { dates: true })[1],
     granularity: 'MONTHLY'
   }
 }
 
 export function buildPublishedIndicatorAnalysisQuery(source = {}, period = '') {
+  const range = dateRangeForMonths(period)
+  const dates = resultPeriodToClosedRange(range.periodStart, range.periodEnd, { dates: true })
   return {
     indicatorVersionId: String(source.analysisIndicatorVersionId || source.indicatorVersionId || ''),
     granularity: 'MONTHLY',
-    ...dateRangeForMonths(period)
+    ...(dates.length ? { periodStart: dates[0], periodEnd: dates[1] } : {})
   }
 }
 

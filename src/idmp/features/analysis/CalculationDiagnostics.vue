@@ -37,6 +37,7 @@ import { fetchResultFactors } from '@/idmp/api/modules/drill'
 import { fetchCalcBatch } from '@/idmp/api/modules/calculation'
 import FactorTraceTree from '@/idmp/components/FactorTraceTree.vue'
 import { getStatusLabel } from '@/idmp/design/status'
+import { formatResultPeriod } from '@/idmp/utils/periodRange.js'
 import { diagnosticPeriodQuery, diagnosticResultLabel, diagnosticResults, validateDiagnosticTrace } from './calculationDiagnostics.js'
 
 const props = defineProps({
@@ -51,7 +52,7 @@ let generation = 0, traceGeneration = 0, resultController, traceController
 const options = computed(() => results.value.map(row => ({ value: String(row.resultId), label: diagnosticResultLabel(row) })))
 const batchId = computed(() => String(trace.value?.context?.calculationBatchId || ''))
 const tracePeriod = computed(() => trace.value?.context?.periodStart
-  ? `${trace.value.context.periodStart.slice(0, 10)} ～ ${trace.value.context.periodEnd?.slice(0, 10) || '-'}（结束不含）` : '静态结果')
+  ? formatResultPeriod(trace.value.context.periodStart, trace.value.context.periodEnd) : '静态结果')
 const valueText = value => value === null || value === undefined ? '未返回' : typeof value === 'object' ? JSON.stringify(value) : String(value)
 
 function clearTrace() {

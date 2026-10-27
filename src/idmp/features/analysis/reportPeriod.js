@@ -48,11 +48,9 @@ export function reportPeriodQuery(context) {
 }
 
 export function analysisReportContext(query = {}) {
-  // Old dashboard links used CUSTOM and an exclusive end. New links carry inclusive report dates.
-  const legacyCustom = String(query.granularity).toUpperCase() === 'CUSTOM'
   const range = query.periodStart && query.periodEnd ? [String(query.periodStart).slice(0, 10),
-    legacyCustom ? shiftReportDate(query.periodEnd, -1) : String(query.periodEnd).slice(0, 10)] : []
-  const summaryGranularity = String(query.summaryGranularity || (legacyCustom ? 'CUSTOM' : query.granularity) || 'MONTHLY').toUpperCase()
+    String(query.periodEnd).slice(0, 10)] : []
+  const summaryGranularity = String(query.summaryGranularity || query.granularity || 'MONTHLY').toUpperCase()
   return { ...resolveReportPeriod(range, summaryGranularity), granularity: normalizeAnalysisGranularity(query.granularity) }
 }
 

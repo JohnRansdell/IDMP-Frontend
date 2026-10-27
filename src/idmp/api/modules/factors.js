@@ -1,5 +1,6 @@
 import { requestJson } from '@/idmp/api/request'
 import { fetchAllPages } from '../pagination.js'
+import { closedPeriodToQuery } from '../../utils/periodRange.js'
 
 export const fetchAllFactors = (params = {}) => fetchAllPages(fetchFactors, params)
 export const fetchAllFactorTemplates = (params = {}) => fetchAllPages(fetchFactorTemplates, params)
@@ -97,7 +98,7 @@ export function trialFactorVersion(versionId, payload, idempotencyKey) {
   return requestJson(`/factor-versions/${versionId}/trial`, {
     method: 'POST',
     headers: idempotencyKey ? { 'X-Idempotency-Key': idempotencyKey } : undefined,
-    body: JSON.stringify(payload)
+    body: JSON.stringify(closedPeriodToQuery(payload))
   })
 }
 
@@ -106,7 +107,7 @@ export function queryFactorVersion(versionId, payload, options = {}) {
     method: 'POST',
     timeoutMs: 120000,
     cache: options.cache,
-    body: JSON.stringify(payload)
+    body: JSON.stringify(closedPeriodToQuery(payload))
   })
 }
 

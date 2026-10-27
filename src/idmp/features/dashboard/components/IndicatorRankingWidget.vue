@@ -7,7 +7,7 @@
         <h3 v-if="groups.length > 1">{{ group.unit || '无单位' }}<span v-if="group.period"> · {{ group.period }}</span></h3>
         <ol><li v-for="(item, index) in group.items" :key="item.id" :class="{ 'is-selected': designer && item.id === selectedItemId }" @click.stop="designer && emit('select-item', item.id)">
           <span class="indicator-ranking__rank">{{ item.numericValue === null ? '—' : index + 1 }}</span>
-          <div class="indicator-ranking__name"><span :title="item.label">{{ item.label }}</span><small v-if="item.message" :title="item.message">{{ item.message }}</small><small v-else-if="item.periodStart">{{ item.periodStart.slice(0, 10) }} 至 {{ item.periodEnd.slice(0, 10) }}</small></div>
+          <div class="indicator-ranking__name"><span :title="item.label">{{ item.label }}</span><small v-if="item.message" :title="item.message">{{ item.message }}</small><small v-else-if="item.periodStart">{{ formatResultPeriod(item.periodStart, item.periodEnd) }}</small></div>
           <strong>{{ item.value }}<small>{{ item.unit }}</small></strong>
           <button v-if="item.loadStatus === 'ERROR'" type="button" @pointerdown.stop @click.stop="emit('retry', item.id)">重试</button>
         </li></ol>
@@ -20,6 +20,7 @@
 
 <script setup>
 import { computed, inject } from 'vue'
+import { formatResultPeriod } from '../../../utils/periodRange.js'
 import { normalizeMetricGroupConfig } from '../metricGroup.js'
 import { metricItemModel } from '../metricItemModel.js'
 import { resolveWidgetVisualStyle } from '../visualStyle.js'

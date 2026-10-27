@@ -1,3 +1,5 @@
+import { resultPeriodToClosedRange } from './periodRange.js'
+
 export function normalizeTrialPeriodRecommendation(payload = {}) {
   const data = payload?.data ?? payload ?? {}
   return {
@@ -18,11 +20,11 @@ export function normalizeTrialPeriodRecommendation(payload = {}) {
 }
 
 export function isCompleteTrialPeriod(period) {
-  return Array.isArray(period) && period.length === 2 && Boolean(period[0]) && Boolean(period[1]) && String(period[0]) < String(period[1])
+  return Array.isArray(period) && period.length === 2 && Boolean(period[0]) && Boolean(period[1]) && String(period[0]) <= String(period[1])
 }
 
 export function recommendationPeriod(recommendation) {
-  const period = [recommendation?.recommendedPeriodStart || '', recommendation?.recommendedPeriodEnd || '']
+  const period = resultPeriodToClosedRange(recommendation?.recommendedPeriodStart, recommendation?.recommendedPeriodEnd)
   return isCompleteTrialPeriod(period) ? period : []
 }
 

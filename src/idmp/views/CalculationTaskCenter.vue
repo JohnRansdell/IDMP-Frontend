@@ -726,8 +726,8 @@ async function createSelectedBatch() {
     ElMessage.warning('请输入完整的计算时间范围')
     return
   }
-  if (new Date(createForm.periodStart).getTime() >= new Date(createForm.periodEnd).getTime()) {
-    ElMessage.warning('结束时间必须晚于开始时间')
+  if (new Date(createForm.periodStart).getTime() > new Date(createForm.periodEnd).getTime()) {
+    ElMessage.warning('结束时间不能早于开始时间')
     return
   }
 

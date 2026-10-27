@@ -1,4 +1,5 @@
 import { requestJson, requestPdf } from '@/idmp/api/request'
+import { closedPeriodToQuery } from '../../utils/periodRange.js'
 import { normalizeIndicatorAnalysisParams, normalizeIndicatorRangeSummaryParams } from '@/idmp/api/adapters/indicator'
 import { fetchAllPages } from '../pagination.js'
 
@@ -99,7 +100,7 @@ export function trialIndicatorVersion(versionId, payload, idempotencyKey) {
   return requestJson(`/indicator-versions/${versionId}/trial`, {
     method: 'POST',
     headers: idempotencyKey ? { 'X-Idempotency-Key': idempotencyKey } : undefined,
-    body: JSON.stringify(payload)
+    body: JSON.stringify(closedPeriodToQuery(payload))
   })
 }
 
@@ -108,7 +109,7 @@ export function queryIndicatorVersion(versionId, payload, options = {}) {
     method: 'POST',
     timeoutMs: 120000,
     cache: options.cache,
-    body: JSON.stringify(payload)
+    body: JSON.stringify(closedPeriodToQuery(payload))
   })
 }
 

@@ -5,7 +5,6 @@ import { compileScript, parse } from '@vue/compiler-sfc'
 import { JSDOM } from 'jsdom'
 import { createAnalysisProfile, createOverviewPresentation } from '../src/idmp/features/analysis/overviewPresentation.js'
 import { createAnalysisTrendPresentation } from '../src/idmp/features/analysis/trendPresentation.js'
-import { createDepartmentRankRows, departmentDrillContext } from '../src/idmp/features/analysis/departmentRanking.js'
 import { DRILL_GRANULARITIES } from '../src/idmp/features/analysis/drillPeriods.js'
 import { periodOptions } from '../src/idmp/features/analysis/indicatorProfiles.js'
 
@@ -13,6 +12,7 @@ const dom = new JSDOM('<!doctype html><html><body></body></html>')
 for (const key of ['window', 'document', 'HTMLElement', 'SVGElement', 'Element', 'Node', 'Document', 'Text', 'Comment']) globalThis[key] = dom.window[key]
 Object.defineProperty(globalThis, 'navigator', { configurable: true, value: dom.window.navigator })
 const vue = await import('vue')
+const { createDepartmentRankRows, departmentDrillContext } = await import('../src/idmp/features/analysis/departmentRanking.js')
 const { mount } = await import('@vue/test-utils')
 const slot = name => vue.defineComponent({ name, setup: (_, { slots }) => () => vue.h('div', [slots.title?.(), slots.default?.()]) })
 const Control = vue.defineComponent({ props: ['modelValue', 'disabled', 'loading', 'remoteMethod'], emits: ['update:modelValue', 'change'], setup: (_, { slots }) => () => vue.h('div', slots.default?.()) })

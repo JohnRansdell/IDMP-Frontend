@@ -3,7 +3,6 @@
     <div class="query-header">
       <h2>查询条件</h2>
       <div class="query-context">
-        <span v-if="calculationMode === 'TEMPORAL'">结束时间不包含在查询范围内</span>
         <el-button :icon="Refresh" size="small" circle title="刷新查询条件" aria-label="刷新查询条件" :disabled="schemaLoading" @click="load" />
       </div>
     </div>
@@ -15,7 +14,7 @@
         <div class="query-controls">
           <div v-if="calculationMode === 'TEMPORAL'" class="query-period">
             <label>查询周期</label>
-            <el-date-picker v-model="period" type="datetimerange" value-format="YYYY-MM-DDTHH:mm:ss" range-separator="至" start-placeholder="开始时间" end-placeholder="结束时间（不含）" aria-label="因子查询周期" :disabled="recommendationLoading" />
+            <el-date-picker v-model="period" type="datetimerange" value-format="YYYY-MM-DDTHH:mm:ss" range-separator="至" start-placeholder="开始时间" end-placeholder="结束时间" aria-label="因子查询周期" :disabled="recommendationLoading" />
           </div>
           <RuntimeParameterFields v-if="declarations.length" v-model="values" :declarations="declarations" :show-metadata="false" />
           <span v-else-if="calculationMode !== 'TEMPORAL'" class="query-empty-parameters">无需填写运行参数</span>
@@ -94,7 +93,7 @@ async function runQuery() {
   queryError.value = ''; result.value = null
   const error = validateSqlRuntimeParameterValues(declarations.value, values.value)
   if (error) { queryError.value = error; return }
-  if (props.calculationMode === 'TEMPORAL' && (period.value?.length !== 2 || !period.value[0] || !period.value[1] || period.value[0] >= period.value[1])) { queryError.value = '请选择开始时间早于结束时间的完整查询周期'; return }
+  if (props.calculationMode === 'TEMPORAL' && (period.value?.length !== 2 || !period.value[0] || !period.value[1] || period.value[0] > period.value[1])) { queryError.value = '请选择开始时间不晚于结束时间的完整查询周期'; return }
   const revision = ++queryRevision, token = generation
   const payload = { parameters: buildSqlRuntimeParameterValues(declarations.value, values.value), ...(props.calculationMode === 'TEMPORAL' ? { periodStart: period.value[0], periodEnd: period.value[1] } : {}) }
   queryLoading.value = true

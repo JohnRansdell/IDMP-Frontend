@@ -27,9 +27,9 @@ test('fixed component inclusive dates are not shifted twice', () => {
   assert.equal(route.summaryGranularity, 'QUARTERLY')
 })
 
-test('old CUSTOM links recover exclusive dates without changing ordinary manual report dates', () => {
+test('all user-facing route dates are closed regardless of calculation mode', () => {
   assert.deepEqual(analysisReportContext({ granularity: 'CUSTOM', periodStart: '2026-01-01', periodEnd: '2026-04-01' }), {
-    mode: 'INSTANT', granularity: 'MONTHLY', summaryGranularity: 'CUSTOM', range: ['2026-01-01', '2026-03-31']
+    mode: 'INSTANT', granularity: 'MONTHLY', summaryGranularity: 'CUSTOM', range: ['2026-01-01', '2026-04-01']
   })
   assert.equal(analysisReportContext({ granularity: 'MONTHLY', periodStart: '2026-01-01', periodEnd: '2026-04-01' }).range[1], '2026-04-01')
   assert.equal(formalReportGranularity(['2026-01-01', '2026-02-28'], 'MONTHLY'), 'CUSTOM')

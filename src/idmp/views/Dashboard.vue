@@ -477,6 +477,7 @@ import { createDefaultBinding } from '@/idmp/features/dashboard/smartDefaultBind
 import { createMultiIndicatorDataset, multiIndicatorMeasureField, normalizeIndicatorBindings, singleIndicatorProjectionBinding } from '@/idmp/features/dashboard/multiIndicator.js'
 import { buildRemoteFilterOptionQuery, buildRemoteWidgetQuery, isDashboardIndicatorQueryWidget, resolveDashboardQueryState } from '@/idmp/features/dashboard/remoteQuery.js'
 import { buildIndicatorAnalysisPeriodContext, buildIndicatorAnalysisRouteQuery } from '@/idmp/features/dashboard/analysisNavigation.js'
+import { resultPeriodToClosedRange } from '@/idmp/utils/periodRange.js'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
 import {
   copyDashboard, createDashboard, deleteDashboard, fetchDashboardCatalog,
@@ -900,6 +901,7 @@ provide('dashboardResolveWidgetDrill', async (widget, params) => {
   }
   const scope = widget?.config?.backendQuery || {}
   const query = { ...buildPublishedIndicatorAnalysisQuery(source), ...remoteSelectedPeriod(widget) }
+  if (query.periodStart && query.periodEnd) query.periodEnd = resultPeriodToClosedRange(query.periodStart, query.periodEnd, { dates: true })[1]
   if (!query.granularity) throw new Error('所选统计区间暂无完整结果')
   query.indicatorVersionId = widget.config?.analysisIndicatorVersionId || query.indicatorVersionId
   if (scope.periodMode === 'INDEPENDENT' && scope.periodStart && scope.periodEnd) {
@@ -931,7 +933,7 @@ provide('dashboardResolveWidgetDrill', async (widget, params) => {
     pathResultIds: { [pathCode]: resultId },
     indicatorName: source.name,
     departmentNames: Object.fromEntries(await fetchDepartmentNames()),
-    period: query.periodStart && query.periodEnd ? `${query.periodStart} ～ ${query.periodEnd}` : '',
+    period: query.periodStart && query.periodEnd ? `${query.periodStart} 至 ${query.periodEnd}` : '',
     maxLevels: Object.fromEntries(configuredPaths.filter(path => path?.pathCode && path?.maxLevel).map(path => [path.pathCode, path.maxLevel])),
     configuredPaths
   }
@@ -2805,6 +2807,7 @@ async function hydrateIndicatorSource(source) {
   if (!['indicator-catalog', 'dashboard-data-source'].includes(source?.origin) || !source.analysisIndicatorId) return source
   const periodSelection = remotePeriodRange.value
   const query = { ...buildPublishedIndicatorAnalysisQuery(source), ...remoteSelectedPeriod() }
+  if (query.periodStart && query.periodEnd) query.periodEnd = resultPeriodToClosedRange(query.periodStart, query.periodEnd, { dates: true })[1]
   if (!query.granularity) return { ...source, currentValue: null, yoy: null, mom: null, trendData: [], departmentData: [], pieData: [], analysisLoaded: false }
   const queryKey = JSON.stringify(query)
   if (source.analysisLoaded && source.analysisQueryKey === queryKey) return source

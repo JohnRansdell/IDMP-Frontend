@@ -137,6 +137,7 @@ import { assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDr
 import { isStatusRecord } from '@/idmp/features/analysis/resultAvailability'
 import { getStatusLabel } from '@/idmp/design/status'
 import { formatResultNumber, formatResultValue } from '../shared/resultPresentation.js'
+import { formatResultPeriod } from '../../utils/periodRange.js'
 
 const props = defineProps({
   resultId: { type: [String, Number], default: '' },
@@ -214,7 +215,7 @@ const resolvedPeriod = computed(() => {
   if (props.granularity === 'STATIC') return '静态结果'
   const start = result.value.context?.periodStart
   const end = result.value.context?.periodEnd
-  return start && end ? `${start} ～ ${end}` : (props.period || '由结果快照确定')
+  return start && end ? formatResultPeriod(start, end) : (props.period || '由结果快照确定')
 })
 
 const currentLevelLabel = computed(() => props.configuredPaths.find(path => path.pathCode === lastDrillDimension.value)?.levels?.find(level => level.levelCode === currentLevel.value)?.levelName || ({
