@@ -40,6 +40,17 @@ export function buildAnalysisPdfReport({ versionId, metadata = [], primaryMetric
 
 const metric = (value, unit) => value === undefined || value === null || value === '-' ? '-' : `${text(value)}${unit}`
 
+export function analysisChartExportOption(option = {}) {
+  const still = { animation: false, animationDuration: 0, animationDurationUpdate: 0 }
+  const series = Array.isArray(option.series) ? option.series : option.series ? [option.series] : []
+  return normalizeChartOption({ ...option, ...still, backgroundColor: '#ffffff',
+    series: series.map(item => ({ ...item, ...still, progressive: 0,
+      ...(item.markLine ? { markLine: { ...item.markLine, ...still } } : {}),
+      ...(item.markPoint ? { markPoint: { ...item.markPoint, ...still } } : {}),
+      ...(item.markArea ? { markArea: { ...item.markArea, ...still } } : {})
+    })) })
+}
+
 export function renderAnalysisChartPng(option) {
   const element = document.createElement('div')
   Object.assign(element.style, { position: 'fixed', left: '-10000px', width: '1000px', height: '360px' })
@@ -47,7 +58,9 @@ export function renderAnalysisChartPng(option) {
   let chart
   try {
     chart = echarts.init(element, IDMP_CHART_THEME, { renderer: 'canvas', width: 1000, height: 360, devicePixelRatio: 1 })
-    chart.setOption(normalizeChartOption({ ...option, animation: false, backgroundColor: '#ffffff' }), { notMerge: true })
+    // Series-level animation overrides the global flag and otherwise captures an empty reveal frame.
+    chart.setOption(analysisChartExportOption(option), { notMerge: true })
+    chart.getZr().flush()
     return chart.getDataURL({ type: 'png', pixelRatio: 1.5, backgroundColor: '#ffffff', excludeComponents: ['toolbox'] })
   } finally { chart?.dispose(); element.remove() }
 }

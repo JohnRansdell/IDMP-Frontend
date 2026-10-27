@@ -1,7 +1,25 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { buildAnalysisPdfReport, analysisPdfFilename } from '../src/idmp/features/analysis/pdfReport.js'
+import { buildAnalysisPdfReport, analysisPdfFilename, analysisChartExportOption } from '../src/idmp/features/analysis/pdfReport.js'
 import { requestPdf, setSessionRecoveryHandler } from '../src/idmp/api/request.js'
+
+test('PDF chart overrides per-series animation without changing live chart data or callbacks', () => {
+  const formatter = value => `${value}%`
+  const option = { animation: true, animationDuration: 450, yAxis: { min: formatter }, series: [
+    { type: 'line', animation: true, data: [0.42, 0.51, 0.47], markLine: { animation: true, data: [{ yAxis: 0.3 }] } },
+    { type: 'line', animation: true, data: [0], showSymbol: true },
+    { type: 'line', animation: true, data: [0.4, null, 0.5] }
+  ] }
+  const still = analysisChartExportOption(option)
+  assert.equal(still.animation, false)
+  assert.equal(still.animationDuration, 0)
+  assert.ok(still.series.every(series => series.animation === false && series.progressive === 0))
+  assert.equal(still.series[0].markLine.animation, false)
+  assert.equal(still.yAxis.min, formatter)
+  assert.deepEqual(still.series.map(s => s.data), option.series.map(s => s.data))
+  assert.equal(option.series[0].animation, true)
+  assert.equal(option.series[0].markLine.animation, true)
+})
 
 test('PDF report freezes loaded values and preserves separate periods and metadata', () => {
   const metrics = [{ label: '分子', value: '15' }, { label: '分母', value: '2,207' }]
