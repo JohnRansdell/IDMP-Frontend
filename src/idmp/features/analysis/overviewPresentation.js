@@ -1,6 +1,7 @@
 import { getStatusLabel } from '../../design/status.js'
 import { formatResultNumber, formatResultValue, hasResultDisplay, resultChartNumber, resultNumber, resultUnit } from '../shared/resultPresentation.js'
 import { operandValue, resultOperandColumns } from '../shared/formulaPresentation.js'
+import { resultAvailabilityGuidance } from './resultAvailability.js'
 
 export function resolveAnalysisPerformanceTarget(versionId, ...analyses) {
   const response = analyses.find(analysis => analysis?.indicatorVersionId != null
@@ -53,7 +54,7 @@ export function createOverviewPresentation({ report, formal, selected, unit, dis
         value: ready ? (hasResultDisplay(result.displayValue) ? result.displayValue : formatResultValue(result.value, { unit, display })) : '-',
         tone: ready && result.qualityStatus === 'PASSED' ? 'success' : 'neutral',
         status: ready ? 'ACTIVE' : result.status,
-        statusLabel: ready ? report.modeLabel : '区间结果不可用',
+        statusLabel: ready ? report.modeLabel : resultAvailabilityGuidance(result.status).title,
         periodLabel: report.resultPeriodLabel
       }
     }
@@ -68,7 +69,7 @@ export function createOverviewPresentation({ report, formal, selected, unit, dis
         periodLabel: formal.periodLabel || '结果周期未返回'
       }
     }
-    if (hasResponse) return { label: `${report.periodLabel || '当前报告期'}指标值`, value: '-', tone: 'neutral', status: formal.availability?.status || 'UNKNOWN', statusLabel: '暂无正式结果', periodLabel: report.periodLabel || '请先选择报告期' }
+    if (hasResponse) return { label: `${report.periodLabel || '当前报告期'}指标值`, value: '-', tone: 'neutral', status: formal.availability?.status || 'UNKNOWN', statusLabel: resultAvailabilityGuidance(formal.availability?.status).title, periodLabel: report.periodLabel || '请先选择报告期' }
     return { label: '当前指标值', value: '-', tone: 'neutral', status: 'NO_DATA', statusLabel: '暂无正式结果', periodLabel: '尚未读取到已激活结果' }
   }
   function summaryMetrics() {

@@ -902,7 +902,7 @@ provide('dashboardResolveWidgetDrill', async (widget, params) => {
   const scope = widget?.config?.backendQuery || {}
   const query = { ...buildPublishedIndicatorAnalysisQuery(source), ...remoteSelectedPeriod(widget) }
   if (query.periodStart && query.periodEnd) query.periodEnd = resultPeriodToClosedRange(query.periodStart, query.periodEnd, { dates: true })[1]
-  if (!query.granularity) throw new Error('所选统计区间暂无完整结果')
+  if (!query.granularity) throw new Error('所选统计区间暂不支持下钻，请调整统计周期')
   query.indicatorVersionId = widget.config?.analysisIndicatorVersionId || query.indicatorVersionId
   if (scope.periodMode === 'INDEPENDENT' && scope.periodStart && scope.periodEnd) {
     query.periodStart = scope.periodStart

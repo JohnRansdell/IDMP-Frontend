@@ -1,5 +1,6 @@
 import { createDefaultBinding } from './smartDefaultBinding.js'
 import { isPeriodField } from './periodFields.js'
+import { resultAvailabilityGuidance } from '../analysis/resultAvailability.js'
 
 const SOURCE_FREE_TYPES = new Set(['text', 'metric-group', 'warnings', 'ranking'])
 
@@ -22,8 +23,7 @@ export function widgetLibraryReadiness(type, source, datasets = []) {
 export function widgetEmptyGuidance(model = {}, dataset = {}, { binding } = {}) {
   if (dataset.status === 'LOADING') return { title: '正在读取数据', description: '正在读取当前字段配置的预览结果。', action: '' }
   if (dataset.status === 'ERROR') return { title: '数据预览失败', description: dataset.message || '数据请求失败，请重试。', action: 'retry' }
-  if (dataset.periodContext && dataset.status === 'EMPTY' && !dataset.rows?.length) return { title: '当前筛选条件下暂无数据', description: dataset.message || '当前统计周期与筛选条件下没有匹配的结果。', action: 'filters' }
-  if (dataset.periodContext && !dataset.rows?.length) return { title: dataset.periodContext.granularity ? '该统计周期暂无完整结果' : '该区间暂不支持整体结果查询', description: dataset.message || '请先计算所选周期的正式结果。', action: 'scope' }
+  if (!dataset.rows?.length && (dataset.periodContext || ['NO_DATA', 'NOT_CALCULABLE', 'INCOMPLETE_DATA', 'CALCULATION_ERROR', 'CALCULATION_IN_PROGRESS', 'WAITING_FOR_CALCULATION'].includes(dataset.status))) return resultAvailabilityGuidance(dataset.status, dataset.message)
   const availability = dataset.comparisonAvailability?.status
   const axis = binding?.dimensions?.[0]
   const timeAxis = isPeriodField(axis?.field)

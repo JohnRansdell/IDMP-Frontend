@@ -21,7 +21,7 @@
   <StatePanel v-else-if="rankErrorMessage" type="error" title="科室排名加载失败" :description="rankErrorMessage">
     <template #actions><el-button size="small" @click="emit('retry')">重试</el-button></template>
   </StatePanel>
-  <StatePanel v-else-if="rankInitialized && !rankPeriodOptions.length" type="empty" :title="`暂无${rankGranularityLabel}正式结果`" description="该粒度尚未生成正式计算结果。" />
+  <StatePanel v-else-if="rankInitialized && !rankPeriodOptions.length" type="empty" :title="`暂无${rankGranularityLabel}可用结果`" description="当前范围没有可展示的科室结果，请调整周期或筛选条件，具体状态可查看计算记录。" />
   <div v-else class="table-scroll rank-table-scroll">
     <el-table
       :data="rankTableData"

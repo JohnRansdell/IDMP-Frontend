@@ -205,7 +205,7 @@ test('ranking loading, error and no-period states do not show stale rows', async
   await button(wrapper, '重试').trigger('click')
   assert.equal(wrapper.emitted('retry').length, 1)
   await wrapper.setProps({ rankErrorMessage: '', rankInitialized: true, rankGranularityLabel: '年度' })
-  assert.ok(wrapper.text().includes('暂无年度正式结果'))
+  assert.ok(wrapper.text().includes('暂无年度可用结果'))
   assert.equal(wrapper.find('.rank-period-toolbar').exists(), false)
   wrapper.unmount()
 })

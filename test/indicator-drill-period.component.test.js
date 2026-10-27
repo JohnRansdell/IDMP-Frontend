@@ -119,7 +119,7 @@ test('quarter/year use separate formal results; an empty year never retains mont
   await change(wrapper, Group, 'QUARTERLY')
   assert.equal(wrapper.findComponent(Explorer).props('resultId'), 'quarter')
   await change(wrapper, Group, 'YEARLY')
-  assert.match(wrapper.text(), /暂无年度正式结果/)
+  assert.match(wrapper.text(), /暂无年度可用下钻结果/)
   assert.equal(wrapper.findComponent(Explorer).exists(), false)
   await change(wrapper, Group, 'MONTHLY')
   assert.equal(wrapper.findComponent(Explorer).props('resultId'), 'april')

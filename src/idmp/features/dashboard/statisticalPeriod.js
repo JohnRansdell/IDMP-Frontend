@@ -63,16 +63,14 @@ export function enforceDashboardResultPeriod(result, query, { timeSeries = false
     ? boundary(row.periodStart) && boundary(row.periodEnd) && boundary(row.periodStart) >= query.periodStart && boundary(row.periodEnd) <= query.periodEnd
     : samePeriod(row, query))
   const context = { ...period, label: dashboardPeriodLabel(period), ...dashboardComparisonPeriods(period) }
-  if (result?.status === 'EMPTY' && !rows.length) return {
-    ...result, rows: [], resultId: null, snapshotId: null, drillContext: null,
-    timeComparison: null, comparison: { yoy: null, mom: null }, periodContext: context,
-    message: result.message || '当前统计周期与筛选条件下没有匹配的结果'
-  }
   const unavailable = !query.granularity || (!rows.length && result?.status !== 'LOADING')
   if (unavailable) return {
-    ...result, status: 'NO_ACTIVE_RESULT', rows: [], resultId: null, snapshotId: null, drillContext: null,
+    ...result, rows: [], resultId: null, snapshotId: null, drillContext: null,
     timeComparison: null, comparison: { yoy: null, mom: null }, periodContext: context,
-    message: query.granularity ? `所选统计周期（${context.label}）暂无完整结果，请先计算对应周期。` : `所选区间（${context.label}）暂不支持整体结果查询。`
+    status: !query.granularity ? 'UNSUPPORTED_PERIOD' : result?.rows?.length || !result?.status || result.status === 'READY' ? 'NO_ACTIVE_RESULT' : result.status,
+    message: !query.granularity ? `所选区间（${context.label}）暂不支持整体结果查询。`
+      : result?.rows?.length ? `返回结果与所选统计周期（${context.label}）不一致。`
+      : result?.message || `所选统计周期（${context.label}）暂无可用结果，请查看计算记录确认状态。`
   }
   let comparison = result.timeComparison
   if (!samePeriod(comparison?.current, query)) comparison = null

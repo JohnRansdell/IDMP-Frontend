@@ -9,6 +9,22 @@ const STATUS_COPY = Object.freeze({
   UNKNOWN: '源数据画像尚未完成，不能据此判定为无数据。'
 })
 
+export function resultAvailabilityGuidance(status, message = '') {
+  const states = {
+    NO_DATA: ['该统计周期无源数据', '所选周期没有符合指标条件的源数据。', ''],
+    EMPTY: ['当前筛选条件下暂无数据', '当前统计周期与筛选条件下没有匹配的结果。', 'filters'],
+    NOT_CALCULABLE: ['该统计周期无法计算指标值', STATUS_COPY.NOT_CALCULABLE, ''],
+    VALUE_NOT_CALCULABLE: ['该统计周期无法计算指标值', STATUS_COPY.NOT_CALCULABLE, ''],
+    INCOMPLETE_DATA: ['该统计周期的计算输入不完整', STATUS_COPY.INCOMPLETE_DATA, ''],
+    CALCULATION_ERROR: ['该统计周期计算失败', '请查看计算记录了解失败原因。', ''],
+    CALCULATION_IN_PROGRESS: ['该统计周期正在计算', STATUS_COPY.CALCULATION_IN_PROGRESS, ''],
+    WAITING_FOR_CALCULATION: ['该统计周期尚待计算', STATUS_COPY.WAITING_FOR_CALCULATION, ''],
+    UNSUPPORTED_PERIOD: ['该区间暂不支持整体结果查询', '请选择支持的统计周期。', 'scope']
+  }
+  const [title, description, action] = states[status] || ['该统计周期暂无可用结果', '请查看计算记录确认该周期的结果状态。', 'scope']
+  return { title, description: message || description, action }
+}
+
 export function normalizeFactorDataProfiles(profiles = []) {
   return (Array.isArray(profiles) ? profiles : []).map((item) => ({
     ...item,

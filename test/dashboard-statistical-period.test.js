@@ -10,6 +10,23 @@ const monthly = month => resolveDashboardPeriod({ type: 'MONTHLY', month })
 const row = (period, value = .4) => ({ ...period, value, periodStart: `${period.periodStart}T00:00:00`, periodEnd: `${period.periodEnd}T00:00:00` })
 const comparable = { status: 'COMPARABLE', relativeChangePercent: 25 }
 
+test('saved calculation outcomes survive period validation, dataset conversion and empty guidance', () => {
+  for (const [status, title] of [
+    ['NO_DATA', '无源数据'], ['NOT_CALCULABLE', '无法计算指标值'], ['INCOMPLETE_DATA', '计算输入不完整'],
+    ['CALCULATION_ERROR', '计算失败'], ['CALCULATION_IN_PROGRESS', '正在计算'], ['WAITING_FOR_CALCULATION', '尚待计算']
+  ]) {
+    const result = enforceDashboardResultPeriod({ status, rows: [], message: '真实计算状态', resultId: 'old' }, monthly('2026-04'))
+    assert.equal(result.status, status)
+    assert.equal(result.resultId, null)
+    const guidance = widgetEmptyGuidance({}, widgetResultToDataset(result))
+    assert.ok(guidance.title.includes(title))
+    assert.equal(guidance.description, '真实计算状态')
+    assert.doesNotMatch(guidance.description, /请先计算/)
+  }
+  const unknown = widgetEmptyGuidance({}, widgetResultToDataset(enforceDashboardResultPeriod({ status: 'NO_ACTIVE_RESULT', rows: [] }, monthly('2026-04'))))
+  assert.doesNotMatch(unknown.description, /请先计算|无源数据|尚未计算/)
+})
+
 test('empty filter matches stay empty rather than claiming the period must be recalculated', () => {
   for (const period of [monthly('2026-03'), resolveDashboardPeriod({ type: 'CUSTOM', startMonth: '2026-03', endMonth: '2026-03' })]) {
     const result = enforceDashboardResultPeriod({ status: 'EMPTY', rows: [], message: '当前统计周期与筛选条件下没有匹配的结果' }, period)
@@ -82,7 +99,7 @@ test('last month returned for a requested quarter is rejected along with its res
   assert.equal(result.timeComparison, null)
   assert.equal(response.rows.length, 1)
   const dataset = widgetResultToDataset(result)
-  assert.match(widgetEmptyGuidance({ status: 'empty' }, dataset).title, /暂无完整结果/)
+  assert.match(widgetEmptyGuidance({ status: 'empty' }, dataset).title, /暂无可用结果/)
 })
 
 test('arbitrary multi-month totals never average or sum the monthly result rows', () => {

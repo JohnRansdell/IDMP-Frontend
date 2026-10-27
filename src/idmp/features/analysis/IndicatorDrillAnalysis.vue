@@ -16,7 +16,7 @@
     <StatePanel v-else-if="errorMessage" type="error" title="下钻周期加载失败" :description="errorMessage">
       <template #actions><el-button size="small" @click="retryPeriod">重试</el-button></template>
     </StatePanel>
-    <StatePanel v-else-if="!periodOptions.length" type="empty" :title="`暂无${granularityLabel}正式结果`" description="该粒度尚未生成正式计算结果。" />
+    <StatePanel v-else-if="!periodOptions.length" type="empty" :title="`暂无${granularityLabel}可用下钻结果`" description="当前范围没有可展示的下钻结果，请调整周期或筛选条件，具体状态可查看计算记录。" />
     <DrillExplorer
       v-else-if="anchor.resultId" :key="`${granularity}:${selectedPeriod}:${entrySequence}`" ref="explorer"
       :result-id="anchor.resultId" :path-result-ids="anchor.pathResultIds" :enabled="enabled"
