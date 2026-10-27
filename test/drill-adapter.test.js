@@ -41,8 +41,7 @@ test('drill adapter uses backend column titles and derives separate multi-path a
   })
 
   assert.deepEqual(pathResultIds, {
-    ORGANIZATION: 'hospital-result',
-    DISEASE: 'case-result'
+    ORGANIZATION: 'hospital-result'
   })
 })
 
@@ -58,7 +57,7 @@ test('drill adapter reconciles a stale child summary with the returned root reco
   assert.equal(result.records[0].resultId, '101')
 })
 
-test('multi-path analysis uses an organization-specific anchor and the overview for disease', () => {
+test('historical disease calculation targets no longer create a built-in disease anchor', () => {
   const pathResultIds = deriveDrillPathResultIds({
     overview: { resultId: 'disease-root', dimensions: { hospital_code: 'H001' } },
     dimensionComparison: [
@@ -72,8 +71,7 @@ test('multi-path analysis uses an organization-specific anchor and the overview 
   })
 
   assert.deepEqual(pathResultIds, {
-    ORGANIZATION: 'department-result',
-    DISEASE: 'disease-root'
+    ORGANIZATION: 'disease-root'
   })
 })
 

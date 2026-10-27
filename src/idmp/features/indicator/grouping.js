@@ -1,3 +1,5 @@
+import { isRetiredDrillPath } from './drillPathPolicy.js'
+
 export function createCustomDrillCode(prefix, cryptoProvider = globalThis.crypto) {
   const bytes = new Uint8Array(16)
   cryptoProvider.getRandomValues(bytes)
@@ -16,7 +18,7 @@ export function normalizeDimensionGrain(values = []) {
 
 export function serializeDrillPaths(paths = []) {
   if (!Array.isArray(paths)) throw new Error('下钻路径最多选择 5 条')
-  paths = paths.filter(path => String(path?.pathCode || '').trim().toUpperCase() !== 'TIME')
+  paths = paths.filter(path => !isRetiredDrillPath(path?.pathCode))
   if (paths.length > 5) throw new Error('下钻路径最多选择 5 条')
   const seen = new Set()
   return paths.map(path => {
@@ -51,7 +53,7 @@ export function serializeDrillPaths(paths = []) {
 function selectedSqlDrillLevels(paths, catalog) {
   const selected = []
   for (const path of paths) {
-    if (!['ORGANIZATION', 'DISEASE'].includes(path.pathCode) && !path.pathCode.startsWith('CUSTOM_')) continue
+    if (path.pathCode !== 'ORGANIZATION' && !path.pathCode.startsWith('CUSTOM_')) continue
     const definition = catalog.find(item => String(item.version?.id) === String(path.pathVersionId))
     const levels = path.levels || definition?.levels || []
     const end = levels.findIndex(level => level.levelCode === path.maxLevel)

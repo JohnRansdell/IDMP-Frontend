@@ -125,7 +125,7 @@ async function loadDrillPathCatalog() {
   drillPathLoading.value = true; drillPathError.value = ''
   try {
     const paths = await fetchAllPages(fetchDrillPaths, { subjectType: 'INDICATOR_RESULT', size: 100 })
-    const ids = [...new Set(paths.filter(path => ['ORGANIZATION', 'DISEASE'].includes(path.pathCode)).map(path => path.currentPublishedVersionId).filter(Boolean))]
+    const ids = [...new Set(paths.filter(path => path.pathCode === 'ORGANIZATION').map(path => path.currentPublishedVersionId).filter(Boolean))]
     const details = await Promise.all(ids.map(fetchDrillPathVersion))
     drillPathCatalog.value = details.filter(detail => detail.version?.publicationStatus === 'PUBLISHED' && detail.levels?.length)
   } catch (error) { drillPathError.value = error?.message || '下钻路径读取失败，请重试' }

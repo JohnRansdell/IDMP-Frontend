@@ -533,10 +533,6 @@ const backendDepartmentComparisons = computed(() =>
     departmentNamesByCode.value
   )
 )
-const backendDimensionResults = computed(() =>
-  (Array.isArray(backendAnalysis.value?.dimensionComparison) ? backendAnalysis.value.dimensionComparison : [])
-    .filter((item) => Object.keys(item?.dimensions || {}).length > 0)
-)
 const overviewPresentation = computed(() => createOverviewPresentation({
   report: {
     dirty: reportDirty.value, loading: rangeSummaryLoading.value, error: rangeSummaryErrorMessage.value,
@@ -547,7 +543,7 @@ const overviewPresentation = computed(() => createOverviewPresentation({
     analysis: backendAnalysis.value, overview: analysisOverview.value,
     loading: analysisLoading.value, error: analysisErrorMessage.value,
     periodLabel: formatAnalysisPeriod(analysisOverview.value), availability: analysisAvailability.value,
-    dimensionCount: backendDimensionResults.value.length, hasDrill: Object.keys(drillMaxLevels.value).length > 0
+    dimensionCount: null, hasDrill: Object.keys(drillMaxLevels.value).length > 0
   },
   selected: Boolean(selectedBackendIndicator.value), unit: currentProfile.value.unit, display: metricDisplay.value
 }))
@@ -611,7 +607,7 @@ const drillResultId = computed(() => String(
   route.query.drillResultId ||
   (backendIndicatorVersion.value?.drillConfig?.drillPaths || [])
     .map(path => drillPathResultIds.value[path.pathCode]).find(Boolean) ||
-  drillPathResultIds.value.ORGANIZATION || drillPathResultIds.value.DISEASE ||
+  drillPathResultIds.value.ORGANIZATION ||
   backendAnalysis.value?.overview?.resultId || backendAnalysis.value?.resultContext?.resultId || ''
 ))
 const drillPeriod = computed(() => String(
@@ -648,6 +644,7 @@ const { granularity: rankGranularity, selectedPeriod: rankSelectedPeriod, period
   }, async (indicatorId, params, options) => {
     const paths = backendIndicatorVersion.value?.drillConfig?.drillPaths || []
     const data = await fetchIndicatorAnalysis(indicatorId, params, options)
+    if (params.sections === 'TREND') return data
     return { ...data, departmentComparison: await loadDepartmentComparisons(data, paths, searchResultDrill, analysisFilters(params), options) }
   })
 const rankPeriodDescription = computed(() => rankInitialized.value
@@ -1044,7 +1041,7 @@ async function refreshIndicatorAnalysis() {
     // Overview and trend publish independently, without waiting for one another.
     void refreshTrendAnalysis()
     const params = { ...buildAnalysisParams(reportPeriodRange.value), sections: [
-      'OVERVIEW', 'DIMENSION_COMPARISON', 'CALCULATION_TARGETS', 'TIME_COMPARISON',
+      'OVERVIEW', 'CALCULATION_TARGETS', 'TIME_COMPARISON',
       ...(calculationMode === 'STATIC' ? ['DEPARTMENT_COMPARISON'] : [])
     ] }
     const result = await overviewQuery.run(({ signal }) => fetchIndicatorAnalysis(backendIndicatorId, params, { signal }), {

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createCustomDrillCode, serializeDrillPaths, sqlImportGroupingFields, sqlImportGroupingFieldLabels } from '../src/idmp/features/indicator/grouping.js'
-import { buildIndicatorVersionPayload } from '../src/idmp/api/adapters/indicator.js'
+import { buildIndicatorVersionPayload, normalizeDrillPaths, normalizeDrillCapabilities } from '../src/idmp/api/adapters/indicator.js'
 import { buildSqlImportMetadataPayload } from '../src/idmp/api/adapters/sqlImport.js'
 
 const path = { pathCode: 'CUSTOM_DEPT_DOCTOR', pathName: '科室医生下钻', maxLevel: 'DOCTOR', levels: [
@@ -10,13 +10,19 @@ const path = { pathCode: 'CUSTOM_DEPT_DOCTOR', pathName: '科室医生下钻', m
   { levelCode: 'DOCTOR', levelName: '医生', dimensionFieldCode: '医生' }
 ] }
 
-test('legacy time paths are omitted before validation in ordinary and SQL authoring', () => {
-  const legacy = Array.from({ length: 6 }, () => ({ pathCode: ' time ' }))
+test('retired built-in paths are omitted before validation in ordinary and SQL authoring', () => {
+  const legacy = [' time ', 'DISEASE', 'FACTOR_TRACE', ' disease ', 'factor_trace', 'TIME'].map(pathCode => ({ pathCode }))
   assert.deepEqual(serializeDrillPaths([...legacy, path]), [path])
   assert.deepEqual(buildIndicatorVersionPayload({ drillPaths: legacy }).drillPaths, [])
   const metadata = buildSqlImportMetadataPayload({ scope: 'FACTORS_AND_INDICATOR', indicator: { drillPaths: [...legacy, path], timeDrillEnabled: true }, factors: [] })
   assert.deepEqual(metadata.drillPaths, [path])
   assert.equal(Object.hasOwn(metadata, 'timeDrillEnabled'), false)
+  const configured = [...legacy.map(item => ({ ...item, maxLevel: 'ROOT' })), path]
+  assert.deepEqual(normalizeDrillPaths({ drillPaths: configured }).map(item => item.pathCode), [path.pathCode])
+  assert.deepEqual(normalizeDrillCapabilities({ dimensions: configured }).dimensions.map(item => item.pathCode), [path.pathCode])
+  const disease = { ...path, pathCode: 'CUSTOM_DISEASE', pathName: '病种下钻' }
+  assert.deepEqual(serializeDrillPaths([...legacy, disease]), [disease])
+  assert.deepEqual(sqlImportGroupingFields(legacy), [])
 })
 
 test('codes work with crypto available on HTTP pages without randomUUID', () => {

@@ -2,10 +2,8 @@
   <div class="drill-explorer">
     <div class="drill-context-bar">
       <div class="drill-context-bar__filters">
-        <el-select v-model="dimension" size="small" aria-label="下钻维度" class="drill-dimension-select">
-          <el-option label="组织维度" value="ORGANIZATION" :disabled="!pathAvailable('ORGANIZATION')" />
-          <el-option label="病种维度" value="DISEASE" :disabled="!pathAvailable('DISEASE')" />
-          <el-option v-for="path in customPaths" :key="path.pathCode" :label="path.pathName || '自定义路径'" :value="path.pathCode" />
+        <el-select v-model="dimension" size="small" aria-label="下钻维度" class="drill-dimension-select" :disabled="!availablePaths.length" placeholder="未配置下钻路径">
+          <el-option v-for="path in availablePaths" :key="path.pathCode" :label="path.pathName || (path.pathCode === 'ORGANIZATION' ? '组织维度' : '自定义路径')" :value="path.pathCode" />
         </el-select>
         <span class="drill-context-bar__period">统计周期：{{ resolvedPeriod }}</span>
         <span class="drill-context-bar__source">真实接口</span>
@@ -16,7 +14,8 @@
       </div>
     </div>
 
-    <template v-if="!isFactorTraceMode">
+    <StatePanel v-if="!isFactorTraceMode && !availablePaths.length" type="empty" title="该指标未配置下钻路径" />
+    <template v-else-if="!isFactorTraceMode">
     <nav class="drill-breadcrumb" aria-label="下钻层级">
       <template v-for="(item, index) in result.breadcrumb" :key="`${item.level}-${item.key}`">
         <button type="button" class="drill-breadcrumb__item" @click="goToBreadcrumb(index)">
@@ -161,15 +160,23 @@ const props = defineProps({
 const emit = defineEmits(['level-change'])
 const route = useRoute()
 const router = useRouter()
-const customPaths = computed(() => props.configuredPaths.filter(path => path.pathCode?.startsWith('CUSTOM_')))
-const inferredDimension = inferDimensionFromLevel(props.startLevel)
-const initialDimension = props.startPathCode || customPaths.value.find(path => path.levels?.some(level => level.levelCode === props.startLevel))?.pathCode ||
-  (customPaths.value.length && !props.configuredPaths.some(path => path.pathCode === inferredDimension) ? customPaths.value[0].pathCode : inferredDimension)
+const availablePaths = computed(() => props.configuredPaths.filter(path => path.pathCode === 'ORGANIZATION' || path.pathCode?.startsWith('CUSTOM_')))
+function preferredPathCode() {
+  return availablePaths.value.find(path => path.pathCode === props.startPathCode)?.pathCode
+    || availablePaths.value.find(path => path.levels?.some(level => level.levelCode === props.startLevel))?.pathCode
+    || availablePaths.value[0]?.pathCode || ''
+}
+const initialDimension = preferredPathCode()
 const dimension = ref(initialDimension)
 const lastDrillDimension = ref(initialDimension)
-const initialPath = props.configuredPaths.find(path => path.pathCode === initialDimension)
-const currentLevel = ref(initialPath?.levels?.length && !initialPath.levels.some(level => level.levelCode === props.startLevel) ? initialPath.levels[0].levelCode : props.startLevel)
-const parentKeys = ref({ ...props.startParentKeys })
+function matchesEntry(pathCode) {
+  const path = availablePaths.value.find(path => path.pathCode === pathCode)
+  return path && (!props.startPathCode || props.startPathCode === pathCode)
+    && (!path.levels?.length || path.levels.some(level => level.levelCode === props.startLevel))
+}
+const initialEntryMatches = matchesEntry(initialDimension)
+const currentLevel = ref(initialEntryMatches ? props.startLevel : rootForPath(initialDimension))
+const parentKeys = ref(initialEntryMatches ? { ...props.startParentKeys } : {})
 const result = shallowRef(emptyResult())
 const loading = ref(false)
 const errorMessage = ref('')
@@ -184,6 +191,7 @@ const traceBatchId = computed(() => String(factorTrace.value?.context?.calculati
 const factorTraceLoading = ref(false)
 const factorTraceScope = createRequestScope()
 const resolvedPathResultIds = ref({})
+const navigationAnchors = shallowRef({})
 const isFactorTraceMode = ref(false)
 const statusRecord = computed(() => result.value.records.find(isStatusRecord) || null)
 const memberRecords = computed(() => result.value.records.filter((item) => !isStatusRecord(item)))
@@ -191,9 +199,13 @@ const visibleColumns = computed(() => result.value.columns.filter((column) => (
   String(column.field || '').toLowerCase() !== 'factorsourceprofiles'
 )))
 const activeResultId = computed(() => String(
+  navigationAnchors.value[navigationKey()]?.resultId ||
   resolvedPathResultIds.value[lastDrillDimension.value] ||
   props.pathResultIds?.[lastDrillDimension.value] || props.resultId || ''
 ))
+function navigationKey(level = currentLevel.value, keys = parentKeys.value) {
+  return JSON.stringify([lastDrillDimension.value, level, Object.entries(keys).sort(([a], [b]) => a.localeCompare(b))])
+}
 const availableNextLevels = computed(() => {
   const pathCode = lastDrillDimension.value
   return limitDrillNextLevels(result.value.nextLevels, pathCode, props.maxLevels?.[pathCode])
@@ -212,8 +224,6 @@ const currentLevelLabel = computed(() => props.configuredPaths.find(path => path
   MEDICAL_GROUP: '医疗组',
   ATTENDING_DOCTOR: '主治医师',
   DOCTOR: '医师',
-  ALL_SINGLE_DISEASE: '全部病种',
-  SINGLE_DISEASE: '单病种',
   CASE: '病例',
   PATIENT: '患者'
 }[currentLevel.value] || '当前层'))
@@ -279,18 +289,27 @@ async function loadDrill() {
   interrupted = false
   result.value = emptyResult()
   loading.value = false
-  if (!activeResultId.value || isFactorTraceMode.value) { result.value = emptyResult(); return }
-  loading.value = true
   errorMessage.value = ''
+  if (!activeResultId.value || isFactorTraceMode.value || !pathAvailable(lastDrillDimension.value)) return
+  loading.value = true
   try {
     const context = { resultId: activeResultId.value, indicatorVersionId: props.indicatorVersionId,
-      snapshotId: lastDrillDimension.value === (props.startPathCode || initialDimension) ? props.snapshotId : '',
+      snapshotId: navigationAnchors.value[navigationKey()]?.snapshotId
+        || (lastDrillDimension.value === (props.startPathCode || initialDimension) ? props.snapshotId : ''),
       period: props.resultPeriod, pathCode: lastDrillDimension.value,
       currentLevel: currentLevel.value, parentKeys: parentKeys.value, filters: props.startFilters }
     const request = buildDrillRequest(context, { path: selectedPath(), pageNum: pageNum.value, pageSize: pageSize.value, sort: sort.value })
     const response = await searchResultDrill(request.resultId, request.payload, { source: props.source, signal: ticket.signal })
     if (!ticket.isCurrent()) return
     assertDrillResponseContext(response, context)
+    const root = selectedPath()?.levels?.[0]
+    if (lastDrillDimension.value === 'ORGANIZATION' && root && !drillMemberField(selectedPath(), root.levelCode)) {
+      const label = root.levelName || '医院'
+      response.records = response.records.map(row => row.levelCode === root.levelCode && row.dimensionKey === '__UNASSIGNED__'
+        ? { ...row, dimensionName: label, dimensionLabel: label } : row)
+      response.breadcrumb = response.breadcrumb.map(item => item.level === root.levelCode && item.key === '__UNASSIGNED__'
+        ? { ...item, label } : item)
+    }
     const levelCode = response.context.currentLevel || currentLevel.value
     const definition = props.configuredPaths.find(path => path.pathCode === lastDrillDimension.value)?.levels?.find(level => level.levelCode === levelCode)
       || { levelCode }
@@ -332,6 +351,11 @@ function openNextLevel(row) {
   const navigation = nextDrillNavigation({ currentLevel: currentLevel.value, parentKeys: parentKeys.value }, row, nextLevel, selectedPath())
   if (!navigation) return
   resetPaging()
+  if (row.resultId) navigationAnchors.value = {
+    ...navigationAnchors.value, [navigationKey(navigation.currentLevel, navigation.parentKeys)]: {
+      resultId: String(row.resultId), snapshotId: row.snapshotId ? String(row.snapshotId) : ''
+    }
+  }
   parentKeys.value = navigation.parentKeys
   currentLevel.value = navigation.currentLevel
   emit('level-change', navigation)
@@ -414,35 +438,32 @@ function syncRouteContext() {
 }
 
 function pathAvailable(path) {
-  if (path.startsWith('CUSTOM_')) return customPaths.value.some(item => item.pathCode === path)
-  const businessPaths = props.configuredPaths.filter(item => ['ORGANIZATION', 'DISEASE'].includes(item.pathCode) || item.pathCode?.startsWith('CUSTOM_'))
-  if (businessPaths.length && !businessPaths.some(item => item.pathCode === path)) return false
-  const configuredPaths = Object.keys(props.pathResultIds || {})
-  if (configuredPaths.length) return Boolean(props.pathResultIds[path])
-  return path === initialDimension
-}
-
-function inferDimensionFromLevel(level) {
-  return ['ALL_SINGLE_DISEASE', 'SINGLE_DISEASE', 'CASE', 'PATIENT'].includes(String(level))
-    ? 'DISEASE'
-    : 'ORGANIZATION'
+  return availablePaths.value.some(item => item.pathCode === path)
 }
 
 watch([
-  () => JSON.stringify([props.startLevel, props.startParentKeys, props.startFilters]),
-  () => JSON.stringify([props.resultId, props.snapshotId, props.indicatorVersionId, props.resultPeriod, props.pathResultIds, props.configuredPaths])
-], ([entry, target], [previousEntry, previousTarget]) => {
+  () => JSON.stringify([props.startPathCode, props.startLevel, props.startParentKeys, props.startFilters]),
+  () => JSON.stringify([props.resultId, props.snapshotId, props.indicatorVersionId, props.resultPeriod, props.pathResultIds, props.configuredPaths]),
+  () => props.startPathCode
+], ([entry, target, pathCode], [previousEntry, previousTarget, previousPathCode]) => {
   resetPaging()
   if (entry !== previousEntry) {
     currentLevel.value = props.startLevel
     parentKeys.value = { ...props.startParentKeys }
+    navigationAnchors.value = {}
   }
-  if (target !== previousTarget) resolvedPathResultIds.value = {}
-  if (!pathAvailable(lastDrillDimension.value)) {
-    const nextDimension = customPaths.value[0]?.pathCode || (pathAvailable('ORGANIZATION') ? 'ORGANIZATION' : 'DISEASE')
+  if (target !== previousTarget) {
+    resolvedPathResultIds.value = {}
+    navigationAnchors.value = {}
+  }
+  if (!pathAvailable(lastDrillDimension.value) || (pathCode !== previousPathCode && pathAvailable(pathCode) && pathCode !== lastDrillDimension.value)) {
+    const nextDimension = preferredPathCode()
     dimension.value = nextDimension
     lastDrillDimension.value = nextDimension
-    currentLevel.value = rootForPath(nextDimension)
+    currentLevel.value = matchesEntry(nextDimension) ? props.startLevel : rootForPath(nextDimension)
+    parentKeys.value = matchesEntry(nextDimension) ? { ...props.startParentKeys } : {}
+  } else if (selectedPath()?.levels?.length && !selectedPath().levels.some(level => level.levelCode === currentLevel.value)) {
+    currentLevel.value = rootForPath(lastDrillDimension.value)
     parentKeys.value = {}
   }
   if (isFactorTraceMode.value) loadFactorTrace()
@@ -461,6 +482,7 @@ watch(() => props.source, (source) => {
 })
 watch(dimension, (value) => {
   if (value === lastDrillDimension.value) return
+  if (!pathAvailable(value)) { dimension.value = lastDrillDimension.value; return }
   resetPaging()
   factorTraceScope.cancel()
   factorTraceLoading.value = false
@@ -470,21 +492,9 @@ watch(dimension, (value) => {
   errorMessage.value = ''
   isFactorTraceMode.value = false
   lastDrillDimension.value = value
-  if (value.startsWith('CUSTOM_')) {
-    currentLevel.value = rootForPath(value)
-    parentKeys.value = {}
-    loadDrill()
-    return
-  }
-  if (value === 'DISEASE') {
-    currentLevel.value = 'ALL_SINGLE_DISEASE'
-    parentKeys.value = {}
-    loadDrill()
-  } else if (value === 'ORGANIZATION') {
-    currentLevel.value = 'HOSPITAL'
-    parentKeys.value = {}
-    loadDrill()
-  }
+  currentLevel.value = rootForPath(value)
+  parentKeys.value = {}
+  loadDrill()
 })
 onMounted(loadDrill)
 function suspendRequests() {
@@ -505,7 +515,8 @@ onDeactivated(() => { inactive = true; suspendRequests() })
 onActivated(() => { inactive = false; resumeRequests() })
 
 function rootForPath(pathCode) {
-  return props.configuredPaths.find(path => path.pathCode === pathCode)?.levels?.[0]?.levelCode || (pathCode.startsWith('CUSTOM_') ? 'ROOT' : pathCode === 'DISEASE' ? 'ALL_SINGLE_DISEASE' : 'HOSPITAL')
+  return availablePaths.value.find(path => path.pathCode === pathCode)?.levels?.[0]?.levelCode
+    || (pathCode === 'ORGANIZATION' ? 'HOSPITAL' : pathCode.startsWith('CUSTOM_') ? 'ROOT' : '')
 }
 </script>
 

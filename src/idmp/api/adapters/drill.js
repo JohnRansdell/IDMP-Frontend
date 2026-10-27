@@ -3,7 +3,6 @@ import { drillResultMetrics } from './result.js'
 
 export const DRILL_DIMENSIONS = Object.freeze({
   ORGANIZATION: 'ORGANIZATION',
-  DISEASE: 'DISEASE',
   FACTOR: 'FACTOR',
   SCENARIO: 'SCENARIO'
 })
@@ -24,12 +23,6 @@ const DRILL_LEVEL_RANKS = Object.freeze({
     MEDICAL_GROUP: 3,
     ATTENDING_DOCTOR: 4,
     DOCTOR: 4
-  }),
-  DISEASE: Object.freeze({
-    ALL_SINGLE_DISEASE: 1,
-    SINGLE_DISEASE: 2,
-    CASE: 3,
-    PATIENT: 3
   })
 })
 
@@ -55,8 +48,7 @@ export function legacyDrillLevelDefinition(levelCode) {
     HOSPITAL: ['HOSPITAL_CODE', 'HOSPITAL_NAME'],
     OUT_DEPT: ['OUT_DEPT_CODE', 'OUT_DEPT_NAME'], DEPARTMENT: ['DEPARTMENT_CODE', 'DEPARTMENT_NAME'],
     MEDICAL_GROUP: ['MEDICAL_GROUP_CODE', 'MEDICAL_GROUP_NAME'],
-    ATTENDING_DOCTOR: ['ATTENDING_DOCTOR_CODE', 'ATTENDING_DOCTOR_NAME'], DOCTOR: ['DOCTOR_CODE', 'DOCTOR_NAME'],
-    ALL_SINGLE_DISEASE: ['HOSPITAL_CODE', 'HOSPITAL_NAME'], SINGLE_DISEASE: ['SINGLE_DISEASE_CODE', 'SINGLE_DISEASE_NAME']
+    ATTENDING_DOCTOR: ['ATTENDING_DOCTOR_CODE', 'ATTENDING_DOCTOR_NAME'], DOCTOR: ['DOCTOR_CODE', 'DOCTOR_NAME']
   }
   const [memberKeyFieldCode, displayFieldCode] = fields[levelCode] || []
   return { levelCode, memberKeyFieldCode, displayFieldCode }
@@ -122,7 +114,7 @@ export function adaptDrillResult(payload = {}) {
 
 function reconcileRootSummary(summary, records, currentLevel) {
   const level = String(currentLevel || '').toUpperCase()
-  if (!['HOSPITAL', 'ALL_SINGLE_DISEASE'].includes(level)) return summary
+  if (level !== 'HOSPITAL') return summary
   const rootRecord = records.find((record) => String(record.levelCode || '').toUpperCase() === level)
   if (!rootRecord) return summary
   return normalizeSummary({ ...summary, ...rootRecord })
@@ -172,46 +164,22 @@ export function deriveDrillPathResultIds(analysis = {}, configuredPaths = []) {
   const candidates = [analysis.overview, ...(Array.isArray(analysis.dimensionComparison) ? analysis.dimensionComparison : [])]
     .filter((item) => item?.resultId)
   const selected = {}
-  const scores = { ORGANIZATION: Number.POSITIVE_INFINITY, DISEASE: -1 }
-  const targetCodes = (Array.isArray(analysis.calculationTargets) ? analysis.calculationTargets : [])
-    .map((target) => String(target?.targetCode || '').toUpperCase())
-  const hasOrganizationTarget = targetCodes.some((code) => code.startsWith('DRILL:ORGANIZATION:'))
-  const hasDiseaseTarget = targetCodes.some((code) => code.startsWith('DRILL:DISEASE:'))
-  let organizationSpecificCandidate = null
+  let organizationRank = Number.POSITIVE_INFINITY
 
   candidates.forEach((item) => {
     const dimensions = normalizeDimensionKeys(item.dimensions)
     const organizationScore = scoreOrganizationDimensions(dimensions)
-    const diseaseScore = scoreDiseaseDimensions(dimensions)
     // 下钻接口必须始终使用路径根结果作为锚点；组织路径优先全院，而不是更深的科室/医生结果。
-    if (organizationScore > 0 && organizationScore < scores.ORGANIZATION) {
-      scores.ORGANIZATION = organizationScore
+    if (organizationScore > 0 && organizationScore < organizationRank) {
+      organizationRank = organizationScore
       selected.ORGANIZATION = toOpaqueId(item.resultId)
-    }
-    if (organizationScore >= 20 && (!organizationSpecificCandidate || organizationScore < organizationSpecificCandidate.score)) {
-      organizationSpecificCandidate = { score: organizationScore, resultId: toOpaqueId(item.resultId) }
-    }
-    if (diseaseScore > scores.DISEASE) {
-      scores.DISEASE = diseaseScore
-      selected.DISEASE = toOpaqueId(item.resultId)
     }
   })
 
-  if (!Number.isFinite(scores.ORGANIZATION)) delete selected.ORGANIZATION
-  if (scores.DISEASE <= 0) delete selected.DISEASE
-  // 当同一批次同时计算组织与病种路径时，全院维度结果可能被最后激活的病种
-  // 快照占用。科室结果则必然属于组织快照，可先用它进入组织路径，再由根层
-  // 响应解析出真正的全院 resultId。
-  if (hasOrganizationTarget && hasDiseaseTarget && organizationSpecificCandidate) {
-    selected.ORGANIZATION = organizationSpecificCandidate.resultId
-  }
   if (departmentAnchor) {
     selected.ORGANIZATION = toOpaqueId(departmentAnchor.resultId)
   }
-  if (hasDiseaseTarget && !selected.DISEASE) {
-    selected.DISEASE = toOpaqueId(analysis.overview?.resultId || analysis.resultContext?.resultId)
-  }
-  if (!selected.ORGANIZATION && !selected.DISEASE && analysis.overview?.resultId) {
+  if (!selected.ORGANIZATION && analysis.overview?.resultId) {
     selected.ORGANIZATION = toOpaqueId(analysis.overview.resultId)
   }
   // 自定义路径的根结果可能不会出现在 overview（汇总值没有 resultId）。
@@ -237,13 +205,6 @@ function scoreOrganizationDimensions(keys) {
   if (hasAnyKey(keys, ['medical_group_code', 'medical_group_name'])) return 30
   if (hasAnyKey(keys, ['out_dept_code', 'out_dept_name', 'department_code', 'department_name'])) return 20
   if (hasAnyKey(keys, ['hospital_code', 'hospital_name'])) return 10
-  return 0
-}
-
-function scoreDiseaseDimensions(keys) {
-  if (hasAnyKey(keys, ['visit_id', 'patient_id', 'patient_name', 'case_id'])) return 40
-  if (hasAnyKey(keys, ['single_disease_code', 'single_disease_name'])) return 30
-  if (hasAnyKey(keys, ['direct_death', 'diagnosis_code', 'diagnosis_name', 'disease_code', 'disease_name'])) return 20
   return 0
 }
 

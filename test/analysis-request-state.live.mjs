@@ -22,6 +22,7 @@ const state = () => page.locator('.indicator-analysis').evaluate(node => {
 const ready = () => page.waitForFunction(() => {
   const s = document.querySelector('.indicator-analysis')?.__vueParentComponent?.setupState
   return s && !s.analysisLoading && !s.rangeSummaryLoading && !s.trendLoading && !s.indicatorOptionsLoading
+    && Object.keys(s.departmentNamesByCode || {}).length > 0
 }, null, { timeout: 90000 })
 async function applyMonth(month) {
   await page.locator('.indicator-analysis').evaluate((node, value) => { node.__vueParentComponent.setupState.trendMonthRange = [value, value] }, month)

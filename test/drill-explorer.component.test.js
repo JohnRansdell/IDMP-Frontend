@@ -27,7 +27,7 @@ const Select = vue.defineComponent({ props: ['modelValue'], emits: ['update:mode
   setup: (props, { slots }) => () => vue.h('div', { 'data-path': props.modelValue }, slots.default?.()) })
 const Button = vue.defineComponent({ setup: (_, { slots }) => () => vue.h('button', slots.default?.()) })
 
-function create(fetchResultFactors = async () => ({ context: {}, factors: [] }), props = {}, drillResponse = {}) {
+function create(fetchResultFactors = async () => ({ context: {}, factors: [] }), props = {}, drillResponse = {}, interactive = false) {
   const requests = []
   const component = Function('vue', 'deps', `const { createRequestScope, useRoute, useRouter, StatePanel, FactorTraceTree, searchResultDrill, fetchResultFactors, limitDrillNextLevels, isStatusRecord, getStatusLabel, fetchDepartmentNames, isDepartmentLevel, namedDrillRecord, canonicalDrillRootResultId, assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation, formatResultNumber, formatResultValue } = deps;\n${bindings}\n${code}`)(vue, {
     createRequestScope, formatResultNumber, formatResultValue,
@@ -48,11 +48,80 @@ function create(fetchResultFactors = async () => ({ context: {}, factors: [] }),
       startParentKeys: { OUT_DEPT_CODE: '17' }, startFilters: { OUT_DEPT_CODE: '17' },
       configuredPaths: [{ pathCode: 'CUSTOM_DEPT', pathName: '科室下钻', levels: [{ levelCode: 'ROOT' }, { levelCode: 'DEPT' }] }], embedded: true, ...props },
     global: { components: { ElSelect: Select, ElButton: Button },
-      stubs: { ElOption: true, ElTable: true, ElTableColumn: true, ElPagination: true }, directives: { loading() {} } }
+      stubs: { ElOption: true, ElTable: interactive ? vue.defineComponent({ props: ['data'], setup(props, { slots }) {
+        vue.provide('testRows', vue.computed(() => props.data))
+        return () => vue.h('div', slots.default?.())
+      } }) : true, ElTableColumn: interactive ? vue.defineComponent({ setup(_, { slots }) {
+        const rows = vue.inject('testRows')
+        return () => vue.h('div', rows.value.flatMap(row => slots.default?.({ row }) || []))
+      } }) : true, ElPagination: true }, directives: { loading() {} } }
   })
   return { wrapper, requests }
 }
 function button(wrapper, text) { return wrapper.findAll('button').find(item => item.text() === text) }
+
+test('organization clicks use each selected result anchor and restore the hospital when navigating back', async () => {
+  const { wrapper, requests } = create(undefined, {
+    resultId: 'hospital-result', snapshotId: 'hospital-snapshot', startPathCode: 'ORGANIZATION', startLevel: 'HOSPITAL', startParentKeys: {}, startFilters: {},
+    configuredPaths: [{ pathCode: 'ORGANIZATION', levels: [{ levelCode: 'HOSPITAL' },
+      { levelCode: 'DEPARTMENT', memberKeyFieldCode: '科室' }, { levelCode: 'ATTENDING_DOCTOR', memberKeyFieldCode: '医生' }] }]
+  }, (id, payload) => ({ context: { currentLevel: payload.currentLevel },
+    nextLevels: payload.currentLevel === 'HOSPITAL' ? ['DEPARTMENT'] : payload.currentLevel === 'DEPARTMENT' ? ['ATTENDING_DOCTOR'] : [],
+    breadcrumb: payload.currentLevel === 'ATTENDING_DOCTOR' ? [{ level: 'HOSPITAL', label: '医院' }, { level: 'DEPARTMENT', key: '15', label: '科室' }] : [],
+    pageInfo: { total: 1 }, records: [{ resultId: payload.currentLevel === 'HOSPITAL' ? 'hospital-result' : 'selected-department-result',
+      snapshotId: payload.currentLevel === 'HOSPITAL' ? 'hospital-snapshot' : 'department-snapshot', dimensionKey: '15' }]
+  }), true)
+  await flushPromises()
+  await button(wrapper, '查看下一级').trigger('click')
+  await flushPromises()
+  assert.equal(requests.at(-1).payload.currentLevel, 'DEPARTMENT')
+  assert.deepEqual(requests.at(-1).payload.parentKeys, {})
+  await button(wrapper, '查看下一级').trigger('click')
+  await flushPromises()
+  assert.equal(requests.at(-1).id, 'selected-department-result')
+  assert.equal(requests.at(-1).payload.snapshotId, 'department-snapshot')
+  assert.deepEqual(requests.at(-1).payload.parentKeys, { 科室: '15' })
+  wrapper.findComponent({ name: 'ElPagination' }).vm.$emit('current-change', 2)
+  await flushPromises()
+  assert.equal(requests.at(-1).id, 'selected-department-result')
+  await wrapper.find('.drill-breadcrumb__item').trigger('click')
+  await flushPromises()
+  assert.equal(requests.at(-1).id, 'hospital-result')
+  assert.equal(requests.at(-1).payload.currentLevel, 'HOSPITAL')
+  assert.deepEqual(requests.at(-1).payload.parentKeys, {})
+  await wrapper.setProps({ resultId: 'new-month-result', startLevel: 'ATTENDING_DOCTOR', startParentKeys: { 科室: '15' } })
+  await flushPromises()
+  assert.equal(requests.at(-1).id, 'new-month-result')
+  wrapper.unmount()
+})
+
+test('an unbound hospital root is a configured summary, not a missing hospital member', async () => {
+  const { wrapper } = create(undefined, { resultId: 'root', startLevel: 'HOSPITAL', startPathCode: 'ORGANIZATION',
+    configuredPaths: [{ pathCode: 'ORGANIZATION', levels: [{ levelCode: 'HOSPITAL', levelName: '医院' }] }]
+  }, { context: { currentLevel: 'HOSPITAL' }, columns: [{ field: 'dimensionName', label: '医院' }],
+    records: [{ levelCode: 'HOSPITAL', dimensionKey: '__UNASSIGNED__', dimensionName: '未维护医院' }],
+    breadcrumb: [{ level: 'HOSPITAL', key: '__UNASSIGNED__', label: '未维护医院' }] })
+  await flushPromises()
+  assert.deepEqual(wrapper.vm.getReportSnapshot().section.rows, [['医院']])
+  assert.equal(wrapper.find('.drill-breadcrumb__item').text(), '医院')
+  wrapper.unmount()
+})
+
+test('a configured custom disease root opens its business level using the selected result', async () => {
+  const { wrapper, requests } = create(undefined, { startPathCode: 'CUSTOM_DISEASE', startLevel: 'ROOT', startParentKeys: {}, startFilters: {},
+    configuredPaths: [{ pathCode: 'CUSTOM_DISEASE', levels: [{ levelCode: 'ROOT', levelName: '全部病种' },
+      { levelCode: 'DIAGNOSIS', memberKeyFieldCode: '病种' }] }]
+  }, (id, payload) => ({ context: { currentLevel: payload.currentLevel }, nextLevels: payload.currentLevel === 'ROOT' ? ['DIAGNOSIS'] : [],
+    records: [{ resultId: '病种根结果', dimensionKey: 'ROOT' }], pageInfo: { total: 1 } }), true)
+  await flushPromises()
+  await button(wrapper, '查看下一级').trigger('click')
+  await flushPromises()
+  assert.equal(requests.length, 2)
+  assert.equal(requests[1].id, '病种根结果')
+  assert.equal(requests[1].payload.currentLevel, 'DIAGNOSIS')
+  assert.deepEqual(requests[1].payload.parentKeys, {})
+  wrapper.unmount()
+})
 
 test('equivalent parent objects and tab toggles do not reload an already completed drill', async () => {
   const { wrapper, requests } = create()
@@ -105,7 +174,7 @@ test('static drill displays its mode instead of the persisted sentinel period', 
 })
 
 test('built-in and custom drill requests always send the selected path explicitly', async () => {
-  for (const [pathCode, level] of [['ORGANIZATION', 'OUT_DEPT'], ['DISEASE', 'SINGLE_DISEASE'], ['CUSTOM_DEPT', 'DEPT']]) {
+  for (const [pathCode, level] of [['ORGANIZATION', 'OUT_DEPT'], ['CUSTOM_DISEASE', 'SINGLE_DISEASE'], ['CUSTOM_DEPT', 'DEPT']]) {
     const { wrapper, requests } = create(undefined, { startPathCode: pathCode, startLevel: level,
       configuredPaths: [{ pathCode, levels: [{ levelCode: level }] }] })
     await flushPromises()
@@ -119,7 +188,7 @@ test('built-in and custom drill requests always send the selected path explicitl
 test('factor tracing is a separate command, not a drill path option', async () => {
   const { wrapper, requests } = create()
   await flushPromises()
-  assert.ok(!wrapper.findAll('el-option-stub').some(option => ['FACTOR_TRACE', 'TIME', 'SCENARIO'].includes(option.attributes('value'))))
+  assert.ok(!wrapper.findAll('el-option-stub').some(option => ['FACTOR_TRACE', 'TIME', 'DISEASE', 'SCENARIO'].includes(option.attributes('value'))))
   await button(wrapper, '查看因子追溯').trigger('click')
   await flushPromises()
   assert.equal(wrapper.findComponent(Select).props('modelValue'), 'CUSTOM_DEPT')
@@ -150,14 +219,17 @@ test('returning to drill prevents a pending trace response from reopening the tr
 })
 
 test('choosing another drill path exits trace mode without leaving an internal value in the selector', async () => {
-  const { wrapper, requests } = create()
+  const { wrapper, requests } = create(undefined, { configuredPaths: [
+    { pathCode: 'CUSTOM_DEPT', levels: [{ levelCode: 'ROOT' }, { levelCode: 'DEPT' }] },
+    { pathCode: 'CUSTOM_DISEASE', levels: [{ levelCode: 'ROOT' }, { levelCode: 'SINGLE_DISEASE' }] }
+  ] })
   await flushPromises()
   await button(wrapper, '查看因子追溯').trigger('click')
   await flushPromises()
-  wrapper.findComponent(Select).vm.$emit('update:modelValue', 'DISEASE')
+  wrapper.findComponent(Select).vm.$emit('update:modelValue', 'CUSTOM_DISEASE')
   await flushPromises()
   assert.equal(wrapper.find('section[aria-label="因子结果追溯"]').exists(), false)
-  assert.equal(requests.at(-1).payload.currentLevel, 'ALL_SINGLE_DISEASE')
+  assert.equal(requests.at(-1).payload.currentLevel, 'ROOT')
   assert.ok(button(wrapper, '查看因子追溯'))
   wrapper.unmount()
 })
@@ -224,14 +296,83 @@ test('table rejects responses for another period version or snapshot', async () 
 })
 
 test('switching paths never pins the previous path snapshot', async () => {
-  const { wrapper, requests } = create(undefined, { snapshotId: '科室快照' })
+  const { wrapper, requests } = create(undefined, { snapshotId: '科室快照', configuredPaths: [
+    { pathCode: 'CUSTOM_DEPT', levels: [{ levelCode: 'ROOT' }, { levelCode: 'DEPT' }] },
+    { pathCode: 'CUSTOM_DISEASE', levels: [{ levelCode: 'ROOT' }, { levelCode: 'SINGLE_DISEASE' }] }
+  ] })
   await flushPromises()
   assert.equal(requests.at(-1).payload.snapshotId, '科室快照')
-  wrapper.findComponent(Select).vm.$emit('update:modelValue', 'DISEASE')
+  wrapper.findComponent(Select).vm.$emit('update:modelValue', 'CUSTOM_DISEASE')
   await flushPromises()
-  assert.equal(requests.at(-1).payload.pathCode, 'DISEASE')
+  assert.equal(requests.at(-1).payload.pathCode, 'CUSTOM_DISEASE')
   assert.equal(requests.at(-1).payload.snapshotId, undefined)
   wrapper.unmount()
+})
+
+test('only actual organization and custom paths are selectable, including custom disease paths', async () => {
+  const { wrapper, requests } = create(undefined, { startPathCode: 'DISEASE', startLevel: 'SINGLE_DISEASE',
+    configuredPaths: [
+      { pathCode: 'DISEASE' }, { pathCode: 'TIME' }, { pathCode: 'FACTOR_TRACE' },
+      { pathCode: 'ORGANIZATION', levels: [{ levelCode: 'HOSPITAL' }] },
+      { pathCode: 'CUSTOM_DISEASE', pathName: '诊断下钻', levels: [{ levelCode: 'ROOT' }, { levelCode: 'DIAGNOSIS' }] }
+    ] })
+  await flushPromises()
+  assert.deepEqual(wrapper.findAll('el-option-stub').map(option => option.attributes('value')), ['ORGANIZATION', 'CUSTOM_DISEASE'])
+  assert.equal(requests.length, 1)
+  assert.equal(requests[0].payload.pathCode, 'ORGANIZATION')
+  assert.equal(requests[0].payload.currentLevel, 'HOSPITAL')
+  assert.deepEqual(requests[0].payload.parentKeys, {})
+  wrapper.findComponent(Select).vm.$emit('update:modelValue', 'DISEASE')
+  await flushPromises()
+  assert.equal(requests.length, 1)
+  assert.equal(wrapper.findComponent(Select).props('modelValue'), 'ORGANIZATION')
+  wrapper.unmount()
+})
+
+test('removed paths select the remaining configured root once, then stop when no path remains', async () => {
+  const { wrapper, requests } = create()
+  await flushPromises()
+  await wrapper.setProps({ configuredPaths: [{ pathCode: 'ORGANIZATION', levels: [{ levelCode: 'HOSPITAL' }] }] })
+  await flushPromises()
+  assert.equal(requests.length, 2)
+  assert.equal(requests[1].payload.pathCode, 'ORGANIZATION')
+  assert.equal(requests[1].payload.currentLevel, 'HOSPITAL')
+  await wrapper.setProps({ configuredPaths: [{ pathCode: 'DISEASE' }] })
+  await flushPromises()
+  assert.equal(requests.length, 2)
+  assert.match(wrapper.text(), /未配置下钻路径/)
+  assert.equal(wrapper.findComponent(Select).props('modelValue'), '')
+  wrapper.unmount()
+})
+
+test('asynchronous configuration preserves an explicit entry level and parent scope', async () => {
+  const { wrapper, requests } = create(undefined, { configuredPaths: [] })
+  await flushPromises()
+  assert.equal(requests.length, 0)
+  await wrapper.setProps({ configuredPaths: [{ pathCode: 'CUSTOM_DEPT', levels: [{ levelCode: 'ROOT' }, { levelCode: 'DEPT' }] }] })
+  await flushPromises()
+  assert.equal(requests.length, 1)
+  assert.equal(requests[0].payload.currentLevel, 'DEPT')
+  assert.deepEqual(requests[0].payload.parentKeys, { OUT_DEPT_CODE: '17' })
+  wrapper.unmount()
+})
+
+test('no configured path makes no drill request but still allows real factor tracing', async () => {
+  for (const configuredPaths of [[], [{ pathCode: 'DISEASE' }, { pathCode: 'TIME' }, { pathCode: 'FACTOR_TRACE' }]]) {
+    const traces = []
+    const { wrapper, requests } = create(async id => { traces.push(id); return { context: {}, factors: [] } }, { configuredPaths })
+    await flushPromises()
+    assert.equal(requests.length, 0)
+    assert.match(wrapper.text(), /未配置下钻路径/)
+    await button(wrapper, '查看因子追溯').trigger('click')
+    await flushPromises()
+    assert.deepEqual(traces, ['dept-result'])
+    assert.ok(wrapper.find('section[aria-label="因子结果追溯"]').exists())
+    await button(wrapper, '返回下钻').trigger('click')
+    await flushPromises()
+    assert.equal(requests.length, 0)
+    wrapper.unmount()
+  }
 })
 
 test('a late response cannot restore a cleared result or overwrite a newer selection', async () => {

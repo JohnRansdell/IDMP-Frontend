@@ -61,6 +61,41 @@ test('navigation binds codes only and preserves zero identities and ancestor sco
   assert.equal(nextDrillNavigation(context, { dimensionLabel: '无编码科室' }, 'DOCTOR', path), null)
 })
 
+test('an unbound organization root enters departments without inventing a hospital filter', () => {
+  for (const root of ['HOSPITAL', 'ROOT']) {
+    const organization = { pathCode: 'ORGANIZATION', levels: [
+      { levelCode: root }, { levelCode: 'DEPARTMENT', memberKeyFieldCode: '科室' }
+    ] }
+    for (const row of [{ dimensionKey: 'DEFAULT_HOSPITAL', dimensionName: '全院' }, { dimensionName: '全院' }]) {
+      assert.deepEqual(nextDrillNavigation({ currentLevel: root, parentKeys: {}, filters: { 科室: ['15'] } }, row, 'DEPARTMENT', organization), {
+        currentLevel: 'DEPARTMENT', parentKeys: {}, label: '全院'
+      })
+    }
+    assert.equal(nextDrillNavigation({ currentLevel: root }, {}, '', organization), null)
+  }
+})
+
+test('an unbound configured custom root enters its business level without inventing a member filter', () => {
+  const custom = { pathCode: 'CUSTOM_DISEASE', levels: [{ levelCode: 'ROOT', levelName: '全部病种' },
+    { levelCode: 'DIAGNOSIS', memberKeyFieldCode: '病种' }] }
+  assert.deepEqual(nextDrillNavigation({ currentLevel: 'ROOT', parentKeys: {} }, { dimensionKey: 'ROOT' }, 'DIAGNOSIS', custom), {
+    currentLevel: 'DIAGNOSIS', parentKeys: {}, label: '全部病种'
+  })
+  assert.equal(nextDrillNavigation({ currentLevel: 'ROOT' }, {}, '', custom), null)
+  const bound = { ...custom, levels: [{ levelCode: 'ROOT', memberKeyFieldCode: '院区' }, custom.levels[1]] }
+  assert.deepEqual(nextDrillNavigation({ currentLevel: 'ROOT' }, { dimensionKey: '院区甲' }, 'DIAGNOSIS', bound).parentKeys, { 院区: '院区甲' })
+})
+
+test('the root exception never bypasses missing identities on member levels', () => {
+  for (const [code, level] of [['CUSTOM_1', 'DEPT'], ['ORGANIZATION', 'DEPARTMENT'], ['CUSTOM_1', 'HOSPITAL']]) {
+    const configured = { pathCode: code, levels: [{ levelCode: level }, { levelCode: 'DOCTOR' }] }
+    assert.equal(nextDrillNavigation({ currentLevel: level }, { dimensionKey: '15' }, 'DOCTOR', configured), null)
+  }
+  assert.deepEqual(nextDrillNavigation({ currentLevel: 'HOSPITAL', parentKeys: {} }, { dimensionKey: '院区甲' }, 'OUT_DEPT', path), {
+    currentLevel: 'OUT_DEPT', parentKeys: { HOSPITAL_CODE: '院区甲' }, label: '院区甲'
+  })
+})
+
 test('projected navigation removes obsolete names only after resolving the selected row code', () => {
   const projected = projectedDrillNavigation({ 科室编码: '15', 科室名称: '新名称' }, path, {
     currentLevel: 'OUT_DEPT', parentKeys: { HOSPITAL_CODE: '院区甲' }, filters: { 科室名称: ['旧名称'], 病种: ['肺炎'] }

@@ -91,11 +91,15 @@ export function createOverviewPresentation({ report, formal, selected, unit, dis
           { label: '维度分析', value: '-', description: '后端维度结果未返回' }
         ]
       }
-      if (formal.overview?.numerator !== undefined && formal.overview?.numerator !== null) metrics.push({ label: '分子', value: formatCount(formal.overview.numerator), description: '计入事件数' })
-      if (formal.overview?.denominator !== undefined && formal.overview?.denominator !== null) metrics.push({ label: '分母', value: formatCount(formal.overview.denominator), description: '统计对象总量' })
+      const numerator = formal.overview?.numeratorValue ?? formal.overview?.numerator
+      const denominator = formal.overview?.denominatorValue ?? formal.overview?.denominator
+      if (numerator != null) metrics.push({ label: '分子', value: formatCount(numerator), description: '计入事件数' })
+      if (denominator != null) metrics.push({ label: '分母', value: formatCount(denominator), description: '统计对象总量' })
       const dimensionCount = formal.dimensionCount
       const configured = formal.hasDrill
-      metrics.push(dimensionCount
+      metrics.push(dimensionCount == null
+        ? { label: '维度分析', value: configured ? '已配置' : '未配置' }
+        : dimensionCount
         ? { label: '维度结果', value: `${dimensionCount} 个`, description: '本报告期已生成的维度成员数' }
         : { label: '维度分析', value: configured ? '本期暂无结果' : '未配置', description: configured ? '该报告期未生成维度结果' : '该指标未配置维度分析' })
       if (hasData) {
