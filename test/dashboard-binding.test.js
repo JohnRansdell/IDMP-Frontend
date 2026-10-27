@@ -207,7 +207,7 @@ test('capabilities reject wrong types, duplicate slots, unsupported granularity 
   for (const bad of [null, {}, { ...binding(), measures: [null] }, { ...binding(), sort: [null] }]) assert.equal(compileWidgetData('line', bad, dataset).status, 'invalid')
 })
 
-test('formal ratio rows with direct values regroup from complete numerator and denominator data', () => {
+test('direct indicator rows never guess a ratio from optional operands', () => {
   const formal = {
     fields: [
       { id: 'OUT_DEPT_NAME', label: '出院科室', semanticType: 'dimension' },
@@ -223,9 +223,12 @@ test('formal ratio rows with direct values regroup from complete numerator and d
   }
   const binding = { dataset: 'backend', dimensions: [{ field: 'OUT_DEPT_NAME' }], measures: [{ field: 'value', aggregation: 'direct', axis: 'left' }], series: [], sort: [] }
   const model = compileWidgetData('bar', binding, formal)
-  assert.equal(model.status, 'ready')
-  assert.deepEqual(model.categories, ['重症医学科', '呼吸内科'])
-  assert.deepEqual(model.series[0].values, [3 / 11, 0.1])
+  assert.equal(model.status, 'invalid')
+  formal.rows = [formal.rows[0], formal.rows[2]]
+  formal.rows[0].value = -12.5
+  const unique = compileWidgetData('bar', binding, formal)
+  assert.equal(unique.status, 'ready')
+  assert.deepEqual(unique.series[0].values, [-12.5, 0.1])
 })
 
 test('legacy code dimensions display their formal companion names while retaining raw tuples', () => {

@@ -28,8 +28,8 @@
 
     <div class="drill-summary-strip" aria-label="当前层汇总">
       <div><span>指标值</span><strong>{{ formatResultValue(result.summary.indicatorValue, { displayValue: result.summary.displayValue, unit: result.summary.unit || result.context.unit }) }}</strong></div>
-      <div><span>分子</span><strong>{{ formatResultNumber(result.summary.numerator) }}</strong></div>
-      <div><span>分母</span><strong>{{ formatResultNumber(result.summary.denominator) }}</strong></div>
+      <div v-if="result.summary.numerator != null"><span>分子</span><strong>{{ formatResultNumber(result.summary.numerator) }}</strong></div>
+      <div v-if="result.summary.denominator != null"><span>分母</span><strong>{{ formatResultNumber(result.summary.denominator) }}</strong></div>
       <div><span>质量状态</span><strong>{{ result.summary.qualityStatus ? getStatusLabel(result.summary.qualityStatus) : '-' }}</strong></div>
     </div>
 
@@ -102,7 +102,7 @@
 
     <section v-if="source !== 'mock' && (isFactorTraceMode || factorTrace)" class="factor-trace-panel" aria-label="因子结果追溯">
       <div class="drill-table-heading">
-        <div><h3>因子结果追溯</h3><p>从当前指标结果追溯到公式中的分子、分母因子。</p></div>
+        <div><h3>因子结果追溯</h3><p>从当前指标结果追溯到公式中的各个参与因子。</p></div>
         <span class="drill-table-heading__count">{{ factorTrace?.factors?.length || 0 }} 个因子</span>
       </div>
       <StatePanel v-if="factorTraceLoading" type="loading" title="正在加载因子追溯" />
@@ -198,6 +198,7 @@ const statusRecord = computed(() => result.value.records.find(isStatusRecord) ||
 const memberRecords = computed(() => result.value.records.filter((item) => !isStatusRecord(item)))
 const visibleColumns = computed(() => result.value.columns.filter((column) => (
   String(column.field || '').toLowerCase() !== 'factorsourceprofiles'
+  && (!['numerator', 'denominator'].includes(column.field) || memberRecords.value.some(row => row[column.field] != null))
 )))
 const activeResultId = computed(() => String(
   navigationAnchors.value[navigationKey()]?.resultId ||

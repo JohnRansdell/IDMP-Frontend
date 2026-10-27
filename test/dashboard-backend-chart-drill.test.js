@@ -130,8 +130,10 @@ test('pie drill component updates values, series name and diagnostics with its t
     { dimensionLabel: '医生甲', indicatorValue: 0.25, displayValue: '25%', numerator: 5, denominator: 20 },
     { dimensionLabel: '医生乙', indicatorValue: 0.5, displayValue: '50%', numerator: 20, denominator: 40 }
   ] } })
-  const { rawOption, chartIssue } = Function('computed', 'props', 'currentEntry', 'backendChartMeasure', 'backendChartValue', 'formatResultNumber', 'formatResultValue',
-    `${block}; return { rawOption, chartIssue }`)(computed, props, currentEntry, backendChartMeasure, backendChartValue, formatResultNumber, formatResultValue)
+  const { resultOperandColumns, operandValue } = await import('../src/idmp/features/shared/formulaPresentation.js')
+  const operandColumns = computed(() => resultOperandColumns(currentEntry.value.result.records))
+  const { rawOption, chartIssue } = Function('computed', 'props', 'currentEntry', 'backendChartMeasure', 'backendChartValue', 'formatResultNumber', 'formatResultValue', 'operandColumns', 'operandValue',
+    `${block}; return { rawOption, chartIssue }`)(computed, props, currentEntry, backendChartMeasure, backendChartValue, formatResultNumber, formatResultValue, operandColumns, operandValue)
   for (const [field, label, values] of [
     ['value', '指标值', [0.25, 0.5]], ['numeratorValue', '转科人次', [5, 20]], ['denominatorValue', '入院人次', [20, 40]], ['value', '指标值', [0.25, 0.5]]
   ]) {

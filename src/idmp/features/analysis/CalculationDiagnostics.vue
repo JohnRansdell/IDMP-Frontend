@@ -22,7 +22,7 @@
           <div><dt>批次状态</dt><dd>{{ batch ? getStatusLabel(batch.batchStatus || batch.status) : batchError || '后端未返回' }}</dd></div>
         </dl>
         <p v-if="trace.formula?.displayText">计算公式：{{ trace.formula.displayText }}</p>
-        <div class="diagnostic-values"><span>分子：{{ valueText(trace.indicatorResult?.numeratorValue) }}</span><span>分母：{{ valueText(trace.indicatorResult?.denominatorValue) }}</span><strong>指标值：{{ trace.indicatorResult?.displayValue ?? valueText(trace.indicatorResult?.value) }}</strong></div>
+        <div class="diagnostic-values"><span v-for="operand in operandColumns" :key="operand.field">{{ operand.label }}：{{ valueText(operandValue(trace.indicatorResult, operand)) }}</span><strong>指标值：{{ trace.indicatorResult?.displayValue ?? valueText(trace.indicatorResult?.value) }}</strong></div>
         <FactorTraceTree v-if="trace.factors?.length" :key="selectedId" :result-id="selectedId" :factors="trace.factors" />
         <p v-else>当前结果未返回匹配的因子追溯信息。</p>
       </template>
@@ -39,6 +39,7 @@ import FactorTraceTree from '@/idmp/components/FactorTraceTree.vue'
 import { getStatusLabel } from '@/idmp/design/status'
 import { formatResultPeriod } from '@/idmp/utils/periodRange.js'
 import { diagnosticPeriodQuery, diagnosticResultLabel, diagnosticResults, validateDiagnosticTrace } from './calculationDiagnostics.js'
+import { operandValue, resultOperandColumns } from '../shared/formulaPresentation.js'
 
 const props = defineProps({
   indicatorId: { type: String, required: true }, indicatorVersionId: { type: String, required: true },
@@ -51,6 +52,7 @@ const loading = ref(false), error = ref(''), emptyMessage = ref(''), traceLoadin
 let generation = 0, traceGeneration = 0, resultController, traceController
 const options = computed(() => results.value.map(row => ({ value: String(row.resultId), label: diagnosticResultLabel(row, props.granularity) })))
 const batchId = computed(() => String(trace.value?.context?.calculationBatchId || ''))
+const operandColumns = computed(() => resultOperandColumns([trace.value?.indicatorResult], trace.value?.formula?.formula))
 const tracePeriod = computed(() => props.granularity === 'STATIC' || !trace.value?.context?.periodStart
   ? '静态结果' : formatResultPeriod(trace.value.context.periodStart, trace.value.context.periodEnd))
 const valueText = value => value === null || value === undefined ? '未返回' : typeof value === 'object' ? JSON.stringify(value) : String(value)

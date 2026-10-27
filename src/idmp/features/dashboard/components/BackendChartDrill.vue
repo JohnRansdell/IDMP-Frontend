@@ -22,11 +22,11 @@
       <template #actions><button type="button" class="backend-chart-drill__retry" @click="retry">重试</button></template>
       <template #table>
         <table>
-          <thead><tr><th>{{ levelName(currentEntry?.navigation.currentLevel) }}</th><th>分子</th><th>分母</th><th>指标值</th></tr></thead>
+          <thead><tr><th>{{ levelName(currentEntry?.navigation.currentLevel) }}</th><th v-for="operand in operandColumns" :key="operand.field">{{ operand.label }}</th><th>指标值</th></tr></thead>
           <tbody>
             <tr v-for="(row, index) in currentEntry?.result.records || []" :key="row.resultId || `${row.dimensionKey}-${index}`">
               <td><button v-if="nextNavigation(row)" type="button" @click="openRow(row)">{{ row.dimensionLabel }}</button><span v-else>{{ row.dimensionLabel }}</span></td>
-              <td>{{ formatResultNumber(row.numerator, { missing: '—' }) }}</td><td>{{ formatResultNumber(row.denominator, { missing: '—' }) }}</td><td>{{ formatResultValue(row.indicatorValue, { displayValue: row.displayValue, unit: row.unit || unit, missing: '—' }) }}</td>
+              <td v-for="operand in operandColumns" :key="operand.field">{{ formatResultNumber(operandValue(row, operand), { missing: '—' }) }}</td><td>{{ formatResultValue(row.indicatorValue, { displayValue: row.displayValue, unit: row.unit || unit, missing: '—' }) }}</td>
             </tr>
           </tbody>
         </table>
@@ -43,6 +43,7 @@ import { createDashboardChartTheme } from '../chartTheme.js'
 import { applyWidgetVisualStyle } from '../visualStyle.js'
 import { resolveWidgetSurfaceTone } from '../backgroundAssets.js'
 import { formatResultNumber, formatResultValue } from '../../shared/resultPresentation.js'
+import { operandValue, resultOperandColumns } from '../../shared/formulaPresentation.js'
 import {
   backendChartMeasure, backendChartValue, chartDrillLevelName, findBackendChartRow,
   initialBackendChartNavigation, loadBackendChartLevel, loadBackendChartRoot, nextBackendChartNavigation
@@ -54,6 +55,7 @@ const resolveTarget = inject('dashboardResolveWidgetDrill', async () => null)
 const searchDrill = inject('dashboardSearchDrill', searchResultDrill)
 const root = ref(null)
 const history = ref([])
+const operandColumns = computed(() => resultOperandColumns(history.value.at(-1)?.result.records))
 const loading = ref(false)
 const error = ref('')
 const notice = ref('')
@@ -79,7 +81,7 @@ const rawOption = computed(() => {
   const tooltip = { trigger: props.kind === 'pie' ? 'item' : 'axis', confine: true, formatter: (params) => {
     const item = Array.isArray(params) ? params[0] : params
     const row = item?.data?.row
-    return row ? `${row.dimensionLabel}<br/>指标值：${formatResultValue(row.indicatorValue, { displayValue: row.displayValue, unit: row.unit || props.unit, missing: '—' })}<br/>分子：${formatResultNumber(row.numerator, { missing: '—' })}<br/>分母：${formatResultNumber(row.denominator, { missing: '—' })}` : ''
+    return row ? `${row.dimensionLabel}<br/>指标值：${formatResultValue(row.indicatorValue, { displayValue: row.displayValue, unit: row.unit || props.unit, missing: '—' })}${operandColumns.value.map(operand => `<br/>${operand.label}：${formatResultNumber(operandValue(row, operand), { missing: '—' })}`).join('')}` : ''
   } }
   if (props.kind === 'pie') return { tooltip, legend: { type: 'scroll', bottom: 0 }, series: [{ name: measure.value.label, type: 'pie', radius: ['42%', '67%'], center: ['50%', '44%'], minShowLabelAngle: 2, data }] }
   return { tooltip, grid: { top: 22, bottom: 34, left: 12, right: 16, containLabel: true }, dataZoom: rows.length > 15 ? [{ type: 'inside', start: 0, end: 15 / rows.length * 100 }, { type: 'slider', height: 12, bottom: 2, start: 0, end: 15 / rows.length * 100 }] : [], xAxis: { type: 'category', data: rows.map(row => row.dimensionLabel), axisLabel: { hideOverlap: true } }, yAxis: { type: 'value', axisLabel: { formatter: props.unit === '%' ? '{value}%' : '{value}' } }, series: [{ type: 'bar', data, barMaxWidth: 42 }] }

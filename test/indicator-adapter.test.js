@@ -378,7 +378,7 @@ test('analysis explanation lists non-ratio factors and falls back to version ids
 
   assert.deepEqual(collectFormulaFactorVersionIds(formula), ['left-version', 'right-version'])
   assert.equal(explanation.type, 'FACTORS')
-  assert.deepEqual(explanation.operands[0].factorVersionIds, ['left-version', 'right-version'])
+  assert.deepEqual(explanation.operands.map(item => item.factorVersionIds), [['left-version'], ['right-version']])
   assert.match(explanation.formulaText, /参与因子（版本 left-version） \+ 参与因子（版本 right-version）/)
   assert.match(explanation.operands[0].factorNames[0], /版本 left-version/)
 })

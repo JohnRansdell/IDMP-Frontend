@@ -42,7 +42,7 @@ export function createPieDrillRequestGate() {
   }
 }
 
-export async function loadPieDrillLevel(search, root, navigation, { signal, pageNum = 1, tableOnly = false } = {}) {
+export async function loadPieDrillLevel(search, root, navigation, { signal, pageNum = 1, tableOnly = false, measure = 'numerator' } = {}) {
   if (root.error || !root.target) throw contextError(root.error || '缺少下钻根结果')
   const currentLevel = normalizeOrganizationDrillLevel(navigation.currentLevel)
   const parentKeys = cleanParentKeys(navigation.parentKeys)
@@ -83,10 +83,10 @@ export async function loadPieDrillLevel(search, root, navigation, { signal, page
     const result = await loadPage(page)
     const issue = paginationIssue(result, page)
     if (issue || result.pageInfo.total !== first.pageInfo.total || result.pageInfo.pageSize !== first.pageInfo.pageSize) return fallback(issue || '分页统计发生变化，无法确认整层数据完整')
-    if (differentNumber(result.summary?.numerator, first.summary?.numerator)) return fallback('分页汇总不一致，无法绘制构成图')
+    if (differentNumber(result.summary?.[measure], first.summary?.[measure])) return fallback('分页汇总不一致，无法绘制构成图')
     records.push(...result.records)
   }
-  const issue = chartIssue(records, first.summary?.numerator, navigation.expectedNumerator)
+  const issue = chartIssue(records, first.summary?.numerator, navigation.expectedNumerator, measure)
   if (issue) return fallback(issue)
   return { ...first, records, chartIssue: '', paged: false }
 }
@@ -142,15 +142,16 @@ function paginationIssue(result, pageNum) {
   return ''
 }
 
-function chartIssue(records, summaryNumerator, expectedNumerator) {
-  if ([summaryNumerator, expectedNumerator].some((value) => value !== undefined && value !== null && numericPieValue(value) === null)) return '汇总分子值无效，请使用分页表格核对'
+function chartIssue(records, summaryNumerator, expectedNumerator, measure) {
+  const numerator = measure === 'numerator'
+  if (numerator && [summaryNumerator, expectedNumerator].some((value) => value !== undefined && value !== null && numericPieValue(value) === null)) return '汇总分子值无效，请使用分页表格核对'
   const keys = records.map((row) => opaqueKey(row.dimensionKey))
   if (keys.some((key) => !key) || new Set(keys).size !== keys.length) return '组织编码缺失或重复，请使用分页表格核对'
-  const values = records.map((row) => numericPieValue(row.numerator))
-  if (values.some((value) => value === null)) return '分子值缺失或无效，不能按指标发生率绘制构成图'
+  const values = records.map((row) => numericPieValue(row[measure]))
+  if (values.some((value) => value === null)) return '构成度量缺失、为负数或无效，请使用表格查看'
   const sum = values.reduce((total, value) => total + value, 0)
-  if (numericPieValue(sum) === null || differentNumber(sum, summaryNumerator) || differentNumber(sum, expectedNumerator)) return '分子汇总与父级或当前层统计不一致，请使用分页表格核对'
-  if (records.length && sum === 0) return '当前层分子值全部为 0，请使用表格查看或继续下钻'
+  if (numericPieValue(sum) === null || numerator && (differentNumber(sum, summaryNumerator) || differentNumber(sum, expectedNumerator))) return '分子汇总与父级或当前层统计不一致，请使用分页表格核对'
+  if (records.length && sum === 0) return '当前层度量值全部为 0，请使用表格查看或继续下钻'
   return ''
 }
 

@@ -3,6 +3,7 @@ import { normalizeDimensionGrain, serializeDrillPaths } from '../../features/ind
 import { formulaChildren, arithmeticFormulaText } from '../../features/indicator/arithmeticFormula.js'
 import { normalizeResultMetrics } from './result.js'
 import { isRetiredDrillPath } from '../../features/indicator/drillPathPolicy.js'
+import { isRatioFormula } from '../../features/shared/formulaPresentation.js'
 
 const runtimeEnv = typeof import.meta.env === 'object' && import.meta.env ? import.meta.env : {}
 
@@ -91,7 +92,7 @@ export function createIndicatorDataExplanation({ analysis = {}, overview = null,
   const root = formula?.root || formula
   const result = overview || analysis?.overview || {}
   const display = formula?.display || {}
-  const isRatio = String(root?.nodeType || '').toUpperCase() === 'BINARY' && String(root?.operator || '').toUpperCase() === 'DIV'
+  const isRatio = isRatioFormula(formula)
   const multiplier = String(display.multiplier || '')
   const ids = collectFormulaFactorVersionIds(formula)
   const factorLabels = ids.map(id => ({ versionId: id, name: resolveFactorVersionName(factorVersions?.[id], id, 'FACTOR') }))
@@ -108,11 +109,11 @@ export function createIndicatorDataExplanation({ analysis = {}, overview = null,
     }
   }
 
-  const factors = createExplanationOperand('FACTOR', collectFormulaFactorIds(root), result, factorVersions)
+  const factors = ids.map(id => ({ ...createExplanationOperand('FACTOR', [id], result, factorVersions), key: id }))
   return {
     type: 'FACTORS',
-    formulaText: formulaText || (factors.factorNames.length ? `参与因子：${factors.factorNames.join('、')}` : '当前指标版本未返回可解析的公式因子。'),
-    operands: factors.factorVersionIds.length ? [factors] : []
+    formulaText: formulaText || (factors.length ? `参与因子：${factors.flatMap(item => item.factorNames).join('、')}` : '当前指标版本未返回可解析的公式因子。'),
+    operands: factors
   }
 }
 

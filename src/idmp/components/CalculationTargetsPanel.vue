@@ -27,8 +27,7 @@
           <el-table :data="nodeResults.results.records || []" size="small" max-height="360" empty-text="当前页暂无结果">
             <el-table-column v-for="field in resultFields" :key="field" :label="field" min-width="110"><template #default="{ row }">{{ calculationDimensionValue(row, field) }}</template></el-table-column>
             <el-table-column label="结果值" min-width="120"><template #default="{ row }">{{ calculationResultValue(row) }}</template></el-table-column>
-            <el-table-column v-if="isIndicatorNode" prop="numeratorValue" label="分子" min-width="100" />
-            <el-table-column v-if="isIndicatorNode" prop="denominatorValue" label="分母" min-width="100" />
+            <el-table-column v-for="operand in operandColumns" :key="operand.field" :label="operand.label" min-width="100"><template #default="{ row }">{{ operandValue(row, operand) }}</template></el-table-column>
             <el-table-column label="结果状态" min-width="100"><template #default="{ row }"><StatusBadge :status="row.outcomeStatus || row.qualityStatus" /></template></el-table-column>
           </el-table>
           <el-pagination v-if="Number(nodeResults.results.total) > resultPageSize" :current-page="resultPage" :page-size="resultPageSize" :total="Number(nodeResults.results.total)" layout="prev, pager, next" small @current-change="changeResultPage" />
@@ -83,6 +82,7 @@ import CalculationTargetDag from '@/idmp/components/CalculationTargetDag.vue'
 import { fetchCalcNodeResults } from '@/idmp/api/modules/calculation'
 import { calculationDimensionValue, calculationResultFields, calculationResultValue, nodeResultLabel } from '@/idmp/utils/calculationResults'
 import { canRetryCalculationNode, NODE_LABELS, targetPeriod, targetTitle } from '@/idmp/utils/calculationGraph'
+import { operandValue, resultOperandColumns } from '@/idmp/features/shared/formulaPresentation.js'
 const props = defineProps({ targets: { type: Array, default: () => [] }, batchStatus: { type: String, default: '' }, retryingNodeId: { type: String, default: '' } })
 defineEmits(['retry'])
 const expanded = ref(''), drawerOpen = ref(false), selection = reactive({ targetId: '', nodeId: '' })
@@ -93,6 +93,7 @@ const nodeResults = ref(null), resultsLoading = ref(false), resultsError = ref('
 const resultPageSize = 20
 let resultRequest = 0, resultAbort
 const isIndicatorNode = computed(() => ['FORMULA', 'INDICATOR'].includes(selectedNode.value?.nodeType))
+const operandColumns = computed(() => isIndicatorNode.value ? resultOperandColumns(nodeResults.value?.results?.records) : [])
 const canLoadResults = computed(() => selectedNode.value?.status === 'SUCCEEDED' && ['FACTOR', 'DERIVED_FACTOR', 'FORMULA', 'INDICATOR'].includes(selectedNode.value?.nodeType))
 const resultSummary = computed(() => selectedNode.value?.status === 'SUCCEEDED' ? nodeResults.value?.summary || selectedNode.value?.resultSummary : null)
 const resultFields = computed(() => calculationResultFields(nodeResults.value?.dimensionFields, nodeResults.value?.results?.records))

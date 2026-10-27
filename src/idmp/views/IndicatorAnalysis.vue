@@ -213,17 +213,17 @@
         <h3>指标计算口径</h3>
         <p>{{ indicatorDataExplanation.formulaText }}</p>
         <div v-if="indicatorDataExplanation.operands.length" class="formula-operands">
-          <article v-for="operand in indicatorDataExplanation.operands" :key="operand.role" class="formula-operand">
+          <article v-for="operand in indicatorDataExplanation.operands" :key="operand.key || operand.role" class="formula-operand">
             <span>{{ operand.role === 'NUMERATOR' ? '分子' : operand.role === 'DENOMINATOR' ? '分母' : '参与因子' }}</span>
             <strong>{{ operand.factorNames.join('、') || '-' }}</strong>
             <p>因子版本：{{ operand.factorVersionIds.join('、') || '-' }}</p>
             <template v-if="operand.role !== 'FACTOR'">
               <div class="formula-operand__result"><span>本期结果</span><strong>{{ formatExplanationOperandValue(operand) }}</strong></div>
-              <p v-if="!operand.hasResultValue">当前正式结果未返回{{ operand.role === 'NUMERATOR' ? '分子' : '分母' }}值。</p>
+              <p v-if="!operand.hasResultValue && operand.role !== 'FACTOR'">当前结果未提供{{ operand.role === 'NUMERATOR' ? '分子' : '分母' }}值。</p>
             </template>
           </article>
         </div>
-        <p v-else>当前指标版本尚未返回公式定义，暂无法识别分子、分母因子。</p>
+        <p v-else>当前指标版本暂无可展示的参与因子。</p>
       </section>
       <ResultAvailabilityPanel v-if="analysisAvailability" :availability="analysisAvailability" @open-batch="openCalculationBatch" />
       <section v-if="availablePeriod" class="diagnostics-section">
@@ -546,7 +546,8 @@ const overviewPresentation = computed(() => createOverviewPresentation({
     periodLabel: formatAnalysisPeriod(analysisOverview.value), availability: analysisAvailability.value,
     dimensionCount: null, hasDrill: Object.keys(drillMaxLevels.value).length > 0
   },
-  selected: Boolean(selectedBackendIndicator.value), unit: currentProfile.value.unit, display: metricDisplay.value
+  selected: Boolean(selectedBackendIndicator.value), unit: currentProfile.value.unit, display: metricDisplay.value,
+  formula: extractIndicatorFormula(backendIndicatorVersion.value)
 }))
 const primaryMetric = computed(() => overviewPresentation.value.primary)
 const summaryMetrics = computed(() => overviewPresentation.value.summaries)

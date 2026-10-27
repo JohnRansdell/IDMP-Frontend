@@ -12,6 +12,16 @@ const target = {
 const root = resolvePieDrillRoot([target])
 const navigation = { currentLevel: 'OUT_DEPT', parentKeys: root.parentKeys, label: '全部科室' }
 
+test('任意公式构成按已选指标值展示，不要求分子或父子相加', async () => {
+  const records = rows(2).map((row, index) => ({ ...row, numerator: null, denominator: null, indicatorValue: index ? 120 : 35 }))
+  const { search } = pagedSearch(records)
+  const result = await loadPieDrillLevel(search, root, { ...navigation, expectedNumerator: 999 }, { measure: 'indicatorValue' })
+  assert.equal(result.chartIssue, '')
+  assert.deepEqual(result.records.map(row => row.indicatorValue), [35, 120])
+  const negative = pagedSearch([{ ...records[0], indicatorValue: -1 }])
+  assert.match((await loadPieDrillLevel(negative.search, root, navigation, { measure: 'indicatorValue' })).chartIssue, /负数/)
+})
+
 function rows(count, offset = 0) {
   return Array.from({ length: count }, (_, index) => ({ dimensionKey: `dept-${offset + index}`, dimensionLabel: `科室${offset + index}`, numerator: 1, denominator: 100, indicatorValue: '1%', nextLevel: 'MEDICAL_GROUP' }))
 }

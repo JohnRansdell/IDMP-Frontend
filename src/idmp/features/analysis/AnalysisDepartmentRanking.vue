@@ -44,8 +44,8 @@
           </strong>
         </template>
       </el-table-column>
-      <el-table-column prop="numerator" label="分子" width="130" />
-      <el-table-column prop="denominator" label="分母" width="130" />
+      <el-table-column v-if="rankTableData.some(row => row.numerator != null && row.numerator !== '-')" prop="numerator" label="分子" width="130" />
+      <el-table-column v-if="rankTableData.some(row => row.denominator != null && row.denominator !== '-')" prop="denominator" label="分母" width="130" />
       <el-table-column label="较上期" width="120">
         <template #default="{ row }">
           <span :class="changeClass(row.change)">{{ row.change }}</span>

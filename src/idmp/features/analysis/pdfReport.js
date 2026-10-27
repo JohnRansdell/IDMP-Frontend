@@ -5,6 +5,7 @@ const text = value => value === undefined || value === null || value === '' ? '-
 
 export function buildAnalysisPdfReport({ versionId, metadata = [], primaryMetric, summaryMetrics = [], trendRows = [], hasPeerTrend = false,
   unit = '', trendDescription = '', chartPng, rankRows = [], rankDescription = '', provenance = [], drillSection }) {
+  const rankOperands = ['numerator', 'denominator'].filter(field => rankRows.some(row => row[field] != null && row[field] !== '-'))
   const sections = [
     { title: '指标概览', columns: ['项目', '结果', '说明'], rows: [
       [text(primaryMetric?.label), text(primaryMetric?.value), text(primaryMetric?.statusLabel)],
@@ -13,8 +14,8 @@ export function buildAnalysisPdfReport({ versionId, metadata = [], primaryMetric
     { title: '趋势分析', description: trendDescription, columns: ['周期', '本院实际值', ...(hasPeerTrend ? ['同级医院均值'] : [])],
       rows: trendRows.map(row => [text(row.label), row.actualDisplay ?? metric(row.actual, unit), ...(hasPeerTrend ? [row.peerDisplay ?? metric(row.peer, unit)] : [])]),
       ...(chartPng ? { chartPng } : {}) },
-    { title: '科室指标排名', description: rankDescription, columns: ['排名', '科室', '指标值', '分子', '分母', '状态'],
-      rows: rankRows.map(row => [row.rank, row.department, row.rate, row.numerator, row.denominator, row.status].map(text)) },
+    { title: '科室指标排名', description: rankDescription, columns: ['排名', '科室', '指标值', ...rankOperands.map(field => field === 'numerator' ? '分子' : '分母'), '状态'],
+      rows: rankRows.map(row => [row.rank, row.department, row.rate, ...rankOperands.map(field => row[field]), row.status].map(text)) },
     { title: '计算口径与结果追溯', columns: ['项目', '内容'], rows: provenance.map(row => row.map(text)) }
   ]
   if (drillSection) {

@@ -195,7 +195,7 @@
                     text
                     circle
                     :icon="Close"
-                    :aria-label="`移除分子因子 ${factor.name}`"
+                    :aria-label="`移除${activeMode.leftLabel}因子 ${factor.name}`"
                     @click="removeFactor('numerator', factor.code)"
                   />
                 </div>
@@ -223,7 +223,7 @@
                     text
                     circle
                     :icon="Close"
-                    :aria-label="`移除分母因子 ${factor.name}`"
+                    :aria-label="`移除${activeMode.rightLabel}因子 ${factor.name}`"
                     @click="removeFactor('denominator', factor.code)"
                   />
                 </div>
@@ -374,7 +374,7 @@
             <div class="business-action-bar formula-actions">
               <div>
                 <span>公式与试算操作</span>
-                <small>{{ indicatorWorkflow.versionId ? `当前版本 ${indicatorWorkflow.versionId}` : (indicatorWorkflow.indicatorId ? '选择分子、分母后首次保存将创建指标版本' : '请先保存指标基本信息') }}</small>
+                <small>{{ indicatorWorkflow.versionId ? `当前版本 ${indicatorWorkflow.versionId}` : (indicatorWorkflow.indicatorId ? '配置公式后首次保存将创建指标版本' : '请先保存指标基本信息') }}</small>
               </div>
               <el-button
                 v-if="indicatorWorkflow.published"
@@ -462,9 +462,9 @@
                   <dt>资源版本</dt>
                   <dd class="mono-data">{{ workflowDebug.resourceVersion }}</dd>
                 </template>
-                <dt>分子因子</dt>
+                <dt>左侧参与因子</dt>
                 <dd class="mono-data">{{ deathFactorVersionId }}</dd>
-                <dt>分母因子</dt>
+                <dt>右侧参与因子</dt>
                 <dd class="mono-data">{{ dischargeFactorVersionId }}</dd>
                 <dt>构建版本</dt>
                 <dd class="mono-data">{{ buildInfo.commit }} / {{ buildInfo.time }}</dd>
@@ -1124,7 +1124,7 @@ async function runDrillCapabilityPreflight(providedFormula) {
   try {
     formula = formula || createIndicatorFormulaPayload(0).formula
   } catch (error) {
-    ElMessage.warning(error?.message || '请先选择已发布的分子、分母因子')
+    ElMessage.warning(error?.message || '请先选择已发布的参与因子')
     return false
   }
 
@@ -1643,7 +1643,7 @@ async function createIndicatorDraftVersion() {
 
   if (!indicatorWorkflow.versionId) {
     activeTab.value = 'formula'
-    ElMessage.info('请先选择分子、分母；首次保存公式时会同时创建指标版本')
+    ElMessage.info('请先配置公式；首次保存公式时会同时创建指标版本')
     return false
   }
 
@@ -1728,7 +1728,7 @@ async function saveIndicatorFormulaOnly() {
   try {
     formula = createIndicatorFormulaPayload(0).formula
   } catch (error) {
-    ElMessage.warning(error?.message || '请先选择已发布的分子、分母因子')
+    ElMessage.warning(error?.message || '请先选择已发布的参与因子')
     return
   }
   if (!await ensureFreshDrillCapability(formula)) return

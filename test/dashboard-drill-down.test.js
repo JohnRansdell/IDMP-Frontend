@@ -33,7 +33,10 @@ test('formal bar drilling filters by raw department code, not the visible depart
   ]
   const dataset = { rows, fields: createFieldCatalog(rows) }
   const widget = { type: 'chart', chartKind: 'bar', config: { dataBinding: { dimensions: [{ field: 'OUT_DEPT_NAME' }], measures: [{ field: 'value', aggregation: 'direct' }], series: [], sort: [] }, interaction: { clickAction: 'drill', drill: { hierarchy: ['department', 'doctor'] } } } }
-  const top = effectiveDrill(widget, dataset)
+  const top = effectiveDrill(widget, { ...dataset, rows: [
+    { OUT_DEPT_CODE: '4', OUT_DEPT_NAME: '重症医学科', value: 0.15 },
+    { OUT_DEPT_CODE: '28', OUT_DEPT_NAME: '呼吸内科', value: 0.3 }
+  ] })
   const model = compileWidgetData('bar', top.binding, top.dataset)
   const point = bindingChartOption('bar', model).series[0].data[0]
   const click = { name: model.categories[0], dataIndex: 0, data: point }

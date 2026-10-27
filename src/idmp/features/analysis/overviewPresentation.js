@@ -1,5 +1,6 @@
 import { getStatusLabel } from '../../design/status.js'
 import { formatResultNumber, formatResultValue, hasResultDisplay, resultChartNumber, resultNumber, resultUnit } from '../shared/resultPresentation.js'
+import { operandValue, resultOperandColumns } from '../shared/formulaPresentation.js'
 
 export function resolveAnalysisPerformanceTarget(versionId, ...analyses) {
   const response = analyses.find(analysis => analysis?.indicatorVersionId != null
@@ -31,9 +32,12 @@ const formatCount = value => formatResultNumber(value, { maximumFractionDigits: 
 const displayStatus = value => value ? getStatusLabel(value) : '-'
 
 // This model is shared by the overview component and the PDF export.
-export function createOverviewPresentation({ report, formal, selected, unit, display }) {
+export function createOverviewPresentation({ report, formal, selected, unit, display, formula }) {
   const hasData = Boolean(formal.analysis?.dataAvailable && formal.overview)
   const hasResponse = Boolean((formal.analysis || report.result) && selected)
+  const operandMetrics = result => resultOperandColumns([result], formula).map(operand => ({
+    label: operand.label, value: formatCount(operandValue(result, operand))
+  }))
   function primaryMetric() {
     if (report.dirty) return { label: `${report.periodLabel}指标值`, value: '-', tone: 'neutral', status: 'PENDING_QUERY', statusLabel: '待查询', periodLabel: report.periodLabel }
     if (report.loading || report.error) return {
@@ -77,8 +81,7 @@ export function createOverviewPresentation({ report, formal, selected, unit, dis
           { label: report.modeLabel, value: '不可用', description: result.message || '未返回可用结果' }
         ]
         return [
-          { label: '分子', value: result.numeratorValue == null ? '-' : formatCount(result.numeratorValue), description: '计入事件数' },
-          { label: '分母', value: result.denominatorValue == null ? '-' : formatCount(result.denominatorValue), description: '统计对象总量' },
+          ...operandMetrics(result),
           { label: '质量状态', value: displayStatus(result.qualityStatus), tone: result.qualityStatus === 'PASSED' ? 'success' : 'warning' },
           { label: '结果来源', value: result.executionMode === 'AD_HOC_SOURCE' ? '源数据即时计算' : '正式结果复用' }
         ]
@@ -87,14 +90,10 @@ export function createOverviewPresentation({ report, formal, selected, unit, dis
       if (!formal.analysis) {
         return [
           { label: '分析状态', value: formal.loading || report.loading ? '正在读取' : '暂无正式结果', description: formal.error || '后端尚未返回可展示的指标结果' },
-          { label: '分子 / 分母', value: '-', description: '后端结果未返回' },
           { label: '维度分析', value: '-', description: '后端维度结果未返回' }
         ]
       }
-      const numerator = formal.overview?.numeratorValue ?? formal.overview?.numerator
-      const denominator = formal.overview?.denominatorValue ?? formal.overview?.denominator
-      if (numerator != null) metrics.push({ label: '分子', value: formatCount(numerator), description: '计入事件数' })
-      if (denominator != null) metrics.push({ label: '分母', value: formatCount(denominator), description: '统计对象总量' })
+      metrics.push(...operandMetrics(formal.overview))
       const dimensionCount = formal.dimensionCount
       const configured = formal.hasDrill
       metrics.push(dimensionCount == null

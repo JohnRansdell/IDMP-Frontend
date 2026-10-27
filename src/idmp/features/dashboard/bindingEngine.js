@@ -79,23 +79,7 @@ export function aggregateValues(values, aggregation) {
 }
 
 function aggregateMeasureRows(rows, measure, fields) {
-  if (measure.aggregation !== 'direct' || rows.length <= 1 || String(measure.field).toLowerCase() !== 'value') {
-    return aggregateValues(rows.map(row => row?.[measure.field]), measure.aggregation)
-  }
-  const fieldIds = new Map(fields.map(field => [String(field.id).toLowerCase(), field.id]))
-  const numeratorField = fieldIds.get('numeratorvalue') || fieldIds.get('numerator')
-  const denominatorField = fieldIds.get('denominatorvalue') || fieldIds.get('denominator')
-  if (!numeratorField || !denominatorField) return aggregateValues(rows.map(row => row?.[measure.field]), measure.aggregation)
-  const pairs = rows.map(row => [numericValue(row?.[numeratorField]), numericValue(row?.[denominatorField])])
-  if (pairs.some(([numerator, denominator]) => numerator === null || denominator === null)) {
-    return aggregateValues(rows.map(row => row?.[measure.field]), measure.aggregation)
-  }
-  const numerator = pairs.reduce((sum, pair) => sum + pair[0], 0)
-  const denominator = pairs.reduce((sum, pair) => sum + pair[1], 0)
-  if (denominator === 0) return null
-  const ratio = numerator / denominator
-  const unit = fields.find(field => field.id === measure.field)?.unit
-  return unit === '%' ? ratio * 100 : ratio
+  return aggregateValues(rows.map(row => row?.[measure.field]), measure.aggregation)
 }
 
 // Keep chart and filter values numeric; apply formatting only at presentation.

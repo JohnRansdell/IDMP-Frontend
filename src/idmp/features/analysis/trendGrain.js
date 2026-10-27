@@ -46,7 +46,7 @@ export async function loadTrendGrainMemberNames(options) {
   // The candidate catalog can span many months, while analysis comparison rows
   // belong only to the latest month. Look up remaining names in the same
   // version's other formal periods, without querying a different indicator.
-  const periods = [...(analysis?.trend || [])].sort((a, b) => Number(b.denominatorValue || 0) - Number(a.denominatorValue || 0))
+  const periods = [...(analysis?.trend || [])].sort((a, b) => String(b.periodStart || '').localeCompare(String(a.periodStart || '')))
   const visited = new Set([String(analysis?.overview?.periodStart || '')])
   for (const period of periods) {
     if (!period.periodStart || !period.periodEnd || visited.has(String(period.periodStart))) continue

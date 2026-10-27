@@ -18,7 +18,7 @@
 
     <div class="pie-context" role="status" aria-live="polite">
       <span :class="{ 'is-demo': source === 'mock' }">{{ source === 'mock' ? '演示数据' : '正式接口数据' }}</span>
-      <span>{{ levelLabel }} · {{ numeratorLabel }}</span>
+      <span>{{ levelLabel }} · {{ measure.label }}</span>
       <span v-if="result?.context.period">结果期间：{{ result.context.period }}</span>
       <span v-if="isLeaf && !loading && !error">已到末级</span>
     </div>
@@ -42,7 +42,7 @@
         :empty="!result.records.length"
         height="100%"
         fit-container
-        :aria-label="`${currentNavigation.label}，${levelLabel}${numeratorLabel}分布，可通过数据表下钻`"
+        :aria-label="`${currentNavigation.label}，${levelLabel}${measure.label}分布，可通过数据表下钻`"
         @chart-click="onChartClick"
       />
       <div class="pie-table-toolbar">
@@ -66,19 +66,18 @@
         tabindex="0"
       >
         <table class="pie-table">
-          <thead><tr><th scope="col">{{ levelLabel }}</th><th scope="col">{{ numeratorLabel }}</th><th scope="col">分母</th><th scope="col">指标值</th><th scope="col">操作</th></tr></thead>
+          <thead><tr><th scope="col">{{ levelLabel }}</th><th v-for="operand in operandColumns" :key="operand.field" scope="col">{{ operand.label }}</th><th scope="col">指标值</th><th scope="col">操作</th></tr></thead>
           <tbody>
             <tr v-for="(row, index) in result.records" :key="`${row.dimensionKey}-${index}`">
               <th scope="row">{{ row.dimensionLabel }}</th>
-              <td>{{ displayNumber(row.numerator) }}{{ numeratorUnit }}</td>
-              <td>{{ displayNumber(row.denominator) }}</td>
+              <td v-for="operand in operandColumns" :key="operand.field">{{ displayNumber(operandValue(row, operand)) }}</td>
               <td>{{ displayIndicator(row) }}</td>
               <td>
                 <button v-if="nextNavigation(row)" type="button" class="action-link" :aria-label="`下钻${row.dimensionLabel}`" @click="openRow(row)">下钻</button>
                 <span v-else>不可下钻</span>
               </td>
             </tr>
-            <tr v-if="!result.records.length"><td colspan="5">当前层暂无数据</td></tr>
+            <tr v-if="!result.records.length"><td :colspan="3 + operandColumns.length">当前层暂无数据</td></tr>
           </tbody>
         </table>
       </div>
@@ -99,6 +98,8 @@ import { searchResultDrill } from '@/idmp/api/modules/drill'
 import { normalizeOrganizationDrillLevel } from '@/idmp/api/adapters/drill'
 import { createDashboardChartTheme } from './chartTheme.js'
 import { applyWidgetVisualStyle } from './visualStyle.js'
+import { backendChartMeasure } from './backendChartDrill.js'
+import { operandValue, resultOperandColumns } from '../shared/formulaPresentation.js'
 import {
   createPieDrillRequestGate,
   getPieNextNavigation,
@@ -121,6 +122,9 @@ const tableId = `pie-drill-table-${useId()}`
 const history = ref([])
 const root = ref(null)
 const result = ref(null)
+const measure = computed(() => backendChartMeasure(props.widget))
+const measureField = computed(() => ({ value: 'indicatorValue', indicatorvalue: 'indicatorValue', numeratorvalue: 'numerator', numerator: 'numerator', denominatorvalue: 'denominator', denominator: 'denominator' })[String(measure.value.field).toLowerCase()])
+const operandColumns = computed(() => resultOperandColumns(result.value?.records))
 const loading = ref(false)
 const error = ref(null)
 const tableExpanded = ref(false)
@@ -159,26 +163,26 @@ const rawChartOption = computed(() => ({
     confine: true,
     formatter: ({ data }) => {
       const row = data.row
-      return `${row.dimensionLabel}\n${props.numeratorLabel}：${displayNumber(row.numerator)}${props.numeratorUnit}\n分母：${displayNumber(row.denominator)}\n指标值：${displayIndicator(row)}`
+      return `${row.dimensionLabel}\n指标值：${displayIndicator(row)}${operandColumns.value.map(operand => `\n${operand.label}：${displayNumber(operandValue(row, operand))}`).join('')}`
     }
   },
   legend: { type: 'scroll', bottom: 0, left: 'center', itemWidth: 12, itemHeight: 9 },
   series: [{
-    id: 'organization-numerator',
+    id: 'organization-measure',
     type: 'pie',
     radius: ['44%', '68%'],
     center: ['50%', '43%'],
     stillShowZeroSum: false,
     minShowLabelAngle: 2,
     avoidLabelOverlap: true,
-    label: { fontSize: 11, formatter: ({ data }) => `${data.name}\n${displayNumber(data.value)}${props.numeratorUnit}` },
+    label: { fontSize: 11, formatter: ({ data }) => `${data.name}\n${measureField.value === 'indicatorValue' ? displayIndicator(data.row) : displayNumber(data.value)}` },
     labelLine: { length: 8, length2: 6 },
     itemStyle: { borderColor: '#fff', borderWidth: 1 },
     emphasis: { scaleSize: 5 },
     data: (result.value?.records || []).map((row) => ({
       id: row.dimensionKey,
       name: row.dimensionLabel,
-      value: numericPieValue(row.numerator),
+      value: numericPieValue(row[measureField.value]),
       cursor: nextNavigation(row) ? 'pointer' : 'default',
       row
     }))
@@ -241,8 +245,9 @@ async function loadLevel(nextPage = 1, tableOnly = false) {
   pageNum.value = nextPage
   tableOnlyMode.value = tableOnly
   try {
+    if (measure.value.error) throw new Error(measure.value.error)
     const loaded = await loadPieDrillLevel(searchResultDrill, root.value, currentNavigation.value, {
-      signal: request.signal, pageNum: nextPage, tableOnly
+      signal: request.signal, pageNum: nextPage, tableOnly, measure: measureField.value
     })
     if (!request.isCurrent()) return
     if (!root.value.target.snapshotId) root.value.target.snapshotId = loaded.context.snapshotId
