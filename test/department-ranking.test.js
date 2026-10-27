@@ -45,12 +45,14 @@ test('explicit identity wins over legacy fields and missing names fall back to r
   const [row] = normalizeDepartmentComparisons([{ departmentCode: '14', departmentName: '血管外科', dimensions: { out_dept_code: '10', out_dept_name: '妇科' } }])
   assert.equal(row.departmentCode, '14')
   assert.equal(row.departmentName, '血管外科')
-  assert.equal(normalizeDepartmentComparisons([{ departmentCode: 0 }])[0].departmentName, '0')
-  assert.equal(normalizeDepartmentComparisons([{ departmentCode: '14', departmentName: 'null' }])[0].departmentName, '14')
+  assert.equal(normalizeDepartmentComparisons([{ departmentCode: 0 }])[0].departmentName, '未知科室（0）')
+  assert.equal(normalizeDepartmentComparisons([{ departmentCode: '14', departmentName: 'null' }])[0].departmentName, '未知科室（14）')
 })
 
 test('missing identities are not replaced with invented department numbers', () => {
-  assert.deepEqual(normalizeDepartmentComparisons([null, {}, { departmentCode: 'null' }, { dimensions: { 任意维度: '14' } }]), [])
+  assert.deepEqual(normalizeDepartmentComparisons([null, {}, { dimensions: { 任意维度: '14' } }]), [])
+  assert.deepEqual(normalizeDepartmentComparisons([{ departmentCode: null, value: 0.25 }]),
+    [{ departmentCode: '__UNASSIGNED__', departmentName: '未知科室', value: 0.25 }])
   assert.deepEqual(normalizeDepartmentComparisons(null), [])
 })
 

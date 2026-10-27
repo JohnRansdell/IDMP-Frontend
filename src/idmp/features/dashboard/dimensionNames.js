@@ -13,7 +13,14 @@ export const DEPARTMENT_FIELD_PAIRS = [
 ]
 const departmentPairs = DEPARTMENT_FIELD_PAIRS
 const text = value => value == null ? '' : String(value).trim()
-export const isMemberName = (value, code) => Boolean(text(value) && text(value) !== text(code) && !/^\d+$/.test(text(value)) && text(value) !== '-')
+export const missingMemberCode = value => !text(value) || text(value) === '__UNASSIGNED__'
+export function unknownMemberName(level = {}, code) {
+  const role = text(level.levelCode).toUpperCase()
+  const label = ['DEPARTMENT', 'DEPT', 'OUT_DEPT', 'IN_DEPT', 'CHANGE_DEPT'].includes(role) ? '科室'
+    : ['DOCTOR', 'ATTENDING_DOCTOR'].includes(role) ? '医生' : role === 'HOSPITAL' ? '医院' : text(level.levelName) || '成员'
+  return `未知${label}${missingMemberCode(code) ? '' : `（${code}）`}`
+}
+export const isMemberName = (value, code) => Boolean(text(value) && text(value) !== text(code) && !/^\d+$/.test(text(value)) && !['-', 'null', 'undefined', '__UNASSIGNED__'].includes(text(value)))
 
 export function dimensionFieldValue(row, field) {
   for (const values of [row, row?.dimensions, row?.dimensionValues]) {
@@ -104,16 +111,23 @@ export function normalizeDepartmentDataset(dataset, { paths = [], names = new Ma
     fields: dataset.fields?.map(field => identifiers.has(String(field.id).toLowerCase()) ? { ...field, semanticType: 'dimension' } : field),
     dimensionDisplayFields: displayFields,
     departmentFields: [...new Set([...departmentMappings(paths).map(([field]) => field), ...(dataset.departmentFields || [])])],
-    nameDiagnostics: [...new Set([...diagnostics, ...(missing.size ? [`${missing.size} 个科室未返回名称，暂显示科室编码。`] : [])])]
+    dimensionLevels: { ...Object.fromEntries(paths.flatMap(path => (path.levels || []).flatMap(level =>
+      [level.dimensionFieldCode, level.memberKeyFieldCode, level.displayFieldCode].filter(Boolean).map(field => [field, level])))), ...dataset.dimensionLevels },
+    nameDiagnostics: [...new Set([...diagnostics, ...(missing.size ? [`${missing.size} 个科室未返回名称，显示为未知科室并保留编码。`] : [])])]
   }
 }
 
 export function visibleDimensionName(row, dimension, dataset = {}) {
   const field = dimension.field
   const raw = dimensionFieldValue(row, field)
+  const configured = Object.entries(dataset.dimensionLevels || {}).find(([key]) => key.toLowerCase() === String(field).toLowerCase())?.[1]
+  const department = (dataset.departmentFields || []).some(key => key.toLowerCase() === String(field).toLowerCase())
+    || departmentPairs.some(pair => pair.some(key => key.toLowerCase() === String(field).toLowerCase()))
+  const level = configured || (department ? { levelCode: 'DEPARTMENT', levelName: '科室' } : null)
   const labels = row.dimensionLabels || {}
   const labelKey = Object.keys(labels).find(key => key.toLowerCase() === String(field).toLowerCase())
   if (labelKey !== undefined) return labels[labelKey]
+  if (level && missingMemberCode(raw)) return unknownMemberName(level, raw)
   const identity = departmentIdentity(row)
   if ([identity.field, identity.displayField].some(key => key && key.toLowerCase() === String(field).toLowerCase())) {
     const dictionaryName = dataset.departmentNames?.[identity.code]
@@ -129,15 +143,18 @@ export function visibleDimensionName(row, dimension, dataset = {}) {
     if (label) return label
   }
   if (identity.code === text(raw) && identity.name) return identity.name
-  const isDepartment = (dataset.departmentFields || []).some(key => key.toLowerCase() === String(field).toLowerCase())
-  if ((identity.code === text(raw) && !identity.name || isDepartment) && /^\d+$/.test(text(raw))) return `科室编码：${raw}`
+  if (department || configured?.displayFieldCode && configured.displayFieldCode.toLowerCase() !== String(field).toLowerCase()) return unknownMemberName(level, raw)
   return raw
 }
 
 export function namedDrillRecord(row, level = {}, names = new Map()) {
   const code = text(row.dimensionKey ?? dimensionFieldValue(row, level.memberKeyFieldCode || level.dimensionFieldCode))
-  if (row.dimensionLabelSource === 'DICTIONARY') return { ...row, dimensionKey: code, dimensionLabel: text(row.dimensionName) || code }
+  const namedLevel = !level.levelCode && isDepartmentLevel(level) ? { ...level, levelCode: 'DEPARTMENT' } : level
+  if (missingMemberCode(code)) return { ...row, dimensionKey: code, dimensionLabel: unknownMemberName(namedLevel, code) }
+  if (['DICTIONARY', 'FALLBACK'].includes(row.dimensionLabelSource)) return { ...row, dimensionKey: code, dimensionLabel: text(row.dimensionName) || unknownMemberName(namedLevel, code) }
   const name = [isDepartmentLevel(level) ? names.get(code) : '', dimensionFieldValue(row, level.displayFieldCode),
     row.dimensionName, row.dimensionLabel].find(name => isMemberName(name, code))
-  return { ...row, dimensionKey: code, dimensionLabel: text(name) || `${level.levelName || (isDepartmentLevel(level) ? '科室' : '成员')}编码：${code}` }
+  const natural = (!level.displayFieldCode || text(level.displayFieldCode).toLowerCase() === text(level.memberKeyFieldCode || level.dimensionFieldCode).toLowerCase())
+    && !isDepartmentLevel(level) && !['HOSPITAL', 'DOCTOR', 'ATTENDING_DOCTOR'].includes(text(level.levelCode).toUpperCase())
+  return { ...row, dimensionKey: code, dimensionLabel: text(name) || (natural ? code : unknownMemberName(namedLevel, code)) }
 }

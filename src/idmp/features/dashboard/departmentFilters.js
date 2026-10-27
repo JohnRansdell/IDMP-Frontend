@@ -1,4 +1,4 @@
-import { DEPARTMENT_FIELD_PAIRS, isDepartmentLevel } from './dimensionNames.js'
+import { DEPARTMENT_FIELD_PAIRS, isDepartmentLevel, unknownMemberName } from './dimensionNames.js'
 
 const key = field => String(field?.code || field?.id || '').toLowerCase()
 const match = (fields, name) => fields.find(field => key(field) === String(name || '').toLowerCase())
@@ -47,7 +47,7 @@ export function departmentCodeOptions(options = [], names = new Map()) {
   const named = options.map(option => {
     const value = String(option?.value ?? option)
     const supplied = option?.label && String(option.label) !== value ? String(option.label) : ''
-    return { value, label: names.get(value) || supplied || `未提供名称（科室编码：${value}）` }
+    return { value, label: names.get(value) || supplied || unknownMemberName({ levelCode: 'DEPARTMENT' }, value) }
   })
   const codesByName = new Map()
   for (const option of named) codesByName.set(option.label, new Set([...(codesByName.get(option.label) || []), option.value]))

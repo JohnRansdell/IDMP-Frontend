@@ -51,7 +51,7 @@ const cells = wrapper => wrapper.findAll('tbody tr').map(row => row.findAll('td'
 test('chart data table formats each series without changing chart numeric values', () => {
   const source = dataset()
   const wrapper = create(widget('bar'), source)
-  assert.deepEqual(cells(wrapper), [['科室编码：0016', '0.23%', '1', '429']])
+  assert.deepEqual(cells(wrapper), [['未知科室（0016）', '0.23%', '1', '429']])
   const option = JSON.parse(wrapper.get('.numeric-chart-data').text())
   assert.equal(option.series[0].data[0], 1 / 429)
   assert.equal(option.series[1].data[0], 1)
@@ -62,7 +62,7 @@ test('chart data table formats each series without changing chart numeric values
 test('bound table and raw configured columns share percentage formatting', () => {
   for (const extra of [{}, { tableColumns: ['department', 'value', 'numeratorValue', 'denominatorValue', 'displayValue'] }]) {
     const wrapper = create(widget('table', extra))
-    assert.deepEqual(cells(wrapper), [[extra.tableColumns ? '0016' : '科室编码：0016', '0.23%', '1', '429', ...(extra.tableColumns ? ['0.23%'] : [])]])
+    assert.deepEqual(cells(wrapper), [[extra.tableColumns ? '0016' : '未知科室（0016）', '0.23%', '1', '429', ...(extra.tableColumns ? ['0.23%'] : [])]])
     wrapper.unmount()
   }
 })
@@ -78,7 +78,7 @@ test('already scaled percent, zero and missing values retain their distinct mean
   const definition = widget('table')
   definition.config.dataBinding.measures = [{ field: 'value', aggregation: 'direct' }]
   const wrapper = create(definition, source)
-  assert.deepEqual(cells(wrapper), [['one', '0.23%'], ['zero', '0.00%'], ['missing', '—']])
+  assert.deepEqual(cells(wrapper), [['未知科室（one）', '0.23%'], ['未知科室（zero）', '0.00%'], ['未知科室（missing）', '—']])
   wrapper.unmount()
 })
 
@@ -89,7 +89,7 @@ test('counting percentage-valued rows produces a count, not a percentage', () =>
   const definition = widget('table')
   definition.config.dataBinding.measures = [{ field: 'value', aggregation: 'count' }]
   const wrapper = create(definition, source)
-  assert.deepEqual(cells(wrapper), [['科室编码：0016', '2']])
+  assert.deepEqual(cells(wrapper), [['未知科室（0016）', '2']])
   wrapper.unmount()
 })
 

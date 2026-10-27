@@ -2,6 +2,7 @@ import { deriveDrillPathResultIds, normalizeDrillLevelDefinition } from '../../a
 import { drillPeriodKey } from './drillPeriods.js'
 import { formatResultNumber, formatResultValue, hasResultDisplay } from '../shared/resultPresentation.js'
 import { assertDrillResponseContext, buildDrillRequest, drillMemberField, drillScope } from './drillContext.js'
+import { unknownMemberName, missingMemberCode } from '../dashboard/dimensionNames.js'
 
 export async function resolveAnalysisDrillPaths(paths = [], fetchPathVersion) {
   return Promise.all(paths.map(async path => {
@@ -53,13 +54,16 @@ export function normalizeDepartmentComparisons(rows, dimensionRows = [], namesBy
   const fallbackRows = Array.isArray(dimensionRows) ? dimensionRows : []
   const normalize = (items) => items.flatMap((row) => {
     if (!row || typeof row !== 'object') return []
-    const departmentCode = fieldText(row.departmentCode)
+    const rawCode = fieldText(row.departmentCode)
       || legacyField(row.dimensions, 'out_dept_code')
       || legacyField(row.dimensions, 'out_dept_id')
-    if (!departmentCode) return []
-    const departmentName = fieldText(namesByCode[departmentCode]) || fieldText(row.departmentName)
+    const hasDepartment = Object.hasOwn(row, 'departmentCode') || Object.keys(row.dimensions || {}).some(key => ['out_dept_code', 'out_dept_id'].includes(key.toLowerCase()))
+    if (!rawCode && !hasDepartment) return []
+    const departmentCode = rawCode || '__UNASSIGNED__'
+    const departmentName = missingMemberCode(departmentCode) ? unknownMemberName({ levelCode: 'DEPARTMENT' })
+      : fieldText(namesByCode[departmentCode]) || fieldText(row.departmentName)
       || legacyField(row.dimensions, 'out_dept_name')
-      || fieldText(namesByCode[departmentCode]) || departmentCode
+      || unknownMemberName({ levelCode: 'DEPARTMENT' }, departmentCode)
     return [{ ...row, departmentCode, departmentName }]
   })
   const normalizedDirect = normalize(directRows)

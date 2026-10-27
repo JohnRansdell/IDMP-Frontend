@@ -79,7 +79,7 @@ test('viewer and preview normalization preserve codes and expose missing-name di
     assert.equal(compileWidgetData('pie', binding('科室'), named).categories[0], '血管外科')
   }
   const missing = normalizeDepartmentDataset(raw, { paths: [path], diagnostics: ['名称查询失败'] })
-  assert.equal(compileWidgetData('pie', binding('科室'), missing).categories[0], '科室编码：791')
+  assert.equal(compileWidgetData('pie', binding('科室'), missing).categories[0], '未知科室（791）')
   assert.ok(missing.nameDiagnostics.includes('名称查询失败'))
   assert.equal(raw.rows[0].科室名称, undefined)
 })
@@ -92,10 +92,10 @@ test('projected diagnostics count only unresolved dictionary members without cha
   for (let attempt = 0; attempt < 2; attempt++) {
     const named = normalizeDepartmentDataset(raw, { paths: [path], names })
     assert.strictEqual(named.rows, raw.rows)
-    assert.deepEqual(named.nameDiagnostics, ['1 个科室未返回名称，暂显示科室编码。'])
+    assert.deepEqual(named.nameDiagnostics, ['1 个科室未返回名称，显示为未知科室并保留编码。'])
     const categories = compileWidgetData('pie', direct, named).categories
-    assert.equal(categories.filter(name => name.startsWith('科室编码：')).length, 1)
-    assert.equal(categories.at(-1), '科室编码：833')
+    assert.equal(categories.filter(name => name.startsWith('未知科室（')).length, 1)
+    assert.equal(categories.at(-1), '未知科室（833）')
     assert.deepEqual(raw.rows.map(row => row.科室), codes)
     assert.ok(raw.rows.every(row => !Object.hasOwn(row, '科室名称') && row.value === 1))
   }
@@ -109,7 +109,7 @@ test('projected diagnostics count only unresolved dictionary members without cha
 test('missing-name diagnostics deduplicate codes and retain unrelated loader diagnostics', () => {
   const raw = { ...dataset([{ OUT_DEPT_CODE: '833', value: 1 }, { OUT_DEPT_CODE: '833', value: 2 }, { OUT_DEPT_CODE: '22', value: 3 }]), rowMode: 'PROJECTED' }
   const named = normalizeDepartmentDataset(raw, { names: new Map([['22', '泌尿外科']]), diagnostics: ['名称查询失败'] })
-  assert.deepEqual(named.nameDiagnostics, ['名称查询失败', '1 个科室未返回名称，暂显示科室编码。'])
+  assert.deepEqual(named.nameDiagnostics, ['名称查询失败', '1 个科室未返回名称，显示为未知科室并保留编码。'])
   assert.strictEqual(named.rows, raw.rows)
 })
 
@@ -117,9 +117,9 @@ test('placeholder dictionary values do not suppress missing names and row names 
   for (const placeholder of ['', '-', '833', '999']) {
     const raw = { ...dataset([{ OUT_DEPT_CODE: '833', value: 1 }, { OUT_DEPT_CODE: '22', OUT_DEPT_NAME: '泌尿外科', value: 2 }]), rowMode: 'PROJECTED' }
     const named = normalizeDepartmentDataset(raw, { names: new Map([['833', placeholder], ['22', '-']]) })
-    assert.deepEqual(named.nameDiagnostics, ['1 个科室未返回名称，暂显示科室编码。'])
+    assert.deepEqual(named.nameDiagnostics, ['1 个科室未返回名称，显示为未知科室并保留编码。'])
     const direct = { ...binding('OUT_DEPT_CODE'), measures: [{ field: 'value', aggregation: 'direct' }] }
-    assert.deepEqual(compileWidgetData('pie', direct, named).categories, ['科室编码：833', '泌尿外科'])
+    assert.deepEqual(compileWidgetData('pie', direct, named).categories, ['未知科室（833）', '泌尿外科'])
   }
 })
 
