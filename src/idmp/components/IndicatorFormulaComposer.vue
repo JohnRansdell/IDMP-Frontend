@@ -55,7 +55,10 @@
                 <el-icon v-if="isBlock(slot.node)" class="open-block"><ArrowRight /></el-icon>
               </div>
               <el-switch v-if="slot.node?.nodeType === 'CONST' && slot.node.typeDescriptor?.valueType === 'BOOLEAN'" :model-value="slot.node.value" :disabled="disabled" :aria-label="`${slot.label}布尔常量`" @update:model-value="patchAt(absolute(slot.path), { value: $event })" />
-              <el-input v-else-if="slot.node?.nodeType === 'CONST'" :model-value="String(slot.node.value ?? '')" :disabled="disabled" class="slot-number" :aria-label="`${slot.label}数字常量`" @update:model-value="patchAt(absolute(slot.path), { value: $event })" />
+              <template v-else-if="slot.node?.nodeType === 'CONST'">
+                <el-checkbox :model-value="slot.node.value === null" :disabled="disabled" :aria-label="`${slot.label}空值`" @update:model-value="setNullConstant(absolute(slot.path), $event)">空值</el-checkbox>
+                <el-input v-if="slot.node.value !== null" :model-value="String(slot.node.value ?? '')" :disabled="disabled" class="slot-number" :aria-label="`${slot.label}数字常量`" @update:model-value="patchAt(absolute(slot.path), { value: $event })" />
+              </template>
             </div>
           </div>
           <el-button v-if="descriptor.additive" text type="primary" :icon="Plus" :disabled="disabled" @click="appendSumSlot">添加参与项</el-button>
@@ -73,7 +76,10 @@
           </div>
           <label v-else class="scalar-constant"><span>{{ current.typeDescriptor?.valueType === 'BOOLEAN' ? '布尔值' : '数值' }}</span>
             <el-switch v-if="current.typeDescriptor?.valueType === 'BOOLEAN'" :model-value="current.value" :disabled="disabled" aria-label="布尔常量" @update:model-value="patchCurrent({ value: $event })" />
-            <el-input v-else :model-value="String(current.value ?? '')" :disabled="disabled" aria-label="数字常量" @update:model-value="patchCurrent({ value: $event })" />
+            <template v-else>
+              <el-checkbox :model-value="current.value === null" :disabled="disabled" aria-label="常量为空值" @update:model-value="setNullConstant(activePath, $event)">空值</el-checkbox>
+              <el-input v-if="current.value !== null" :model-value="String(current.value ?? '')" :disabled="disabled" aria-label="数字常量" @update:model-value="patchCurrent({ value: $event })" />
+            </template>
           </label>
         </div>
         <div v-if="selectedConstant && selectedConstant.typeDescriptor?.valueType !== 'BOOLEAN'" class="block-settings constant-settings">
@@ -206,13 +212,17 @@ function activateSlot(slot) {
   else selectSlot(absolute(slot.path))
 }
 function pieceLabel(node) {
-  if (node?.nodeType === 'CONST') return `常量 ${node.value}`
+  if (node?.nodeType === 'CONST') return node.value === null && node.typeDescriptor?.nullable ? '空值' : `常量 ${node.value}`
   if (node?.nodeType === 'FACTOR_REF') return props.factors.find(factor => String(factor.versionId) === String(node.factorVersionId))?.name || `因子 ${node.factorVersionId}`
   return describeFormulaBlock(node).name
 }
 function patchAt(path, changes) { if (!props.disabled) commit(replaceFormulaAt(root.value, path, { ...formulaAt(root.value, path), ...changes })) }
 function patchCurrent(changes) { patchAt(activePath.value, changes) }
 function patchConstantType(key, value) { patchAt(constantPath.value, { typeDescriptor: { ...selectedConstant.value.typeDescriptor, [key]: value } }) }
+function setNullConstant(path, enabled) {
+  const node = formulaAt(root.value, path)
+  patchAt(path, { value: enabled ? null : '0', typeDescriptor: { ...node.typeDescriptor, nullable: enabled } })
+}
 function changeOperator(operator) {
   const next = { ...current.value, operator }
   if (operator === 'DIV') next.zeroDenominatorPolicy ||= 'RETURN_NULL'

@@ -34,6 +34,26 @@ const fraction = binary('DIV', binary('SUB', ref('11'), binary('ADD', ref('12'),
 const formula = { root: round(binary('MUL', fraction, constant('100'))), display: { format: 'NUMBER', multiplier: '1', scale: 2, roundingMode: 'HALF_UP' } }
 const factors = ['总费用', '药品费用', '耗材费用', '出院人次'].map((name, index) => ({ versionId: String(index + 11), name }))
 
+test('SQL imported CASE, boolean conditions and NULL remain visible and round-trip without losing semantics', () => {
+  const root = { nodeType: 'CONDITION', nullConditionPolicy: 'WHEN_FALSE', condition: {
+    nodeType: 'FUNCTION', functionCode: 'OR', arguments: [
+      { nodeType: 'FUNCTION', functionCode: 'IS_NULL', arguments: [ref('11')] },
+      { nodeType: 'COMPARE', comparator: 'EQ', left: ref('12'), right: { ...constant('0'), sqlLiteral: true } }
+    ] }, whenTrue: { ...constant(null), sqlLiteral: true, typeDescriptor: { ...constant(null).typeDescriptor, nullable: true } }, whenFalse: round(fraction) }
+  const parsed = parseEditorFormula({ root })
+  assert.equal(parsed.mode, '嵌套公式型')
+  const built = arithmetic.buildArithmeticFormula(root)
+  assert.equal(built.root.nullConditionPolicy, 'WHEN_FALSE')
+  assert.equal(built.root.whenTrue.value, null)
+  assert.equal(built.root.condition.arguments[1].right.sqlLiteral, true)
+  const wrapper = mount(Expression, { props: { formula: { root }, factors } })
+  assert.match(wrapper.text(), /是否为空/)
+  assert.match(wrapper.text(), /空值/)
+  assert.equal(wrapper.text().includes('null'), false)
+  assert.equal(wrapper.findAll('.math-fraction').length, 1)
+  wrapper.unmount()
+})
+
 test('outer ROUND and multiplier render a real fraction with separate rounding notes', () => {
   const w = mount(Expression, { props: { formula, factors }, slots: { factor: ({ id, text }) => vue.h('button', { 'data-version': id }, text) } })
   assert.equal(w.findAll('.math-fraction').length, 1)

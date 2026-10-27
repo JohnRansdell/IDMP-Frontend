@@ -34,7 +34,7 @@ export function createFormulaBlock(code) {
 
 export function createFunctionBlock(code) {
   if (!formulaFunctions.some(([value]) => value === code)) throw new Error('不支持的公式函数')
-  const count = ['IF', 'CLAMP'].includes(code) ? 3 : ['MIN', 'MAX', 'AVG', 'MEDIAN', 'PERCENTILE', 'COALESCE'].includes(code) ? 2 : 1
+  const count = ['IF', 'CLAMP'].includes(code) ? 3 : ['MIN', 'MAX', 'AVG', 'MEDIAN', 'PERCENTILE', 'COALESCE', 'AND', 'OR', 'NULLIF'].includes(code) ? 2 : 1
   return { nodeType: 'FUNCTION', functionCode: code, arguments: Array.from({ length: count }, emptyFormulaSlot),
     ...(code === 'ROUND' ? { scale: 2, roundingMode: 'HALF_UP' } : {}), ...(code === 'PERCENTILE' ? { percentile: '0.9' } : {}) }
 }
@@ -60,7 +60,7 @@ function sumSlots(node, path = []) {
 export function describeFormulaBlock(node) {
   if (isEmptyFormulaSlot(node)) return { name: '公式', slots: [] }
   if (node.nodeType === 'FACTOR_REF') return { name: '因子', slots: [] }
-  if (node.nodeType === 'CONST') return { name: '数字常量', slots: [] }
+  if (node.nodeType === 'CONST') return { name: node.value === null && node.typeDescriptor?.nullable ? '空值' : '数字常量', slots: [] }
   const statisticMethod = statisticMethodForNode(node)
   if (statisticMethod) return { name: '统计量型', statisticMethod, variableArguments: true,
     slots: (node.arguments || []).map((child, index) => ({ label: `统计对象 ${index + 1}`, path: ['arguments', index], node: child })) }
@@ -69,7 +69,7 @@ export function describeFormulaBlock(node) {
     const code = node.nodeType === 'COALESCE' ? 'COALESCE' : node.functionCode
     const labels = code === 'IF' ? ['条件', '满足时', '不满足时'] : code === 'CLAMP' ? ['计算值', '下限', '上限'] : []
     return { name: formulaFunctions.find(([value]) => value === code)?.[1] || code,
-      variableArguments: !['IF', 'CLAMP', 'ABS'].includes(code),
+      variableArguments: !['IF', 'CLAMP', 'ABS', 'IS_NULL', 'NOT', 'AND', 'OR', 'NULLIF'].includes(code),
       slots: (node.arguments || []).map((child, index) => ({ label: labels[index] || `参数 ${index + 1}`, path: ['arguments', index], node: child })) }
   }
   if (node.nodeType === 'COMPARE') return { name: '比较条件', comparison: true, slots: [{ label: '比较值', path: ['left'], node: node.left }, { label: '参照值', path: ['right'], node: node.right }] }

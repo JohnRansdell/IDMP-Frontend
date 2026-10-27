@@ -18,7 +18,8 @@ export function createStatisticFunction(method, args) {
 export const formulaFunctions = [
   ['ROUND', '舍入'], ['ABS', '绝对值'], ['MIN', '最小值'], ['MAX', '最大值'],
   ['CLAMP', '限定范围'], ['COALESCE', '空值替代'], ['IF', '条件选择'],
-  ['AVG', '平均数'], ['MEDIAN', '中位数'], ['PERCENTILE', '分位数']
+  ['AVG', '平均数'], ['MEDIAN', '中位数'], ['PERCENTILE', '分位数'],
+  ['IS_NULL', '是否为空'], ['NULLIF', '相等时为空'], ['AND', '且'], ['OR', '或'], ['NOT', '非']
 ]
 export const comparisonOperators = [['EQ', '等于'], ['NE', '不等于'], ['GT', '大于'], ['GE', '大于等于'], ['LT', '小于'], ['LE', '小于等于']]
 export const formulaChildren = node => node ? [node.left, node.right, node.operand, node.condition, node.whenTrue, node.whenFalse, ...(node.arguments || [])].filter(Boolean) : []
@@ -33,6 +34,7 @@ export function arithmeticDisplayError(display = {}) {
 export function arithmeticFormulaError(node, depth = 0) {
   if (!node || depth > 40) return '公式为空或嵌套层级过深'
   if (node.nodeType === 'FACTOR_REF') return String(node.factorVersionId || '') ? '' : '请选择因子'
+  if (node.nodeType === 'CONST' && node.value === null && node.typeDescriptor?.nullable === true) return ''
   if (node.nodeType === 'CONST') return node.typeDescriptor?.valueType === 'BOOLEAN'
     ? (typeof node.value === 'boolean' ? '' : '请填写有效布尔常量')
     : typeof node.value !== 'boolean' && /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(String(node.value ?? '')) && Number.isFinite(Number(node.value)) ? '' : '请填写有效数字常量'
@@ -49,7 +51,7 @@ export function arithmeticFormulaError(node, depth = 0) {
     if (!formulaFunctions.some(([value]) => value === code)) return '该函数暂不支持可视化编辑'
     if (!Array.isArray(node.arguments) || !node.arguments.length) return '请添加函数参数'
     if (code === 'COALESCE' && node.arguments.length < 2) return '空值替代至少需要两个参数'
-    if (['ROUND', 'ABS'].includes(code) && node.arguments.length !== 1 || ['IF', 'CLAMP'].includes(code) && node.arguments.length !== 3) return '函数参数数量不正确'
+    if (['ROUND', 'ABS', 'IS_NULL', 'NOT'].includes(code) && node.arguments.length !== 1 || ['IF', 'CLAMP'].includes(code) && node.arguments.length !== 3 || ['AND', 'OR', 'NULLIF'].includes(code) && node.arguments.length !== 2) return '函数参数数量不正确'
     if (code === 'ROUND') {
       if (!Number.isInteger(node.scale) || node.scale < 0 || node.scale > 10) return '舍入精度应为 0 至 10 的整数'
       if (node.roundingMode && !roundingModes.some(([value]) => value === node.roundingMode)) return '舍入方式无效'
@@ -110,7 +112,7 @@ export function arithmeticFormulaText(node, factors = []) {
   if (!node) return ''
   const text = child => arithmeticFormulaText(child, factors)
   if (node.nodeType === 'FACTOR_REF') return factors.find(f => String(f.versionId ?? f.factorVersionId) === String(node.factorVersionId))?.name || factors.find(f => String(f.factorVersionId) === String(node.factorVersionId))?.factorName || `因子 ${node.factorVersionId || '待选择'}`
-  if (node.nodeType === 'CONST') return String(node.value ?? '')
+  if (node.nodeType === 'CONST') return node.value === null && node.typeDescriptor?.nullable ? '空值' : String(node.value ?? '')
   if (node.nodeType === 'COMPARE') return `(${text(node.left)} ${{ EQ: '=', NE: '≠', GT: '>', GE: '≥', LT: '<', LE: '≤' }[node.comparator]} ${text(node.right)})`
   if (node.nodeType === 'UNARY') return `${node.operator === 'NEGATE' ? '负值' : '绝对值'}(${text(node.operand)})`
   if (node.nodeType === 'CONDITION') return `IF(${text(node.condition)}, ${text(node.whenTrue)}, ${text(node.whenFalse)})`

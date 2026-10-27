@@ -15,7 +15,7 @@ export default defineComponent({
         const text = repeated ? `${name}（版本 ${id}）` : name
         return h('span', { class: 'math-factor' }, slots.factor?.({ id, text }) || text)
       }
-      if (node.nodeType === 'CONST') return h('span', String(node.value))
+      if (node.nodeType === 'CONST') return h('span', node.value === null && node.typeDescriptor?.nullable ? '空值' : String(node.value))
       if (node.nodeType === 'FUNCTION' && node.functionCode === 'ROUND') return h('span', { class: 'math-operation' }, ['ROUND(', render(node.arguments[0]), `；${rounding(node)})`])
       if (['FUNCTION', 'COALESCE'].includes(node.nodeType)) {
         const code = node.nodeType === 'COALESCE' ? 'COALESCE' : node.functionCode
