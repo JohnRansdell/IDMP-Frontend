@@ -23,8 +23,13 @@ export function canAccess(session, method, path) {
 export function canVisit(session, target) {
   const path = typeof target === 'string' ? target.split('?')[0] : target.path
   if (path === '/forbidden') return true
-  if (path === '/dashboard' && typeof target !== 'string' && target.query?.edit)
-    return canAccess(session, ...ACTION_GRANTS['dashboard.update'])
+  if (path === '/dashboard' && typeof target !== 'string' && target.query?.edit) {
+    const id = String(target.query.id || '')
+    // Browser-created drafts have no server resource yet; existing boards require their own update grant.
+    if (id.startsWith('dashboard-')) return canAccess(session, ...ACTION_GRANTS['dashboard.create'])
+    const grant = id ? resolveAccessGrant({ action: 'dashboard.update', resourceId: id }) : ACTION_GRANTS['dashboard.update']
+    return canAccess(session, ...grant)
+  }
   const rule = PAGE_ACCESS.find(rule => rule.pattern.test(path))
   if (!rule) return session.roles?.some(role => ['SYSTEM_ADMIN', 'ADMIN'].includes(role)) || false
   const grant = rule.resourceIdGroup
