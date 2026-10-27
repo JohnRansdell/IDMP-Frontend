@@ -1,9 +1,3 @@
-export function newTableRelationCode(cryptoApi = globalThis.crypto) {
-  // 公网 HTTP 页面没有 randomUUID，getRandomValues 仍可用于生成配置编码。
-  const bytes = cryptoApi.getRandomValues(new Uint8Array(16))
-  return `JOIN_${Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')}`
-}
-
 export function tableRelationPayload(source, target, form, sourceFields, targetFields) {
   if (!source?.physicalTableBindingId || !target?.id) throw new Error('请选择要关联的物理表')
   if (String(source.physicalTableBindingId) === String(target.id)) throw new Error('关联表不能与当前来源表相同')

@@ -4,7 +4,7 @@ export function fetchValueSets(params = {}) {
   return requestJson(withQuery('/meta/value-sets', params))
 }
 
-export function createValueSet(payload) {
+export function createValueSet({ code: _code, ...payload }) {
   return requestJson('/meta/value-sets', { method: 'POST', body: JSON.stringify(payload) })
 }
 

@@ -48,15 +48,7 @@
 
     <section class="surface-card filter-card">
         <el-form :model="filters" aria-label="指标筛选">
-          <el-form-item>
-            <el-input
-              v-model="filters.code"
-              placeholder="指标编码"
-              clearable
-              class="filter-code"
-              aria-label="按指标编码筛选"
-            />
-          </el-form-item>
+
           <el-form-item>
             <el-input
               v-model="filters.name"
@@ -141,7 +133,7 @@
         >
           <el-table-column type="selection" width="46" />
           <el-table-column prop="name" label="指标名称" min-width="280" show-overflow-tooltip>
-            <template #default="{ row }"><CodeTooltip :code="row.code" label="指标编码" :focusable="false"><button type="button" class="action-link" @click="openDetail(row)">{{ row.name }}</button></CodeTooltip></template>
+            <template #default="{ row }"><button type="button" class="action-link" @click="openDetail(row)">{{ row.name }}</button></template>
           </el-table-column>
           <el-table-column prop="category" label="分类" width="120" />
           <el-table-column prop="version" label="版本" width="86" />
@@ -190,7 +182,7 @@
       <div v-if="pagedRows.length" class="indicator-card-grid">
         <article v-for="row in pagedRows" :key="row.code" class="surface-card indicator-card">
           <div class="indicator-card__head">
-            <CodeTooltip :code="row.code" label="指标编码" :focusable="false"><button type="button" class="indicator-code" @click="openDetail(row)">{{ row.name }}</button></CodeTooltip>
+            <button type="button" class="indicator-code" @click="openDetail(row)">{{ row.name }}</button>
             <StatusBadge :status="row.status" :label="row.status" :tone="statusTone(row.status)" />
           </div>
           <dl>
@@ -242,7 +234,6 @@ import { Download, Grid, Menu, Plus, RefreshLeft, Search, Upload } from '@elemen
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
-import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
  import ResourceDeleteDialog from '@/idmp/components/ResourceDeleteDialog.vue'
 import { deleteIndicator, fetchIndicatorDeletionImpact, fetchAllIndicators, fetchAllIndicatorVersions } from '@/idmp/api/modules/indicators'
 import { getStatusLabel } from '@/idmp/design/status'
@@ -355,7 +346,7 @@ const toIndicatorRow = (item) => ({
 
 const toPublishedIndicatorVersionRow = (item) => ({
   code: item.indicatorCode || item.code,
-  name: item.indicatorName || item.name || item.indicatorCode || item.code,
+  name: item.indicatorName || item.name || '未命名指标',
   category: item.category || '—',
   attribute: item.attribute || '—',
   version: item.versionNo ? `V${item.versionNo}` : `版本 ${item.id || item.versionId || '-'}`,

@@ -123,7 +123,6 @@ function markJsonInteger(value) {
 }
 
 export function validateWarningRuleForm(form) {
-  if (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(String(form.code || '').trim())) return '规则编码须以字母开头，仅含字母、数字或下划线，最长 64 位'
   if (!String(form.name || '').trim()) return '请填写规则名称'
   if (!opaquePositiveId(form.indicatorVersionId)) return '请选择已发布指标版本'
   if (!WARNING_PERIOD_TYPES.includes(form.periodType)) return '请选择统计周期'

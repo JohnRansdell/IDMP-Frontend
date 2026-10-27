@@ -2,7 +2,6 @@ import { toOpaqueId } from '../../utils/resourceId.js'
 import { normalizeDimensionGrain, serializeDrillPaths } from '../../features/indicator/grouping.js'
 import { toUserMessage } from '../../utils/userMessage.js'
 import { formatApiError } from '../../utils/apiError.js'
-import { newResourceCode } from '../../utils/resourceCode.js'
 
 
 function cleanMappings(tableMappings = {}) {
@@ -231,7 +230,7 @@ export function mergeSqlFactorMetadata(current = [], drafts = []) {
   return drafts.map((draft) => {
     const saved = existing.get(String(draft.key || '').toUpperCase())
     return {
-      key: draft.key, code: saved?.code || newResourceCode('FACTOR'), name: saved?.name || draft.suggestedName,
+      key: draft.key, code: saved?.code || '', name: saved?.name || draft.suggestedName,
       description: saved?.description || '', missingRowPolicy: saved?.missingRowPolicy || 'KEEP_NULL',
       calculationMode: saved?.calculationMode || (saved?.timeField ? 'TEMPORAL' : 'STATIC'),
       timeField: saved?.timeField || draft.timeFieldOptions?.find(item => item.recommended)?.fieldReference || '',
@@ -248,7 +247,7 @@ export function buildSqlImportMetadataPayload({ scope, category, indicator, fact
     factors: (factors || []).map((item) => {
       const calculationMode = String(item.calculationMode || 'STATIC').toUpperCase()
       return {
-        key: String(item.key || '').trim(), code: String(item.code || '').trim(), name: String(item.name || '').trim(),
+        key: String(item.key || '').trim(), name: String(item.name || '').trim(),
         ...(String(item.description || '').trim() ? { description: String(item.description).trim() } : {}),
         ...(item.missingRowPolicy ? { missingRowPolicy: item.missingRowPolicy } : {}), calculationMode,
         ...((item.parameters || []).length ? { parameters: item.parameters.map(normalizeSqlRuntimeParameter) } : {}),
@@ -258,7 +257,7 @@ export function buildSqlImportMetadataPayload({ scope, category, indicator, fact
     })
   }
   if (normalizedScope === 'FACTORS_AND_INDICATOR') Object.assign(payload, {
-    indicatorCode: String(indicator?.code || '').trim(), indicatorName: String(indicator?.name || '').trim(),
+    indicatorName: String(indicator?.name || '').trim(),
     ...(String(indicator?.description || '').trim() ? { indicatorDescription: String(indicator.description).trim() } : {}),
     formula: indicator?.formula || {},
     drillPaths: serializeDrillPaths(indicator?.drillPaths || []),
@@ -319,15 +318,6 @@ export function shouldPollSqlImport(task) { return SQL_IMPORT_RUNNING_STATUSES.h
 export function canSubmitSqlImportMetadata(task) { return String(task?.status || '').toUpperCase() === 'AWAITING_METADATA' }
 export function canTrialSqlImport(task) { return String(task?.status || '').toUpperCase() === 'READY_FOR_TRIAL' }
 export function canFinalizeSqlImport(task) { return String(task?.status || '').toUpperCase() === 'TRIAL_SUCCEEDED' }
-
-export function nextSqlImportCode(value) {
-  const code = String(value || '').trim().toUpperCase()
-  if (!code) return ''
-  const match = code.match(/^(.*)_R(\d+)$/)
-  if (!match) return `${code}_R02`
-  const width = Math.max(2, match[2].length)
-  return `${match[1]}_R${String(Number(match[2]) + 1).padStart(width, '0')}`
-}
 
 export function normalizeSqlImportOperationError(error = {}, fallback = '导入操作失败') {
   const payload = error?.payload || {}

@@ -30,16 +30,7 @@
 
     <section class="surface-card filter-card factor-filter" aria-label="因子筛选">
       <el-form :inline="true" @submit.prevent="applyFilters">
-        <el-form-item>
-          <el-input
-            v-model.trim="form.code"
-            class="filter-code"
-            clearable
-            placeholder="因子编码"
-            aria-label="按因子编码筛选"
-            @keyup.enter="applyFilters"
-          />
-        </el-form-item>
+
         <el-form-item>
           <el-input
             v-model.trim="form.name"
@@ -108,7 +99,7 @@
           <el-table-column type="selection" width="46" />
           <el-table-column prop="name" label="因子名称" min-width="280" show-overflow-tooltip>
             <template #default="{ row }">
-              <CodeTooltip :code="row.code" label="因子编码" :focusable="false"><button class="action-link factor-name-text" type="button" @click="openFactorDetail(row)">{{ row.name }}</button></CodeTooltip>
+              <button class="action-link factor-name-text" type="button" @click="openFactorDetail(row)">{{ row.name }}</button>
             </template>
           </el-table-column>
           <el-table-column prop="category" label="分类" width="120" />
@@ -172,13 +163,14 @@ import { Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
   import StatusBadge from '@/idmp/components/StatusBadge.vue'
-import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
  import ResourceDeleteDialog from '@/idmp/components/ResourceDeleteDialog.vue'
  import { deleteFactor, fetchFactorDeletionImpact, fetchAllFactors } from '@/idmp/api/modules/factors'
 import { getStatusLabel } from '@/idmp/design/status'
 import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
 import { getFactorTypeLabel } from '@/idmp/utils/factorType'
 import { canRequest } from '@/idmp/auth/session'
+import { fetchDataDomains } from '@/idmp/api/modules/meta'
+import { adaptDataDomainList } from '@/idmp/api/adapters/meta'
 
 const router = useRouter()
 
@@ -193,6 +185,7 @@ const emptyFilters = () => ({
 const form = reactive(emptyFilters())
 const filters = reactive(emptyFilters())
 const backendFactorRows = ref([])
+const domainNames = ref({})
 const sourceMode = ref('loading')
 const loadError = ref('')
 const tableLoading = ref(false)
@@ -265,6 +258,10 @@ async function loadBackendFactors() {
   loadError.value = ''
   selectedRows.value = []
   try {
+    if (canRequest('GET', '/meta/data-domains')) {
+      try { domainNames.value = Object.fromEntries(adaptDataDomainList(await fetchDataDomains()).map(item => [item.code, item.name])) }
+      catch { domainNames.value = {} }
+    }
     const payload = await fetchAllFactors()
     const rows = normalizeList(payload).map(toFactorRow)
     backendFactorRows.value = rows
@@ -286,7 +283,7 @@ function toFactorRow(item) {
     type: getFactorTypeLabel(item.definitionKind || item.factorKind || item.type),
     category: item.category || '—',
     aggregation: item.aggregation || item.output?.dimension || '-',
-    domain: item.domain || item.domainCode || '-',
+    domain: item.domainName || domainNames.value[item.domainCode] || '-',
     references: item.references ?? item.referenceCount ?? null,
     status: item.status || 'UNKNOWN',
     publishedVersionId: item.publishedVersionId

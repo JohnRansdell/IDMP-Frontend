@@ -73,7 +73,7 @@
                 filterable remote clearable
                 :remote-method="searchOwners"
                 :loading="ownerOptionsLoading || ownerInitializing"
-                placeholder="按名称或编码搜索"
+                placeholder="按名称搜索"
                 @change="handleOwnerChange"
                 @visible-change="handleOwnerSelectVisible"
               >
@@ -418,7 +418,7 @@ function listRows(payload) {
 function normalizeOwner(item) {
   const id = toOpaqueId(item.id)
   const name = item.name || item.indicatorName || item.factorName || '未命名'
-  return { ...item, id, label: `${name}${item.code ? ` · ${item.code}` : ''}` }
+  return { ...item, id, label: name }
 }
 
 function isVersionEligible(version) {
@@ -601,7 +601,7 @@ function normalizeScenarioOptions(payload) {
   const records = Array.isArray(payload) ? payload : payload?.records || payload?.items || payload?.list || []
   return records.map((item) => {
     const id = toOpaqueId(item.scenarioVersionId || item.versionId || item.id)
-    const name = item.scenarioName || item.name || item.scenarioCode || '未命名场景'
+    const name = item.scenarioName || item.name || '未命名场景'
     const period = item.configuredPeriodType || item.defaultPeriodType || ''
     return { id, label: `${name}${period ? ` · ${period}` : ''}` }
   }).filter((item) => item.id)

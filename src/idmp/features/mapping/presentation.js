@@ -7,7 +7,7 @@ const differenceLabels = {
 export function policyLabel(indicator) {
   const references = Array.isArray(indicator?.policyReferences) ? indicator.policyReferences : []
   const policy = references.find(item => item?.policyFileName || item?.policyFileCode || item?.policyFileVersionId)
-  return policy?.policyFileName || policy?.policyFileCode || indicator?.policyFileName || indicator?.policyFileCode || '未标注政策来源'
+  return policy?.policyFileName || indicator?.policyFileName || '未标注政策来源'
 }
 
 function differenceValue(value, detailed) {

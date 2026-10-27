@@ -8,7 +8,7 @@
 
     <section class="surface-card filter-card scenario-filter" aria-label="场景筛选">
       <el-form :inline="true" @submit.prevent="load">
-        <el-form-item><el-input v-model.trim="filters.code" class="filter-code" clearable placeholder="场景编码" /></el-form-item>
+
         <el-form-item><el-input v-model.trim="filters.name" class="filter-name" clearable placeholder="场景名称" /></el-form-item>
         <el-form-item><el-select v-model="filters.type" class="filter-select" clearable placeholder="场景类型">
           <el-option v-for="item in SCENARIO_TYPES" :key="item.value" :label="item.label" :value="item.value" />
@@ -25,7 +25,7 @@
       <StatePanel v-else-if="loadError" type="error" title="场景目录加载失败" :description="loadError"><template #actions><el-button type="primary" @click="load">重试</el-button></template></StatePanel>
       <template v-else>
       <el-table v-loading="loading" :data="rows" empty-text="暂无场景">
-        <el-table-column prop="name" label="场景名称" min-width="280"><template #default="{ row }"><CodeTooltip :code="row.code" label="场景编码"><span>{{ row.name }}</span></CodeTooltip></template></el-table-column>
+        <el-table-column prop="name" label="场景名称" min-width="280"><template #default="{ row }"><span>{{ row.name }}</span></template></el-table-column>
         <el-table-column label="类型" width="130"><template #default="{ row }">{{ scenarioTypeLabel(row.type) }}</template></el-table-column>
         <el-table-column prop="governingOrgName" label="主管部门" min-width="160" />
         <el-table-column prop="indicatorCount" label="指标数" width="90" />
@@ -39,7 +39,7 @@
 
     <el-dialog v-model="createOpen" title="新建场景" width="560px" destroy-on-close>
       <el-form ref="formRef" :model="form" :rules="rules" label-width="110px">
-        <el-form-item label="场景编码" prop="code"><el-input v-model.trim="form.code" /></el-form-item>
+
         <el-form-item label="场景名称" prop="name"><el-input v-model.trim="form.name" /></el-form-item>
         <el-form-item label="场景类型" prop="type"><el-select v-model="form.type" style="width: 100%"><el-option v-for="item in SCENARIO_TYPES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
         <el-form-item label="默认周期" prop="defaultPeriodType"><el-select v-model="form.defaultPeriodType" style="width: 100%"><el-option v-for="item in PERIOD_TYPES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
@@ -59,7 +59,6 @@ import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
-import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
 import { createScenario, fetchScenarios, fetchScenarioVersions } from '@/idmp/api/modules/scenarios'
 import { normalizePage, PERIOD_TYPES, SCENARIO_TYPES, publicationStatusLabel, scenarioTypeLabel, selectScenarioVersion } from '@/idmp/api/adapters/scenario'
 
@@ -75,7 +74,7 @@ const createOpen = ref(false)
 const formRef = ref()
 const filters = reactive({ code: '', name: '', type: '', publicationStatus: '' })
 const form = reactive({ code: '', name: '', type: 'CUSTOM', defaultPeriodType: 'MONTHLY', governingOrgName: '', description: '' })
-const rules = { code: [{ required: true, message: '请输入场景编码' }], name: [{ required: true, message: '请输入场景名称' }], type: [{ required: true, message: '请选择场景类型' }], defaultPeriodType: [{ required: true, message: '请选择默认周期' }] }
+const rules = { name: [{ required: true, message: '请输入场景名称' }], type: [{ required: true, message: '请选择场景类型' }], defaultPeriodType: [{ required: true, message: '请选择默认周期' }] }
 
 async function load() {
   loading.value = true

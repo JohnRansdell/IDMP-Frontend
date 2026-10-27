@@ -6,14 +6,14 @@
     </PageHeader>
     <section class="surface-card filter-card">
       <el-form :inline="true" @submit.prevent="load">
-        <el-form-item><el-input v-model.trim="filters.code" placeholder="编码" clearable /></el-form-item>
+
         <el-form-item><el-input v-model.trim="filters.name" placeholder="名称" clearable /></el-form-item>
         <el-form-item><el-button type="primary" native-type="submit">查询</el-button></el-form-item>
       </el-form>
     </section>
     <section class="surface-card">
       <el-table :data="records" v-loading="loading" empty-text="回收站为空">
-        <el-table-column prop="resourceCode" label="编码" min-width="160" />
+
         <el-table-column prop="resourceName" label="名称" min-width="180" />
         <el-table-column label="删除前状态" width="120"><template #default="{ row }">{{ row.status ? getStatusLabel(row.status) : '-' }}</template></el-table-column>
         <el-table-column prop="deletedByName" label="删除人" width="120" />
@@ -28,7 +28,7 @@
     </section>
     <el-drawer v-model="detailVisible" :title="`${resourceLabel}回收站详情`" size="520px">
       <template v-if="detail">
-        <el-descriptions :column="1" border><el-descriptions-item label="编码">{{ detail.resource.resourceCode }}</el-descriptions-item><el-descriptions-item label="名称">{{ detail.resource.resourceName }}</el-descriptions-item><el-descriptions-item label="删除人">{{ detail.resource.deletedByName || detail.resource.deletedBy || '-' }}</el-descriptions-item><el-descriptions-item label="删除原因">{{ detail.resource.deleteReason }}</el-descriptions-item><el-descriptions-item label="删除时间">{{ detail.resource.deletedAt }}</el-descriptions-item></el-descriptions>
+        <el-descriptions :column="1" border><el-descriptions-item label="名称">{{ detail.resource.resourceName }}</el-descriptions-item><el-descriptions-item label="删除人">{{ detail.resource.deletedByName || detail.resource.deletedBy || '-' }}</el-descriptions-item><el-descriptions-item label="删除原因">{{ detail.resource.deleteReason }}</el-descriptions-item><el-descriptions-item label="删除时间">{{ detail.resource.deletedAt }}</el-descriptions-item></el-descriptions>
         <h3>保留版本</h3><el-table :data="detail.versions || []"><el-table-column prop="versionNo" label="版本" /><el-table-column label="状态"><template #default="{ row }">{{ row.status ? getStatusLabel(row.status) : '-' }}</template></el-table-column><el-table-column prop="createdAt" label="创建时间" /></el-table>
         <el-button class="restore-button" type="success" :loading="restoringId === detail.resource.resourceId" @click="restore(detail.resource)">恢复此资源</el-button>
       </template>

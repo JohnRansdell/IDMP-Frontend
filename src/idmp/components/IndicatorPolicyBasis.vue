@@ -4,7 +4,7 @@
     <el-alert v-if="controller.error" :title="controller.error" type="error" :closable="false" />
     <el-empty v-if="!controller.references.length && !modelValue.length" description="尚未选择政策文件来源，请先在第 1 页选择；依据可以留空。" />
     <el-table v-if="controller.references.length" :data="controller.references" empty-text="暂无已保存政策依据" table-layout="fixed">
-      <el-table-column label="政策文件" min-width="200"><template #default="{ row }">{{ row.policyFileName || row.policyFileCode || row.policyFileVersionId }}</template></el-table-column>
+      <el-table-column label="政策文件" min-width="200"><template #default="{ row }">{{ row.policyFileName || '未命名政策文件' }}</template></el-table-column>
       <el-table-column prop="policyVersionNo" label="版本" width="80" />
       <el-table-column label="文号" min-width="140"><template #default="{ row }">{{ controller.metadata[row.policyFileId]?.documentNumber || '未提供' }}</template></el-table-column>
       <el-table-column prop="citationLocation" label="章节或条款（选填）" min-width="160" />

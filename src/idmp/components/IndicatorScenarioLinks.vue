@@ -5,12 +5,12 @@
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <el-alert v-if="savedVersionId" title="已加入场景草稿。请进入场景编辑页核对覆盖规则、校验并发布，场景计算才会使用该配置。" type="success" :closable="false" />
     <el-table v-loading="loading" :data="links" empty-text="当前指标版本暂无关联场景">
-      <el-table-column label="场景" min-width="200"><template #default="{ row }">{{ row.name || row.scenarioName || row.code }}</template></el-table-column>
+      <el-table-column label="场景" min-width="200"><template #default="{ row }">{{ row.name || row.scenarioName || '未命名场景' }}</template></el-table-column>
       <el-table-column prop="publicationStatus" label="状态" width="120" />
       <el-table-column label="操作" width="150"><template #default="{ row }"><el-button link type="primary" @click="open(row.id || row.scenarioId, row.scenarioVersionId)">查看或配置覆盖</el-button></template></el-table-column>
     </el-table>
     <div v-if="published" class="scenario-controls">
-      <el-select v-model="scenarioId" filterable remote :remote-method="search" :loading="searching" placeholder="搜索可关联的场景" :disabled="saving" @visible-change="visible => visible && search('')" @change="loadVersions"><el-option v-for="row in options" :key="row.id" :value="String(row.id)" :label="row.name || row.code" /></el-select>
+      <el-select v-model="scenarioId" filterable remote :remote-method="search" :loading="searching" placeholder="搜索可关联的场景" :disabled="saving" @visible-change="visible => visible && search('')" @change="loadVersions"><el-option v-for="row in options" :key="row.id" :value="String(row.id)" :label="row.name || '未命名场景'" /></el-select>
       <el-select v-model="draftId" placeholder="选择场景草稿版本" :disabled="saving || versionsLoading" :loading="versionsLoading"><el-option v-for="row in drafts" :key="row.id" :value="String(row.id)" :label="`草稿版本 ${row.versionNo}`" /></el-select>
       <el-button type="primary" :disabled="!draftId || saving" :loading="saving" @click="bind">加入场景草稿</el-button>
       <el-button v-if="scenarioId" @click="open(scenarioId, savedVersionId || draftId)">进入场景编辑</el-button>

@@ -10,7 +10,7 @@
       <StatePanel v-if="loading" type="loading" title="正在读取政策引用" />
       <StatePanel v-else-if="error" type="error" title="政策引用读取失败" :description="error" />
       <el-table v-else :data="references" empty-text="当前指标版本暂无有效政策引用" table-layout="fixed">
-        <el-table-column label="政策文件" min-width="200"><template #default="{ row }">{{ row.policyFileName || row.policyFileCode || row.policyFileVersionId }}</template></el-table-column>
+        <el-table-column label="政策文件" min-width="200"><template #default="{ row }">{{ row.policyFileName || '未命名政策文件' }}</template></el-table-column>
         <el-table-column prop="policyVersionNo" label="政策版本" width="100" />
         <el-table-column label="引用用途" width="110"><template #default="{ row }">{{ policyReferenceRoleLabel(row.relationRole) }}</template></el-table-column>
         <el-table-column prop="citationLocation" label="出处" min-width="160" show-overflow-tooltip />

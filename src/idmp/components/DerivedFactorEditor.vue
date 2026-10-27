@@ -2,7 +2,7 @@
   <section class="surface-card derived-editor" aria-label="复合因子定义">
     <h2>复合因子定义</h2>
     <el-form label-position="top" class="definition-fields">
-      <el-form-item label="数据域"><el-select :model-value="modelValue.primaryDomain?.domainCode" filterable :disabled="disabled" @update:model-value="value => update('primaryDomain', { ...modelValue.primaryDomain, domainCode: value })"><el-option v-for="domain in domains" :key="domain.code" :value="domain.code" :label="domain.name || domain.code" /></el-select></el-form-item>
+      <el-form-item label="数据域"><el-select :model-value="modelValue.primaryDomain?.domainCode" filterable :disabled="disabled" @update:model-value="value => update('primaryDomain', { ...modelValue.primaryDomain, domainCode: value })"><el-option v-for="domain in domains" :key="domain.code" :value="domain.code" :label="domain.name || '未命名数据域'" /></el-select></el-form-item>
       <el-form-item label="输出分组粒度"><el-select :model-value="modelValue.output?.grain || []" multiple filterable allow-create default-first-option :disabled="disabled" placeholder="不选表示总体" @update:model-value="value => updateOutput('grain', value)"><el-option v-for="grain in grains" :key="grain" :value="grain" :label="grain" /></el-select></el-form-item>
       <el-form-item label="输出量纲"><el-input :model-value="modelValue.output?.dimension" :disabled="disabled" @update:model-value="value => updateOutput('dimension', value)" /></el-form-item>
       <el-form-item label="输出单位"><el-input :model-value="modelValue.output?.unit" :disabled="disabled" @update:model-value="value => updateOutput('unit', value)" /></el-form-item>
@@ -58,7 +58,7 @@ const simpleLeft = computed(() => String(simple.value?.left?.factorVersionId || 
 const simpleRight = computed(() => String(simple.value?.right?.factorVersionId || ''))
 const operatorSymbol = computed(() => ({ ADD: '+', SUB: '−', MUL: '×', DIV: '÷' })[simpleOperator.value])
 const versionName = id => versions.value.find(item => String(item.id ?? item.versionId) === String(id))?.factorName
-  || versions.value.find(item => String(item.id ?? item.versionId) === String(id))?.factorCode || (id ? `因子版本 ${id}` : '请选择因子')
+  || (id ? `因子版本 ${id}` : '请选择因子')
 const formulaPreview = computed(() => {
   if (!simple.value) return '当前为高级公式；可在上方逐层查看和修改。'
   const left = versionName(simpleLeft.value)
@@ -67,7 +67,7 @@ const formulaPreview = computed(() => {
 const grains = computed(() => [...new Set(versions.value.flatMap(item => item.output?.grain || item.dsl?.output?.grain || []))])
 function update(key, value) { emit('update:modelValue', { ...props.modelValue, [key]: value }) }
 function updateOutput(key, value) { update('output', { ...props.modelValue.output, [key]: value }) }
-function versionLabel(item) { return `${item.factorName || item.factorCode} · V${item.versionNo} · ${item.id ?? item.versionId}` }
+function versionLabel(item) { return `${item.factorName || '未命名因子'} · V${item.versionNo} · ${item.id ?? item.versionId}` }
 function setOperator(operator) {
   if (operator === simpleOperator.value) return
   update('expression', buildSimpleDerivedExpression(operator, simple.value?.left || '', simple.value?.right || '',

@@ -1,7 +1,7 @@
 <template>
   <div class="indicator-source-picker">
     <el-select :model-value="modelValue" :loading="loading" :aria-label="label" :data-testid="testId" filterable clearable :placeholder="placeholder" @change="emit('change', $event || '')" @visible-change="visible => visible && emit('refresh')">
-      <el-option v-if="modelValue && !sources.some(source => source.code === modelValue)" :value="modelValue" :label="currentName || modelValue" disabled />
+      <el-option v-if="modelValue && !sources.some(source => source.code === modelValue)" :value="modelValue" :label="currentName || '指标已不可用'" disabled />
       <el-option v-for="source in sources" :key="source.code" :value="source.code" :label="source.name">
         <span class="indicator-source-picker__name" :title="source.name">{{ source.name }}</span>
         <small v-if="source.indicatorVersionNo">发布版 {{ source.indicatorVersionNo }}</small>

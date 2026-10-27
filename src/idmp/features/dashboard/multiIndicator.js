@@ -8,8 +8,8 @@ export function normalizeIndicatorBindings(value = [], primary = {}) {
     seen.add(sourceCode)
     return [{
       sourceCode,
-      sourceName: String(item.sourceName || sourceCode),
-      alias: String(item.alias || item.sourceName || sourceCode),
+      sourceName: String(item.sourceName || `指标 ${index + 1}`),
+      alias: String(item.alias || item.sourceName || `指标 ${index + 1}`),
       ...(item.indicatorVersionId ? { indicatorVersionId: String(item.indicatorVersionId) } : {}),
       axis: item.axis === 'right' ? 'right' : 'left',
       order: index
@@ -19,8 +19,8 @@ export function normalizeIndicatorBindings(value = [], primary = {}) {
   if (primaryCode && !seen.has(primaryCode)) {
     rows.unshift({
       sourceCode: primaryCode,
-      sourceName: String(primary.sourceName || primaryCode),
-      alias: String(primary.sourceName || primaryCode),
+      sourceName: String(primary.sourceName || '主指标'),
+      alias: String(primary.sourceName || '主指标'),
       ...(primary.config?.analysisIndicatorVersionId ? { indicatorVersionId: String(primary.config.analysisIndicatorVersionId) } : {}),
       axis: 'left',
       order: -1

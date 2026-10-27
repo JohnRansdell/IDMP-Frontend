@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { newResourceCode } from '../src/idmp/utils/resourceCode.js'
+import { randomUUID } from 'node:crypto'
+const newResourceCode = prefix => `${prefix}_${randomUUID().replaceAll('-', '').toUpperCase()}`
 import { db } from './system-db.mjs'
 
 assert.equal(process.env.IDMP_LIVE_WRITE, '1', 'Set IDMP_LIVE_WRITE=1 to create isolated acceptance resources')

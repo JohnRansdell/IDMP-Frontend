@@ -92,5 +92,5 @@ export function mappingActionAllowed(detail = {}, action = '') {
 export function formatIndicatorRef(indicator = {}) {
   const code = indicator.indicatorCode || indicator.code || ''
   const name = indicator.indicatorName || indicator.name || ''
-  return [code, name].filter(Boolean).join(' · ') || toOpaqueId(indicator.indicatorVersionId)
+  return name || '未命名指标'
 }

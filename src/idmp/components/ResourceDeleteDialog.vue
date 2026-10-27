@@ -15,7 +15,7 @@
           <h4>删除阻断项</h4>
           <div v-for="item in impact.blockers" :key="item.code" class="impact-item">
             <strong>{{ item.message || item.code }}</strong><span>共 {{ item.count }} 项</span>
-            <ul v-if="item.samples?.length"><li v-for="sample in item.samples" :key="`${item.code}-${sample.resourceId}-${sample.versionId}`">{{ sample.resourceName || sample.resourceCode || sample.resourceType || '关联资源' }}</li></ul>
+            <ul v-if="item.samples?.length"><li v-for="sample in item.samples" :key="`${item.code}-${sample.resourceId}-${sample.versionId}`">{{ sample.resourceName || '关联资源' }}</li></ul>
           </div>
         </section>
         <section v-if="impact.automaticActions?.length" class="impact-group is-warning">

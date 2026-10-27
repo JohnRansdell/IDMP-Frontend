@@ -4,7 +4,7 @@ export function fetchDataDomains() {
   return requestJson('/meta/data-domains')
 }
 
-export function createDataDomain(payload) {
+export function createDataDomain({ code: _code, ...payload }) {
   return requestJson('/meta/data-domains', {
     method: 'POST',
     body: JSON.stringify(payload)
@@ -30,7 +30,7 @@ export function fetchPhysicalTableRelations(physicalTableBindingId, params = {})
   return requestJson(withQuery('/meta/physical-table-relations', { physicalTableBindingId, ...params }))
 }
 
-export function createPhysicalTableRelation(payload) {
+export function createPhysicalTableRelation({ code: _code, ...payload }) {
   return requestJson('/meta/physical-table-relations', { method: 'POST', body: JSON.stringify(payload) })
 }
 
@@ -102,7 +102,7 @@ export function syncSourceMappings() {
   })
 }
 
-export function bindSourceTableDomain(tableName, payload) {
+export function bindSourceTableDomain(tableName, { domainCode: _code, ...payload }) {
   // 兼容快捷接口：正式 M0 流程应使用 createSemanticTable 逐步配置。
   return requestJson(`/meta/source-tables/${encodeURIComponent(tableName)}/bind-domain`, {
     method: 'POST',
@@ -143,7 +143,7 @@ export function fetchSemanticTableRelations(viewMappingId, params = {}) {
   return requestJson(withQuery('/meta/semantic-table-relations', { viewMappingId, ...params }))
 }
 
-export function createSemanticTableRelation(payload) {
+export function createSemanticTableRelation({ code: _code, ...payload }) {
   return requestJson('/meta/semantic-table-relations', {
     method: 'POST',
     body: JSON.stringify(payload)

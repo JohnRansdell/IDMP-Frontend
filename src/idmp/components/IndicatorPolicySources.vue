@@ -8,7 +8,7 @@
     </el-select>
     <p>已保存来源 {{ sourceReferences.length }} 项，待绑定 {{ modelValue.length }} 项。文件名称及文号自动读取，无需重复填写。</p>
     <el-table v-if="sourceReferences.length" v-loading="loading" :data="sourceReferences" empty-text="暂无已保存政策引用" table-layout="fixed">
-      <el-table-column label="政策文件" min-width="200"><template #default="{ row }">{{ row.policyFileName || row.policyFileCode || row.policyFileVersionId }}</template></el-table-column>
+      <el-table-column label="政策文件" min-width="200"><template #default="{ row }">{{ row.policyFileName || '未命名政策文件' }}</template></el-table-column>
       <el-table-column prop="policyVersionNo" label="版本" width="80" />
       <el-table-column label="文号" min-width="140"><template #default="{ row }">{{ metadata[row.policyFileId]?.documentNumber || '未提供' }}</template></el-table-column>
       <el-table-column label="操作" width="130"><template #default="{ row }"><el-button link type="primary" @click="viewerId = String(row.policyFileVersionId)">查看文件</el-button><el-button v-if="published" link type="danger" :disabled="saving" @click="invalidate(row)">失效</el-button></template></el-table-column>

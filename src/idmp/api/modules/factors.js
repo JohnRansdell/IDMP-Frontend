@@ -43,7 +43,7 @@ export function fetchFactorImpactAnalysis(versionId) {
   return requestJson(`/factor-versions/${encodeURIComponent(versionId)}/impact-analysis`)
 }
 
-export function createFactor(payload) {
+export function createFactor({ code: _code, ...payload }) {
   return requestJson('/factors', {
     method: 'POST',
     body: JSON.stringify(payload)
@@ -145,7 +145,7 @@ export function fetchFactorTemplates(params = {}) {
   return requestJson(withQuery('/factor-templates', params))
 }
 
-export function createFactorTemplate(payload) {
+export function createFactorTemplate({ code: _code, ...payload }) {
   return requestJson('/factor-templates', {
     method: 'POST',
     body: JSON.stringify(payload)
@@ -188,7 +188,7 @@ export function publishFactorTemplateVersion(versionId, resourceVersion) {
   })
 }
 
-export function instantiateFactorTemplateVersion(versionId, payload) {
+export function instantiateFactorTemplateVersion(versionId, { factorCode: _code, ...payload }) {
   return requestJson(`/factor-template-versions/${versionId}/instantiate`, {
     method: 'POST',
     body: JSON.stringify(payload)

@@ -102,7 +102,7 @@ test('dashboard and preview API wrappers request and decode columnar results', a
   assert.equal(calls[0].body.responseFormat, 'COLUMNAR')
   assert.equal(calls[0].body.granularity, 'MONTHLY')
   assert.equal(calls[1].body.responseFormat, 'COLUMNAR')
-  assert.match(calls[1].body.widget.code, /^PREVIEW_[0-9a-f]+$/)
+  assert.equal(Object.hasOwn(calls[1].body.widget, 'code'), false)
   assert.deepEqual(preview, batch.widgets.bar)
   assert.equal(preview.rows[0].resultId, '9007199254740993')
 })

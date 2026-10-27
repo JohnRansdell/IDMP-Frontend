@@ -7,7 +7,7 @@ export function fetchScenarios(params = {}) {
   return requestJson(withQuery('/scenarios', params))
 }
 
-export function createScenario(payload, idempotencyKey) {
+export function createScenario({ code: _code, ...payload }, idempotencyKey) {
   return requestJson('/scenarios', {
     method: 'POST',
     headers: idempotencyKey ? { 'X-Idempotency-Key': idempotencyKey } : undefined,

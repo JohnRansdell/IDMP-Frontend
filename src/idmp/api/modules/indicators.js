@@ -35,7 +35,7 @@ export function preflightIndicatorDrillCapabilities(formula, options = {}) {
   })
 }
 
-export function createIndicator(payload) {
+export function createIndicator({ code: _code, ...payload }) {
   return requestJson('/indicators', {
     method: 'POST',
     body: JSON.stringify(payload)

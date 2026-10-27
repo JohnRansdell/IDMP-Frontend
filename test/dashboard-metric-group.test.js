@@ -102,9 +102,10 @@ test('remote metric group envelope round-trips without capturing ordinary text w
     widgets: [{ id: 'group', type: 'metric-group', title: 'Group', config: { style: { backgroundAssetKey: 'mint' }, metricGroup: { title: 'Group', items: [{ id: 'item', label: 'A', sourceCode: 'source-a', dataBinding: { dataset: 'current', dimensions: [], measures: [{ field: 'value', aggregation: 'avg' }], series: [], sort: [] } }] } }, layout: { x: 1, y: 2, w: 12, h: 5 } }]
   })
   const payload = schemaToDashboardPayload(schema)
+  for (const widget of payload.widgets) widget.code = `WIDGET_${widget.clientKey}`
   const restored = dashboardDetailToSchema({ dashboard: { id: 'remote-group' }, version: { layout: { columns: 24, float: false }, widgets: payload.widgets } })
   assert.equal(restored.widgets[0].type, 'metric-group')
-  assert.deepEqual(restored.widgets[0].config, schema.widgets[0].config)
+  assert.deepEqual(restored.widgets[0].config, { ...schema.widgets[0].config, persistedWidgetCode: payload.widgets[0].code })
   assert.deepEqual(restored.widgets[0].layout, schema.widgets[0].layout)
 
   const text = dashboardDetailToSchema({ dashboard: { id: 'ordinary-text' }, version: { layout: { columns: 24, float: false }, widgets: [{ code: 'text', type: 'TEXT', title: 'Text', position: { x: 0, y: 0, w: 4, h: 3 }, chart: { chartKind: 'text' }, style: { __idmpMetricGroup: { config: { items: [] } } } }] } })

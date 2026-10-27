@@ -149,7 +149,7 @@ export function createPublishedIndicatorSources(indicators = [], publishedVersio
 
     return {
       code: `catalog-indicator-${identity}`,
-      name: indicator?.name || version?.indicatorName || version?.name || indicatorCode || '未命名指标',
+      name: indicator?.name || version?.indicatorName || version?.name || '未命名指标',
       category: indicator?.categoryName || indicator?.category || nestedIndicator.categoryName || nestedIndicator.category || '指标目录',
       unit: indicator?.unit || indicator?.displayUnit || nestedIndicator.unit || nestedIndicator.displayUnit || version?.unit || version?.displayUnit || '',
       currentValue: null,

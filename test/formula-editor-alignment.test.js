@@ -182,7 +182,8 @@ test('editing legacy empty metadata is valid while new indicator selections rema
   for (const key of ['attribute', 'unit', 'direction']) assert.deepEqual(rules.value[key], [])
   isNew.value = true
   for (const key of ['attribute', 'unit', 'direction']) assert.equal(rules.value[key][0].required, true)
-  for (const key of ['code', 'name']) assert.equal(rules.value[key][0].required, true)
+  assert.equal(rules.value.name[0].required, true)
+  assert.equal(Object.hasOwn(rules.value, 'code'), false)
 })
 
 test('obsolete scenario persistence demonstration notices are removed', () => {

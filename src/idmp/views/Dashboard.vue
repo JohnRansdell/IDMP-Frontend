@@ -306,7 +306,7 @@
                 <small v-else-if="Object.hasOwn(remoteSourcePeriodOptions, activeDesignerWidget.sourceCode) && !remoteSourcePeriodOptions[activeDesignerWidget.sourceCode].length">该指标暂未提供可用期间结果，请先计算并激活正式结果。</small>
                 <small v-else-if="suggestDesignerWidgetPeriod(activeDesignerWidget.sourceCode)">该指标在当前看板周期无数据；组件将使用 {{ suggestDesignerWidgetPeriod(activeDesignerWidget.sourceCode).periodStart.slice(0, 7) }} 的独立周期。</small>
               </div>
-              <dl v-else class="dashboard-property-list"><dt>指标</dt><dd>{{ activeDesignerWidget.sourceName || activeDesignerWidget.sourceCode || '未绑定' }}</dd><dt>展示类型</dt><dd>{{ activeDesignerWidget.chartKind || activeDesignerWidget.type }}</dd></dl>
+              <dl v-else class="dashboard-property-list"><dt>指标</dt><dd>{{ activeDesignerWidget.sourceName || '未绑定' }}</dd><dt>展示类型</dt><dd>{{ activeDesignerWidget.chartKind || activeDesignerWidget.type }}</dd></dl>
               <MultiIndicatorInspector
                 v-if="activeDesignerWidget.sourceCode && activeDesignerWidget.type === 'chart' && ['line', 'bar', 'table', 'radar'].includes(activeDesignerWidget.chartKind)"
                 :widget="activeDesignerWidget"
@@ -2950,7 +2950,7 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
     if (!isCurrentLoad()) return
     if (medicalMode.value) catalogIndicatorSources.value = sourceCodes.map(code => {
       const widget = rawSchema.widgets.find(widget => widget.sourceCode === code)
-      return dashboardDataSourceToFrontend({ code, name: widget?.sourceName || widget?.title || code, indicatorVersionId: widget?.config?.analysisIndicatorVersionId })
+      return dashboardDataSourceToFrontend({ code, name: widget?.sourceName || widget?.title || '未命名指标', indicatorVersionId: widget?.config?.analysisIndicatorVersionId })
     })
     remoteFieldCatalog.value = Object.fromEntries(metadataEntries.map(item => [item.code, item.fields]))
     const versionedWidgets = [...new Map(rawSchema.widgets.filter(widget => widget.sourceCode && widget.config?.analysisIndicatorVersionId)
@@ -3025,7 +3025,7 @@ async function queryRemoteMultiIndicatorSources(widget, range, signal, schema = 
   await Promise.all(bindings.map(async binding => {
     const source = availableIndicatorSources.value.find(item => item.code === binding.sourceCode)
     if (source?.origin !== 'dashboard-data-source') {
-      datasets.set(binding.sourceCode, [{ id: 'backend', fields: [], rows: [], status: 'ERROR', message: `指标 ${binding.sourceCode} 不是可查询的正式数据源` }])
+      datasets.set(binding.sourceCode, [{ id: 'backend', fields: [], rows: [], status: 'ERROR', message: '所选指标不是可查询的正式数据源' }])
       return
     }
     const fields = remoteFieldCatalog.value[binding.sourceCode] || await fetchDashboardDataSourceFields(binding.sourceCode, { signal })

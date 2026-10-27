@@ -12,7 +12,6 @@ import {
   canTrialSqlImport,
   isSqlImportTerminal,
   mergeSqlFactorMetadata,
-  nextSqlImportCode,
   normalizeSqlImportPreview,
   normalizeSqlImportOperationError,
   normalizeSqlImportTask,
@@ -26,12 +25,12 @@ import {
 import { resourceConflictEditorPath, resolveResourceConflict } from '../src/idmp/api/adapters/resourceConflict.js'
 import { sqlImportGroupingFields, sqlImportGroupingFieldLabels, normalizeDimensionGrain, validateSqlDimensionBindings, selectSqlDimensionBindings } from '../src/idmp/features/indicator/grouping.js'
 
-test('SQL import creates independent automatic codes and retains edited or resumed codes', () => {
+test('SQL import leaves new resource codes to backend and retains resumed identities locally', () => {
   const drafts = [{ key: 'total', suggestedCode: 'TOTAL', suggestedName: '入院总人次' }]
   const first = mergeSqlFactorMetadata([], drafts)
   const second = mergeSqlFactorMetadata([], drafts)
-  assert.match(first[0].code, /^FACTOR_[A-F0-9]{32}$/)
-  assert.notEqual(first[0].code, second[0].code)
+  assert.equal(first[0].code, '')
+  assert.equal(second[0].code, '')
   assert.equal(mergeSqlFactorMetadata(first, drafts)[0].code, first[0].code)
   first[0].code = 'MANUAL_ADMISSIONS'
   assert.equal(mergeSqlFactorMetadata(first, drafts)[0].code, 'MANUAL_ADMISSIONS')
@@ -115,10 +114,7 @@ test('SQL import preview keeps opaque ids and normalizes generated drafts', () =
   assert.equal(preview.diagnostics[0].severity, 'ERROR')
 })
 
-test('SQL import conflict recovery advances a stable run code and preserves conflict evidence', () => {
-  assert.equal(nextSqlImportCode('UAT_FACTOR_R01'), 'UAT_FACTOR_R02')
-  assert.equal(nextSqlImportCode('UAT_FACTOR_R009'), 'UAT_FACTOR_R010')
-  assert.equal(nextSqlImportCode('UAT_FACTOR'), 'UAT_FACTOR_R02')
+test('SQL import conflict recovery preserves conflict evidence', () => {
   const conflict = normalizeSqlImportOperationError({
     status: 409,
     code: 'FACTOR-40901',
@@ -202,9 +198,9 @@ test('SQL import separates creation, metadata and trial payloads', () => {
 
   assert.deepEqual(createPayload.tableMappings, { patient_visit: '102027642460316628' })
   assert.equal(createPayload.sql, 'SELECT 1')
-  assert.equal(metadataPayload.indicatorCode, 'RATE_48H')
+  assert.equal(Object.hasOwn(metadataPayload, 'indicatorCode'), false)
   assert.equal('tableMappings' in metadataPayload, false)
-  assert.equal(metadataPayload.factors[0].code, 'CUSTOM_TOTAL')
+  assert.equal(Object.hasOwn(metadataPayload.factors[0], 'code'), false)
   assert.equal(metadataPayload.factors[0].missingRowPolicy, 'KEEP_NULL')
   assert.deepEqual(buildSqlImportTrialPayload([{ calculationMode: 'STATIC' }]), {})
   assert.deepEqual(buildSqlImportTrialPayload([{ calculationMode: 'TEMPORAL' }], ['2026-01-01', '2026-02-01']), { periodStart: '2026-01-01', periodEnd: '2026-02-01' })

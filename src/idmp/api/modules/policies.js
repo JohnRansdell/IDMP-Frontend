@@ -12,7 +12,7 @@ export const fetchPolicies = (params = {}) => requestJson(query('/meta/policy-fi
 export const fetchPolicy = id => requestJson(`/meta/policy-files/${encodeURIComponent(id)}`, { cache: 'no-store' })
 export const fetchPolicyVersion = id => requestJson(`/meta/policy-file-versions/${encodeURIComponent(id)}`, { cache: 'no-store' })
 export const fetchPublishedPolicyVersions = (params = {}) => requestJson(query('/meta/policy-file-versions/published', params), { cache: 'no-store' })
-export const createPolicy = body => write('/meta/policy-files', body)
+export const createPolicy = ({ code: _code, ...body }) => write('/meta/policy-files', body)
 export const updatePolicy = (id, body) => write(`/meta/policy-files/${encodeURIComponent(id)}`, body, 'PATCH')
 export const createPolicyVersion = (id, body) => write(`/meta/policy-files/${encodeURIComponent(id)}/versions`, body)
 export const updatePolicyVersion = (id, body) => write(`/meta/policy-file-versions/${encodeURIComponent(id)}`, body, 'PATCH')

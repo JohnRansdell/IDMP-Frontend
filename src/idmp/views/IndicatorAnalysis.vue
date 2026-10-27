@@ -30,7 +30,7 @@
             >
               <div class="indicator-option">
                 <span>{{ item.name }}</span>
-                <small>{{ item.backendCode || item.code }} · {{ item.source }}</small>
+                <small>{{ item.source }}</small>
               </div>
             </el-option>
           </el-select>
@@ -381,7 +381,7 @@ const selectedBackendIndicator = computed(() => backendIndicators.value.find((it
 const currentProfile = computed(() => createAnalysisProfile(
   selectedBackendIndicator.value || {
     code: indicatorCode.value,
-    name: route.query.indicatorName || indicatorCode.value || '未选择指标',
+    name: route.query.indicatorName || '未选择指标',
     unit: ''
   },
   selectedBackendIndicator.value
@@ -865,7 +865,7 @@ async function loadBackendAnalysisIndicators() {
       normalizeList(publishedVersions)
     )
     if (selectedBackendIndicator.value) {
-      const backendName = selectedBackendIndicator.value.name || selectedBackendIndicator.value.code || ''
+      const backendName = selectedBackendIndicator.value.name || ''
       if (backendName && route.query.indicatorName !== backendName) {
         await router.replace({ path: '/analysis', query: { ...route.query, indicatorName: backendName } })
       }
@@ -897,7 +897,7 @@ function createBackendAnalysisOptions(indicators) {
     return {
       optionKey: key,
       code: key,
-      name: item.name || item.code || '未命名指标',
+      name: item.name || '未命名指标',
       backendCode: item.code,
       source: '后端指标',
       backendId: item.id || item.indicatorId || key,
@@ -938,7 +938,7 @@ function mergePublishedAnalysisIndicators(indicators, publishedVersions) {
       id: indicator.id || indicatorId || versionId,
       indicatorId: indicator.id || indicator.indicatorId || indicatorId,
       code: indicator.code || code,
-      name: indicator.name || version.indicatorName || version.name || code,
+      name: indicator.name || version.indicatorName || version.name || '未命名指标',
       status: 'PUBLISHED',
       publicationStatus: 'PUBLISHED',
       currentPublishedVersionId: versionId,

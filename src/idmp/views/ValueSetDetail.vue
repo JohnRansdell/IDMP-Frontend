@@ -7,7 +7,7 @@
     <StatePanel v-if="error" type="error" title="值集详情加载失败" :description="error" />
     <template v-else>
       <section class="surface-card value-set-summary">
-        <div><span>编码</span><el-tooltip :content="valueSet?.code || '—'" placement="top" :show-after="300"><strong class="summary-ellipsis summary-ellipsis--code">{{ valueSet?.code || '—' }}</strong></el-tooltip></div><div><span>匹配模式</span><strong class="summary-ellipsis">{{ matchModeLabel(version?.matchMode || valueSet?.matchMode) || '—' }}</strong></div><div><span>状态</span><StatusBadge :status="valueSet?.status" /></div><div><span>当前发布版本</span><el-tooltip :content="String(valueSet?.currentPublishedVersionId || '—')" placement="top" :show-after="300"><strong class="summary-ellipsis summary-ellipsis--code">{{ valueSet?.currentPublishedVersionId || '—' }}</strong></el-tooltip></div>
+        <div><span>匹配模式</span><strong class="summary-ellipsis">{{ matchModeLabel(version?.matchMode || valueSet?.matchMode) || '—' }}</strong></div><div><span>状态</span><StatusBadge :status="valueSet?.status" /></div><div><span>当前发布版本</span><el-tooltip :content="String(valueSet?.currentPublishedVersionId || '—')" placement="top" :show-after="300"><strong class="summary-ellipsis summary-ellipsis--code">{{ valueSet?.currentPublishedVersionId || '—' }}</strong></el-tooltip></div>
       </section>
       <section v-if="isContinuous" class="surface-card table-card continuous-spec-card">
         <div class="section-title"><div><h2>连续值规范</h2><p class="section-title__description">连续值集不维护枚举值项；范围筛选使用左闭右开区间 [开始值, 结束值)。</p></div></div>
@@ -20,7 +20,7 @@
       </section>
       <section v-if="!isContinuous" class="surface-card table-card">
         <div class="section-title"><div><h2>值项</h2><p class="section-title__description">{{ version?.publicationStatus ? getStatusLabel(version.publicationStatus) : '—' }} · {{ items.length }} 项</p></div></div>
-        <el-table v-if="items.length" :data="items" table-layout="fixed"><el-table-column prop="code" label="编码" min-width="160" /><el-table-column prop="value" label="标准值" min-width="160" /><el-table-column prop="label" label="标签" min-width="160" /><el-table-column prop="sortOrder" label="排序" width="100" /><el-table-column label="启用状态" width="130"><template #default="{ row }">{{ row.enableStatus ? getStatusLabel(row.enableStatus) : '—' }}</template></el-table-column></el-table>
+        <el-table v-if="items.length" :data="items" table-layout="fixed"><el-table-column prop="value" label="标准值" min-width="160" /><el-table-column prop="label" label="标签" min-width="160" /><el-table-column prop="sortOrder" label="排序" width="100" /><el-table-column label="启用状态" width="130"><template #default="{ row }">{{ row.enableStatus ? getStatusLabel(row.enableStatus) : '—' }}</template></el-table-column></el-table>
         <StatePanel v-else type="empty" title="暂无值项" description="该版本当前没有值项。" />
       </section>
     </template>

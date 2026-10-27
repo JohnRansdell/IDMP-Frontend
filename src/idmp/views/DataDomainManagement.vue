@@ -27,7 +27,7 @@
       </div>
 
       <div class="filter-bar">
-        <el-input v-model="filters.code" clearable placeholder="按域编码筛选" />
+
         <el-input v-model="filters.name" clearable placeholder="按域名称筛选" />
         <el-select v-model="filters.status" clearable placeholder="按状态筛选">
           <el-option label="草稿" value="DRAFT" />
@@ -62,7 +62,7 @@
         v-else-if="!filteredDomains.length"
         type="empty"
         title="没有匹配的数据域"
-        description="请调整编码、名称或状态筛选条件。"
+        description="请调整名称或状态筛选条件。"
       >
         <template #actions>
           <el-button @click="resetFilters">清空筛选</el-button>
@@ -77,7 +77,7 @@
         table-layout="fixed"
         @row-click="openWorkspace"
       >
-        <el-table-column prop="name" label="数据域名称" min-width="280" show-overflow-tooltip><template #default="{ row }"><CodeTooltip :code="row.code" label="数据域编码"><span>{{ row.name }}</span></CodeTooltip></template></el-table-column>
+        <el-table-column prop="name" label="数据域名称" min-width="280" show-overflow-tooltip><template #default="{ row }"><span>{{ row.name }}</span></template></el-table-column>
         <el-table-column prop="description" label="业务说明" min-width="250" show-overflow-tooltip>
           <template #default="{ row }">{{ row.description || '—' }}</template>
         </el-table-column>
@@ -108,10 +108,7 @@
     <el-dialog v-model="createDialogVisible" title="新建数据域" width="520px" destroy-on-close>
       <div class="dialog-api-note">POST /api/v1/meta/data-domains</div>
       <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-position="top">
-        <el-form-item label="数据域编码" prop="code">
-          <el-input v-model.trim="createForm.code" placeholder="如 INPATIENT_QUALITY" />
-          <div class="field-help">仅允许大写字母、数字和下划线，且必须以字母开头。</div>
-        </el-form-item>
+
         <el-form-item label="数据域名称" prop="name">
           <el-input v-model.trim="createForm.name" placeholder="请输入数据域名称" />
         </el-form-item>
@@ -140,7 +137,6 @@ import { Plus, Refresh } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
-import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
 import { createDataDomain, fetchDataDomains } from '@/idmp/api/modules/meta'
 import { adaptDataDomainList, normalizeDataDomain } from '@/idmp/api/adapters/meta'
 import { getStatusLabel } from '@/idmp/design/status'
@@ -162,10 +158,6 @@ const publishedCount = computed(() => domains.value.filter((item) => item.status
 const draftCount = computed(() => domains.value.filter((item) => item.status?.toUpperCase() !== 'PUBLISHED').length)
 
 const createRules = {
-  code: [
-    { required: true, message: '请输入数据域编码', trigger: 'blur' },
-    { pattern: /^[A-Z][A-Z0-9_]*$/, message: '编码仅允许大写字母、数字和下划线，且必须以字母开头', trigger: 'blur' }
-  ],
   name: [{ required: true, message: '请输入数据域名称', trigger: 'blur' }]
 }
 
@@ -231,7 +223,7 @@ async function submitCreate() {
   if (!valid) return
   try {
     await ElMessageBox.confirm(
-      `确认创建数据域 ${createForm.code}（${createForm.name}）？创建后状态为草稿。`,
+      `确认创建数据域 “${createForm.name}”？创建后状态为草稿。`,
       '确认创建数据域',
       { confirmButtonText: '确认创建', cancelButtonText: '返回修改', type: 'warning' }
     )
@@ -252,7 +244,7 @@ async function submitCreate() {
     await loadDomains()
     const createdRow = domains.value.find((item) => item.id === created.id || item.code === created.code)
     if (createdRow) newlyCreatedId.value = createdRow.id
-    ElMessage.success(`数据域 ${created.code} 创建成功，当前状态为${getStatusLabel(created.status || 'DRAFT')}`)
+    ElMessage.success(`数据域 ${created.name || createForm.name} 创建成功，当前状态为${getStatusLabel(created.status || 'DRAFT')}`)
   } catch (error) {
     createError.value = error
     ElMessage.error(createErrorMessage.value)

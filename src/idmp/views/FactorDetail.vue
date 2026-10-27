@@ -1,8 +1,8 @@
 <template>
   <div class="idmp-page factor-detail-page">
-    <PageHeader :title="`查看因子 / ${factor?.name || factor?.factorName || route.params.id}`" :status="status" :status-label="getStatusLabel(status)">
+    <PageHeader :title="`查看因子 / ${factor?.name || factor?.factorName || '待加载'}`" :status="status" :status-label="getStatusLabel(status)">
       <template #meta>
-        <span class="mono-data">因子编码：{{ factor?.code || factor?.factorCode || '' }}</span>
+
         <span v-if="factor">{{ getFactorTypeLabel(dsl.definitionKind || factor.definitionKind || factor.factorKind) }}</span>
       </template>
       <template #actions>

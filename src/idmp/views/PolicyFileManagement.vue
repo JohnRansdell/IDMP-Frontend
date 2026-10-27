@@ -17,7 +17,7 @@
       <div class="policy-table-scroll">
         <el-table v-loading="loading" :data="rows" empty-text="暂无政策文件" @row-dblclick="openDetail">
           <el-table-column prop="name" label="文件名称" min-width="220" show-overflow-tooltip />
-          <el-table-column prop="code" label="编码" min-width="140" />
+
           <el-table-column prop="issuingOrganization" label="发布机构" min-width="140" />
           <el-table-column prop="documentNumber" label="文号" min-width="160" />
           <el-table-column label="发布状态" width="100"><template #default="{ row }"><StatusBadge :status="row.status" /></template></el-table-column>
@@ -30,7 +30,7 @@
     <el-dialog v-model="metadataVisible" :title="metadata.id ? '编辑政策信息' : '新建政策文件'" width="min(620px, 94vw)" :close-on-click-modal="!saving">
       <el-form class="policy-metadata-form" label-position="top" @submit.prevent="saveMetadata">
         <el-form-item class="policy-metadata-form__wide" label="文件名称" required><el-input v-model.trim="metadata.name" maxlength="300" /></el-form-item>
-        <el-form-item label="编码" required><el-input v-model.trim="metadata.code" :disabled="Boolean(metadata.id)" maxlength="64" /></el-form-item>
+
         <el-form-item label="类别" required><el-select v-model="metadata.category"><el-option label="医疗质量" value="QUALITY" /><el-option label="绩效考核" value="PERFORMANCE" /><el-option label="其他" value="OTHER" /></el-select></el-form-item>
         <el-form-item label="发布机构"><el-input v-model.trim="metadata.issuingOrganization" maxlength="200" /></el-form-item>
         <el-form-item label="文号"><el-input v-model.trim="metadata.documentNumber" maxlength="100" /></el-form-item>
@@ -43,7 +43,7 @@
       <el-alert v-if="detailError" :title="detailError" type="error" :closable="false" />
       <div v-loading="detailLoading">
         <template v-if="detail">
-          <el-descriptions :column="2" border><el-descriptions-item label="编码">{{ detail.policyFile.code }}</el-descriptions-item><el-descriptions-item label="发布机构">{{ detail.policyFile.issuingOrganization || '-' }}</el-descriptions-item><el-descriptions-item label="文号">{{ detail.policyFile.documentNumber || '-' }}</el-descriptions-item><el-descriptions-item label="说明">{{ detail.policyFile.description || '-' }}</el-descriptions-item></el-descriptions>
+          <el-descriptions :column="2" border><el-descriptions-item label="发布机构">{{ detail.policyFile.issuingOrganization || '-' }}</el-descriptions-item><el-descriptions-item label="文号">{{ detail.policyFile.documentNumber || '-' }}</el-descriptions-item><el-descriptions-item label="说明">{{ detail.policyFile.description || '-' }}</el-descriptions-item></el-descriptions>
           <div class="section-toolbar"><h3>文件版本</h3><el-button v-access="'policy.versions.create'" type="primary" :icon="Upload" :disabled="uploading || saving" @click="newVersion">上传新版本</el-button></div>
           <el-table :data="detail.versions" empty-text="尚未上传文件版本">
             <el-table-column prop="versionNo" label="版本" width="70" />
@@ -141,7 +141,7 @@ function newPolicy() { Object.assign(metadata, { id: '', code: '', name: '', cat
 function editPolicy(row) { Object.assign(metadata, row); metadataVisible.value = true }
 async function saveMetadata() {
   if (saving.value) return
-  if (!metadata.name || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(metadata.code)) return ElMessage.warning('请填写文件名称，编码须以字母开头且仅包含字母、数字和下划线')
+  if (!metadata.name) return ElMessage.warning('请填写文件名称')
   saving.value = true
   try {
     const result = metadata.id ? await api.updatePolicy(metadata.id, metadata) : await api.createPolicy(metadata)

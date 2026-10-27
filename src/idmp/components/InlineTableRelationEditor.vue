@@ -5,7 +5,7 @@
         <div class="relation-settings">
           <el-form-item label="关联表数据域">
             <el-select v-model="form.domainId" filterable :loading="loading.tables" :disabled="busy" @change="loadTables">
-              <el-option v-for="domain in domains" :key="domain.id" :label="`${domain.name || domain.code}（${domain.code}）`" :value="String(domain.id)" />
+              <el-option v-for="domain in domains" :key="domain.id" :label="domain.name || '未命名数据域'" :value="String(domain.id)" />
             </el-select>
           </el-form-item>
           <el-form-item label="关联物理表">
@@ -53,9 +53,9 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { Delete, Plus } from '@element-plus/icons-vue'
 import { adaptPhysicalTableList, adaptSemanticFieldList, adaptSourceFieldList } from '@/idmp/api/adapters/meta'
 import { adaptFactorPhysicalFields } from '@/idmp/api/adapters/factorMetadata'
-import { createPhysicalTableRelation, fetchPhysicalTableFields, fetchPhysicalTableRelation, fetchPhysicalTableRelations, fetchPhysicalTables,
+import { createPhysicalTableRelation, fetchPhysicalTableFields, fetchPhysicalTableRelation, fetchPhysicalTables,
   fetchSourceTableFields, publishPhysicalTableRelation, updatePhysicalTableRelation, validatePhysicalTableRelation } from '@/idmp/api/modules/meta'
-import { newTableRelationCode, tableRelationPayload, relationValidationMessage } from '@/idmp/utils/tableRelation'
+import { tableRelationPayload, relationValidationMessage } from '@/idmp/utils/tableRelation'
 import { toUserMessage } from '@/idmp/utils/userMessage'
 
 const props = defineProps({ source: { type: Object, required: true }, sourceFields: { type: Array, required: true }, domains: { type: Array, required: true } })
@@ -64,7 +64,7 @@ const form = reactive({ domainId: String(props.source.domainId), tableId: '', jo
 const targetTables = ref([]), targetFields = ref([]), error = ref(''), busy = ref(false)
 const loading = reactive({ tables: false, fields: false })
 const targetTable = computed(() => targetTables.value.find(table => String(table.id) === form.tableId))
-let requestVersion = 0, disposed = false, draft = null, draftPayload = '', pendingCode = '', pendingPayload = ''
+let requestVersion = 0, disposed = false, draft = null, draftPayload = ''
 onUnmounted(() => { disposed = true; requestVersion++; emit('busy', false) })
 watch(form, () => { error.value = '' }, { deep: true })
 
@@ -106,18 +106,11 @@ async function applyRelation() {
     const fingerprint = JSON.stringify(payload)
     // 校验或发布失败后继续使用同一草稿，重试不重复创建关系。
     if (draft) draft = await fetchPhysicalTableRelation(draft.id)
-    else if (pendingCode) {
-      const relations = await fetchPhysicalTableRelations(props.source.physicalTableBindingId)
-      draft = relations.find(item => item.code === pendingCode) || null
-      if (draft) draftPayload = pendingPayload
-    }
     if (disposed) return
     const prior = draftPayload ? JSON.parse(draftPayload) : null
     const tablesChanged = prior && (prior.leftPhysicalTableBindingId !== payload.leftPhysicalTableBindingId || prior.rightPhysicalTableBindingId !== payload.rightPhysicalTableBindingId)
     if (!draft || tablesChanged || (draft.status === 'PUBLISHED' && fingerprint !== draftPayload)) {
-      if (!pendingCode || draft) pendingCode = newTableRelationCode()
-      pendingPayload = fingerprint
-      draft = await createPhysicalTableRelation({ code: pendingCode, ...payload })
+      draft = await createPhysicalTableRelation(payload)
       draftPayload = fingerprint
     } else if (fingerprint !== draftPayload) {
       const { joinType, cardinality, leftKeySpec, rightKeySpec } = payload

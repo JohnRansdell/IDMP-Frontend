@@ -1,7 +1,7 @@
 <template>
   <div class="idmp-page scenario-editor">
     <PageHeader :title="form.name || '场景编辑'" :status="form.publicationStatus" :status-label="publicationStatusLabel(form.publicationStatus)">
-      <template #meta><span class="mono-data">场景编码：{{ form.code || '新建场景' }}</span><span>当前版本：V{{ form.versionNo }}</span><span>资源版本：{{ form.resourceVersion }}</span></template>
+      <template #meta><span>当前版本：V{{ form.versionNo }}</span><span>资源版本：{{ form.resourceVersion }}</span></template>
       <template #actions>
         <el-button @click="router.push({ name: 'ScenarioList' })">返回目录</el-button>
         <el-button v-if="capabilities.canStartEdit" type="primary" :loading="startingEdit" @click="startEditing">编辑场景</el-button>
@@ -15,7 +15,7 @@
       <el-tab-pane label="基本信息" name="basic">
         <el-form :model="form" label-position="top" class="basic-form">
           <el-form-item label="场景名称" required><el-input v-model.trim="form.name" :disabled="!editable" placeholder="请输入场景名称" /></el-form-item>
-          <el-form-item label="场景编码"><el-input v-model="form.code" disabled /></el-form-item>
+
           <el-form-item label="场景类型"><el-select v-model="form.type" disabled><el-option v-for="item in SCENARIO_TYPES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
           <el-form-item label="主管部门"><el-input v-model.trim="form.governingOrgName" :disabled="!editable" placeholder="填写主管部门（可选）" /></el-form-item>
           <el-form-item label="默认统计周期" required><el-select v-model="form.defaultPeriodType" :disabled="!editable"><el-option v-for="item in PERIOD_TYPES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
@@ -27,18 +27,18 @@
         <div class="indicator-heading">
           <div><h2>已关联指标 <span>{{ boundIndicators.length }}</span></h2><p>维护指标版本、必选设置和上报要求。</p></div>
           <div v-if="capabilities.canEdit" class="indicator-add">
-            <el-select v-model="pendingIndicatorId" filterable clearable :disabled="!editable" aria-label="选择待添加指标" placeholder="搜索指标名称或编码，选择已发布版本" :no-data-text="indicatorOptions.length ? '已关联全部可用指标' : '暂无可用的已发布指标'">
-              <el-option v-for="item in availableIndicatorOptions" :key="optionVersionId(item)" :label="`${item.indicatorName || item.name || item.indicatorCode || item.code} · V${item.versionNo || '-'} · ${item.indicatorCode || item.code || ''}`" :value="optionVersionId(item)" />
+            <el-select v-model="pendingIndicatorId" filterable clearable :disabled="!editable" aria-label="选择待添加指标" placeholder="搜索指标名称，选择已发布版本" :no-data-text="indicatorOptions.length ? '已关联全部可用指标' : '暂无可用的已发布指标'">
+              <el-option v-for="item in availableIndicatorOptions" :key="optionVersionId(item)" :label="`${item.indicatorName || item.name || '未命名指标'} · V${item.versionNo || '-'}`" :value="optionVersionId(item)" />
             </el-select>
             <el-button type="primary" plain :disabled="!editable || !pendingIndicatorId" @click="addIndicator">添加指标</el-button>
           </div>
         </div>
         <el-table :data="boundIndicators" row-key="indicatorVersionId" table-layout="fixed" max-height="420" :empty-text="capabilities.canEdit ? '暂未关联指标，请选择已发布指标版本后添加。' : '当前场景暂无关联指标'">
-          <el-table-column label="指标名称" min-width="220"><template #default="{ row }"><span class="indicator-name">{{ row.indicatorName || row.indicatorCode || '未命名指标' }}</span><small v-if="row.indicatorCode" class="indicator-code mono-data">{{ row.indicatorCode }}</small></template></el-table-column>
+          <el-table-column label="指标名称" min-width="220"><template #default="{ row }"><span class="indicator-name">{{ row.indicatorName || '未命名指标' }}</span></template></el-table-column>
           <el-table-column label="版本" width="100"><template #default="{ row }"><CodeTooltip :code="row.indicatorVersionId" label="指标版本 ID"><span>{{ row.indicatorVersionNo ? `V${row.indicatorVersionNo}` : '版本号未提供' }}</span></CodeTooltip></template></el-table-column>
-          <el-table-column label="必选" width="90"><template #default="{ row }"><el-switch v-if="capabilities.canEdit" v-model="row.required" :disabled="!editable" :aria-label="`${row.indicatorName || row.indicatorCode}是否必选`" /><span v-else>{{ row.required ? '必选' : '可选' }}</span></template></el-table-column>
+          <el-table-column label="必选" width="90"><template #default="{ row }"><el-switch v-if="capabilities.canEdit" v-model="row.required" :disabled="!editable" :aria-label="`${row.indicatorName || '未命名指标'}是否必选`" /><span v-else>{{ row.required ? '必选' : '可选' }}</span></template></el-table-column>
           <el-table-column label="上报要求" min-width="240"><template #default="{ row }"><el-input v-if="capabilities.canEdit" v-model="row.reportRequirementText" :disabled="!editable" placeholder="填写上报要求（可选）" /><span v-else class="report-text">{{ row.reportRequirementText || '—' }}</span></template></el-table-column>
-          <el-table-column label="操作" :width="capabilities.canEdit ? 140 : 80" fixed="right"><template #default="{ row }"><el-button link type="primary" :loading="openingIndicatorId === row.indicatorVersionId" @click="openIndicator(row)">查看</el-button><el-button v-if="capabilities.canEdit" link type="danger" :disabled="!editable" :aria-label="`移除${row.indicatorName || row.indicatorCode}`" @click="removeIndicator(row.indicatorVersionId)">移除</el-button></template></el-table-column>
+          <el-table-column label="操作" :width="capabilities.canEdit ? 140 : 80" fixed="right"><template #default="{ row }"><el-button link type="primary" :loading="openingIndicatorId === row.indicatorVersionId" @click="openIndicator(row)">查看</el-button><el-button v-if="capabilities.canEdit" link type="danger" :disabled="!editable" :aria-label="`移除${row.indicatorName || '未命名指标'}`" @click="removeIndicator(row.indicatorVersionId)">移除</el-button></template></el-table-column>
         </el-table>
       </el-tab-pane>
     </el-tabs>

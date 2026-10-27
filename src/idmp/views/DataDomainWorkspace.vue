@@ -17,7 +17,7 @@
       <section class="surface-card domain-overview" aria-label="当前数据域">
         <div class="domain-overview__main">
           <span class="domain-overview__eyebrow">当前数据域</span>
-          <div class="domain-overview__title"><CodeTooltip :code="domain.code" label="数据域编码"><h2>{{ domain.name }}</h2></CodeTooltip><StatusBadge :status="domain.status" /></div>
+          <div class="domain-overview__title"><h2>{{ domain.name }}</h2><StatusBadge :status="domain.status" /></div>
           <p>{{ domain.description || '暂无说明' }}</p>
         </div>
         <div class="domain-overview__count"><strong>{{ physicalTables.length }}</strong><span>接入物理表</span></div>
@@ -84,7 +84,7 @@
     </el-dialog>
 
     <el-dialog v-model="valueSetDialogVisible" title="绑定值集" width="500px" destroy-on-close>
-      <el-select v-model="selectedValueSetId" filterable clearable :loading="valueSetLoading" placeholder="选择已发布值集" class="dialog-select" @change="validateSelectedValueSet"><el-option v-for="item in valueSets" :key="item.id" :label="item.name || item.code" :value="String(item.id)" /></el-select>
+      <el-select v-model="selectedValueSetId" filterable clearable :loading="valueSetLoading" placeholder="选择已发布值集" class="dialog-select" @change="validateSelectedValueSet"><el-option v-for="item in valueSets" :key="item.id" :label="item.name || '未命名值集'" :value="String(item.id)" /></el-select>
       <template #footer><el-button @click="valueSetDialogVisible = false">取消</el-button><el-button v-access="'field.valueSet.update'" type="primary" :loading="valueSetSaving" :disabled="!selectedValueSetId" @click="saveValueSetBinding">保存</el-button></template>
     </el-dialog>
 
@@ -104,7 +104,6 @@ import { ArrowLeft, Plus, Refresh } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
-import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
 import { addPhysicalTable, bindPhysicalTableField, fetchDataDomains, fetchPhysicalTableFields, fetchPhysicalTables, fetchSemanticField, fetchSourceTableFields, fetchSourceTables, updateSemanticField } from '@/idmp/api/modules/meta'
 import { adaptDataDomainList, adaptPhysicalTableList, adaptSemanticFieldList, adaptSourceFieldList, adaptSourceTableList } from '@/idmp/api/adapters/meta'
 import { dataTypeLabel } from '@/idmp/features/meta/model'

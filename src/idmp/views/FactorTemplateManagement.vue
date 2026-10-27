@@ -6,13 +6,13 @@
     </PageHeader>
     <section class="surface-card filter-card template-filter" aria-label="因子模板筛选">
       <el-form :inline="true" @submit.prevent="load">
-        <el-form-item><el-input v-model.trim="filters.code" class="filter-code" placeholder="模板编码" clearable /></el-form-item>
+
         <el-form-item><el-input v-model.trim="filters.name" class="filter-name" placeholder="模板名称" clearable /></el-form-item>
         <el-form-item><el-select v-model="filters.publicationStatus" class="filter-select filter-select--small" placeholder="发布状态" clearable><el-option label="草稿" value="DRAFT" /><el-option label="已发布" value="PUBLISHED" /></el-select></el-form-item>
         <el-form-item><el-button type="primary" native-type="submit">查询</el-button></el-form-item>
       </el-form>
     </section>
-    <section class="surface-card table-card"><el-table v-loading="loading" :data="rows" empty-text="暂无模板"><el-table-column prop="name" label="模板名称" min-width="260"><template #default="{ row }"><CodeTooltip :code="row.code" label="模板编码"><span>{{ row.name }}</span></CodeTooltip></template></el-table-column><el-table-column prop="factorTypeScope" label="适用因子类型" min-width="140" /><el-table-column label="当前状态" width="120"><template #default="{ row }"><StatusBadge :status="row.publicationStatus || row.status" /></template></el-table-column><el-table-column label="校验状态" width="120"><template #default="{ row }">{{ row.validatedAt ? '已校验' : '-' }}</template></el-table-column><el-table-column prop="updatedAt" label="更新时间" min-width="170" /><el-table-column label="操作" width="200" fixed="right"><template #default="{ row }"><el-button v-access="'factorTemplateVersion.instantiate'" v-if="row.currentPublishedVersionId" link type="primary" @click="instantiate(row)">创建因子</el-button><el-button v-access="'factorTemplateVersion.edit'" link @click="open(row)">{{ row.currentPublishedVersionId ? '管理模板' : '管理草稿' }}</el-button></template></el-table-column></el-table></section>
+    <section class="surface-card table-card"><el-table v-loading="loading" :data="rows" empty-text="暂无模板"><el-table-column prop="name" label="模板名称" min-width="260"><template #default="{ row }"><span>{{ row.name }}</span></template></el-table-column><el-table-column prop="factorTypeScope" label="适用因子类型" min-width="140" /><el-table-column label="当前状态" width="120"><template #default="{ row }"><StatusBadge :status="row.publicationStatus || row.status" /></template></el-table-column><el-table-column label="校验状态" width="120"><template #default="{ row }">{{ row.validatedAt ? '已校验' : '-' }}</template></el-table-column><el-table-column prop="updatedAt" label="更新时间" min-width="170" /><el-table-column label="操作" width="200" fixed="right"><template #default="{ row }"><el-button v-access="'factorTemplateVersion.instantiate'" v-if="row.currentPublishedVersionId" link type="primary" @click="instantiate(row)">创建因子</el-button><el-button v-access="'factorTemplateVersion.edit'" link @click="open(row)">{{ row.currentPublishedVersionId ? '管理模板' : '管理草稿' }}</el-button></template></el-table-column></el-table></section>
   </div>
 </template>
 <script setup>
@@ -21,7 +21,6 @@ import { ElMessage } from '@/idmp/utils/message'
 import { useRouter } from 'vue-router'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
-import CodeTooltip from '@/idmp/components/CodeTooltip.vue'
 import { fetchAllFactorTemplates as fetchFactorTemplates, fetchFactorTemplateVersions } from '@/idmp/api/modules/factors'
 import { computed } from 'vue'
 const router = useRouter(); const loading = ref(false); const rows = ref([]); const filters = reactive({ code: '', name: '', publicationStatus: '' })

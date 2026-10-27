@@ -143,7 +143,7 @@ function createExplanationOperand(role, ids, result, factorVersions) {
 }
 
 function resolveFactorVersionName(factorVersion, versionId, role) {
-  return factorVersion?.factorName || factorVersion?.name || factorVersion?.factor?.name || factorVersion?.factor?.factorName || factorVersion?.factorCode || factorVersion?.code ||
+  return factorVersion?.factorName || factorVersion?.name || factorVersion?.factor?.name || factorVersion?.factor?.factorName ||
     `${role === 'NUMERATOR' ? '分子' : role === 'DENOMINATOR' ? '分母' : '参与'}因子（版本 ${versionId}）`
 }
 

@@ -21,7 +21,7 @@ export function fetchWarningRule(ruleId) {
   return requestJson(`/analysis/warning-rules/${encodeURIComponent(ruleId)}`)
 }
 
-export function createWarningRule(payload) {
+export function createWarningRule({ code: _code, ...payload }) {
   return requestJson('/analysis/warning-rules', { method: 'POST', body: serializeWarningRulePayload(payload) })
 }
 

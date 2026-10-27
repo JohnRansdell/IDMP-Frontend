@@ -94,7 +94,7 @@
     <section class="composer-factor-section" aria-label="因子素材">
       <div class="factor-section-heading">
         <h3><el-icon><Box /></el-icon>可用因子 <small>{{ filteredFactors.length }}</small></h3>
-        <el-input v-model="search" :prefix-icon="Search" placeholder="搜索因子名称或编码" clearable aria-label="搜索公式因子" />
+        <el-input v-model="search" :prefix-icon="Search" placeholder="搜索因子名称" clearable aria-label="搜索公式因子" />
       </div>
       <div class="composer-factors" aria-label="可拖入因子" v-loading="loading">
         <button v-for="factor in filteredFactors" :key="factor.versionId" type="button" class="factor-piece" :disabled="disabled" :draggable="false" :data-factor-version="String(factor.versionId)" :aria-label="`添加因子 ${factor.name}`" @pointerdown="startPointerDrag($event, { kind: 'factor', versionId: String(factor.versionId) })" @dragstart="startDrag($event, { kind: 'factor', versionId: String(factor.versionId) })" @dragend="finishDrag" @click="clickItem({ kind: 'factor', versionId: String(factor.versionId) })">

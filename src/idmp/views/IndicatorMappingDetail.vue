@@ -2,7 +2,7 @@
   <div class="idmp-page mapping-detail-page">
     <PageHeader title="映射详情" :status-label="mappingStatusLabel(mapping?.reviewStatus)" status-tone="info">
       <template #meta>
-        <span v-if="mapping" class="mapping-detail-page__name">{{ mapping.name || mapping.code || `映射 ${mapping.id}` }}</span>
+        <span v-if="mapping" class="mapping-detail-page__name">{{ mapping.name || '未命名映射' }}</span>
       </template>
       <template #actions>
         <div class="mapping-detail-actions">
@@ -60,8 +60,8 @@
           </article>
         </div>
         <dl class="mapping-summary">
-          <div><dt>映射编码</dt><dd class="mono-data">{{ mapping.code || mapping.id }}</dd></div>
-          <div><dt>语义组</dt><dd>{{ mapping.group?.name || mapping.group?.code || mapping.group?.id || '-' }}</dd></div>
+
+          <div><dt>语义组</dt><dd>{{ mapping.group?.name || '-' }}</dd></div>
           <div><dt>当前治理版本</dt><dd>V{{ version?.versionNo || '-' }}</dd></div>
           <div><dt>发布状态</dt><dd>{{ mapping.publicationStatus === 'PUBLISHED' ? '已发布' : '未发布' }}</dd></div>
         </dl>
@@ -129,7 +129,7 @@
                 <div class="policy-table-scroll">
                   <div class="policy-table">
                     <el-table :data="policyReferences[side.key]" size="small" max-height="300" empty-text="暂无有效政策引用">
-                      <el-table-column label="政策文件" min-width="180"><template #default="{ row }">{{ row.policyFileName || row.policyFileCode || `政策版本 ${row.policyFileVersionId}` }}</template></el-table-column>
+                      <el-table-column label="政策文件" min-width="180"><template #default="{ row }">{{ row.policyFileName || '未命名政策文件' }}</template></el-table-column>
                       <el-table-column label="引用角色" width="110"><template #default="{ row }">{{ policyReferenceRoleLabel(row.relationRole) }}</template></el-table-column>
                       <el-table-column prop="citationLocation" label="出处" min-width="150" show-overflow-tooltip />
                       <el-table-column label="操作" width="76"><template #default="{ row }"><el-button v-access="'mapping.policyReferences.invalidate'" link type="danger" @click="invalidatePolicyReference(row, side.key)">失效</el-button></template></el-table-column>

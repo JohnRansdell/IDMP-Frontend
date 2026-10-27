@@ -7,7 +7,7 @@
     >
       <template #meta>
         <span>{{ isNew ? '新建模式' : '编辑模式' }}</span>
-        <span class="mono-data">指标编码：{{ form.code || routeIndicatorKey || '未填写' }}</span>
+
         <span class="mono-data">版本 ID：{{ indicatorWorkflow.versionId || '尚未创建' }}</span>
       </template>
       <template #actions>
@@ -35,9 +35,7 @@
         <section class="surface-card form-card">
           <el-form ref="formRef" :model="form" :rules="rules" label-width="108px" status-icon>
             <div class="form-grid">
-              <el-form-item label="指标编码" prop="code">
-                <el-input v-model.trim="form.code" :disabled="!isNew || Boolean(indicatorWorkflow.indicatorId)" maxlength="64" aria-label="指标编码" placeholder="自动生成，可在创建时修改" />
-              </el-form-item>
+
               <el-form-item label="指标名称" prop="name">
                 <el-input v-model="form.name" placeholder="请输入指标完整名称" />
               </el-form-item>
@@ -192,13 +190,12 @@
               <div class="slot-content">
                 <div v-for="factor in numeratorFactors" :key="factor.code" class="selected-factor">
                   <span>{{ factor.name }}</span>
-                  <small>{{ factor.code }}</small>
                   <button type="button" @click="editFactor(factor)">查看因子条件</button>
                   <el-button
                     text
                     circle
                     :icon="Close"
-                    :aria-label="`移除分子因子 ${factor.name}（${factor.code}）`"
+                    :aria-label="`移除分子因子 ${factor.name}`"
                     @click="removeFactor('numerator', factor.code)"
                   />
                 </div>
@@ -221,13 +218,12 @@
               <div class="slot-content">
                 <div v-for="factor in denominatorFactors" :key="factor.code" class="selected-factor">
                   <span>{{ factor.name }}</span>
-                  <small>{{ factor.code }}</small>
                   <button type="button" @click="editFactor(factor)">查看因子条件</button>
                   <el-button
                     text
                     circle
                     :icon="Close"
-                    :aria-label="`移除分母因子 ${factor.name}（${factor.code}）`"
+                    :aria-label="`移除分母因子 ${factor.name}`"
                     @click="removeFactor('denominator', factor.code)"
                   />
                 </div>
@@ -275,7 +271,7 @@
                 <el-icon><Tickets /></el-icon>
                 <div>
                   <strong>{{ factor.name }}</strong>
-                  <small>{{ factor.code }} | {{ getAggregationLabel(factor.aggregation) }} | {{ factor.domain }}</small>
+                  <small>{{ getAggregationLabel(factor.aggregation) }} | {{ factor.domain }}</small>
                 </div>
                 <el-button text type="primary" @click="quickAdd(factor)">添加</el-button>
               </article>
@@ -620,7 +616,6 @@ import { getStatusLabel } from '@/idmp/design/status'
 import { resolveResultAvailability } from '@/idmp/features/analysis/resultAvailability'
 import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
 import { factorCalculationMode } from '@/idmp/utils/factorPeriod'
-import { newResourceCode } from '@/idmp/utils/resourceCode'
 import { parseEditorFormula, zeroPolicy, zeroPolicyLabel } from '@/idmp/features/indicator/formulaEditor'
 import { arithmeticFormulaError, arithmeticDisplayError, arithmeticFactorIds, arithmeticFormulaText, buildArithmeticFormula, cloneFormula, createArithmeticNode, roundingModes, statisticMethods, createStatisticFunction } from '@/idmp/features/indicator/arithmeticFormula'
 import IndicatorFormulaComposer from '@/idmp/components/IndicatorFormulaComposer.vue'
@@ -786,7 +781,7 @@ const sourceOptions = computed(() => {
   return options
 })
 const form = reactive({
-  code: isNew.value ? newResourceCode('INDICATOR') : routeIndicatorKey.value,
+  code: isNew.value ? '' : routeIndicatorKey.value,
   name: '',
   shortName: '',
   categoryPath: [...defaultCategoryPath],
@@ -848,7 +843,6 @@ const editorStatusLabel = computed(() => ({
 
 const required = message => ({ required: true, message, trigger: ['blur', 'change'] })
 const rules = computed(() => ({
-  code: [required('请输入指标编码'), { pattern: /^[A-Z][A-Z0-9_]{0,63}$/, message: '编码须以大写字母开头，仅含大写字母、数字和下划线，最长 64 位', trigger: ['blur', 'change'] }],
   name: [required('请输入指标名称')],
   categoryPath: [required('请选择指标分类')],
   attribute: isNew.value ? [required('请选择指标属性')] : [],
@@ -1631,7 +1625,7 @@ async function handleIndicatorSaveError(error) {
     return
   }
   const action = await ElMessageBox.confirm(
-    `已存在同名指标：${conflict.resource.name}（${conflict.resource.code}）。未创建新指标。`,
+    `已存在同名指标：${conflict.resource.name}。未创建新指标。`,
     '指标名称冲突',
     { type: 'warning', confirmButtonText: '打开已有指标', cancelButtonText: '返回修改', distinguishCancelAndClose: true }
   ).catch(() => 'cancel')

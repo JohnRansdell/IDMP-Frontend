@@ -7,7 +7,7 @@ export function fetchMappingGroups(params = {}) {
   return requestJson(withQuery('/mappings/groups', params))
 }
 
-export function createMappingGroup(payload) {
+export function createMappingGroup({ code: _code, ...payload }) {
   return requestJson('/mappings/groups', { method: 'POST', body: JSON.stringify(payload) })
 }
 
@@ -15,7 +15,7 @@ export function fetchMappings(params = {}) {
   return requestJson(withQuery('/mappings', params))
 }
 
-export function createMapping(payload) {
+export function createMapping({ code: _code, ...payload }) {
   return requestJson('/mappings', { method: 'POST', body: JSON.stringify(payload) })
 }
 

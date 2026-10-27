@@ -53,7 +53,11 @@ export function dashboardDetailToSchema(detail = {}) {
     appearance: { theme: version.theme?.name || version.theme || 'default', ...(object(version.style).appearance || {}) },
     presentation: object(version.style).presentation || {},
     globalFilters: Array.isArray(version.globalFilters) ? version.globalFilters : [],
-    widgets: (Array.isArray(version.widgets) ? version.widgets : []).map(remoteWidgetToSchemaWidget)
+    widgets: (Array.isArray(version.widgets) ? version.widgets : []).map(widget => {
+      const restored = remoteWidgetToSchemaWidget(widget)
+      restored.config.persistedWidgetCode = String(widget.code)
+      return restored
+    })
   })
 }
 
@@ -98,6 +102,9 @@ export function schemaToDashboardPayload(schema, { resourceVersion, dataSources 
     const kind = widget.type === 'chart' ? widget.chartKind || 'line' : widget.type
     const source = sourceOf(widget)
     const config = object(widget.config)
+    const identity = config.persistedWidgetCode === widget.id
+      ? { code: String(widget.id) }
+      : { clientKey: String(widget.id) }
     const indicatorBindings = Array.isArray(config.indicatorBindings) ? config.indicatorBindings : []
     const indicatorVersionIds = indicatorBindings
       .map(binding => binding?.indicatorVersionId || sources.get(binding?.sourceCode)?.indicatorVersionId || sources.get(binding?.sourceCode)?.analysisIndicatorVersionId)
@@ -106,13 +113,13 @@ export function schemaToDashboardPayload(schema, { resourceVersion, dataSources 
     if (widget.type === 'metric-group' || (widget.type === 'ranking' && config.ranking?.mode === 'indicators')) {
       const indicatorRanking = widget.type === 'ranking'
       return {
-        code: String(widget.id), title: String(widget.title || '指标组'), type: 'TEXT', position: { ...widget.layout },
+        ...identity, title: String(widget.title || '指标组'), type: 'TEXT', position: { ...widget.layout },
         fieldBindings: {}, query: { resultShape: 'OVERVIEW' }, filterBindings: {}, drill: {}, chart: { chartKind: indicatorRanking ? 'indicator-ranking' : 'metric-group' },
         style: { ...object(config.style), [indicatorRanking ? INDICATOR_RANKING_KEY : METRIC_GROUP_KEY]: { config } }
       }
     }
     return {
-      code: String(widget.id), title: String(widget.title || source.name || '未命名组件'),
+      ...identity, title: String(widget.title || source.name || '未命名组件'),
       type: REMOTE_TYPE_BY_FRONTEND[kind] || String(kind || 'KPI').toUpperCase(),
       ...(widget.type === 'text' ? {} : {
         dataSourceCode: widget.sourceCode || null,

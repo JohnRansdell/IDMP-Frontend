@@ -19,7 +19,7 @@
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top" :disabled="!editable && !isCreate" @submit.prevent>
         <div class="step-title"><span>1</span><div><h2>基本信息</h2><p>描述模板的业务用途和适用范围。</p></div></div>
         <div class="grid">
-          <el-form-item label="模板编码" prop="code"><el-input v-model.trim="form.code" :disabled="!isCreate" placeholder="例如 COUNT_BY_DOMAIN" /></el-form-item>
+
           <el-form-item label="模板名称" prop="name"><el-input v-model.trim="form.name" placeholder="例如 按数据域计数模板" /></el-form-item>
           <el-form-item label="因子类型范围" prop="factorTypeScope"><el-select v-model="form.factorTypeScope"><el-option label="聚合因子（AGGREGATE）" value="AGGREGATE" /><el-option label="原子因子（ATOMIC）" value="ATOMIC" /></el-select></el-form-item>
         </div>
@@ -28,7 +28,7 @@
         <el-divider />
         <div class="step-title"><span>2</span><div><h2>数据来源与计算定义</h2></div></div>
         <div class="grid">
-          <el-form-item label="主数据域" prop="domainCode"><el-select v-model="designer.domainCode" filterable :loading="loading.domains" placeholder="请选择已发布数据域" @change="handleDomainChange"><el-option v-for="domain in domains" :key="domain.id || domain.code" :label="optionLabel(domain)" :value="domain.code" /></el-select></el-form-item>
+          <el-form-item label="主数据域" prop="domainCode"><el-select v-model="designer.domainCode" filterable :loading="loading.domains" placeholder="请选择已发布数据域" @change="handleDomainChange"><el-option v-for="domain in domains" :key="domain.id || domain.code" :label="domain.name || '未命名数据域'" :value="domain.code" /></el-select></el-form-item>
           <el-form-item label="物理表" required><el-select v-model="designer.tableName" filterable :disabled="!designer.domainCode" :loading="loading.tables" placeholder="请选择数据域中的物理表" @change="handleTableChange"><el-option v-for="table in tables" :key="table.tableName" :label="optionLabel({ name: table.tableComment, code: table.tableName })" :value="table.tableName" /></el-select></el-form-item>
           <el-form-item label="聚合方式" prop="aggregation"><el-select v-model="designer.aggregation"><el-option v-for="item in aggregationOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
         </div>
@@ -55,7 +55,7 @@
           <el-table-column label="业务名称" min-width="150"><template #default="{ row }"><el-input v-model.trim="row.displayName" placeholder="例如 计数字段" /></template></el-table-column>
           <el-table-column label="类型" width="150"><template #default="{ row }"><el-select v-model="row.dataType"><el-option label="标准编码（CODE）" value="CODE" /><el-option label="字段引用" value="FIELD_REF" /><el-option label="值集" value="VALUE_SET" /><el-option label="文本" value="STRING" /><el-option label="数值" value="DECIMAL" /><el-option label="日期时间" value="DATETIME" /><el-option label="布尔" value="BOOLEAN" /></el-select></template></el-table-column>
           <el-table-column label="默认值" min-width="130"><template #default="{ row }"><el-input-number v-if="['DECIMAL', 'NUMBER', 'INTEGER'].includes(row.dataType)" v-model="row.defaultValue" :precision="row.dataType === 'INTEGER' ? 0 : undefined" /><el-select v-else-if="row.dataType === 'BOOLEAN'" v-model="row.defaultValue" clearable><el-option label="是" :value="true" /><el-option label="否" :value="false" /></el-select><el-input v-else v-model="row.defaultValue" /></template></el-table-column>
-          <el-table-column label="值来源" min-width="150"><template #default="{ row }"><el-select v-model="row.valueSourceType"><el-option label="固定枚举" value="FIXED" /><el-option label="手工输入" value="MANUAL" /><el-option label="语义字段" value="SEMANTIC_FIELD" /><el-option label="值集" value="VALUE_SET" /><el-option label="枚举" value="ENUM" /></el-select><el-input v-if="row.valueSourceType !== 'MANUAL' && row.valueSourceType !== 'FIXED'" v-model.trim="row.valueSourceRef" class="source-ref" placeholder="来源编码或数据域" /></template></el-table-column>
+          <el-table-column label="值来源" min-width="150"><template #default="{ row }"><el-select v-model="row.valueSourceType"><el-option label="固定枚举" value="FIXED" /><el-option label="手工输入" value="MANUAL" /><el-option label="语义字段" value="SEMANTIC_FIELD" /><el-option label="值集" value="VALUE_SET" /><el-option label="枚举" value="ENUM" /></el-select><el-select v-if="row.valueSourceType === 'VALUE_SET'" v-model="row.valueSourceRef" filterable clearable class="source-ref" placeholder="选择值集"><el-option v-for="item in valueSets" :key="item.id" :value="item.code" :label="item.name || '未命名值集'" /></el-select><el-select v-else-if="row.valueSourceType === 'SEMANTIC_FIELD'" v-model="row.valueSourceRef" filterable clearable class="source-ref" placeholder="选择业务字段"><el-option v-for="item in fields.filter(field => field.semanticFieldCode)" :key="item.semanticFieldCode" :value="item.semanticFieldCode" :label="item.label || item.semanticFieldCode" /></el-select><el-input v-else-if="row.valueSourceType === 'ENUM'" v-model.trim="row.valueSourceRef" class="source-ref" placeholder="枚举类型" /></template></el-table-column>
           <el-table-column label="可选标准值" min-width="190"><template #default="{ row }"><el-select v-model="row.validation.enum" multiple filterable allow-create default-first-option placeholder="输入标准编码，如 MALE、FEMALE"><el-option v-for="item in row.validation.enum || []" :key="item" :label="item" :value="item" /></el-select></template></el-table-column>
           <el-table-column label="必填" width="70"><template #default="{ row }"><el-switch v-model="row.required" /></template></el-table-column>
           <el-table-column label="向业务用户暴露" width="120"><template #default="{ row }"><el-switch v-model="row.exposed" /></template></el-table-column>
@@ -95,7 +95,7 @@
     </section>
     <el-dialog v-model="instancesVisible" title="该模板版本创建的因子" width="760px">
       <el-table v-loading="instancesLoading" :data="instances" empty-text="暂无仍有效的实例因子">
-        <el-table-column prop="code" label="因子编码" min-width="180" />
+
         <el-table-column prop="name" label="因子名称" min-width="180" />
         <el-table-column prop="status" label="状态" width="110" />
         <el-table-column label="生效参数" min-width="190"><template #default="{ row }">{{ parameterSummary(row.origin?.effectiveParameters) }}</template></el-table-column>
@@ -117,6 +117,11 @@ import { adaptPhysicalTableList, adaptSemanticFieldList, adaptSourceFieldList } 
 import { adaptFactorPhysicalFields } from '@/idmp/api/adapters/factorMetadata'
 import { buildFactorTemplateDefinition, templatePeriodField } from '@/idmp/utils/factorTemplateDefinition'
 import { createFactorTemplate, createFactorTemplateVersion, fetchAllFactorTemplateInstances as fetchFactorTemplateInstances, fetchFactorTemplateVersion, publishFactorTemplateVersion, updateFactorTemplateVersion, validateFactorTemplateVersion } from '@/idmp/api/modules/factors'
+
+import { fetchValueSets } from '@/idmp/api/modules/valueSets'
+import { fetchAllPages } from '@/idmp/api/pagination.js'
+const valueSets = ref([])
+async function loadValueSets() { try { valueSets.value = await fetchAllPages(fetchValueSets, { status: 'PUBLISHED', size: 100 }) } catch (error) { ElMessage.error(error?.message || '值集读取失败') } }
 
 const route = useRoute()
 const router = useRouter()
@@ -141,7 +146,7 @@ const fields = ref([])
 const form = reactive({ code: '', name: '', description: '', factorTypeScope: 'AGGREGATE' })
 const designer = reactive({ domainCode: '', domainId: '', tableName: '', primaryOptions: {}, calculationMode: 'TEMPORAL', periodFieldCode: '', aggregation: 'COUNT', fieldCode: '', groupBy: [], runtimeParameters: [], output: { valueType: 'DECIMAL', unit: 'PERSON_TIME', precision: 30, scale: 10 }, allowedGrains: ['MONTHLY', 'YEARLY'], drillPathVersionIds: [], parameters: [], filters: { nodeType: 'TRUE' }, templateFilter: { enabled: false, fieldCode: '', operator: 'EQ', parameterCode: '' }, extraDefinition: {} })
 let metadataRequestVersion = 0
-const rules = { code: [{ required: true, message: '请输入模板编码', trigger: 'blur' }], name: [{ required: true, message: '请输入模板名称', trigger: 'blur' }], factorTypeScope: [{ required: true, message: '请选择因子类型范围', trigger: 'change' }] }
+const rules = { name: [{ required: true, message: '请输入模板名称', trigger: 'blur' }], factorTypeScope: [{ required: true, message: '请选择因子类型范围', trigger: 'change' }] }
 const aggregationOptions = [{ value: 'COUNT', label: '记录计数' }, { value: 'COUNT_DISTINCT', label: '去重计数' }, { value: 'SUM', label: '数值求和' }, { value: 'AVG', label: '平均值' }, { value: 'MIN', label: '最小值' }, { value: 'MAX', label: '最大值' }]
 const editable = computed(() => isCreate.value || (version.publicationStatus || version.status) !== 'PUBLISHED')
 // 当前为产品演示环境：开放模板生命周期入口，服务端仍负责最终权限校验。
@@ -149,7 +154,7 @@ const canManageTemplates = computed(() => true)
 const aggregatableFields = computed(() => fields.value.filter(field => field.aggregatable !== false))
 const timeFields = computed(() => fields.value.filter(field => ['DATE', 'DATETIME'].includes(field.dataType)))
 
-onMounted(async () => { await loadDomains(); if (!isCreate.value) await load() })
+onMounted(async () => { await Promise.all([loadDomains(), loadValueSets()]); if (!isCreate.value) await load() })
 watch(() => route.params.versionId, (id, previous) => { if (id && id !== previous) load() })
 
 async function loadDomains() {

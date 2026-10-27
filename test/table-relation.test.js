@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { newTableRelationCode, tableRelationPayload, relationValidationMessage } from '../src/idmp/utils/tableRelation.js'
+import { tableRelationPayload, relationValidationMessage } from '../src/idmp/utils/tableRelation.js'
 
 const source = { physicalTableBindingId: '102027642461312817' }, target = { id: '102027642461312818' }
 const fields = [
@@ -9,10 +9,10 @@ const fields = [
   { semanticFieldCode: 'TIME', physicalColumn: 'in_date', relationDataType: 'DATETIME' }
 ]
 const form = () => ({ joinType: 'LEFT', cardinality: 'MANY_TO_ONE', keys: [{ left: 'VISIT_KEY', right: 'VISIT_KEY' }] })
-test('公网 HTTP 环境生成编码不依赖 randomUUID', () => {
-  const cryptoApi = { getRandomValues(bytes) { bytes.fill(15); return bytes } }
-  assert.equal(newTableRelationCode(cryptoApi), `JOIN_${'0f'.repeat(16)}`)
-  assert.notEqual(newTableRelationCode(), newTableRelationCode())
+test('物理表关联由后端生成资源编码，业务字段编码保持不变', () => {
+  const payload = tableRelationPayload(source, target, form(), fields, fields)
+  assert.equal(Object.hasOwn(payload, 'code'), false)
+  assert.deepEqual(payload.leftKeySpec.fieldCodes, ['VISIT_KEY'])
 })
 test('关联接口提交内部字段编码，保留大整数绑定 ID', () => {
   const payload = tableRelationPayload(source, target, form(), fields, fields)

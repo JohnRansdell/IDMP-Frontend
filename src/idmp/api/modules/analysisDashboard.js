@@ -7,7 +7,7 @@ export function fetchDashboardCatalog(options = {}) {
   return requestJson('/analysis/dashboards', options)
 }
 
-export function createDashboard(payload, options = {}) {
+export function createDashboard({ code: _code, ...payload }, options = {}) {
   return requestJson('/analysis/dashboards', {
     ...options,
     method: 'POST',
@@ -40,7 +40,7 @@ export function deleteDashboard(id, options = {}) {
   return requestJson(`/analysis/dashboards/${encodeURIComponent(id)}`, { ...options, method: 'DELETE' })
 }
 
-export function copyDashboard(id, payload = {}, options = {}) {
+export function copyDashboard(id, { code: _code, ...payload } = {}, options = {}) {
   return requestJson(`/analysis/dashboards/${encodeURIComponent(id)}/copy`, {
     ...options,
     method: 'POST',
@@ -79,15 +79,8 @@ export function fetchDashboardDataSourceFields(code, options = {}) {
 }
 
 export function previewDashboardWidget(payload, options = {}) {
-  // Virtual children use "group::item" internally. The preview API accepts
-  // business codes only; keep the local identity and normalize only the wire code.
-  const code = String(payload?.widget?.code || '')
-  let previewPayload = payload
-  if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(code)) {
-    let hash = 2166136261
-    for (const character of code) hash = Math.imul(hash ^ character.codePointAt(0), 16777619)
-    previewPayload = { ...payload, widget: { ...payload.widget, code: `PREVIEW_${(hash >>> 0).toString(16)}` } }
-  }
+  const { code: _code, clientKey: _clientKey, ...widget } = payload.widget
+  const previewPayload = { ...payload, widget }
   return requestJson('/analysis/dashboard-query/preview', {
     ...options,
     method: 'POST',
