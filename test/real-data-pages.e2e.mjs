@@ -177,7 +177,7 @@ try {
   await click('重试')
   await until(() => evaluate(`document.body.innerText.includes('接口详情记录') && !!document.querySelector('.detail-layout')`), 'real detail retry')
   await navigate('/indicator/edit/new?testState=empty', '保存并进入公式配置')
-  await evaluate(`[...document.querySelectorAll('[role="tab"]')].find(el=>el.textContent.includes('6 发布检查')).click()`)
+  await evaluate(`[...document.querySelectorAll('[role="tab"]')].find(el=>el.textContent.includes('4 发布检查')).click()`)
   await until(() => evaluate(`!!document.querySelector('.publish-layout')?.checkVisibility({checkOpacity:true})`), 'extracted indicator publication step')
   assert.equal(await evaluate(`[...document.querySelectorAll('button')].find(el=>el.textContent.trim()==='发布指标版本').disabled`), true)
   await screenshot('indicator-publish-step.png')

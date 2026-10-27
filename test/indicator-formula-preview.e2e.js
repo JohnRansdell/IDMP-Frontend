@@ -105,12 +105,11 @@ try {
     assert.equal(await evaluate(`document.documentElement.scrollWidth>innerWidth`), false)
     if (!viewport.mobile) assert.ok(await evaluate(`document.querySelector('.formula-preview').getBoundingClientRect().height<=innerHeight*0.3+1`))
   }
-  await evaluate(`window.__editor.factorLibraryRows[0].name='费用总额';document.querySelector('#tab-exclusion').click()`)
-  await until(() => evaluate(`document.querySelector('#pane-exclusion').checkVisibility()`), 'optional scope explanation')
-  assert.equal(await evaluate(`document.querySelector('.workflow-overview').children[2].classList.contains('is-optional')`), true)
-  assert.match(await evaluate(`document.querySelector('#pane-exclusion').textContent`), /无需填写或保存/)
-  assert.equal(await evaluate(`document.querySelectorAll('.scope-factor-list li').length`), 2)
-  await evaluate(`Array.from(document.querySelectorAll('#pane-exclusion button')).find(el=>el.textContent.trim()==='前往第 6 页发布检查').click()`)
+  await evaluate(`window.__editor.factorLibraryRows[0].name='费用总额'`)
+  assert.deepEqual(await evaluate(`Array.from(document.querySelectorAll('.editor-tabs > .el-tabs__header [role="tab"]')).map(el=>el.textContent.trim())`), ['1 基础与政策','2 公式与试算','3 场景关联（可选）','4 发布检查'])
+  assert.equal(await evaluate(`document.querySelectorAll('.workflow-overview .workflow-step').length`), 4)
+  assert.equal(await evaluate(`!!document.querySelector('#tab-exclusion')`), false)
+  await evaluate(`Array.from(document.querySelectorAll('#pane-formula button')).find(el=>el.textContent.trim()==='前往发布检查').click()`)
   await until(() => evaluate(`document.querySelector('#pane-publish').checkVisibility()`), 'publication checklist')
   assert.match(await evaluate(`document.querySelector('.publish-gates').textContent`), /发布前检查/)
   assert.doesNotMatch(await evaluate(`document.querySelector('#pane-publish').textContent`), /Hash|AST|编译产物|发布门禁/)
@@ -137,7 +136,7 @@ try {
     if (!viewport.mobile) assert.ok(resultPosition.top>=resultPosition.previewBottom, JSON.stringify(resultPosition))
   }
   assert.deepEqual(exceptions, [])
-  console.log('PASS: unified live preview, responsive layout and long formulas; optional scope explanation, plain-language publication checks and direct trial-result navigation without sticky overlap; no business writes')
+  console.log('PASS: unified live preview, responsive layout and long formulas; four-step workflow with policy basis integrated into basic information, plain-language publication checks and direct trial-result navigation without sticky overlap; no business writes')
 } catch (error) {
   if (socket?.readyState === WebSocket.OPEN) await writeFile(`${output}/failure.png`, Buffer.from((await send('Page.captureScreenshot', { format:'png' })).data, 'base64'))
   throw error

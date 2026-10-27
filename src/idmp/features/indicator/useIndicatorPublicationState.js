@@ -20,12 +20,10 @@ export function useIndicatorPublicationState({ indicatorWorkflow, policySourceSt
   })
 
   const workflowSteps = computed(() => [
-    { key: 'basic', label: '基础与版本', description: indicatorWorkflow.versionId ? '指标与版本已创建' : '填写基本信息并选择政策来源', state: indicatorWorkflow.versionId ? 'complete' : 'current' },
+    { key: 'basic', label: '基础与政策', description: indicatorWorkflow.versionId ? '指标与版本已创建' : '填写基本信息并选择政策来源', state: indicatorWorkflow.versionId ? 'complete' : 'current' },
     { key: 'formula', label: '公式与试算', description: hasIndicatorTrialResults.value ? '试算结果已读取，可前往发布检查' : indicatorWorkflow.compiled ? '校验通过，可执行试算' : '保存公式后校验并试算', state: hasIndicatorTrialResults.value ? 'complete' : 'pending' },
-    { key: 'exclusion', label: '统计范围说明', description: '无需操作，可查看引用因子的统计条件', state: 'optional' },
     { key: 'scene', label: '场景关联', description: '可选，不影响独立指标计算', state: 'optional' },
-    { key: 'policy', label: '政策依据', description: '选填，自动同步第 1 页政策来源，可跳过', state: 'optional' },
-    { key: 'publish', label: '发布检查', description: indicatorWorkflow.published ? '指标已发布，可独立正式计算' : '统一在第 6 页确认发布', state: indicatorWorkflow.published ? 'complete' : 'pending' }
+    { key: 'publish', label: '发布检查', description: indicatorWorkflow.published ? '指标已发布，可独立正式计算' : '在发布检查页确认发布', state: indicatorWorkflow.published ? 'complete' : 'pending' }
   ])
 
   const publishGates = computed(() => [

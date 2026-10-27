@@ -21,7 +21,7 @@ defineProps({ steps: { type: Array, required: true } })
 <style scoped lang="scss">
 .workflow-overview {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-bottom: 12px;
   padding: 14px 16px;
   gap: 0;

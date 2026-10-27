@@ -20,7 +20,7 @@
     <div class="notice-strip editor-contract-note">
       <el-icon><InfoFilled /></el-icon>
       <span>
-        先填写基本信息和政策来源，再配置公式并核对试算结果，最后到第 6 页发布。第 3 页无需填写，场景关联和依据说明可跳过。
+        先填写基本信息和政策来源，再配置公式并核对试算结果，最后到发布检查页发布。场景关联可跳过；政策依据可在第 1 页选择来源后展开补充，留空不影响发布。
         草稿中的政策选择仅保存在当前浏览器，发布后保存到指标版本。
       </span>
     </div>
@@ -31,7 +31,7 @@
     </div>
 
     <el-tabs v-model="activeTab" class="idmp-tabs editor-tabs">
-      <el-tab-pane label="1 基础与版本" name="basic">
+      <el-tab-pane label="1 基础与政策" name="basic">
         <section ref="basicSectionRef" tabindex="-1" class="surface-card form-card publication-navigation-target">
           <el-form ref="formRef" :model="form" :rules="rules" label-width="108px" status-icon>
             <div class="form-grid">
@@ -110,7 +110,7 @@
                   <el-checkbox v-for="item in sourceOptions" :key="item.value" :value="item.value">{{ item.label }}</el-checkbox>
                 </el-checkbox-group>
               </el-form-item>
-              <el-form-item label="政策文件来源" prop="policyDrafts" required class="form-span-2">
+              <el-form-item label="政策文件来源" prop="policyDrafts" required class="form-span-2 policy-source-field">
                 <IndicatorPolicySources :controller="policyPanel" :model-value="form.policyDrafts" :published="indicatorWorkflow.published" />
               </el-form-item>
             </div>
@@ -145,7 +145,7 @@
           <div class="notice-strip is-warning formula-contract-note">
             <el-icon><InfoFilled /></el-icon>
             <span>
-              配置公式后保存、校验并试算，查看试算结果。场景在第 4 页单独配置；发布统一在第 6 页完成。
+              配置公式后保存、校验并试算，查看试算结果。场景在第 3 页单独配置；发布统一在发布检查页完成。
             </span>
           </div>
           <h2>计算模式</h2>
@@ -428,7 +428,7 @@
               <el-button type="primary" :disabled="!indicatorWorkflow.compiled || (!isStaticIndicator && !hasIndicatorTrialPeriod)" :loading="workflowLoading.trial || workflowLoading.result" v-access="'indicatorVersions.trial'" @click="trialIndicatorAndLoadResult">
                 {{ indicatorTrialButtonLabel }}
               </el-button>
-              <el-button type="success" plain @click="activeTab = 'publish'">前往第 6 页发布检查</el-button>
+              <el-button type="success" plain @click="activeTab = 'publish'">前往发布检查</el-button>
               <el-button v-if="indicatorWorkflow.published && !isStaticIndicator && !hasTemporaryIndicatorRuntimeParameters" type="primary" plain :loading="workflowLoading.formal" v-access="'calc.calculation.create'" @click="generateFormalResultAndOpenAnalysis">
                 生成正式结果并去指标分析
               </el-button>
@@ -522,38 +522,11 @@
         </section>
       </el-tab-pane>
 
-      <el-tab-pane label="3 统计范围说明（无需操作）" name="exclusion">
-        <section class="surface-card exclusion-card">
-          <h2>统计范围说明</h2>
-          <el-alert title="本页无需填写或保存，可以直接跳过，不影响指标发布。" type="info" :closable="false" show-icon />
-          <h3>哪些数据会参与统计？</h3>
-          <p>统计范围由公式引用的因子及其筛选条件决定。例如，因子中设置了“仅统计有效记录”，指标计算就会使用该因子定义的范围。</p>
-          <p>可打开下方引用因子的对应版本，核对统计字段、筛选条件及计算口径；如需调整，请在因子管理中维护，再回到第 2 页引用正确的已发布版本。</p>
-          <ul v-if="selectedFormulaFactors.length" class="scope-factor-list" aria-label="引用因子的统计范围">
-            <li v-for="factor in selectedFormulaFactors" :key="factor.versionId">
-              <div><strong>{{ factor.name || factor.code }}</strong><small>因子版本：{{ factor.versionId }}</small></div>
-              <el-button link type="primary" @click="editFactor(factor)">查看统计条件（新窗口）</el-button>
-            </li>
-          </ul>
-          <p v-else>尚未选择因子，请先到第 2 页配置公式。</p>
-          <h3>能否在这里统一排除数据？</h3>
-          <p>当前不支持在指标层面另外保存一套默认排除条件。本页不会额外改变参与统计的数据，也无需为此配置场景。</p>
-          <div class="scope-explanation-actions"><el-button @click="activeTab = 'formula'">返回第 2 页查看公式</el-button><el-button type="primary" @click="activeTab = 'publish'">前往第 6 页发布检查</el-button></div>
-        </section>
-      </el-tab-pane>
-
-      <el-tab-pane label="4 场景关联（可选）" name="scene">
+      <el-tab-pane label="3 场景关联（可选）" name="scene">
         <IndicatorScenarioLinks :indicator-id="String(indicatorWorkflow.indicatorId || '')" :version-id="String(indicatorWorkflow.versionId || '')" :published="indicatorWorkflow.published" />
       </el-tab-pane>
 
-      <el-tab-pane label="5 政策依据（选填）" name="policy">
-        <section class="surface-card table-card">
-          <div class="section-title"><div><h2>政策依据（选填）</h2><p>自动同步第 1 页选择的政策来源，可补充章节、条款和依据说明；本页可以跳过。</p></div></div>
-          <IndicatorPolicyBasis :controller="policyPanel" :model-value="form.policyDrafts" :published="indicatorWorkflow.published" />
-        </section>
-      </el-tab-pane>
-
-      <el-tab-pane label="6 发布检查" name="publish">
+      <el-tab-pane label="4 发布检查" name="publish">
         <IndicatorPublishPanel :workflow="indicatorWorkflow" :loading="workflowLoading" :policy-state="policySourceState"
           :policy-drafts="form.policyDrafts" :is-static="isStaticIndicator" :temporary-parameters="hasTemporaryIndicatorRuntimeParameters"
           :description="publishPanelDescription" :gates="publishGates" @publish="publishIndicatorVersionOnly" @navigate="navigatePublishCheck"
@@ -626,7 +599,6 @@ import {
 } from '@/idmp/api/adapters/indicator'
 import { createCalcBatch, fetchAsyncTask, fetchCalcBatch } from '@/idmp/api/modules/calculation'
 import IndicatorPolicySources from '@/idmp/components/IndicatorPolicySources.vue'
-import IndicatorPolicyBasis from '@/idmp/components/IndicatorPolicyBasis.vue'
 import { useIndicatorPolicySources } from '@/idmp/features/indicator/useIndicatorPolicySources'
 import { restorePolicyDrafts } from '@/idmp/features/indicator/editorWorkflow'
 import { getStatusLabel } from '@/idmp/design/status'
@@ -2420,7 +2392,7 @@ async function retryPolicySources() {
     return true
   } catch (error) {
     rememberIndicatorEditorForm(indicatorWorkflow.indicatorId)
-    ElMessage.error(`指标已发布，但政策来源未全部保存：${error.message}。请在第 6 页重试。`)
+    ElMessage.error(`指标已发布，但政策来源未全部保存：${error.message}。请在发布检查页重试。`)
     return false
   }
 }
@@ -3261,26 +3233,19 @@ onMounted(async () => {
 }
 
 .publication-navigation-target { scroll-margin-top: calc(var(--idmp-topbar-height, 64px) + 12px); }
+@media (max-width: 700px) {
+  .policy-source-field {
+    flex-direction: column;
+    :deep(.el-form-item__label) { width: auto !important; justify-content: flex-start; }
+    :deep(.el-form-item__content) { width: 100%; margin-left: 0 !important; }
+  }
+}
 .publication-navigation-target:focus-visible { outline: 2px solid var(--idmp-interactive); outline-offset: 3px; }
 @media (min-width: 901px) {
   .formula-actions.publication-navigation-target, .workflow-trial-results.publication-navigation-target {
     scroll-margin-top: calc(var(--idmp-topbar-height, 64px) + min(240px, 30vh) + 24px);
   }
 }
-
-.exclusion-card {
-  padding: 22px;
-  h3 { margin: 22px 0 8px; font-size: 15px; }
-  p { color: var(--idmp-text-secondary); line-height: 1.8; }
-}
-
-.scope-factor-list {
-  margin: 16px 0; padding: 0; list-style: none;
-  li { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; padding: 12px 0; border-bottom: 1px solid var(--idmp-border-soft); }
-  li > div { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
-  small { color: var(--idmp-text-helper); }
-}
-.scope-explanation-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; .el-button { margin-left: 0; } }
 
 .logic-row {
   display: flex;

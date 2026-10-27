@@ -17,6 +17,7 @@ const compiled = compileScript(descriptor, { id: 'sources-test', inlineTemplate:
 const bindings = [...compiled.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]vue['"];?/g)].flatMap(([, names]) => names.split(',').map(name => { const [imported, local = imported] = name.trim().split(/\s+as\s+/); return `const ${local} = vue.${imported};` })).join('\n')
 const code = compiled.replace(/^import .*$/gm, '').replace('export default', 'return')
 const Pass = vue.defineComponent({ setup: (_, { slots }) => () => vue.h('div', slots.default?.()) })
+const Input = vue.defineComponent({ props: ['modelValue', 'disabled', 'type'], emits: ['update:modelValue'], setup: (props, { emit }) => () => vue.h(props.type === 'textarea' ? 'textarea' : 'input', { value: props.modelValue, disabled: props.disabled, onInput: event => emit('update:modelValue', event.target.value) }) })
 const pending = id => ({ policyFileVersionId: id, policyFileId: 'file', policyFileName: `政策${id}`, versionNo: '1', citationLocation: '', citationText: '' })
 function create(overrides = {}, props = {}) {
   const writes = [], states = [], messages = []
@@ -30,7 +31,7 @@ function create(overrides = {}, props = {}) {
   }
   const Component = Function('vue', 'deps', `const { ${Object.keys(deps).join(',')} } = deps;\nconst { computed, onBeforeUnmount, reactive, ref, watch } = vue;\n${controllerCode}\n${bindings}\n${code}`)(vue, deps)
   let wrapper
-  wrapper = mount(Component, { props: { modelValue: [], versionId: '', published: false, ...props, 'onUpdate:modelValue': value => wrapper.setProps({ modelValue: value }), onState: state => states.push(state) }, global: { components: { ElAlert: Pass, ElButton: Pass, ElSelect: Pass, ElOption: Pass, ElInput: Pass }, stubs: { ElTable: true, ElTableColumn: true }, directives: { loading() {} } } })
+  wrapper = mount(Component, { props: { modelValue: [], versionId: '', published: false, ...props, 'onUpdate:modelValue': value => wrapper.setProps({ modelValue: value }), onState: state => states.push(state) }, global: { components: { ElAlert: Pass, ElButton: Pass, ElSelect: Pass, ElOption: Pass, ElInput: Input }, stubs: { ElTable: true, ElTableColumn: true }, directives: { loading() {} } } })
   return { wrapper, writes, states, messages }
 }
 test('source is required but empty basis fields are valid, and drafts never write references', async () => {
@@ -153,5 +154,40 @@ test('confirmation from an old indicator version cannot remove a new version sou
   await removing
   await flushPromises()
   assert.deepEqual(wrapper.props('modelValue').map(row => row.policyFileVersionId), ['B'])
+  wrapper.unmount()
+})
+
+
+test('inline optional basis starts collapsed, edits both fields and publishes the exact source version', async () => {
+  const { wrapper, writes } = create({}, { modelValue: [pending('A')] })
+  await flushPromises()
+  assert.equal(wrapper.get('.pending-source details').element.open, false)
+  const fields = wrapper.findAllComponents(Input)
+  fields[0].vm.$emit('update:modelValue', '第三章第二条')
+  fields[1].vm.$emit('update:modelValue', '完整依据原文')
+  await flushPromises()
+  assert.match(wrapper.get('.pending-source summary').text(), /已补充依据/)
+  await wrapper.setProps({ versionId: 'version', published: true })
+  await flushPromises()
+  await wrapper.vm.syncPendingSources()
+  assert.deepEqual(writes, [['version', { policyFileVersionId: 'A', relationRole: 'SOURCE', citationLocation: '第三章第二条', citationText: '完整依据原文' }]])
+  wrapper.unmount()
+})
+
+test('saved source and other legacy references retain read-only basis and copy source annotations to a new draft', async () => {
+  const rows = [
+    { id: 'source', relationRole: 'SOURCE', policyFileVersionId: 'A', policyFileName: '来源政策', citationLocation: '第一条', citationText: '已保存来源依据' },
+    { id: 'basis', relationRole: 'BASIS', policyFileVersionId: 'B', policyFileName: '历史依据政策', citationLocation: '第二条', citationText: '历史补充依据' }
+  ]
+  const { wrapper } = create({ fetchPolicyReferences: async () => rows }, { versionId: 'version', published: true })
+  await flushPromises()
+  assert.equal(wrapper.findAll('.saved-source').length, 2)
+  assert.match(wrapper.text(), /已保存来源依据/)
+  assert.match(wrapper.text(), /历史补充依据/)
+  assert.equal(wrapper.findAllComponents(Input).length, 0)
+  const copied = wrapper.vm.copySourcesToDraft()
+  assert.equal(copied[0].policyFileVersionId, 'A')
+  assert.equal(copied[0].citationText, '已保存来源依据')
+  assert.equal(copied[0].citationLocation, '第一条')
   wrapper.unmount()
 })

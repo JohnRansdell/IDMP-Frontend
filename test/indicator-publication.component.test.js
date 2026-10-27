@@ -74,8 +74,8 @@ test('readiness distinguishes acquired results from business confirmation and re
   const hasResults = vue.ref(false)
   const state = useIndicatorPublicationState({ indicatorWorkflow: workflow, policySourceState: policy, hasIndicatorTrialResults: hasResults })
   const gate = label => state.publishGates.value.find(row => row.label === label)
+  assert.deepEqual(state.workflowSteps.value.map(step => step.key), ['basic', 'formula', 'scene', 'publish'])
   assert.equal(state.workflowSteps.value[2].state, 'optional')
-  assert.match(state.workflowSteps.value[2].description, /无需操作/)
   assert.equal(gate('公式校验').state, 'pending')
   assert.equal(gate('试算结果').stateLabel, '待试算')
   workflow.compiled = true; hasResults.value = true
