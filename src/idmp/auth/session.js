@@ -1,5 +1,6 @@
 import { computed, reactive, readonly } from 'vue'
 import { canAccess, canVisit, firstAccessiblePath } from './permissions.js'
+import { setStorageUser } from './userStorage.js'
 import {
   clearAccessToken,
   getAccessToken,
@@ -7,10 +8,12 @@ import {
   setAccessToken,
   isMedicalSession,
   setMedicalAccessToken,
+  invalidateRequestSession,
   setSessionRecoveryHandler
 } from '@/idmp/api/request'
 
 const state = reactive({
+  revision: 0,
   status: 'idle',
   user: null,
   roles: [],
@@ -40,6 +43,7 @@ export const canNavigate = target => canVisit(state, target)
 export const accessibleHome = () => firstAccessiblePath(state)
 
 export async function loginWithPassword(payload) {
+  clearSession()
   const revision = ++sessionRevision
   const result = await requestJson('/auth/login', {
     method: 'POST',
@@ -63,6 +67,7 @@ export async function loginWithMedicalToken(token, entry = 'PLATFORM') {
   if (revision !== sessionRevision) throw new Error('登录状态已变更，请重新登录')
   setMedicalAccessToken(result.session.accessToken, entry)
   state.user = result.session.user
+  setStorageUser(state.user)
   state.roles = asArray(result.session.user?.roles)
   state.permissions = asArray(result.session.permissions)
   state.expiresInSeconds = Number(result.session.expiresInSeconds || 0)
@@ -84,14 +89,14 @@ export async function hydrateCurrentUser() {
 }
 
 export function refreshSession() {
-  if (isMedicalSession()) { clearSession(); return Promise.resolve(false) }
+  if (isMedicalSession()) { expireSession(); return Promise.resolve(false) }
   if (refreshPromise) return refreshPromise
   const revision = sessionRevision
   refreshPromise = (async () => {
     await Promise.resolve()
     try {
       const csrfToken = readCsrfToken() || state.csrfToken
-      if (!csrfToken) { clearSession(); return false }
+      if (!csrfToken) { expireSession(); return false }
       const result = await requestJson('/auth/refresh', {
         method: 'POST',
         headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {},
@@ -99,14 +104,14 @@ export function refreshSession() {
         skipSessionRecovery: true
       })
       if (revision !== sessionRevision) return false
-      applyLoginResult(result)
+      applyLoginResult(result, true)
       await hydrateCurrentUser()
       return revision === sessionRevision && isAuthenticated.value
     } catch {
-      if (revision === sessionRevision) clearSession()
+      if (revision === sessionRevision) expireSession()
       return false
     } finally {
-      refreshPromise = null
+      if (revision === sessionRevision) refreshPromise = null
     }
   })()
   return refreshPromise
@@ -114,19 +119,24 @@ export function refreshSession() {
 
 export function restoreSession() {
   if (restorePromise) return restorePromise
+  const revision = sessionRevision
   restorePromise = (async () => {
     state.status = 'restoring'
     try {
       if (getAccessToken()) {
         await hydrateCurrentUser()
-        return isAuthenticated.value
+        return revision === sessionRevision && isAuthenticated.value
       }
+      if (revision !== sessionRevision) return false
       return await refreshSession()
     } catch {
+      if (revision !== sessionRevision) return false
       return await refreshSession()
     } finally {
-      if (state.status === 'restoring') state.status = getAccessToken() ? 'authenticated' : 'anonymous'
-      restorePromise = null
+      if (revision === sessionRevision) {
+        if (state.status === 'restoring') state.status = getAccessToken() ? 'authenticated' : 'anonymous'
+        restorePromise = null
+      }
     }
   })()
   return restorePromise
@@ -141,7 +151,8 @@ export function ensureAuthenticatedSession() {
 export function invalidateSession() { clearSession() }
 
 export async function logoutSession(allSessions = false) {
-  sessionRevision += 1
+  const revision = ++sessionRevision
+  invalidateRequestSession()
   const medical = isMedicalSession()
   const csrfToken = medical ? '' : readCsrfToken() || state.csrfToken
   try {
@@ -153,14 +164,17 @@ export async function logoutSession(allSessions = false) {
       skipSessionRecovery: true
     })
   } finally {
-    clearSession()
-    if (typeof window !== 'undefined') window.dispatchEvent(new Event('idmp:logout'))
+    if (revision === sessionRevision) {
+      clearSession()
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('idmp:logout'))
+    }
   }
 }
 
-function applyLoginResult(result = {}) {
-  setAccessToken(result.accessToken)
+function applyLoginResult(result = {}, preserveSession = false) {
+  setAccessToken(result.accessToken, { preserveSession })
   state.user = result.user || state.user
+  setStorageUser(state.user)
   state.roles = asArray(result.user?.roles)
   state.permissions = asArray(result.permissions)
   state.expiresInSeconds = Number(result.expiresInSeconds || 0)
@@ -170,6 +184,7 @@ function applyLoginResult(result = {}) {
 
 function applyCurrentUser(result = {}) {
   state.user = result.user || result
+  setStorageUser(state.user)
   state.roles = asArray(result.roles || result.user?.roles)
   state.permissions = asArray(result.permissions)
   state.dataScopes = asArray(result.dataScopes)
@@ -181,7 +196,11 @@ function applyCurrentUser(result = {}) {
 
 function clearSession() {
   sessionRevision += 1
+  state.revision += 1
+  refreshPromise = null
+  restorePromise = null
   clearAccessToken()
+  setStorageUser(null)
   state.status = 'anonymous'
   state.user = null
   state.roles = []
@@ -192,6 +211,12 @@ function clearSession() {
   state.deniedPaths = []
   state.expiresInSeconds = 0
   state.csrfToken = ''
+}
+
+function expireSession() {
+  const notify = state.status === 'authenticated'
+  clearSession()
+  if (notify && typeof window !== 'undefined') window.dispatchEvent(new Event('idmp:unauthorized'))
 }
 
 function readCsrfToken() {

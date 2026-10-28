@@ -88,6 +88,8 @@
   </div>
 </template>
 <script setup>
+import { userStorage } from '@/idmp/auth/userStorage.js'
+const localStorage = userStorage()
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'

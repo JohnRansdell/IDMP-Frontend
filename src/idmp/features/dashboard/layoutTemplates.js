@@ -2,6 +2,7 @@ import { GRID_COLUMNS, DEFAULT_WIDGET_STYLE, clonePersistableValue, normalizeGri
 import { getWidgetGridConstraints } from './gridLayout.js'
 import { applyCardSurface } from './cardSurface.js'
 import { applyMetricGroupPreset } from './metricGroup.js'
+import { userStorage } from '../../auth/userStorage.js'
 
 export const DASHBOARD_LAYOUT_TEMPLATE_STORAGE_KEY = 'idmp:dashboard-layout-templates:v1'
 export const DASHBOARD_LAYOUT_TEMPLATE_VERSION = 1
@@ -102,14 +103,14 @@ export function applyLayoutTemplateToDashboard(schema, template, options) {
   return { ...clonePersistableValue(schema), ...(plain(template.appearance) ? { appearance: clonePersistableValue(template.appearance) } : {}), widgets: instantiateLayoutTemplate(template, options) }
 }
 
-export function readLocalLayoutTemplates(storage = globalThis.localStorage) {
+export function readLocalLayoutTemplates(storage = userStorage()) {
   try {
     const value = JSON.parse(storage?.getItem(DASHBOARD_LAYOUT_TEMPLATE_STORAGE_KEY) || '[]')
     return Array.isArray(value) ? value.filter(template => validateLayoutTemplate(template).valid).map(template => clonePersistableValue(template)) : []
   } catch { return [] }
 }
 
-export function writeLocalLayoutTemplates(templates, storage = globalThis.localStorage) {
+export function writeLocalLayoutTemplates(templates, storage = userStorage()) {
   const value = Array.isArray(templates) ? templates.map(template => clonePersistableValue(template)) : []
   const invalid = value.find(template => !validateLayoutTemplate(template).valid)
   if (invalid) throw new TypeError('cannot store an invalid layout template')
@@ -117,13 +118,13 @@ export function writeLocalLayoutTemplates(templates, storage = globalThis.localS
   return value
 }
 
-export function saveLocalLayoutTemplate(template, storage = globalThis.localStorage) {
+export function saveLocalLayoutTemplate(template, storage = userStorage()) {
   const templates = readLocalLayoutTemplates(storage).filter(item => item.id !== template.id)
   const next = [...templates, clonePersistableValue(template)]
   return writeLocalLayoutTemplates(next, storage)
 }
 
-export function deleteLocalLayoutTemplate(templateId, storage = globalThis.localStorage) {
+export function deleteLocalLayoutTemplate(templateId, storage = userStorage()) {
   return writeLocalLayoutTemplates(readLocalLayoutTemplates(storage).filter(template => template.id !== templateId), storage)
 }
 

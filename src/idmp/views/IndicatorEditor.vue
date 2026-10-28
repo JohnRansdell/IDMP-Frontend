@@ -533,6 +533,9 @@
 </template>
 
 <script setup>
+import { userStorage } from '@/idmp/auth/userStorage.js'
+const localStorage = userStorage()
+const sessionStorage = userStorage('session')
 import { formatResultPeriod } from '@/idmp/utils/periodRange.js'
 import IndicatorWorkflowOverview from '@/idmp/features/indicator/components/IndicatorWorkflowOverview.vue'
 import IndicatorPublishPanel from '@/idmp/features/indicator/components/IndicatorPublishPanel.vue'

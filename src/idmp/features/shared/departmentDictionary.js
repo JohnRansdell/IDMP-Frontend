@@ -5,34 +5,51 @@ const CODE_FIELDS = new Set([
 ])
 export const isDepartmentCodeField = field => CODE_FIELDS.has(String(field || '').toLowerCase())
 
-// Cache master data only, never clinical results or access permissions.
-export function createDepartmentDictionaryLoader(fetchPage, { now = Date.now, ttl = 300000 } = {}) {
-  let pending, cached, expires = 0
+// The dictionary endpoint is permission-filtered; never reuse it across sessions.
+export function createDepartmentDictionaryLoader(fetchPage, { now = Date.now, ttl = 300000, scopeKey = () => '' } = {}) {
+  let pending, cached, expires = 0, scope
   return async () => {
-    if (cached && now() < expires) return cached
-    if (!pending) pending = (async () => {
-      const entries = [], codes = new Set()
-      let expectedTotal
-      for (let page = 1; ; page++) {
-        const result = await fetchPage({ page, size: 500 })
-        const total = Number(result?.total)
-        if (!Array.isArray(result?.records) || !Number.isSafeInteger(total) || total < 1
-          || Number(result.pageNum) !== page || (expectedTotal != null && expectedTotal !== total)) {
-          throw new Error('科室字典分页数据异常，请重试')
-        }
-        expectedTotal = total
-        for (const entry of result.records) {
-          if (typeof entry.code !== 'string' || !entry.code || typeof entry.name !== 'string' || !entry.name || codes.has(entry.code))
-            throw new Error('科室字典存在无效或重复编码，请重试')
-          codes.add(entry.code); entries.push(Object.freeze({ ...entry }))
-        }
-        if (entries.length === total) break
-        if (!result.records.length || entries.length > total) throw new Error('科室字典尚未加载完整，请重试')
+    const currentScope = scopeKey()
+    if (scope !== currentScope) {
+      scope = currentScope
+      pending = cached = undefined
+      expires = 0
+    }
+    const assertScope = () => {
+      if (scopeKey() !== currentScope) {
+        const error = new Error('登录账号已切换，请重新加载科室')
+        error.name = 'AbortError'
+        throw error
       }
-      cached = Object.freeze(entries)
-      expires = now() + ttl
-      return cached
-    })().finally(() => { pending = null })
+    }
+    if (cached && now() < expires) return cached
+    if (!pending) {
+      const job = (async () => {
+        const entries = [], codes = new Set()
+        let expectedTotal
+        for (let page = 1; ; page++) {
+          const result = await fetchPage({ page, size: 500 })
+          assertScope()
+          const total = Number(result?.total)
+          if (!Array.isArray(result?.records) || !Number.isSafeInteger(total) || total < 0
+            || Number(result.pageNum) !== page || (expectedTotal != null && expectedTotal !== total)) {
+            throw new Error('科室字典分页数据异常，请重试')
+          }
+          expectedTotal = total
+          for (const entry of result.records) {
+            if (typeof entry.code !== 'string' || !entry.code || typeof entry.name !== 'string' || !entry.name || codes.has(entry.code))
+              throw new Error('科室字典存在无效或重复编码，请重试')
+            codes.add(entry.code); entries.push(Object.freeze({ ...entry }))
+          }
+          if (entries.length === total) break
+          if (!result.records.length || entries.length > total) throw new Error('科室字典尚未加载完整，请重试')
+        }
+        cached = Object.freeze(entries)
+        expires = now() + ttl
+        return cached
+      })().finally(() => { if (pending === job) pending = null })
+      pending = job
+    }
     return pending
   }
 }

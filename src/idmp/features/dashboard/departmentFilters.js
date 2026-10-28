@@ -1,5 +1,10 @@
 import { DEPARTMENT_FIELD_PAIRS, isDepartmentLevel, unknownMemberName } from './dimensionNames.js'
 
+export function dashboardFilterLabel(definition) {
+  return /^(出院科室|出院科室名称|科室名称)$/.test(String(definition?.label || ''))
+    && isDepartmentFilterField(definition.field) ? '科室' : definition?.label
+}
+
 const key = field => String(field?.code || field?.id || '').toLowerCase()
 const match = (fields, name) => fields.find(field => key(field) === String(name || '').toLowerCase())
 const pairs = paths => [

@@ -14,3 +14,12 @@ export const dashboardCatalogRevision = ref(0)
 export function notifyDashboardCatalogChanged() { dashboardCatalogRevision.value += 1 }
 export const notificationReadRevision = ref(0)
 export function notifyNotificationsRead() { notificationReadRevision.value += 1 }
+
+export function resetShellState() {
+  designerImmersive.value = false
+  dashboardSceneCode.value = ''
+  dashboardActiveId.value = ''
+  dashboardRequestedId.value = ''
+  dashboardCatalogRevision.value += 1
+  notificationReadRevision.value += 1
+}

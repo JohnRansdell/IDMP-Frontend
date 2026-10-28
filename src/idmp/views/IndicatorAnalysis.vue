@@ -247,6 +247,8 @@
 </template>
 
 <script setup>
+import { userStorage } from '@/idmp/auth/userStorage.js'
+const localStorage = userStorage()
 import { canRequest } from '@/idmp/auth/session'
 import { computed, nextTick, onActivated, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'

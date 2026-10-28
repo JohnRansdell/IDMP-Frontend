@@ -96,7 +96,7 @@
     <main class="idmp-main">
       <StatePanel v-if="platformPermissionsMissing" type="empty" title="账号尚未配置平台权限" description="已登录，请联系管理员为当前账号分配平台角色和访问权限。" />
       <RouterView v-else v-slot="{ Component, route: currentRoute }">
-        <KeepAlive :include="['Dashboard', 'AlertCenter']" :max="2">
+        <KeepAlive :key="sessionState.revision" :include="['Dashboard', 'AlertCenter']" :max="2">
           <component :is="Component" :key="`${currentRoute.path}-${medicalViewer ? 'medical' : 'platform'}`" />
         </KeepAlive>
       </RouterView>
@@ -107,6 +107,7 @@
 <script setup>
 import { computed, KeepAlive, markRaw, onMounted, ref, watch } from 'vue'
 import { dashboardCatalogRevision, dashboardRequestedId, designerImmersive, notificationReadRevision } from './shellState.js'
+import { resetShellState } from './shellState.js'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import {
   Aim,
@@ -137,6 +138,7 @@ import { isPublishedDashboard } from '@/idmp/features/dashboard/publication.js'
 import { buildPageBreadcrumbs } from '@/router/breadcrumbs.js'
 
 const route = useRoute()
+watch(() => sessionState.revision, resetShellState, { flush: 'sync' })
 const router = useRouter()
 const logoutLoading = ref(false)
 const medicalViewer = computed(() => isMedicalDashboardSession() || (route.path === '/dashboard' && route.query.medical === '1'))

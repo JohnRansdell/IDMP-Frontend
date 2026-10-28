@@ -10,6 +10,21 @@ const queryCache = new Map()
 let queryCacheChars = 0
 let queryCacheGeneration = 0
 let sessionRecoveryHandler = null
+let sessionGeneration = 0
+
+export const getRequestSessionRevision = () => sessionGeneration
+export function invalidateRequestSession() {
+  sessionGeneration += 1
+  clearQueryCache()
+}
+function assertRequestSession(generation) {
+  if (generation !== sessionGeneration) {
+    const error = new Error('登录账号已切换，已取消原会话请求')
+    error.name = 'AbortError'
+    error.code = 'SESSION_CHANGED'
+    throw error
+  }
+}
 
 function clearQueryCache() {
   queryCache.clear()
@@ -84,14 +99,15 @@ export function isMedicalDashboardSession() {
 }
 
 export function setMedicalAccessToken(token, entry = 'DASHBOARD') {
-  clearQueryCache()
+  invalidateRequestSession()
   sessionStorage.setItem('idmp_medical_session', '1')
   sessionStorage.setItem('idmp_medical_access_token', token || '')
   sessionStorage.setItem('idmp_medical_entry', entry === 'PLATFORM' ? 'PLATFORM' : 'DASHBOARD')
 }
 
-export function setAccessToken(token) {
-  clearQueryCache()
+export function setAccessToken(token, { preserveSession = false } = {}) {
+  if (preserveSession) clearQueryCache()
+  else invalidateRequestSession()
   if (typeof sessionStorage !== 'undefined') {
     sessionStorage.removeItem('idmp_medical_session')
     sessionStorage.removeItem('idmp_medical_access_token')
@@ -105,7 +121,7 @@ export function setAccessToken(token) {
 }
 
 export function clearAccessToken() {
-  clearQueryCache()
+  invalidateRequestSession()
   if (isMedicalSession()) {
     sessionStorage.removeItem('idmp_medical_access_token')
     return
@@ -114,6 +130,7 @@ export function clearAccessToken() {
 }
 
 export async function requestJson(path, options = {}) {
+  const generation = sessionGeneration
   const token = getAccessToken()
   const {
     headers: optionHeaders,
@@ -182,6 +199,7 @@ export async function requestJson(path, options = {}) {
     if (externalSignal && controller) externalSignal.removeEventListener('abort', abortFromExternalSignal)
   }
 
+  assertRequestSession(generation)
   const payload = parseJsonPreservingLargeIntegers(responseText)
   if (!response.ok) {
     const error = createApiError(response.status, payload, path)
@@ -192,6 +210,7 @@ export async function requestJson(path, options = {}) {
       }
       if (!skipSessionRecovery && !isAuthEndpoint && sessionRecoveryHandler) {
         const recovered = await sessionRecoveryHandler()
+        assertRequestSession(generation)
         if (recovered && !(typeof FormData !== 'undefined' && options.body instanceof FormData)) {
           return requestJson(path, { ...options, skipSessionRecovery: true, notifyUnauthorized: true })
         }
@@ -241,6 +260,7 @@ export function createApiError(status, payload = {}, path = '') {
 }
 
 export async function requestPdf(path, body, { timeoutMs = 60000, skipSessionRecovery = false, notifyUnauthorized = !skipSessionRecovery } = {}) {
+  const generation = sessionGeneration
   const controller = new AbortController()
   let didTimeout = false
   const timer = setTimeout(() => { didTimeout = true; controller.abort() }, timeoutMs)
@@ -252,13 +272,17 @@ export async function requestPdf(path, body, { timeoutMs = 60000, skipSessionRec
       body: JSON.stringify(body)
     })
     const contentType = response.headers.get('Content-Type') || ''
+    assertRequestSession(generation)
     if (!response.ok || !contentType.toLowerCase().startsWith('application/pdf')) {
       const text = await response.text()
+      assertRequestSession(generation)
       const payload = parseJsonPreservingLargeIntegers(text) || {
         message: response.status === 413 ? '导出内容过大，请缩小分析时间范围后重试。' : 'PDF 导出失败，请稍后重试。'
       }
       if (response.status === 401) {
-        if (!skipSessionRecovery && sessionRecoveryHandler && await sessionRecoveryHandler()) {
+        const recovered = !skipSessionRecovery && sessionRecoveryHandler && await sessionRecoveryHandler()
+        assertRequestSession(generation)
+        if (recovered) {
           return requestPdf(path, body, { timeoutMs, skipSessionRecovery: true, notifyUnauthorized: true })
         }
         clearAccessToken()
@@ -267,9 +291,11 @@ export async function requestPdf(path, body, { timeoutMs = 60000, skipSessionRec
       throw createApiError(response.ok ? 422 : response.status, payload, path)
     }
     const blob = await response.blob()
+    assertRequestSession(generation)
     if (!blob.size || blob.size > 20_000_000 || await blob.slice(0, 5).text() !== '%PDF-') {
       throw new Error('服务未返回有效的 PDF 文件，请稍后重试。')
     }
+    assertRequestSession(generation)
     return blob
   } catch (error) {
     if (error?.name === 'AbortError' && didTimeout) throw new Error('PDF 导出超时，请缩小分析范围后重试。')
@@ -279,6 +305,7 @@ export async function requestPdf(path, body, { timeoutMs = 60000, skipSessionRec
 }
 
 export async function requestFile(path, { skipSessionRecovery = false, notifyUnauthorized = !skipSessionRecovery, signal } = {}) {
+  const generation = sessionGeneration
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 60000)
   const cancel = () => controller.abort()
@@ -290,9 +317,13 @@ export async function requestFile(path, { skipSessionRecovery = false, notifyUna
       credentials: isMedicalSession() ? 'omit' : 'include', signal: controller.signal,
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     })
+    assertRequestSession(generation)
     if (!response.ok) {
       const payload = parseJsonPreservingLargeIntegers(await response.text()) || {}
-      if (response.status === 401 && !skipSessionRecovery && sessionRecoveryHandler && await sessionRecoveryHandler()) {
+      assertRequestSession(generation)
+      const recovered = response.status === 401 && !skipSessionRecovery && sessionRecoveryHandler && await sessionRecoveryHandler()
+      assertRequestSession(generation)
+      if (recovered) {
         return requestFile(path, { skipSessionRecovery: true, notifyUnauthorized: true, signal })
       }
       if (response.status === 401) {
@@ -305,8 +336,11 @@ export async function requestFile(path, { skipSessionRecovery = false, notifyUna
     if (!['application/pdf', 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(mime)) {
       throw new Error('服务未返回有效的政策文件，请稍后重试。')
     }
-    return await response.blob()
+    const blob = await response.blob()
+    assertRequestSession(generation)
+    return blob
   } catch (error) {
+    if (error?.code === 'SESSION_CHANGED') throw error
     if (error?.name === 'AbortError' && !signal?.aborted) throw new Error('文件读取超时，请稍后重试。')
     if (error instanceof TypeError) throw new Error('无法连接文件服务，请检查网络后重试。')
     throw error

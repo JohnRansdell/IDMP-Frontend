@@ -37,6 +37,8 @@
 </template>
 
 <script setup>
+import { userStorage } from '@/idmp/auth/userStorage.js'
+const localStorage = userStorage()
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { GridStack } from 'gridstack'
 import 'gridstack/dist/gridstack.min.css'

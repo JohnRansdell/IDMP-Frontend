@@ -1,6 +1,7 @@
 import { clonePersistableValue, getDashboardSchemaStorageKey, normalizeDashboardSchema } from './schema.js'
 import { persistDashboardSchema, recoverDashboardSchema, DASHBOARD_RECOVERY_STATUS } from './persistence.js'
 import { applyLayoutTemplateToDashboard } from './layoutTemplates.js'
+import { userStorage } from '../../auth/userStorage.js'
 
 export const DASHBOARD_CATALOG_STORAGE_KEY = 'idmp:dashboard-catalog:v1'
 export const BUILT_IN_DASHBOARD_IDS = new Set(['quality-overview'])
@@ -11,7 +12,7 @@ export const DASHBOARD_STUDIO_MENU_COMMANDS = Object.freeze([
 const TYPES = new Set(['hospital-overview', 'topic', 'scene', 'department', 'custom'])
 const SCOPES = new Set(['hospital', 'department', 'personal'])
 
-export function readDashboardCatalog(storage = globalThis.localStorage) {
+export function readDashboardCatalog(storage = userStorage()) {
   // Remove only the two dashboards seeded by the retired frontend demo.
   // Never clear user-created layouts or other application storage.
   const retiredIds = new Set(['demo-quality-overview', 'demo-operation-overview'])
@@ -29,7 +30,7 @@ export function readDashboardCatalog(storage = globalThis.localStorage) {
     return retained.map(normalizeCatalogEntry).filter(Boolean)
   } catch { return [] }
 }
-export function writeDashboardCatalog(entries, storage = globalThis.localStorage) {
+export function writeDashboardCatalog(entries, storage = userStorage()) {
   const normalized = (Array.isArray(entries) ? entries : []).map(normalizeCatalogEntry).filter(Boolean)
   storage.setItem(DASHBOARD_CATALOG_STORAGE_KEY, JSON.stringify(normalized))
   return normalized
@@ -38,16 +39,16 @@ export function catalogEntryFromSchema(schema, updatedAt = new Date().toISOStrin
   const item = normalizeDashboardSchema(schema)
   return normalizeCatalogEntry({ id: item.id, name: item.name || '未命名看板', description: item.description, dashboardType: item.dashboardType, category: item.category, scope: item.scope, updatedAt })
 }
-export function saveDashboardToCatalog(schema, storage = globalThis.localStorage, updatedAt = new Date().toISOString()) {
+export function saveDashboardToCatalog(schema, storage = userStorage(), updatedAt = new Date().toISOString()) {
   const entry = catalogEntryFromSchema(schema, updatedAt)
   return writeDashboardCatalog([...readDashboardCatalog(storage).filter(item => item.id !== entry.id), entry], storage)
 }
-export function removeLocalDashboard(id, storage = globalThis.localStorage) {
+export function removeLocalDashboard(id, storage = userStorage()) {
   if (BUILT_IN_DASHBOARD_IDS.has(id)) throw new Error('系统内置看板不可删除')
   storage.removeItem(getDashboardSchemaStorageKey(id))
   return writeDashboardCatalog(readDashboardCatalog(storage).filter(item => item.id !== id), storage)
 }
-export function duplicateLocalDashboard(id, storage = globalThis.localStorage, newId = `dashboard-${Date.now()}`) {
+export function duplicateLocalDashboard(id, storage = userStorage(), newId = `dashboard-${Date.now()}`) {
   const raw = storage.getItem(getDashboardSchemaStorageKey(id))
   if (!raw) throw new Error('找不到要复制的看板')
   const source = normalizeDashboardSchema(JSON.parse(raw))
@@ -56,14 +57,14 @@ export function duplicateLocalDashboard(id, storage = globalThis.localStorage, n
   saveDashboardToCatalog(copy, storage)
   return copy
 }
-export function createLocalDashboard(metadata = {}, { template = null, storage = globalThis.localStorage, id = `dashboard-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` } = {}) {
+export function createLocalDashboard(metadata = {}, { template = null, storage = userStorage(), id = `dashboard-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` } = {}) {
   let schema = normalizeDashboardSchema({ version: 1, id, name: metadata.name || '未命名看板', description: metadata.description || '', dashboardType: metadata.dashboardType || 'custom', category: metadata.category || '', scope: metadata.scope || 'personal', layout: { engine: 'gridstack', columns: 24, float: false }, widgets: [], globalFilters: [] })
   if (template) schema = normalizeDashboardSchema(applyLayoutTemplateToDashboard(schema, template, { createWidgetId: index => `${id}-widget-${index + 1}` }))
   const persisted = persistDashboardSchema(storage, getDashboardSchemaStorageKey(id), schema)
   saveDashboardToCatalog(persisted, storage)
   return persisted
 }
-export function renameLocalDashboard(id, name, storage = globalThis.localStorage) {
+export function renameLocalDashboard(id, name, storage = userStorage()) {
   const safeName = String(name || '').trim()
   if (!safeName) throw new Error('看板名称不能为空')
   const key = getDashboardSchemaStorageKey(id), recovered = recoverDashboardSchema(storage, key)

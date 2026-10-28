@@ -15,7 +15,8 @@ function createSession(respond, { token = '', cookie = '', medical = false } = {
     getAccessToken: () => token, setAccessToken: value => { token = value; medical = false }, clearAccessToken: () => { token = '' },
     isMedicalSession: () => medical, setMedicalAccessToken: (value, mode) => { medical = true; token = value; entry = mode },
     exchangeSso: (value, mode) => { calls.push('/auth/sso/exchange'); return respond('/auth/sso/exchange', { body: JSON.stringify({ token: value, entry: mode }) }) },
-    setSessionRecoveryHandler: () => {}, document: { cookie }, window: { dispatchEvent: event => events.push(event.type) }
+    setSessionRecoveryHandler: () => {}, document: { cookie }, window: { dispatchEvent: event => events.push(event.type) },
+    setStorageUser: () => {}, invalidateRequestSession: () => {}
   }
   const session = Function(...Object.keys(deps), `${source}; return { sessionState, isAuthenticated, loginWithPassword, loginWithMedicalToken, logoutSession, refreshSession, restoreSession, ensureAuthenticatedSession, invalidateSession }`)(...Object.values(deps))
   return { ...session, calls, events, token: () => token, entry: () => entry }
@@ -127,4 +128,30 @@ test('anonymous startup does not permanently disable later refresh after login',
   await session.loginWithPassword({})
   assert.equal(await session.refreshSession(), true)
   assert.ok(session.calls.includes('/auth/refresh'))
+})
+
+test('a delayed logout cannot clear a newer login or redirect its page', async () => {
+  let release
+  const session = createSession(path => {
+    if (path === '/auth/logout') return new Promise(resolve => { release = resolve })
+    return path === '/auth/me' ? me : login
+  }, { token: 'previous' })
+  const logout = session.logoutSession()
+  await session.loginWithPassword({})
+  release(null)
+  await logout
+  assert.equal(session.token(), 'valid')
+  assert.equal(session.isAuthenticated.value, true)
+  assert.deepEqual(session.events, [])
+})
+
+test('a failed refresh expires a visible session and notifies navigation', async () => {
+  const session = createSession(path => {
+    if (path === '/auth/refresh') throw Error('expired')
+    return path === '/auth/me' ? me : login
+  })
+  await session.loginWithPassword({})
+  assert.equal(await session.refreshSession(), false)
+  assert.deepEqual(session.events, ['idmp:unauthorized'])
+  assert.equal(session.token(), '')
 })

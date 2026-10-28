@@ -421,6 +421,9 @@
 </template>
 
 <script setup>
+import { userStorage } from '@/idmp/auth/userStorage.js'
+import { dashboardFilterLabel } from '@/idmp/features/dashboard/departmentFilters.js'
+const localStorage = userStorage()
 import { useDashboardHistory } from '@/idmp/features/dashboard/useDashboardHistory.js'
 import { createDashboardViewerRuntime, createPlatformDashboardRuntime, createMedicalViewerRuntime } from '@/idmp/features/dashboard/viewerRuntime.js'
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, shallowRef, watch } from 'vue'
@@ -948,7 +951,8 @@ provide('dashboardResolveWidgetDrill', async (widget, params) => {
 provide('dashboardSearchDrill', (id, payload, options) => viewerRuntime.searchDrill(id, payload, options))
 provide('dashboardSurfaceTone', computed(() => resolveDashboardSurfaceTone(dashboardBackgroundConfig.value)))
 provide('dashboardAppearanceTheme', dashboardTheme)
-const globalFilterDefinitions = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.globalFilters || [])
+const globalFilterDefinitions = computed(() => ((isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.globalFilters || [])
+  .map(definition => ({ ...definition, label: dashboardFilterLabel(definition) })))
 const compatibleWidgetIdsByGlobalFilter = computed(() => Object.fromEntries(globalFilterDefinitions.value.map(definition => [definition.id, resolveCompatibleGlobalFilterWidgetIds(definition, designerWidgets.value, getBindingDatasets)])))
 const filterRuntimeValues = ref({})
 // Interaction filters are a viewer/preview concern. They never enter schema state
