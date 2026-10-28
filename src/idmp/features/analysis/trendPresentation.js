@@ -116,7 +116,8 @@ export function createAnalysisTrendPresentation({ analysis, profile, display, gr
       textStyle: { fontSize: 12 },
       data: series.map((item) => item.name)
     },
-    grid: { top: 44, left: 50, right: 26, bottom: 40 },
+    // Measure formatted ticks on each render/resize instead of assuming a fixed label width.
+    grid: { top: 64, left: 16, right: 26, bottom: 16, containLabel: true },
     xAxis: {
       type: 'category',
       boundaryGap: false,
@@ -130,7 +131,7 @@ export function createAnalysisTrendPresentation({ analysis, profile, display, gr
       max: isChartNumber(profile.markLineValue)
         ? ({ max }) => Math.max(max, profile.markLineValue) : profile.yAxisMax,
       name: profile.unit ? `单位：${profile.unit}` : '指标值',
-      nameTextStyle: { padding: [0, 0, 4, 0] },
+      nameTextStyle: { align: 'left', padding: [0, 0, 4, 0] },
       axisLabel: { formatter: `{value}${profile.unit || ''}` },
       splitLine: { lineStyle: { type: 'dashed' } }
     },
