@@ -13,15 +13,15 @@
         <el-table-column label="参数编码" min-width="150"><template #default="{ row }"><el-input v-model.trim="row.code" :disabled="!editable" placeholder="例如 LEVEL" /></template></el-table-column>
         <el-table-column label="参数名称" min-width="150"><template #default="{ row }"><el-input v-model="row.displayName" :disabled="!editable" placeholder="例如 手术级别" /></template></el-table-column>
         <el-table-column label="类型" width="150"><template #default="{ row }"><el-select v-model="row.dataType" :disabled="!editable"><el-option v-for="item in parameterTypes" :key="item.value" :label="item.label" :value="item.value" /></el-select></template></el-table-column>
-        <el-table-column label="默认值" min-width="140"><template #default="{ row }"><el-input-number v-if="['DECIMAL','NUMBER','INTEGER'].includes(row.dataType)" v-model="row.defaultValue" :disabled="!editable" :precision="row.dataType === 'INTEGER' ? 0 : undefined" /><el-select v-else-if="row.dataType === 'BOOLEAN'" v-model="row.defaultValue" clearable :disabled="!editable"><el-option label="是" :value="true" /><el-option label="否" :value="false" /></el-select><el-input v-else v-model="row.defaultValue" :disabled="!editable" /></template></el-table-column>
+        <el-table-column label="默认值" min-width="180"><template #default="{ row }"><el-select v-if="row.dataType === 'FIELD_REF'" v-model="row.defaultValue" filterable clearable :disabled="!editable" placeholder="请选择字段"><el-option v-for="field in editorFieldOptions" :key="field.value" :value="field.value" :label="field.label" /></el-select><el-input-number v-else-if="['DECIMAL','NUMBER','INTEGER'].includes(row.dataType)" v-model="row.defaultValue" :disabled="!editable" :precision="row.dataType === 'INTEGER' ? 0 : undefined" /><el-select v-else-if="row.dataType === 'BOOLEAN'" v-model="row.defaultValue" clearable :disabled="!editable"><el-option label="是" :value="true" /><el-option label="否" :value="false" /></el-select><el-input v-else v-model="row.defaultValue" :disabled="!editable" /></template></el-table-column>
         <el-table-column label="值来源" min-width="150"><template #default="{ row }"><el-select v-model="row.valueSourceType" :disabled="!editable"><el-option label="手工输入" value="MANUAL" /><el-option label="固定枚举" value="FIXED" /><el-option label="值集" value="VALUE_SET" /><el-option label="业务字段" value="SEMANTIC_FIELD" /><el-option label="枚举" value="ENUM" /></el-select><el-select v-if="row.valueSourceType === 'VALUE_SET'" v-model="row.valueSourceRef" filterable clearable :disabled="!editable"><el-option v-for="item in valueSets" :key="item.id" :value="item.code" :label="item.name || '未命名值集'" /></el-select><el-input v-else-if="['SEMANTIC_FIELD','ENUM'].includes(row.valueSourceType)" v-model="row.valueSourceRef" :disabled="!editable" placeholder="值来源引用" /></template></el-table-column>
-        <el-table-column label="可选值" min-width="160"><template #default="{ row }"><el-select v-model="row.validation.enum" multiple filterable allow-create default-first-option :disabled="!editable"><el-option v-for="item in row.validation.enum" :key="item" :value="item" :label="String(item)" /></el-select></template></el-table-column>
+        <el-table-column label="可选值" min-width="180"><template #default="{ row }"><el-select v-if="row.dataType === 'FIELD_REF'" v-model="row.validation.enum" multiple filterable :disabled="!editable" placeholder="不限字段"><el-option v-for="field in editorFieldOptions" :key="field.value" :value="field.value" :label="field.label" /></el-select><el-select v-else v-model="row.validation.enum" multiple filterable allow-create default-first-option :disabled="!editable"><el-option v-for="item in row.validation.enum" :key="item" :value="item" :label="String(item)" /></el-select></template></el-table-column>
         <el-table-column label="必填" width="70"><template #default="{ row }"><el-switch v-model="row.required" :disabled="!editable" /></template></el-table-column>
         <el-table-column label="允许填写" width="90"><template #default="{ row }"><el-switch v-model="row.exposed" :disabled="!editable" /></template></el-table-column>
         <el-table-column label="操作" width="70"><template #default="{ $index }"><el-button :icon="Delete" circle title="删除参数" :disabled="!editable" @click="parameters.splice($index,1)" /></template></el-table-column>
       </el-table>
     </section>
-    <FactorEditor v-if="loaded" :key="editorKey" ref="definitionEditor" definition-only :disabled="!editable" :initial-definition="definition" :template-parameters="parameters" />
+    <FactorEditor v-if="loaded" :key="editorKey" ref="definitionEditor" definition-only atomic-only :disabled="!editable" :initial-definition="definition" :template-parameters="parameters" />
     <el-collapse v-if="editable" v-model="openPanels" class="advanced-panel"><el-collapse-item title="高级配置" name="advanced"><div class="advanced-actions"><el-button @click="refreshAdvancedJson">从当前表单生成</el-button><el-button @click="applyAdvancedJson">导入到表单</el-button></div><el-input v-model="advancedJson" type="textarea" :rows="12" /></el-collapse-item></el-collapse>
     <el-alert v-if="diagnostics" :title="diagnostics" type="warning" :closable="false" />
     <div v-if="editable" class="editor-actions-bar"><el-button :loading="saving" type="primary" @click="save">{{ isCreate ? '创建模板草稿' : '保存草稿' }}</el-button><el-button v-if="!isCreate" :loading="validating" @click="validate">校验</el-button><el-button v-if="!isCreate" :loading="publishing" @click="publish">发布</el-button></div>
@@ -41,6 +41,7 @@ import { fieldLabel, toUserMessage } from '@/idmp/utils/userMessage.js'
 import { createFactorTemplate, createFactorTemplateVersion, fetchAllFactorTemplateInstances as fetchFactorTemplateInstances, fetchFactorTemplateVersion, publishFactorTemplateVersion, updateFactorTemplateVersion, validateFactorTemplateVersion } from '@/idmp/api/modules/factors'
 import { fetchValueSets } from '@/idmp/api/modules/valueSets'
 import { fetchAllPages } from '@/idmp/api/pagination.js'
+import { templateFieldOptions } from '@/idmp/utils/templateParameterFields.js'
 
 const route = useRoute(), router = useRouter(), formRef = ref(), definitionEditor = ref()
 const isCreate = computed(() => route.name === 'FactorTemplateCreate')
@@ -48,6 +49,7 @@ const version = reactive({}), template = ref({}), form = reactive({name:'',descr
 const editable = computed(() => isCreate.value || (version.publicationStatus || version.status) !== 'PUBLISHED')
 const rules = {name:[{required:true,message:'请输入模板名称',trigger:'blur'}]}
 const parameters = ref([]), valueSets = ref([]), definition = ref(null), editorKey = ref(0), loaded = ref(false)
+const editorFieldOptions = computed(() => templateFieldOptions(definition.value, definitionEditor.value?.fields || []))
 const saving = ref(false), validating = ref(false), publishing = ref(false), creatingVersion = ref(false)
 const instancesLoading = ref(false), instancesVisible = ref(false), instances = ref([]), diagnostics = ref(''), advancedJson = ref(''), openPanels = ref([])
 const parameterTypes = [{value:'CODE',label:'标准值'},{value:'FIELD_REF',label:'字段引用'},{value:'VALUE_SET',label:'值集'},{value:'STRING',label:'文本'},{value:'DECIMAL',label:'数值'},{value:'INTEGER',label:'整数'},{value:'DATETIME',label:'日期时间'},{value:'BOOLEAN',label:'布尔'}]
@@ -73,7 +75,7 @@ async function load(){
 }
 function addParameter(){parameters.value.push({code:'',displayName:'',dataType:'CODE',required:false,exposed:true,defaultValue:'',valueSourceType:'MANUAL',valueSourceRef:'',validation:{enum:[]}})}
 function refreshAdvancedJson(){try{advancedJson.value=JSON.stringify(definitionEditor.value.getDefinition(false),null,2)}catch(error){ElMessage.warning(error.message)}}
-function applyAdvancedJson(){try{const value=JSON.parse(advancedJson.value);if(!value||value.dslType!=='FACTOR')throw new Error('请选择有效的因子定义');definition.value=value;editorKey.value++}catch(error){ElMessage.error(error.message||'配置格式无效')}}
+function applyAdvancedJson(){try{const value=JSON.parse(advancedJson.value);if(!value||value.dslType!=='FACTOR')throw new Error('请选择有效的因子定义');if(value.definitionKind==='DERIVED'||value.expression)throw new Error('因子模板仅支持原子因子');definition.value=value;editorKey.value++}catch(error){ElMessage.error(error.message||'配置格式无效')}}
 async function payload(){
   if(!(await formRef.value?.validate().catch(()=>false)))return null
   const codes=new Set()

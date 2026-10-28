@@ -17,8 +17,9 @@
       </el-form>
       <div v-if="workflow.factorId || workflow.versionId" class="saved-summary"><span>保存状态：<strong>{{ getStatusLabel(workflow.status || 'DRAFT') }}</strong></span></div>
     </section>
-    <section v-if="definitionOnly" class="editor-section definition-kind-field"><el-radio-group v-model="definitionKind" aria-label="因子定义方式" :disabled="disabled"><el-radio-button label="SOURCE">原子因子</el-radio-button><el-radio-button label="DERIVED">复合因子</el-radio-button></el-radio-group></section>
-    <DerivedFactorEditor v-if="isDerived" ref="derivedEditorRef" v-model="derivedDsl" :domains="domains" :disabled="disabled || workflow.published || loading.save || loading.compile" />
+    <section v-if="definitionOnly" class="editor-section definition-kind-field"><strong v-if="atomicOnly">原子因子</strong><el-radio-group v-else v-model="definitionKind" aria-label="因子定义方式" :disabled="disabled"><el-radio-button label="SOURCE">原子因子</el-radio-button><el-radio-button label="DERIVED">复合因子</el-radio-button></el-radio-group></section>
+    <el-alert v-if="atomicOnly && isDerived" type="error" :closable="false" title="因子模板仅支持原子因子，请使用物理表和统计字段定义计算。" />
+    <DerivedFactorEditor v-if="isDerived && !atomicOnly" ref="derivedEditorRef" v-model="derivedDsl" :domains="domains" :disabled="disabled || workflow.published || loading.save || loading.compile" />
     <section v-if="isNativeSql" class="surface-card editor-section" aria-label="SQL 计算口径">
       <div class="section-title"><span class="section-number">2</span><div><h2>SQL 计算口径</h2></div></div>
       <el-input v-model="unsupportedDsl.sqlTemplate" type="textarea" :rows="14" :readonly="workflow.published || loading.save || loading.compile" aria-label="原始 SQL" spellcheck="false" />
@@ -100,7 +101,7 @@ import { toOpaqueId } from '@/idmp/utils/resourceId.js'
 import { canRequest } from '@/idmp/auth/session'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { validateTemplateConditions, describeTemplateConditions, templateDefinitionFromFactor } from '@/idmp/utils/factorTemplateDefinition.js'
-const props = defineProps({ definitionOnly: Boolean, disabled: Boolean, initialDefinition: { type: Object, default: null }, templateParameters: { type: Array, default: () => [] } })
+const props = defineProps({ definitionOnly: Boolean, atomicOnly: Boolean, disabled: Boolean, initialDefinition: { type: Object, default: null }, templateParameters: { type: Array, default: () => [] } })
 const definitionReady = ref(false)
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
@@ -208,7 +209,7 @@ const supportedFilterFields=computed(()=>filterFields.value)
 function filterChildren(node) { return node?.nodeType === 'NOT' ? filterChildren(node.child) : node?.children || [] }
 const filterPreview=computed(()=>{ruleVersion.value;if(scopeMode.value==='ALL')return '统计当前物理表中的全部记录（无筛选条件）';if(!filterChildren(filters).length)return '请添加一条筛选条件';const errors=validateFilterNode(filters,[],fields.value);return errors[0]||(props.definitionOnly ? describeTemplateConditions(filters,fields.value,props.templateParameters) : describeNode(filters))})
 const caliberDescription=computed(()=>{const aggregation=aggregationOptions.find(item=>item.value===dslForm.aggregation)?.label||'未选择统计方式';const selectedField=fieldByCode(fields.value,dslForm.fieldCode);const expression=aggregateExpression.value?describeFieldExpression(aggregateExpression.value,fields.value):'';const parameter=props.templateParameters.find(item=>'${'+item.code+'}'===dslForm.fieldCode);const object=expression||selectedField?.label||(parameter?`参数「${parameter.displayName||parameter.code}」`:null);const target=dslForm.aggregation==='COUNT'?(object?`${object}的非空值`:'全部记录'):object||'未选择统计字段';const scope=scopeMode.value==='ALL'?'全部记录':filterPreview.value;const joined=joins.value.filter(isJoinComplete).map(item=>item.targetTableName||item.tableName).join('、');const domain=dslForm.domainCode?`“${currentDomainName.value}”的`:'';return `从${domain}“${currentTableName.value||'未选择物理表'}”中${joined?`关联“${joined}”后`:''}，按${aggregation}统计${target}；业务范围：${scope}；结果粒度：${grainDescription.value}。`})
-onMounted(async()=>{await loadDomains();if(props.definitionOnly){await loadDefinition(props.initialDefinition);return}if(template.templateId)await loadParameterSchema();if(!isCreate.value)await loadExisting()})
+onMounted(async()=>{if(!props.definitionOnly&&isCreate.value&&template.templateId&&template.versionId){await router.replace(`/factor/templates/${encodeURIComponent(template.templateId)}/versions/${encodeURIComponent(template.versionId)}/instantiate`);return}await loadDomains();if(props.definitionOnly){await loadDefinition(props.initialDefinition);return}if(template.templateId)await loadParameterSchema();if(!isCreate.value)await loadExisting()})
 
 async function loadDefinition(dsl) {
   definitionReady.value = false
@@ -240,6 +241,7 @@ async function loadDefinition(dsl) {
 }
 
 function getDefinition(validate = true) {
+  if (props.atomicOnly && isDerived.value) throw new Error('因子模板仅支持原子因子')
   if (!definitionReady.value || sourceTablesLoading.value || joins.value.some(item=>item.saving)) throw new Error('请等待计算定义加载完成')
   if (validate) {
     if (unsupportedDsl.value) throw new Error('当前定义包含尚不支持编辑的表达式，请通过高级配置调整')
@@ -259,7 +261,7 @@ function getDefinition(validate = true) {
   return templateDefinitionFromFactor(dsl, props.initialDefinition)
 }
 watch(()=>props.initialDefinition,async value=>{if(props.definitionOnly&&definitionReady.value)await loadDefinition(value)})
-defineExpose({ getDefinition, loadDefinition, definitionReady })
+defineExpose({ getDefinition, loadDefinition, definitionReady, fields })
 async function loadExisting() {
   try {
     const factor = await fetchFactor(route.params.id)
