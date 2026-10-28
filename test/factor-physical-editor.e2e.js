@@ -234,14 +234,19 @@ try {
       assert.equal(header.overlap, false)
       assert.equal(header.overflow, false)
       if (status === 'PUBLISHED') {
-        await click(button('更多'))
-        await click(`Array.from(document.querySelectorAll('.el-dropdown-menu__item')).find(el=>el.textContent.trim()==='技术信息（只读）')`)
+        assert.equal(await evaluate(`document.querySelector('.page-toolbar').textContent.includes('更多')`), false)
+        assert.equal(await evaluate(`document.querySelector('.technical-info').open`), false)
+        assert.equal(await evaluate(`document.querySelector('.factor-editor').lastElementChild.id`), 'factor-technical-info')
+        assert.equal(await evaluate(`!!document.querySelector('.technical-info').closest('[inert]')`), false)
+        await click(`document.querySelector('.technical-info summary')`)
         await waitFor(()=>evaluate(`!!document.querySelector('.dsl-preview')?.getBoundingClientRect().height`))
         assert.match(await evaluate(`document.querySelector('.dsl-preview').textContent`), /"primaryDomain"/)
         assert.match(await evaluate(`document.querySelector('.dsl-preview').textContent`), /"output"/)
         assert.equal(await evaluate(`Array.from(document.querySelectorAll('.page-toolbar button')).find(el=>el.textContent.trim()==='保存因子定义').disabled`), true)
         assert.equal(await evaluate(`document.querySelector('.caliber-section').parentElement.inert`), true)
-        await evaluate(`document.querySelector('.el-drawer__close-btn').click()`)
+        assert.equal(await evaluate(`!!document.querySelector('.technical-info input, .technical-info textarea, .technical-info [contenteditable="true"]')`), false)
+        assert.equal(await evaluate(`document.documentElement.scrollWidth>innerWidth`), false)
+        await evaluate(`document.querySelector('.technical-info summary').click()`)
         await waitFor(()=>evaluate(`!document.querySelector('.dsl-preview')?.getBoundingClientRect().height`))
       }
 

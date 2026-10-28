@@ -33,7 +33,7 @@ function fixture() {
     else if (path === '/factors/200') data={id:'200',code:saved.code,name:saved.name,draftVersionId:'201',status:published?'PUBLISHED':'DRAFT'}
     else if (path === '/factors/200/versions') data=[{id:'201',status:published?'PUBLISHED':'DRAFT',versionNo:1}]
     else if (path === '/factor-versions/201') data={id:'201',factorId:'200',dsl:saved.dsl,status:published?'PUBLISHED':compiled?'VALIDATED':'DRAFT',...(compiled?{currentArtifactId:'301'}:{})}
-    else if (path === '/factor-versions/201/compile') { compiled=true;data={artifactId:'301',status:'VALID'} }
+    else if (path === '/factor-versions/201/compile') { if(window.__invalidCompileOnce){window.__invalidCompileOnce=false;data={artifactId:'301',status:'INVALID',diagnostics:[{message:'模拟公式校验失败，请核对引用因子'}]}}else{compiled=true;data={artifactId:'301',status:'VALID'}} }
     else if (path === '/factor-versions/201/trial-period-recommendation') data={availabilityStatus:'AVAILABLE',recommendedPeriodStart:'2026-01-01T00:00:00',recommendedPeriodEnd:'2026-02-01T00:00:00'}
     else if (path === '/factor-versions/201/trial') data={batchId:'501',status:'SUCCEEDED'}
     else if (path === '/factor-versions/201/trials/501/results') data={valueDecimal:'100016070.36',status:'SUCCEEDED',qualityStatus:'PASSED'}
@@ -79,6 +79,13 @@ try {
   assert.deepEqual(saved.primaryDomain,{})
   assert.equal(saved.output.dimension,'SUM');assert.equal(saved.output.unit,undefined)
   assert.equal(saved.expression.left.factorVersionId,'101');assert.equal(saved.expression.right.factorVersionId,'102')
+  await evaluate(`window.__invalidCompileOnce=true`)
+  await click('编译并校验')
+  await until(()=>evaluate(`document.querySelector('.workflow-alert')?.textContent.includes('模拟公式校验失败')`),'compile diagnostic')
+  await click('查看排查信息')
+  await until(()=>evaluate(`document.querySelector('.technical-info').open && document.activeElement===document.querySelector('.technical-info summary')`),'diagnostic link opens and focuses bottom information')
+  assert.ok(await evaluate(`document.querySelector('.technical-info').getBoundingClientRect().top>=56`))
+  await evaluate(`document.querySelector('.technical-info summary').click()`)
   await click('编译并校验')
   await until(()=>evaluate(`!document.querySelector('.workflow-actions button').classList.contains('is-loading') && Array.from(document.querySelectorAll('.workflow-actions button')).some(el=>el.textContent.trim()==='试算并查看结果'&&!el.disabled)`),'compiled')
   await click('试算并查看结果')
@@ -87,12 +94,20 @@ try {
   await until(()=>evaluate(`document.querySelector('.published-next')?.textContent.includes('因子版本已发布')`),'published')
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('.page-toolbar button')).find(el=>el.textContent.trim()==='保存修改').disabled`),true)
   assert.equal(await evaluate(`document.querySelector('.page-toolbar').textContent.includes('技术信息')`),false)
-  await click('更多')
-  await until(()=>evaluate(`!!Array.from(document.querySelectorAll('.el-dropdown-menu__item')).find(el=>el.textContent.trim()==='技术信息（只读）')`),'more menu')
-  await evaluate(`Array.from(document.querySelectorAll('.el-dropdown-menu__item')).find(el=>el.textContent.trim()==='技术信息（只读）').click()`)
-  await until(()=>evaluate(`!!document.querySelector('.dsl-preview')?.getBoundingClientRect().height`),'readonly technical information')
+  assert.equal(await evaluate(`document.querySelector('.technical-info').open`),false)
+  assert.equal(await evaluate(`document.querySelector('.factor-editor').lastElementChild.id`),'factor-technical-info')
+  for(const viewport of [{width:1440,height:1000,mobile:false},{width:390,height:844,mobile:true}]) {
+    await send('Emulation.setDeviceMetricsOverride',{...viewport,deviceScaleFactor:1})
+    await evaluate(`document.querySelector('.technical-info summary').click();document.querySelector('.technical-info').scrollIntoView({block:'start'})`)
+    await until(()=>evaluate(`!!document.querySelector('.dsl-preview')?.getBoundingClientRect().height`),'inline readonly definition')
+    assert.equal(await evaluate(`document.documentElement.scrollWidth>innerWidth`),false)
+    assert.ok(await evaluate(`document.querySelector('.dsl-preview').getBoundingClientRect().height<=Math.min(360,innerHeight*0.5)+2`))
+    assert.equal(await evaluate(`!!document.querySelector('.technical-info input, .technical-info textarea, .technical-info [contenteditable="true"]')`),false)
+    await writeFile(`.tmp/derived-authoring/technical-${viewport.mobile?'mobile':'desktop'}.png`,Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'))
+    await evaluate(`document.querySelector('.technical-info summary').click()`)
+  }
   assert.deepEqual(errors,[])
-  console.log('PASS: ordinary derived addition from domainless physical factors, automatic compatible metadata, desktop/mobile, save/compile/trial/publish and readonly technical information under More; mocked API only')
+  console.log('PASS: ordinary derived addition from domainless physical factors, automatic compatible metadata, desktop/mobile, save/compile/trial/publish and collapsed bottom readonly technical information with diagnostic navigation; mocked API only')
 } catch(error) {
   if(socket?.readyState===WebSocket.OPEN) {await writeFile('.tmp/derived-authoring/failure.png',Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64')); console.error(await evaluate(`document.body.innerText`))}
   throw error
