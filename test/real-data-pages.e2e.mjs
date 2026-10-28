@@ -58,6 +58,12 @@ function fixture() {
     if (path.endsWith('/auth/me')) {
       const resource = mode === 'edit-factor' ? 'factors' : 'indicators'
       data = { user: { id: '1', username: 'real-user', displayName: '接口用户' }, roles: ['SYSTEM_ADMIN'], permissions: [] }
+      if (mode.startsWith('board-access-')) Object.assign(data, { roles: ['CUSTOM'], permissions: ['dashboard:view'], apiRules: [
+        { action: 'GET', resourcePattern: '/api/v1/analysis/dashboards' },
+        { action: 'GET', resourcePattern: '/api/v1/analysis/dashboards/**' },
+        ...(mode.includes('creator') ? [{ action: 'POST', resourcePattern: '/api/v1/analysis/dashboards' }] : []),
+        ...(mode.includes('editor') ? [{ action: 'PUT', resourcePattern: '/api/v1/analysis/dashboards/800' }] : [])
+      ] })
       if (mode === 'scenario-only') Object.assign(data, { roles: ['CUSTOM'], permissions: ['scenario:view'],
         apiRules: [{ action: 'GET', resourcePattern: '/api/v1/scenarios' }] })
       if (mode.startsWith('edit-')) Object.assign(data, { roles: ['CUSTOM'], permissions: ['resource:view'], apiRules: [
@@ -89,6 +95,11 @@ function fixture() {
         fieldBindings: { dataset: 'backend', dimensions: [], measures: [{ field: 'value', aggregation: 'direct' }], series: [], sort: [] }
       }] }
     }
+    else if (/\/analysis\/dashboards\/(800|810)\/versions$/.test(path) && mode.startsWith('board-access-')) data = [{ id: '801', publicationStatus: 'PUBLISHED', layout: { columns: 24 }, widgets: [{
+      code: 'real-kpi', type: 'KPI', title: '接口返回零值', dataSourceCode: 'REAL_SOURCE',
+      position: { x: 0, y: 0, w: 8, h: 5 },
+      fieldBindings: { dataset: 'backend', dimensions: [], measures: [{ field: 'value', aggregation: 'direct' }], series: [], sort: [] }
+    }] }]
     else if (path.endsWith('/REAL_SOURCE/fields')) data = [{ code: 'value', name: '指标值', dataType: 'DECIMAL', role: 'MEASURE' }]
     else if (path.endsWith('/REAL_SOURCE/available-periods')) data = [{ periodType: 'MONTHLY', periodStart: '2026-09-01' }]
     else if (/\/analysis\/dashboards\/(800|810)\/query$/.test(path)) {
@@ -106,6 +117,14 @@ function fixture() {
       else data = { id: '101', code: 'REAL_101', name: '接口详情记录', status: 'DRAFT' }
     }
     else if (path.endsWith('/query')) throw new Error('This test must not send a fabricated result query')
+    if (mode.startsWith('board-access-') && /\/analysis\/dashboards\/(800|810)$/.test(path) && options.method !== 'DELETE') {
+      data.dashboard.workingVersionId = '802'
+      data.dashboard.workingVersionStatus = 'DRAFT'
+      data.version.id = '802'
+      data.version.publicationStatus = 'DRAFT'
+      data.version.widgets[0].title = '未发布草稿组件'
+      if (mode.includes('unpublished')) delete data.dashboard.currentPublishedVersionId
+    }
     return new Response(JSON.stringify(status === 200 ? { code: 'OK', data } : { code: 'SERVER_ERROR', message: '接口失败验证' }), { status, headers: { 'Content-Type': 'application/json' } })
   }
 }
@@ -158,10 +177,35 @@ try {
   await click('重试')
   await until(() => evaluate(`document.body.innerText.includes('接口详情记录') && !!document.querySelector('.detail-layout')`), 'real detail retry')
   await navigate('/indicator/edit/new?testState=empty', '保存并进入公式配置')
-  await evaluate(`[...document.querySelectorAll('[role="tab"]')].find(el=>el.textContent.includes('6 发布检查')).click()`)
+  await evaluate(`[...document.querySelectorAll('[role="tab"]')].find(el=>el.textContent.includes('4 发布检查')).click()`)
   await until(() => evaluate(`!!document.querySelector('.publish-layout')?.checkVisibility({checkOpacity:true})`), 'extracted indicator publication step')
   assert.equal(await evaluate(`[...document.querySelectorAll('button')].find(el=>el.textContent.trim()==='发布指标版本').disabled`), true)
   await screenshot('indicator-publish-step.png')
+  for (const role of ['reader', 'creator', 'editor']) {
+    await navigate(`/dashboard?id=800&testState=board-access-${role}`, '接口返回零值')
+    await until(() => evaluate(`!!document.querySelector('.dashboard-schema-canvas') && document.body.innerText.includes('0')`), `${role} published viewer`)
+    assert.equal(await evaluate(`!!document.querySelector('.dashboard-draft-badge')`), role === 'editor')
+    assert.equal(await evaluate(`document.body.innerText.includes('未发布草稿组件')`), false, 'viewer must use published widgets')
+    assert.equal(await evaluate(`!!document.querySelector('.dashboard-studio')`), false)
+    await screenshot(`dashboard-${role}-publication.png`)
+  }
+  // Same editor can maintain 800, but switching to 810 must remove its lifecycle hint.
+  await evaluate(`document.querySelector('.idmp-nav__subitem[href*="id=810"]').click()`)
+  await until(() => evaluate(`location.search.includes('id=810') && window.__calls.some(call=>call.path==='/api/v1/analysis/dashboards/810/query') && !!document.querySelector('.dashboard-schema-canvas')`), 'switch to board without update grant')
+  assert.equal(await evaluate(`!!document.querySelector('.dashboard-draft-badge')`), false)
+  await navigate('/dashboard?id=800&edit=1&testState=board-access-editor', 'DASHBOARD STUDIO')
+  await until(() => evaluate(`document.body.innerText.includes('未发布草稿组件')`), 'resource-specific editor can load draft')
+  for (const role of ['reader', 'creator']) {
+    await navigate(`/dashboard?id=800&edit=1&testState=board-access-${role}`, '接口返回零值')
+    assert.equal(await evaluate(`new URLSearchParams(location.search).has('edit')`), false)
+    assert.equal(await evaluate(`!!document.querySelector('.dashboard-studio')`), false)
+  }
+  await navigate('/dashboard?id=800&testState=board-access-reader-unpublished', '当前看板暂不可用')
+  assert.equal(await evaluate(`/有未发布草稿|已发布|草稿配置|进入编辑模式|看板尚未发布/.test(document.body.innerText)`), false)
+  assert.equal(await evaluate(`window.__calls.some(call=>call.path.endsWith('/query'))`), false)
+  await screenshot('dashboard-reader-unavailable.png')
+  await navigate('/dashboard?id=800&testState=board-access-editor-unpublished', '看板尚未发布')
+  assert.equal(await evaluate(`document.body.innerText.includes('进入编辑模式保存并发布')`), true)
   await navigate('/dashboard/manage?testState=publication', '本地未发布看板')
   await until(() => evaluate(`document.querySelectorAll('.dashboard-card').length === 4 && document.querySelectorAll('.idmp-nav__subitem').length === 2`), 'mixed publication catalog')
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('.dashboard-card')].map(card=>({name:card.querySelector('h2').textContent,status:card.querySelector('.dashboard-card__publication').textContent})).sort((a,b)=>a.name.localeCompare(b.name,'en'))`), [

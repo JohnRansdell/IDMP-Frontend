@@ -7,7 +7,7 @@
         <span class="data-source-badge" :class="{ 'is-live': dashboardStatus === 'ready' }">
           {{ dashboardSourceLabel }}
         </span>
-        <el-tooltip v-if="hasUnpublishedDashboardDraft" content="当前展示已发布版本。此前保存的草稿仍在，进入编辑看板可继续修改或发布。" placement="bottom">
+        <el-tooltip v-if="canEditCurrentDashboard && hasUnpublishedDashboardDraft" content="当前展示已发布版本。此前保存的草稿仍在，进入编辑看板可继续修改或发布。" placement="bottom">
           <span class="dashboard-draft-badge" role="status" tabindex="0">有未发布草稿</span>
         </el-tooltip>
       </template>
@@ -20,7 +20,7 @@
       v-if="!isEditing && dashboardStatus === 'loading'"
       type="loading"
       title="正在加载质量看板"
-      description="正在读取已发布看板定义和当前筛选条件下的正式结果。"
+      description="正在读取看板内容和当前筛选条件下的统计结果。"
     />
     <StatePanel
       v-else-if="!isEditing && dashboardStatus === 'select'"
@@ -31,8 +31,8 @@
     <StatePanel
       v-else-if="!isEditing && ['error', 'legacy-mock', 'no-dashboards'].includes(dashboardStatus)"
       :type="dashboardStatus === 'error' ? 'error' : 'empty'"
-      :title="dashboardStatus === 'legacy-mock' ? '看板配置需更新' : dashboardStatus === 'no-dashboards' ? '暂无看板' : '质量看板加载失败'"
-      :description="dashboardLoadMessage || '请刷新重试；若持续失败，请联系管理员。'"
+      :title="dashboardStatus === 'legacy-mock' ? (canEditCurrentDashboard ? '看板配置需更新' : '当前看板暂不可用') : dashboardStatus === 'no-dashboards' ? '暂无看板' : '质量看板加载失败'"
+      :description="dashboardViewerMessage"
     >
       <template #actions>
         <el-button type="primary" @click="retryRemoteDashboardCatalog">重新加载</el-button>
@@ -50,8 +50,8 @@
     <StatePanel
       v-else-if="dashboardStatus === 'unpublished' && !isEditing"
       type="empty"
-      title="看板尚未发布"
-      description="当前仅存在草稿配置，请进入编辑模式保存并发布后查看正式数据。"
+      :title="canEditCurrentDashboard ? '看板尚未发布' : '当前看板暂不可用'"
+      :description="canEditCurrentDashboard ? '当前仅存在草稿配置，请进入编辑模式保存并发布后查看正式数据。' : '暂时无法展示此看板，请稍后重试或联系看板维护人员。'"
     />
 
     <template v-else-if="isEditing || dashboardStatus === 'ready'">
@@ -668,6 +668,13 @@ else if (medicalMode.value) { activeDashboardId.value = ''; requestedDashboardId
 const loadedDashboardId = ref('')
 const activeDashboardStorageKey = computed(() => getDashboardSchemaStorageKey(activeDashboardId.value))
 const currentDashboardId = computed(() => activeDashboardId.value)
+const canEditCurrentDashboard = computed(() => {
+  const id = activeDashboardId.value
+  if (!id || !viewerRuntime.capabilities.edit) return false
+  return isLocalDashboard(id)
+    ? canRequest('POST', '/analysis/dashboards')
+    : canRequest('PUT', `/analysis/dashboards/${encodeURIComponent(String(id))}`)
+})
 const currentDashboardName = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.name || '未命名看板')
 const currentDashboardProtected = computed(() => false)
  const dashboardSelectorOptions = computed(() => localDashboardCatalog.value)
@@ -1423,6 +1430,11 @@ const hasUnpublishedDashboardDraft = computed(() => {
   return String(meta.publicationStatus || '').toUpperCase() === 'DRAFT' ||
     Boolean(meta.workingVersionId && meta.workingVersionId !== meta.currentPublishedVersionId)
 })
+const dashboardViewerMessage = computed(() => {
+  if (!canEditCurrentDashboard.value && dashboardStatus.value === 'legacy-mock') return '暂时无法展示此看板，请稍后重试或联系看板维护人员。'
+  if (dashboardStatus.value === 'no-dashboards' && !canRequest('POST', '/analysis/dashboards')) return '暂无可用看板，请稍后重试或联系看板维护人员。'
+  return dashboardLoadMessage.value || '请刷新重试；若持续失败，请联系管理员。'
+})
 const saveStateLabel = computed(() => {
   if (saveState.value === 'error') return '保存失败'
   if (dashboardDirty.value) return '● 有未保存更改'
@@ -2177,7 +2189,7 @@ function beginDashboardEdit(schema = dashboardSchema.value) {
 }
 
 async function startDashboardEdit() {
-  if (!viewerRuntime.capabilities.edit) return
+  if (!canEditCurrentDashboard.value) return
   if (dashboardEditLoading.value || dashboardDeleting.value || isEditing.value || (!isRemoteDashboard() && !isLocalDashboard())) return
   const targetDashboardId = activeDashboardId.value
   if (isLocalDashboard(targetDashboardId)) {
@@ -2187,12 +2199,12 @@ async function startDashboardEdit() {
   dashboardEditLoading.value = true
   try {
     const detail = await fetchDashboardDefinition(targetDashboardId)
-    if (route.name !== 'Dashboard' || targetDashboardId !== activeDashboardId.value || isEditing.value) return
+    if (route.name !== 'Dashboard' || targetDashboardId !== activeDashboardId.value || isEditing.value || !canEditCurrentDashboard.value) return
     const meta = dashboardDetailMeta(detail)
     let versions = []
     if (meta.workingVersionId && String(detail?.version?.id || '') !== meta.workingVersionId) {
       versions = await fetchDashboardVersions(meta.dashboardId || targetDashboardId)
-      if (route.name !== 'Dashboard' || targetDashboardId !== activeDashboardId.value || isEditing.value) return
+      if (route.name !== 'Dashboard' || targetDashboardId !== activeDashboardId.value || isEditing.value || !canEditCurrentDashboard.value) return
     }
     const workingDetail = { ...detail, version: selectDashboardVersion(detail, versions, { editing: true }) }
     remoteDashboardMeta.value = dashboardDetailMeta(workingDetail)

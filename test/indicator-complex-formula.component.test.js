@@ -388,16 +388,17 @@ test('dropping a mode onto an existing operand keeps it while replacing a subtre
 test('nested mode shares the formula editor surface and keeps a live preview adjacent to its controls', async () => {
   const view = await readFile(new URL('../src/idmp/views/IndicatorEditor.vue', import.meta.url), 'utf8')
   assert.match(view, /class="formula-builder advanced-formula-builder"/)
-  assert.match(view, /class="advanced-formula-preview" aria-label="实时公式预览"/)
+  assert.match(view, /class="formula-preview" aria-label="公式预览"/)
 })
 
-test('nested display controls belong to the bottom formula preview rather than the factor editor', async () => {
+test('nested display controls stay beside the editor and outside the sticky preview', async () => {
   const view = await readFile(new URL('../src/idmp/views/IndicatorEditor.vue', import.meta.url), 'utf8')
   const { descriptor } = parse(view)
   const document = new JSDOM(descriptor.template.content).window.document
   const settings = document.querySelector('.advanced-display-settings')
   assert.equal(document.querySelectorAll('.advanced-display-settings').length, 1)
-  assert.equal(settings.parentElement.className, 'formula-preview')
+  assert.equal(settings.parentElement.className, 'formula-preview-settings')
+  assert.equal(document.querySelector('.formula-preview .advanced-display-settings'), null)
   assert.equal(settings.getAttribute('v-if'), "activeMode.kind === 'advanced'")
   assert.equal(document.querySelector('.advanced-formula-builder .advanced-display-settings'), null)
   for (const label of ['嵌套公式展示格式', '展示乘数', '展示小数位数', '展示舍入方式']) {

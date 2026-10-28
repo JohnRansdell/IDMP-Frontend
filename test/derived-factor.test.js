@@ -120,3 +120,13 @@ test('cycle in a frozen dependency graph is rejected', async () => {
   const root={id:'A',logicalPlan:{factorDependencies:[{factorVersionId:'A'}]}}
   await assert.rejects(inheritedFactorParameters(root,async()=>root),/循环/)
 })
+
+
+test('derived factors accept an empty domain object and never default money formulas to count units', () => {
+  const dsl = fixture(); dsl.primaryDomain = {}
+  assert.equal(validateDerivedFactor(dsl, versions), dsl)
+  assert.equal(newDerivedFactor().output.unit, undefined)
+  assert.equal(newDerivedFactor().output.dimension, undefined)
+  delete dsl.primaryDomain
+  assert.throws(() => validateDerivedFactor(dsl, versions), /归类信息/)
+})

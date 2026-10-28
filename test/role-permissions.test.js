@@ -8,6 +8,25 @@ import { createAccessDirective } from '../src/idmp/auth/accessDirective.js'
 import { reactive } from 'vue'
 
 const session = (rules = [], roles = ['CUSTOM'], deniedPaths = []) => ({ roles, apiRules: rules.map(([action, resourcePattern]) => ({ action, resourcePattern: '/api/v1' + resourcePattern })), deniedPaths })
+test('dashboard editing checks the actual board id instead of the representative grant id', () => {
+  const editor = session([['GET', '/analysis/dashboards/**'], ['PUT', '/analysis/dashboards/800']])
+  assert.equal(canVisit(editor, { path: '/dashboard', query: { id: '800', edit: '1' } }), true)
+  assert.equal(canVisit(editor, { path: '/dashboard', query: { id: '810', edit: '1' } }), false)
+  assert.equal(canVisit(editor, { path: '/dashboard', query: { id: 'dashboard-local', edit: '1' } }), false)
+})
+
+test('creation alone permits editing local drafts but not existing server boards', () => {
+  const creator = session([['POST', '/analysis/dashboards']])
+  assert.equal(canVisit(creator, { path: '/dashboard', query: { id: 'dashboard-local', edit: '1' } }), true)
+  assert.equal(canVisit(creator, { path: '/dashboard', query: { id: '800', edit: '1' } }), false)
+})
+
+test('read-only and revoked grants cannot enter dashboard editing', () => {
+  const reader = session([['GET', '/analysis/dashboards/**']])
+  assert.equal(canVisit(reader, { path: '/dashboard', query: { id: '800', edit: '1' } }), false)
+  const revoked = session([['PUT', '/analysis/dashboards/*']], ['CUSTOM'], ['/api/v1/analysis/dashboards/800'])
+  assert.equal(canVisit(revoked, { path: '/dashboard', query: { id: '800', edit: '1' } }), false)
+})
 test('the platform brand link uses the authorized home while the medical viewer stays isolated', () => {
   const layout = readFileSync(new URL('../src/idmp/layout/IdmpLayout.vue', import.meta.url), 'utf8')
   assert.match(layout, /:to="medicalViewer \? '\/dashboard\?medical=1' : accessibleHome\(\)"/)
