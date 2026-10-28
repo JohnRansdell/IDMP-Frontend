@@ -1,7 +1,7 @@
 <template>
   <main class="sso-status" aria-live="polite" :aria-busy="!error">
     <StatePanel :type="error ? 'error' : 'loading'" :title="error ? '单点登录失败' : '正在登录指标平台'" :description="error">
-      <template v-if="error" #actions><el-button @click="router.replace('/login')">返回登录页</el-button></template>
+      <template v-if="error" #actions><el-button type="primary" @click="router.replace('/login')">使用工号密码登录</el-button></template>
     </StatePanel>
   </main>
 </template>
