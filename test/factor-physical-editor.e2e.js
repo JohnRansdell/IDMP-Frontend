@@ -233,6 +233,18 @@ try {
       assert.equal(header.circleHeight, 28)
       assert.equal(header.overlap, false)
       assert.equal(header.overflow, false)
+      if (status === 'PUBLISHED') {
+        await click(button('更多'))
+        await click(`Array.from(document.querySelectorAll('.el-dropdown-menu__item')).find(el=>el.textContent.trim()==='技术信息（只读）')`)
+        await waitFor(()=>evaluate(`!!document.querySelector('.dsl-preview')?.getBoundingClientRect().height`))
+        assert.match(await evaluate(`document.querySelector('.dsl-preview').textContent`), /"primaryDomain"/)
+        assert.match(await evaluate(`document.querySelector('.dsl-preview').textContent`), /"output"/)
+        assert.equal(await evaluate(`Array.from(document.querySelectorAll('.page-toolbar button')).find(el=>el.textContent.trim()==='保存因子定义').disabled`), true)
+        assert.equal(await evaluate(`document.querySelector('.caliber-section').parentElement.inert`), true)
+        await evaluate(`document.querySelector('.el-drawer__close-btn').click()`)
+        await waitFor(()=>evaluate(`!document.querySelector('.dsl-preview')?.getBoundingClientRect().height`))
+      }
+
     }
     await evaluate(`document.querySelector('.workflow-section').scrollIntoView({block:'start',behavior:'instant'});window.scrollBy(0,-90)`)
     await writeFile(`.tmp/factor-physical-browser/workflow-${viewport.mobile ? 'mobile' : 'desktop'}.png`, Buffer.from((await cdp.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'))

@@ -19,8 +19,8 @@ export function newExpression(type = 'FACTOR_REF') {
 
 export function newDerivedFactor() {
   return { schemaVersion: '1.1', dslType: 'FACTOR', definitionKind: 'DERIVED', calculationMode: 'TEMPORAL',
-    primaryDomain: { domainCode: '' }, expression: newExpression('BINARY'),
-    output: { valueType: 'DECIMAL', semanticKind: 'MEASURE', dimension: 'COUNT', unit: 'COUNT', grain: [] } }
+    primaryDomain: {}, expression: newExpression('BINARY'),
+    output: { valueType: 'DECIMAL', semanticKind: 'MEASURE', grain: [] } }
 }
 
 export function simpleDerivedExpression(node) {
@@ -49,7 +49,7 @@ export function expressionChildren(node = {}) {
 }
 
 export function validateDerivedFactor(dsl, versions = []) {
-  if (!dsl.primaryDomain?.domainCode) throw new Error('请选择数据域')
+  if (!dsl.primaryDomain || typeof dsl.primaryDomain !== 'object' || Array.isArray(dsl.primaryDomain)) throw new Error('因子归类信息格式不正确，请重新打开页面')
   let refs = 0
   const ids = new Map(versions.map(item => [String(item.id ?? item.versionId), item]))
   const grain = values => JSON.stringify([...new Set((values || []).map(value => String(value).trim().toUpperCase()))].sort())
@@ -97,4 +97,48 @@ export function activeSourceBindings(bindings, factors, fields) {
   const ids = new Set(factors.map(item => String(item.versionId)))
   return Object.fromEntries(Object.entries(bindings).filter(([id]) => ids.has(id)).map(([id, values]) =>
     [id, Object.fromEntries(Object.entries(values).filter(([field, value]) => fields.includes(field) && value))]))
+}
+
+
+export function derivedReferenceIds(expression) {
+  const ids = new Set()
+  const visit = node => {
+    if (!node || typeof node !== 'object') return
+    if (node.nodeType === 'FACTOR_REF' && node.factorVersionId) ids.add(String(node.factorVersionId))
+    expressionChildren(node).forEach(([key]) => visit(node[key]))
+    ;(node.arguments || []).forEach(visit)
+  }
+  visit(expression)
+  return [...ids]
+}
+
+// Only reuse declared, compatible metadata. Never invent a domain or a money/count unit.
+export function derivedResultDefaults(expression, versions) {
+  const byId = new Map(versions.map(version => [String(version.id ?? version.versionId), version]))
+  const refs = derivedReferenceIds(expression).map(id => byId.get(id)).filter(Boolean)
+  const modes = [...new Set(refs.map(item => item.calculationMode || item.dsl?.calculationMode).filter(Boolean))]
+  const grainKey = grain => JSON.stringify([...new Set(grain || [])].sort())
+  const strictIds = new Set()
+  const aligned = node => { if (!node || typeof node !== 'object') return; if (node.nodeType === 'FACTOR_REF' && node.alignmentPolicy !== 'SCALAR_BROADCAST') strictIds.add(String(node.factorVersionId)); expressionChildren(node).forEach(([key]) => aligned(node[key])); (node.arguments || []).forEach(aligned) }
+  aligned(expression)
+  const outputs = refs.filter(item => strictIds.has(String(item.id ?? item.versionId))).map(item => item.output || item.dsl?.output || {})
+  const grains = [...new Set(outputs.map(output => grainKey(output.grain)))]
+  const output = { valueType: 'DECIMAL', semanticKind: 'MEASURE', grain: grains.length === 1 ? JSON.parse(grains[0]) : [] }
+  const typeOf = node => {
+    if (node?.nodeType === 'FACTOR_REF') return byId.get(String(node.factorVersionId))?.output || byId.get(String(node.factorVersionId))?.dsl?.output || {}
+    if (node?.nodeType === 'BINARY' && ['ADD', 'SUB'].includes(node.operator)) {
+      const left = typeOf(node.left), right = typeOf(node.right), result = {}
+      for (const key of ['dimension', 'unit']) {
+        if (left[key] && right[key] && left[key] !== right[key]) throw new Error(`相加或相减的因子${key === 'unit' ? '单位' : '量纲'}不一致，请选择兼容的因子`)
+        if (left[key] && left[key] === right[key]) result[key] = left[key]
+      }
+      return result
+    }
+    if (node?.nodeType === 'UNARY' || node?.nodeType === 'FUNCTION' && ['ROUND', 'ABS'].includes(node.functionCode)) return typeOf(node.operand || node.arguments?.[0])
+    return {}
+  }
+  const declared = typeOf(expression)
+  for (const key of ['dimension', 'unit']) if (declared[key]) output[key] = declared[key]
+  if (modes.length > 1) throw new Error('引用因子的计算模式不一致，请选择同为时序或同为静态的因子')
+  return { output, calculationMode: modes[0], grainConflict: grains.length > 1 }
 }

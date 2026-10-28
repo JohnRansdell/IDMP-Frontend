@@ -1,12 +1,7 @@
 <template>
   <section class="surface-card derived-editor" aria-label="复合因子定义">
     <h2>复合因子定义</h2>
-    <el-form label-position="top" class="definition-fields">
-      <el-form-item label="数据域"><el-select :model-value="modelValue.primaryDomain?.domainCode" filterable :disabled="disabled" @update:model-value="value => update('primaryDomain', { ...modelValue.primaryDomain, domainCode: value })"><el-option v-for="domain in domains" :key="domain.code" :value="domain.code" :label="domain.name || domain.code" /></el-select></el-form-item>
-      <el-form-item label="输出分组粒度"><el-select :model-value="modelValue.output?.grain || []" multiple filterable allow-create default-first-option :disabled="disabled" placeholder="不选表示总体" @update:model-value="value => updateOutput('grain', value)"><el-option v-for="grain in grains" :key="grain" :value="grain" :label="grain" /></el-select></el-form-item>
-      <el-form-item label="输出量纲"><el-input :model-value="modelValue.output?.dimension" :disabled="disabled" @update:model-value="value => updateOutput('dimension', value)" /></el-form-item>
-      <el-form-item label="输出单位"><el-input :model-value="modelValue.output?.unit" :disabled="disabled" @update:model-value="value => updateOutput('unit', value)" /></el-form-item>
-    </el-form>
+    <p class="creation-hint">先选择已发布因子并设置计算方式。新建时自动匹配结果分组与可确认的输出属性；无需查看技术信息或选择数据域。</p>
     <div class="formula-heading"><h3>计算公式</h3><el-button :icon="Refresh" size="small" :loading="loading" @click="loadVersions">刷新已发布因子</el-button></div>
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <div class="formula-mode" role="group" aria-label="公式编辑方式">
@@ -35,18 +30,36 @@
     </template>
     <FactorExpressionNode v-else v-loading="loading" :model-value="modelValue.expression" :versions="versions" :disabled="disabled" @update:model-value="value => update('expression', value)" />
     <div class="formula-preview" aria-live="polite"><span>公式预览</span><strong>{{ formulaPreview }}</strong></div>
+    <p v-if="loadingMetadata" class="creation-hint">正在核对引用因子信息，请稍候……</p>
+    <el-alert v-if="metadataError || metadataConflict" :title="metadataError || metadataConflict" type="error" :closable="false"><el-button v-if="metadataError" link type="primary" @click="retryMetadata">重试读取因子信息</el-button></el-alert>
+    <div class="result-summary" aria-label="复合因子结果设置"><span>结果分组：{{ modelValue.output?.grain?.length ? modelValue.output.grain.join('、') : '总体（不分组）' }}</span><span>单位：{{ modelValue.output?.unit || '未指定' }}</span><small>保存后执行编译校验和试算，核对业务结果。</small></div>
+    <details class="advanced-settings">
+      <summary>高级设置（选填）</summary>
+      <p class="creation-hint">仅在需要指定结果分组、单位或管理归类时调整。已保存配置会保留；未声明的量纲或单位不必猜填。</p>
+      <el-form label-position="top" class="definition-fields">
+        <el-form-item label="所属数据域（选填）"><el-select :model-value="modelValue.primaryDomain?.domainCode" clearable filterable :disabled="disabled" placeholder="可留空，计算数据来自引用因子" @update:model-value="setDomain"><el-option v-for="domain in domains" :key="domain.code" :value="domain.code" :label="domain.name || domain.code" /></el-select></el-form-item>
+        <el-form-item label="结果分组"><el-select :model-value="modelValue.output?.grain || []" multiple filterable allow-create default-first-option :disabled="disabled" placeholder="不选表示总体" @update:model-value="value => updateOutput('grain', value)"><el-option v-for="grain in grains" :key="grain" :value="grain" :label="grain" /></el-select></el-form-item>
+        <el-form-item label="输出量纲（选填）"><el-input :model-value="modelValue.output?.dimension" :disabled="disabled" placeholder="沿用已确认的定义，可不填写" @update:model-value="value => updateOutput('dimension', value)" /></el-form-item>
+        <el-form-item label="输出单位（选填）"><el-input :model-value="modelValue.output?.unit" :disabled="disabled" placeholder="沿用已确认的单位，可不填写" @update:model-value="value => updateOutput('unit', value)" /></el-form-item>
+      </el-form>
+    </details>
+
   </section>
 </template>
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import FactorExpressionNode from './FactorExpressionNode.vue'
-import { fetchPublishedFactorVersions } from '@/idmp/api/modules/factors'
-import { buildSimpleDerivedExpression, simpleDerivedExpression, validateDerivedFactor } from '@/idmp/utils/derivedFactor'
-const props = defineProps({ modelValue: { type: Object, required: true }, domains: { type: Array, default: () => [] }, disabled: Boolean })
+import { fetchPublishedFactorVersions, fetchFactorVersion, fetchCompileArtifact } from '@/idmp/api/modules/factors'
+import { buildSimpleDerivedExpression, simpleDerivedExpression, validateDerivedFactor, derivedReferenceIds, derivedResultDefaults } from '@/idmp/utils/derivedFactor'
+const props = defineProps({ modelValue: { type: Object, required: true }, domains: { type: Array, default: () => [] }, disabled: Boolean, autoConfigure: Boolean })
 const emit = defineEmits(['update:modelValue'])
 const versions = ref([]), loading = ref(false), error = ref('')
+const selectedVersions = ref([]), loadingMetadata = ref(false), metadataError = ref('')
+const metadataCache = new Map(), manualOutputKeys = new Set()
+let metadataRevision = 0
+const metadataConflict = computed(() => { try { derivedResultDefaults(props.modelValue.expression, selectedVersions.value); return '' } catch (e) { return e.message } })
 const operations = [
   { value: 'REF', label: '直接引用' }, { value: 'ADD', label: '相加' },
   { value: 'SUB', label: '相减' }, { value: 'MUL', label: '相乘' }, { value: 'DIV', label: '相除' }
@@ -65,8 +78,9 @@ const formulaPreview = computed(() => {
   return simpleOperator.value === 'REF' ? left : `${left} ${operatorSymbol.value} ${versionName(simpleRight.value)}`
 })
 const grains = computed(() => [...new Set(versions.value.flatMap(item => item.output?.grain || item.dsl?.output?.grain || []))])
-function update(key, value) { emit('update:modelValue', { ...props.modelValue, [key]: value }) }
-function updateOutput(key, value) { update('output', { ...props.modelValue.output, [key]: value }) }
+function update(key, value) { if (!props.disabled) emit('update:modelValue', { ...props.modelValue, [key]: value }) }
+function updateOutput(key, value) { manualOutputKeys.add(key); const output = { ...props.modelValue.output, [key]: value }; if (value === '' && key !== 'grain') delete output[key]; update('output', output) }
+function setDomain(value) { const domain = { ...props.modelValue.primaryDomain }; if (value) domain.domainCode = value; else delete domain.domainCode; update('primaryDomain', domain) }
 function versionLabel(item) { return `${item.factorName || item.factorCode} · V${item.versionNo} · ${item.id ?? item.versionId}` }
 function setOperator(operator) {
   if (operator === simpleOperator.value) return
@@ -94,6 +108,46 @@ async function switchToSimple() {
 watch(() => props.modelValue.expression, expression => {
   if (!simpleDerivedExpression(expression)) editorMode.value = 'advanced'
 })
+async function loadSelectedMetadata() {
+  const revision = ++metadataRevision
+  const ids = derivedReferenceIds(props.modelValue.expression)
+  loadingMetadata.value = !!ids.length; metadataError.value = ''
+  try {
+    const selected = await Promise.all(ids.map(async id => {
+      if (metadataCache.has(id)) return metadataCache.get(id)
+      const detail = await fetchFactorVersion(id)
+      if (String(detail?.id ?? detail?.versionId) !== id) throw new Error('引用因子版本信息不一致，请重新选择')
+      let output = detail.output || detail.dsl?.output || {}
+      const artifactId = detail.currentArtifactId || detail.artifactId
+      if (artifactId) {
+        const artifact = await fetchCompileArtifact(artifactId)
+        output = artifact.outputDescriptor || artifact.output || output
+      }
+      const item = { ...versions.value.find(row => String(row.id ?? row.versionId) === id), ...detail, output,
+        calculationMode: detail.calculationMode || detail.dsl?.calculationMode || 'TEMPORAL' }
+      metadataCache.set(id, item)
+      return item
+    }))
+    if (revision !== metadataRevision) return
+    selectedVersions.value = selected
+    if (props.autoConfigure && !props.disabled && ids.length) {
+      const defaults = derivedResultDefaults(props.modelValue.expression, selected)
+      const output = { ...props.modelValue.output }
+      for (const key of ['valueType', 'semanticKind', 'grain', 'dimension', 'unit']) {
+        if (manualOutputKeys.has(key)) continue
+        if (Object.hasOwn(defaults.output, key)) output[key] = defaults.output[key]
+        else delete output[key]
+      }
+      const value = { ...props.modelValue, primaryDomain: props.modelValue.primaryDomain || {}, output,
+        ...(defaults.calculationMode ? { calculationMode: defaults.calculationMode } : {}) }
+      if (JSON.stringify(value) !== JSON.stringify(props.modelValue)) emit('update:modelValue', value)
+    }
+  } catch (e) {
+    if (revision === metadataRevision) { selectedVersions.value = []; metadataError.value = e?.message || '引用因子信息读取失败，请重试' }
+  } finally { if (revision === metadataRevision) loadingMetadata.value = false }
+}
+function retryMetadata() { metadataCache.clear(); return loadSelectedMetadata() }
+watch(() => JSON.stringify(props.modelValue.expression), loadSelectedMetadata, { immediate: true })
 async function loadVersions() {
   if (loading.value) return
   loading.value = true; error.value = ''
@@ -102,10 +156,16 @@ async function loadVersions() {
   } catch (e) { error.value = e?.message || '已发布因子加载失败，请重试' }
   finally { loading.value = false }
 }
-defineExpose({ validate: () => { if (error.value || loading.value) throw new Error('请先完成已发布因子的加载'); return validateDerivedFactor(props.modelValue, versions.value) } })
+defineExpose({ validate: () => { if (error.value || loading.value) throw new Error('请先完成已发布因子的加载'); if (loadingMetadata.value || metadataError.value) throw new Error(metadataError.value || '请等待引用因子信息读取完成'); if (metadataConflict.value) throw new Error(metadataConflict.value); return validateDerivedFactor(props.modelValue, selectedVersions.value) } })
+onBeforeUnmount(() => { metadataRevision++ })
 onMounted(loadVersions)
 </script>
 <style scoped>
+.creation-hint { color: var(--idmp-text-secondary); line-height: 1.7; }
+.result-summary { display: flex; flex-wrap: wrap; gap: 10px 24px; margin-top: 14px; }
+.result-summary small { flex-basis: 100%; color: var(--idmp-text-helper); }
+.advanced-settings { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--idmp-border-soft); }
+.advanced-settings summary { cursor: pointer; color: var(--idmp-text-secondary); }
 .derived-editor { margin-bottom: 16px; padding: 18px; }
 h2 { margin: 0 0 16px; font-size: 16px; } h3 { margin: 0; font-size: 15px; }
 .definition-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
