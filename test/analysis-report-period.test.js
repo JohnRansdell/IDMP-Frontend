@@ -72,19 +72,59 @@ test('instant summary preserves multiple department and diagnosis members', () =
   assert.match(source, /fetchInstant: queryIndicatorSummary/)
 })
 
-test('formal request owns its version, inclusive dates and prefixed filters, not runtime parameters', () => {
+test('non-parameterized formal request owns its version, inclusive dates and prefixed filters', () => {
   for (const [granularity, range] of [
     ['MONTHLY', ['2024-02-01', '2024-02-29']], ['QUARTERLY', ['2026-01-01', '2026-03-31']],
     ['YEARLY', ['2026-01-01', '2026-12-31']]
   ]) {
     const request = buildReportSummaryRequest({ indicatorId: '11', versionId: '22', range, granularity,
-      filters: { OUT_DEPT_CODE: ['15', '16'], IN_ICD10: ['J18.900'] }, parameters: { patientName: '张' } })
+      filters: { OUT_DEPT_CODE: ['15', '16'], IN_ICD10: ['J18.900'] } })
     assert.equal(request.mode, 'FORMAL')
     assert.equal(request.method, 'GET')
     assert.equal(request.path, '/analysis/indicators/11/range-summary')
     assert.deepEqual(request.params, { indicatorVersionId: '22', periodStart: range[0], periodEnd: range[1], granularity,
       'filter.OUT_DEPT_CODE': ['15', '16'], 'filter.IN_ICD10': ['J18.900'] })
     assert.equal(request.payload, undefined)
+  }
+})
+
+test('runtime fields are visible independently of report dates and query mode', () => {
+  assert.match(source, /<RuntimeParameterFields v-if="indicatorRuntimeParameters.length"/)
+  assert.match(source, /parameters: buildSqlRuntimeParameterValues\(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value\)/)
+  for (const range of [[], ['2026-01-01', ''], ['2026-01-01', '2026-01-31']]) {
+    assert.equal(resolveReportPeriod(range, 'MONTHLY', { parameters: { deptCode: '15' } }).mode, 'INSTANT')
+  }
+})
+
+test('parameterized month quarter year and custom queries never discard runtime values', () => {
+  for (const [granularity, range] of [
+    ['MONTHLY', ['2026-01-01', '2026-01-31']],
+    ['QUARTERLY', ['2026-01-01', '2026-03-31']],
+    ['YEARLY', ['2026-01-01', '2026-12-31']],
+    ['CUSTOM', ['2026-02-04', '2026-03-07']]
+  ]) {
+    for (const parameters of [{ patientName: '张' }, { minAge: 0 }, { enabled: false }]) {
+      const request = buildReportSummaryRequest({ indicatorId: '11', versionId: '22', range, granularity, parameters })
+      assert.equal(request.mode, 'INSTANT')
+      assert.equal(request.path, '/analysis/indicator-versions/22/instant-summary')
+      assert.deepEqual(request.payload.parameters, parameters)
+      assert.equal(request.payload.periodStart, `${range[0]}T00:00:00`)
+      assert.equal(request.params, undefined)
+    }
+  }
+})
+
+test('empty optional parameters preserve formal month quarter and year queries', () => {
+  for (const [granularity, range] of [
+    ['MONTHLY', ['2026-01-01', '2026-01-31']],
+    ['QUARTERLY', ['2026-01-01', '2026-03-31']],
+    ['YEARLY', ['2026-01-01', '2026-12-31']]
+  ]) {
+    for (const parameters of [undefined, {}, { patientName: '', minAge: null }]) {
+      const request = buildReportSummaryRequest({ indicatorId: '11', versionId: '22', range, granularity, parameters })
+      assert.equal(request.mode, 'FORMAL')
+      assert.equal(request.method, 'GET')
+    }
   }
 })
 

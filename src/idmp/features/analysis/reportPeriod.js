@@ -25,15 +25,17 @@ export function formalReportGranularity(range, requested = 'CUSTOM') {
 }
 
 // Report ranges are inclusive calendar dates. CUSTOM remains custom even for a full quarter/year.
-export function resolveReportPeriod(range = [], requested = 'MONTHLY') {
+export function resolveReportPeriod(range = [], requested = 'MONTHLY', { parameters = {} } = {}) {
   const dates = range.length === 2 && range.every(Boolean) ? range.map(value => String(value).slice(0, 10)) : []
   const grain = String(requested).toUpperCase()
   const summaryGranularity = grain === 'STATIC' ? 'STATIC'
     : dates.length ? formalReportGranularity(dates, grain) : grain
+  const hasRuntimeValues = Object.values(parameters).some(value => value !== null && value !== undefined && value !== '')
   return {
     range: summaryGranularity === 'STATIC' ? [] : dates,
     summaryGranularity,
-    mode: FORMAL_GRAINS.includes(summaryGranularity) ? 'FORMAL' : 'INSTANT'
+    // Saved results do not represent the user's business-parameter selection.
+    mode: !hasRuntimeValues && FORMAL_GRAINS.includes(summaryGranularity) ? 'FORMAL' : 'INSTANT'
   }
 }
 

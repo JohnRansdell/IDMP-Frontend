@@ -77,12 +77,12 @@
           <label>筛选范围</label>
           <span v-for="(values, field) in reportFilters" :key="field">{{ field }}：{{ Array.isArray(values) ? values.join('、') : values }}</span>
         </div>
-        <RuntimeParameterFields v-if="reportQueryMode === 'INSTANT' && indicatorRuntimeParameters.length" v-model="indicatorRuntimeParameterValues" :declarations="indicatorRuntimeParameters" :show-metadata="false" @change="invalidateReportSummary()" />
+        <RuntimeParameterFields v-if="indicatorRuntimeParameters.length" v-model="indicatorRuntimeParameterValues" :declarations="indicatorRuntimeParameters" :show-metadata="false" @change="invalidateReportSummary()" />
         <div class="instant-query-panel__actions">
-          <el-button type="primary" :loading="rangeSummaryLoading" :disabled="reportQueryMode === 'INSTANT' && indicatorRuntimeParameterConflicts.length > 0" @click="applyReportPeriod">查询</el-button>
+          <el-button type="primary" :loading="rangeSummaryLoading" :disabled="indicatorRuntimeParameterConflicts.length > 0" @click="applyReportPeriod">查询</el-button>
         </div>
       </div>
-      <el-alert v-if="reportQueryMode === 'INSTANT' && indicatorRuntimeParameterConflicts.length" type="error" show-icon :closable="false" :title="`存在不兼容的同名参数：${indicatorRuntimeParameterConflicts.map(item => item.code).join('、')}`" />
+      <el-alert v-if="indicatorRuntimeParameterConflicts.length" type="error" show-icon :closable="false" :title="`存在不兼容的同名参数：${indicatorRuntimeParameterConflicts.map(item => item.code).join('、')}`" />
       <div v-if="runtimeQueryResult" class="runtime-query-result">
         <div class="runtime-query-result__summary">
           <el-tag :type="runtimeQueryResult.executionMode === 'AD_HOC_SOURCE' ? 'warning' : 'success'">{{ runtimeQueryExecutionModeLabel }}</el-tag>
@@ -299,8 +299,8 @@ const initialReportContext = analysisReportContext(route.query)
 const reportGranularity = ref(initialReportContext.granularity)
 const reportSummaryGranularity = ref(initialReportContext.summaryGranularity)
 const reportSelection = computed(() => resolveReportPeriod(reportPeriodRange.value,
-  reportGranularity.value === 'STATIC' ? 'STATIC' : reportSummaryGranularity.value))
-const reportQueryMode = computed(() => reportSelection.value.mode)
+  reportGranularity.value === 'STATIC' ? 'STATIC' : reportSummaryGranularity.value,
+  { parameters: buildSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value) }))
 const reportDirty = ref(false)
 const reportFilterParams = computed(() => analysisFilterParams(route.query))
 const reportFilters = computed(() => analysisFilters(route.query))
@@ -761,7 +761,7 @@ async function applyReportPeriod() {
     if (!validateOptionalDateRange(reportPeriodRange.value, '报告期')) return
     if (!isCompleteDateRange(reportPeriodRange.value)) return ElMessage.warning('请选择完整的报告期范围')
   }
-  const parameterMessage = reportQueryMode.value === 'INSTANT' && validateSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)
+  const parameterMessage = validateSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)
   if (parameterMessage) return ElMessage.warning(parameterMessage)
   const query = { ...route.query, ...reportPeriodQuery({ ...reportSelection.value, granularity: backendAnalysisGranularity.value }) }
   if (temporal && analysisRouteKey(query) !== analysisRouteKey(route.query)) {
@@ -1039,7 +1039,7 @@ async function refreshIndicatorAnalysis() {
 
     const backendIndicatorId = String(backendIndicator.id || backendIndicator.indicatorId)
     if (calculationMode !== 'STATIC' && isCompleteDateRange(reportPeriodRange.value)
-      && (reportQueryMode.value === 'FORMAL' || !validateSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value))) {
+      && !validateSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)) {
       void loadRangeSummary()
     }
     // Overview and trend publish independently, without waiting for one another.
