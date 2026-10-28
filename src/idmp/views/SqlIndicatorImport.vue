@@ -1,7 +1,41 @@
 <template>
   <div class="idmp-page sql-import-page">
     <PageHeader title="SQL 导入因子/指标"><template #actions><el-button v-if="canStartNewImport" type="primary" plain @click="startNewImport">开始新的导入</el-button><el-button :icon="ArrowLeft" @click="router.push('/indicator')">返回指标目录</el-button></template></PageHeader>
-    <section class="surface-card section"><div class="section-heading"><div><h2>1. 提交并解析 SQL</h2><span>创建导入会话后，系统只解析，不创建资源。</span></div><el-button type="primary" :loading="createLoading" :disabled="Boolean(importTask?.importId) || !sql.trim()" @click="createImport">解析 SQL</el-button></div><el-input v-model="sql" type="textarea" :rows="13" class="sql-editor" placeholder="请输入 MySQL 8 SELECT SQL" /><details class="sql-parameter-hint"><summary>SQL 参数规范</summary><p>可选业务条件使用 <code v-text="'[[AND b.In_Dept_Code = {{deptCode}}]]'" />，参数名称与下方运行参数保持一致。</p></details></section>
+    <section class="surface-card section">
+      <div class="section-heading"><div><h2>1. 提交并解析 SQL</h2><span>创建导入会话后，系统只解析，不创建资源。</span></div><el-button type="primary" :loading="createLoading" :disabled="Boolean(importTask?.importId) || !sql.trim()" @click="createImport">解析 SQL</el-button></div>
+      <el-input v-model="sql" type="textarea" :rows="13" class="sql-editor" placeholder="请输入 MySQL 8 SELECT SQL" />
+      <details class="sql-definition-hint">
+        <summary>因子与指标 SQL 定义规范</summary>
+        <h3>查询语句</h3>
+        <p>使用 MySQL 8 只读查询，以 <code>SELECT</code> 或 <code>WITH ... SELECT</code> 开头。建议用一条完整查询表达计算，不支持写入、修改、删除数据或建表等语句。</p>
+        <h3>因子定义</h3>
+        <p>因子表示一个统计结果，使用 <code>COUNT(*)</code>、<code>COUNT(DISTINCT 字段)</code>、<code>SUM</code>、<code>AVG</code>、<code>MIN</code> 或 <code>MAX</code>，并为结果设置别名。多表查询中的字段使用表别名限定。</p>
+        <p>简单因子可直接提交单列聚合查询：</p>
+        <pre><code>SELECT COUNT(*) AS 住院手术记录数
+FROM vmq_surgeryinfo s
+WHERE s.out_inhosp = 2;</code></pre>
+        <h3>指标定义</h3>
+        <p>使用 <code>WITH 名称 AS (...)</code> 定义统计查询，在最终 <code>SELECT</code> 中组合统计结果。支持加、减、乘、除、括号、数值常量，以及 <code>ROUND</code>、<code>COALESCE</code>、<code>NULLIF</code>、<code>ABS</code>、<code>CASE WHEN</code>、比较和与或非条件。</p>
+        <p>多层 CTE 可复用明细查询，不是每个 CTE 或别名都创建因子，实际拆分以解析预览为准。单次最多拆出 10 个因子。建议最终 SELECT 只输出一个带别名的指标结果列，避免多列结果的公式选择歧义；无 CTE 的简单查询只保留一个结果列。</p>
+        <pre><code>WITH total AS (
+  SELECT COUNT(DISTINCT s.patient_ID) AS patient_count
+  FROM vmq_surgeryinfo s
+  WHERE s.out_inhosp = 2
+), level4 AS (
+  SELECT COUNT(DISTINCT s.patient_ID) AS patient_count
+  FROM vmq_surgeryinfo s
+  WHERE s.out_inhosp = 2 AND s.surgery_level = 4
+)
+SELECT ROUND(l4.patient_count * 1.0 / NULLIF(t.patient_count, 0), 4)
+       AS 四级手术患者占比
+FROM level4 l4 CROSS JOIN total t;</code></pre>
+        <h3>时间、分组与下钻</h3>
+        <p>时序因子在解析后选择物理时间字段，统计周期通过试算或查询条件传入，不用业务参数代替。固定业务筛选保留在 SQL 中；固定日期条件也会限制可查询的数据范围。</p>
+        <p>需要自动拆分并按维度计算时，统计层保持单值聚合，不预先添加 <code>GROUP BY</code>、<code>HAVING</code> 或分页；组合粒度与下钻路径在元数据中配置，并为各因子绑定对应字段。复杂查询能否拆分和重新分组，以解析诊断及试算结果为准。</p>
+        <h3>可选业务参数</h3>
+        <p>动态筛选使用 <code v-text="'[[AND s.surgery_level = {{surgeryLevel}}]]'" />，参数名称与运行参数定义保持一致。占位符不加引号，每个参数传入一个值，不能传入 SQL 片段；不使用冒号参数。可选块内的参数全部有值时保留该条件，否则省略整个条件块；同名参数在各因子中的类型、必填性和模式须一致。</p>
+      </details>
+    </section>
 
     <section v-if="importTask" class="surface-card section">
       <div class="section-heading"><div><h2>导入会话</h2><span>{{ sqlImportStepLabel(importTask.step) }}</span></div><el-tag :type="tagType">{{ sqlImportStatusLabel(importTask.status) }}</el-tag></div>
@@ -218,6 +252,12 @@ onMounted(() => { void loadDomainNames(); void loadDrillPathCatalog(); if (route
 </script>
 
 <style scoped>
+.sql-definition-hint{margin-top:12px;line-height:1.7;overflow-wrap:anywhere}
+.sql-definition-hint summary{cursor:pointer}
+.sql-definition-hint h3{margin:16px 0 6px;font-size:14px}
+.sql-definition-hint p{margin:6px 0}
+.sql-definition-hint code{font-family:Consolas,monospace}
+.sql-definition-hint pre{line-height:1.5;overflow-wrap:normal}
 .conflict-resource{margin-top:10px}
 .technical-details{margin:12px 0;color:var(--idmp-text-helper)}
 .technical-details summary{cursor:pointer}
@@ -259,4 +299,4 @@ onMounted(() => { void loadDomainNames(); void loadDrillPathCatalog(); if (route
 }
 </style>
 
-<style scoped lang="scss">.sql-import-page{padding-bottom:48px}.section{margin-bottom:16px;padding:18px}.section-heading{display:flex;justify-content:space-between;gap:16px;align-items:center}.section-heading h2,.section h2,.block h3{margin:0}.section-heading span{color:var(--idmp-text-helper);font-size:12px}.block{margin-top:18px}.block+.block{margin-top:12px}.block :deep(.el-alert)+:deep(.el-alert){margin-top:8px}.mapping-hint,.time-field-hint{display:block;margin-top:6px;color:var(--idmp-text-helper)}.time-field-control{display:flex;gap:8px}.time-field-control .el-select,.time-field-control .el-input{min-width:0;flex:1}.time-field-search{margin:14px 0}.operation-error{margin-top:14px}.operation-error dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px;margin:12px 0}.operation-error dl div{min-width:0;padding:9px 10px;background:var(--idmp-field);border-radius:6px}.operation-error dt{color:var(--idmp-text-helper);font-size:12px}.operation-error dd{overflow-wrap:anywhere;margin:4px 0 0;font-family:Consolas,monospace}.error-actions,.query-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px}.query-actions .el-select{width:190px}.sql-editor{margin-top:16px}.sql-editor :deep(textarea){font-family:Consolas,monospace;background:#111b24;color:#e6edf3}.sql-parameter-hint{margin-top:12px}.sql-parameter-hint code{font-family:Consolas,monospace}.preview-summary{display:flex;gap:20px;margin-top:12px;color:var(--idmp-text-helper)}.factor-list{display:grid;gap:12px;margin-top:18px}.factor{display:grid;gap:8px;padding:14px;border:1px solid var(--idmp-border-subtle)}.factor small{color:var(--idmp-text-helper)}.factor-fields,.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.parameter-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px;padding-top:12px;border-top:1px solid var(--idmp-border-subtle)}.parameter-header>div{display:grid;gap:2px}.parameter-list{display:grid;gap:8px}.parameter-row{display:grid;grid-template-columns:minmax(160px,1.4fr) minmax(120px,1fr) minmax(120px,1fr) auto auto;align-items:center;gap:8px}.runtime-conditions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:16px}.runtime-conditions>.el-date-editor{width:100%}.runtime-field{display:grid;align-content:start;gap:6px;min-width:0}.runtime-field label{display:flex;align-items:baseline;justify-content:space-between;gap:8px}.runtime-field label span{font-weight:600;overflow-wrap:anywhere}.runtime-field label small{color:var(--idmp-text-helper);white-space:nowrap}.runtime-field em{color:var(--el-color-danger);font-style:normal}.runtime-field>.el-input-number,.runtime-field>.el-date-editor{width:100%}.condition-alert{margin-top:14px}.runtime-result{margin-top:16px}.result-summary{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px;color:var(--idmp-text-helper);font-size:12px}.action-bar{display:flex;justify-content:flex-end;margin:16px 0}.section pre{max-height:340px;overflow:auto;padding:12px;background:var(--idmp-field)}@media(max-width:900px){.factor-fields,.grid,.runtime-conditions,.operation-error dl{grid-template-columns:1fr}.parameter-row{grid-template-columns:1fr 1fr}.section-heading{align-items:stretch;flex-direction:column}.time-field-control{align-items:stretch;flex-direction:column}.query-actions{align-items:stretch}.query-actions .el-select{width:100%}}</style>
+<style scoped lang="scss">.sql-import-page{padding-bottom:48px}.section{margin-bottom:16px;padding:18px}.section-heading{display:flex;justify-content:space-between;gap:16px;align-items:center}.section-heading h2,.section h2,.block h3{margin:0}.section-heading span{color:var(--idmp-text-helper);font-size:12px}.block{margin-top:18px}.block+.block{margin-top:12px}.block :deep(.el-alert)+:deep(.el-alert){margin-top:8px}.mapping-hint,.time-field-hint{display:block;margin-top:6px;color:var(--idmp-text-helper)}.time-field-control{display:flex;gap:8px}.time-field-control .el-select,.time-field-control .el-input{min-width:0;flex:1}.time-field-search{margin:14px 0}.operation-error{margin-top:14px}.operation-error dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px;margin:12px 0}.operation-error dl div{min-width:0;padding:9px 10px;background:var(--idmp-field);border-radius:6px}.operation-error dt{color:var(--idmp-text-helper);font-size:12px}.operation-error dd{overflow-wrap:anywhere;margin:4px 0 0;font-family:Consolas,monospace}.error-actions,.query-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px}.query-actions .el-select{width:190px}.sql-editor{margin-top:16px}.sql-editor :deep(textarea){font-family:Consolas,monospace;background:#111b24;color:#e6edf3}.preview-summary{display:flex;gap:20px;margin-top:12px;color:var(--idmp-text-helper)}.factor-list{display:grid;gap:12px;margin-top:18px}.factor{display:grid;gap:8px;padding:14px;border:1px solid var(--idmp-border-subtle)}.factor small{color:var(--idmp-text-helper)}.factor-fields,.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.parameter-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px;padding-top:12px;border-top:1px solid var(--idmp-border-subtle)}.parameter-header>div{display:grid;gap:2px}.parameter-list{display:grid;gap:8px}.parameter-row{display:grid;grid-template-columns:minmax(160px,1.4fr) minmax(120px,1fr) minmax(120px,1fr) auto auto;align-items:center;gap:8px}.runtime-conditions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:16px}.runtime-conditions>.el-date-editor{width:100%}.runtime-field{display:grid;align-content:start;gap:6px;min-width:0}.runtime-field label{display:flex;align-items:baseline;justify-content:space-between;gap:8px}.runtime-field label span{font-weight:600;overflow-wrap:anywhere}.runtime-field label small{color:var(--idmp-text-helper);white-space:nowrap}.runtime-field em{color:var(--el-color-danger);font-style:normal}.runtime-field>.el-input-number,.runtime-field>.el-date-editor{width:100%}.condition-alert{margin-top:14px}.runtime-result{margin-top:16px}.result-summary{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px;color:var(--idmp-text-helper);font-size:12px}.action-bar{display:flex;justify-content:flex-end;margin:16px 0}.section pre{max-height:340px;overflow:auto;padding:12px;background:var(--idmp-field)}@media(max-width:900px){.factor-fields,.grid,.runtime-conditions,.operation-error dl{grid-template-columns:1fr}.parameter-row{grid-template-columns:1fr 1fr}.section-heading{align-items:stretch;flex-direction:column}.time-field-control{align-items:stretch;flex-direction:column}.query-actions{align-items:stretch}.query-actions .el-select{width:100%}}</style>
