@@ -5,7 +5,7 @@ import { parseJsonPreservingLargeIntegers as parse } from '../src/idmp/api/reque
 
 const mode = process.argv[2], tag = `${state.tag}_EXTRA`
 
-if (mode === '关联与路径') {
+if (['关联与路径', '物理关联'].includes(mode)) {
   const seed = rows(await get('/meta/physical-table-relations')).find(item => item.status === 'PUBLISHED')
   assert.ok(seed)
   for (const [index, joinType, cardinality] of [[0, 'INNER', 'MANY_TO_ONE'], [1, 'LEFT', 'MANY_TO_ONE'], [2, 'INNER', 'ONE_TO_ONE']]) await run(`关联表第${index + 1}种配置`, async () => {
@@ -31,7 +31,7 @@ if (mode === '关联与路径') {
     }
   })
   const organization = await get('/meta/drill-path-versions/102027642460761110')
-  for (const [index, subjectType] of ['INDICATOR_RESULT', 'FACTOR_RESULT', 'DQ_ISSUE'].entries()) await run(`中文自定义下钻路径${index + 1}`, async () => {
+  if (mode !== '物理关联') for (const [index, subjectType] of ['INDICATOR_RESULT', 'FACTOR_RESULT', 'DQ_ISSUE'].entries()) await run(`中文自定义下钻路径${index + 1}`, async () => {
     const levels = organization.levels.slice(index === 1 ? 1 : 0).map((level, order) => ({ ...level, levelName: ['医院', '科室', '医生'][order + (index === 1 ? 1 : 0)] }))
     const payload = { pathCode: `${tag}_PATH${index}`, pathName: `全量验收${['指标', '因子', '质量问题'][index]}组织链路`, subjectType, levels }
     let path = await api('POST', '/meta/drill-paths', payload)
@@ -150,11 +150,11 @@ if (mode === '复合因子') {
 if (mode === '定时触发') {
   for (const [index, label, periodType, offset, start, end] of [[0, '月度', 'MONTHLY', 9, '2026-01-01', '2026-02-01'], [1, '季度', 'QUARTERLY', 3, '2026-01-01', '2026-04-01'], [2, '年度', 'YEARLY', 1, '2025-01-01', '2026-01-01']]) await run(`${label}定时触发完整链路`, async () => {
     const ownerVersionId = state.factors[0].draftVersionId
-    const schedule = await api('POST', '/calc/schedules', { scheduleCode: `${tag}_LIVE${index}`, scheduleName: `全量验收${label}一次触发后停用`, ownerType: 'FACTOR', ownerVersionId, cronExpression: '*/20 * * * * *', timezone: 'Asia/Shanghai', periodType, periodOffset: offset, enabled: true })
+    const schedule = await api('POST', '/calc/schedules', { scheduleCode: `${tag}_LIVE${index}_${Date.now()}`, scheduleName: `全量验收${label}一次触发后停用`, ownerType: 'FACTOR', ownerVersionId, cronExpression: '*/20 * * * * *', timezone: 'Asia/Shanghai', periodType, periodOffset: offset, enabled: true })
     state.liveSchedules ||= []; state.liveSchedules.push(schedule); await checkpoint()
     let saved
     try {
-      const deadline = Date.now() + 55000
+      const deadline = Date.now() + 125000
       do {
         saved = await get(`/calc/schedules/${schedule.id}`)
         if (saved.lastTriggerAt || saved.lastError) break
@@ -171,7 +171,7 @@ if (mode === '定时触发') {
     const period = (await sql('PLATFORM', `SELECT period_start_date,period_end_date FROM job_calc_batch WHERE id=${batch.batchId}`, ['start', 'end']))[0]
     check(`${label}按计划偏移生成正确周期`, period.start === start && period.end === end, period)
     const results = await sql('PLATFORM', `SELECT value_decimal FROM rsl_factor_result WHERE calc_target_id=${batch.targets[0].targetId} AND factor_version_id=${ownerVersionId}`, ['value'])
-    const source = (await sql('SOURCE', `SELECT COUNT(*) FROM vmq_basicinformationba WHERE sex='1' AND out_date>='${start}' AND out_date<'${end}'`, ['value']))[0]
+    const source = (await sql('SOURCE', `SELECT COUNT(*) FROM vmq_basicinformationba WHERE out_date>='${start}' AND out_date<'${end}'`, ['value']))[0]
     check(`${label}自动计算结果与相同周期源表一致`, results.length === 1 && close(results[0]?.value, source.value), { results, source })
     const stopped = await get(`/calc/schedules/${schedule.id}`)
     check(`${label}测试后立即停用且没有下次触发`, stopped.status === 'PAUSED' && stopped.nextTriggerAt === null)

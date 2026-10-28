@@ -16,14 +16,14 @@ for (const rule of state.eventTest.rules) await run(`预警${rule.mode}本科室
   await reject(`${rule.mode}无预警角色的科室分析员不能调用接口`, 'GET', `/analysis/warnings?ruleId=${rule.id}&size=100`, undefined, [403], { token: analyst })
   const hospital = rows(await get(`/analysis/warnings?ruleId=${rule.id}&size=100`))
   const scoped = rows(await get(`/analysis/warnings?ruleId=${rule.id}&size=100`, { token: auditor }))
-  const expected = hospital.filter(event => String(event.comparisonContext?.dimensionSnapshot?.out_dept_code) === '16')
+  const expected = hospital.filter(event => String(event.comparisonContext?.dimensionSnapshot?.出院科室) === '16')
   check(`${rule.mode}本科室事件和管理员同范围完全一致`, scoped.length === expected.length && scoped.every(item => expected.some(event => event.id === item.id && event.actualValue === item.actualValue)), { expected: expected.length, actual: scoped.length })
   const foreign = hospital.find(event => !expected.some(item => item.id === event.id)) || mainEvent
   assert.ok(foreign)
   await reject(`${rule.mode}借用其他范围事件标识被拒绝`, 'GET', `/analysis/warnings/${foreign.id}`, undefined, [403, 404], { token: auditor })
   if (scoped.length) {
     const detail = await get(`/analysis/warnings/${scoped[0].id}`, { token: auditor })
-    check('本科室事件详情保持原数值和维度', detail.actualValue === scoped[0].actualValue && String(detail.comparisonContext.dimensionSnapshot.out_dept_code) === '16', detail)
+    check('本科室事件详情保持原数值和维度', detail.actualValue === scoped[0].actualValue && String(detail.comparisonContext.dimensionSnapshot.出院科室) === '16', detail)
   } else check(`${rule.mode}不把总体或其他科室事件充作本科室事件`, !expected.length)
   await save(`预警${rule.mode}科室隔离`, { rule, scoped, expected })
 })

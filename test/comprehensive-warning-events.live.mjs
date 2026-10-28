@@ -25,9 +25,10 @@ if (mode === '触发') await run('真实预警评估及通知闭环', async () =
   state.eventTest.rules = []; state.eventTest.round = (state.eventTest.round || 0) + 1
   const attempt = `${tag}_${state.eventTest.round}`; await checkpoint()
   try {
-    const sourceVersion = await get('/indicator-versions/102027642460761114')
-    const indicator = state.eventTest.indicator || await api('POST', '/indicators', { code: `${tag}_I`, name: '全量验收预警闭环住院死亡率', category: 'QUALITY', unit: '%' })
-    const version = indicator.versionId ? await get(`/indicator-versions/${indicator.versionId}`) : await api('POST', `/indicators/${indicator.id}/versions`, { formula: sourceVersion.formula, dimensionGrain: [], drillPaths: sourceVersion.drillConfig.drillPaths, dataOwnership: { mode: 'DEPARTMENT', departmentFieldCode: 'OUT_DEPT_CODE' } })
+    const sourceVersion = await get('/indicator-versions/102027642467600364')
+    const indicator = state.eventTest.indicator || rows(await get(`/indicators?code=${tag}_I&size=100`)).find(i => i.code === `${tag}_I`) || await api('POST', '/indicators', { code: `${tag}_I`, name: '全量验收预警闭环住院死亡率', category: 'QUALITY', unit: '%' })
+    state.eventTest.indicator = indicator; await checkpoint()
+    const version = indicator.versionId ? await get(`/indicator-versions/${indicator.versionId}`) : await api('POST', `/indicators/${indicator.id}/versions`, { calculationMode: 'TEMPORAL', formula: sourceVersion.formula, dimensionGrain: [], drillPaths: sourceVersion.drillConfig.drillPaths.map(({ levels, ...selection }) => selection), factorDimensionBindings: sourceVersion.drillConfig.factorDimensionBindings })
     state.eventTest.indicator = { ...indicator, versionId: version.id }; await checkpoint()
     const query = { periodStart: '2026-01-01T00:00:00', periodEnd: '2026-02-01T00:00:00', parameters: {} }
     if (version.status !== 'PUBLISHED') {
@@ -41,9 +42,9 @@ if (mode === '触发') await run('真实预警评估及通知闭环', async () =
     const schedules = rows(await get('/calc/schedules')).filter(s => s.ownerVersionId === version.id)
     for (const schedule of schedules) if (schedule.status !== 'PAUSED') await api('PATCH', `/calc/schedules/${schedule.id}/status`, { enabled: false })
     const options = await get(`/analysis/warning-rules/scope-options?indicatorVersionId=${version.id}`)
-    const department = options.find(o => o.targetCode.endsWith(':OUT_DEPT'))
+    const department = options.find(o => o.dimensions?.length === 1 && o.dimensions.includes('出院科室'))
     assert.ok(department)
-    const scopeCases = [{ mode: 'MAIN' }, { mode: 'GROUPED', targetCode: department.targetCode, dimensions: department.dimensions, members: { OUT_DEPT_CODE: ['16'] } }, { mode: 'ALL' }]
+    const scopeCases = [{ mode: 'MAIN' }, { mode: 'GROUPED', targetCode: department.targetCode, dimensions: department.dimensions, members: { 出院科室: ['16'] } }, { mode: 'ALL' }]
     for (const [index, scope] of scopeCases.entries()) {
       const condition = { logic: 'OR', children: [{ logic: 'AND', children: [{ operator: 'GT', threshold: '0' }, { logic: 'NOT', children: [{ operator: 'GTE', threshold: '1' }] }] }, { operator: 'EQ', threshold: '0.25' }] }
       let rule = await api('POST', '/analysis/warning-rules', { code: `${attempt}_R${index}`, name: `全量验收${['总体', '呼吸科分组', '全部'][index]}死亡率预警`, warningType: 'THRESHOLD', indicatorVersionId: version.id, periodType: 'MONTHLY', severity: ['LOW', 'HIGH', 'CRITICAL'][index], scopePolicy: { includeNoScenario: true, resultScope: scope }, condition, notificationPolicy: { channels: ['IN_APP'], recipientUsernames: [username] }, effectiveStartDate: '2026-01-01', effectiveEndDate: '2026-01-31' })
@@ -74,10 +75,11 @@ if (mode === '触发') await run('真实预警评估及通知闭环', async () =
       }
       const expected = dbResults.filter(row => {
         const d = JSON.parse(row.dimensions), value = Number(row.value)
-        return ((value > 0 && value < 1) || value === 0.25) && (rule.mode === 'ALL' || (rule.mode === 'MAIN' ? Object.keys(d).length === 0 : row.target === department.targetCode && d.out_dept_code === '16'))
+        return ((value > 0 && value < 1) || value === 0.25) && (rule.mode === 'ALL' || (rule.mode === 'MAIN' ? Object.keys(d).length === 0 : row.target === department.targetCode && d.出院科室 === '16'))
       })
       const own = allEvents.filter(event => dbResults.some(r => r.id === event.indicatorResultId))
-      check(`${rule.mode}命中数量和全部匹配结果一一对应`, own.length === expected.length && own.every(e => expected.some(r => r.id === e.indicatorResultId)), { expected: expected.length, actual: own.length, total: events.total })
+      const expectedGrains = new Set(expected.map(row => JSON.stringify(Object.entries(JSON.parse(row.dimensions)).sort(([a], [b]) => a.localeCompare(b)))))
+      check(`${rule.mode}同周期同维度去重后与匹配结果一一对应`, own.length === expectedGrains.size && own.every(e => expected.some(r => r.id === e.indicatorResultId)), { expected: expectedGrains.size, actual: own.length, total: events.total })
       for (const event of own) {
         const original = expected.find(r => r.id === event.indicatorResultId)
         assert.ok(original, '事件必须对应本次预期命中的计算结果')

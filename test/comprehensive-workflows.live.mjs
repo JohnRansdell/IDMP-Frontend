@@ -4,27 +4,27 @@ import { api, get, rows, state, save, checkpoint, check, run, reject, sql, close
 
 const mode = process.argv[2], tag = `${state.tag}_EXT`
 if (mode === '映射') for (let index = 0; index < 3; index++) await run(`指标映射完整审核${index + 1}`, async () => {
-  const source = state.indicators[index], template = await get(`/indicator-versions/${state.indicators[(index + 1) % 3].versionId}`)
-  const indicator = rows(await get(`/indicators?code=${tag}_MT${index}&size=100`)).find(i => i.code === `${tag}_MT${index}`) || await api('POST', '/indicators', { code: `${tag}_MT${index}`, name: `全量验收独立映射目标${index + 1}`, category: 'QUALITY' })
-  const versions = rows(await get(`/indicators/${indicator.id}/versions`))
-  const version = versions[0] || await api('POST', `/indicators/${indicator.id}/versions`, { calculationMode: 'STATIC', dimensionGrain: [], drillPaths: [], formula: template.formula })
-  if (version.status !== 'PUBLISHED') {
-    const compilation = await api('POST', `/indicator-versions/${version.id}/formula/compile`, { resourceVersion: version.version })
-    assert.ok(['VALID', 'VALID_WITH_WARNINGS'].includes(compilation.status))
-    const trial = await api('POST', `/indicator-versions/${version.id}/trial`, { parameters: {} })
-    await poll(`/async-tasks/${trial.taskId}`)
-    await api('POST', `/indicator-versions/${version.id}/publish`, {})
-  }
-  const target = { ...indicator, versionId: version.id }
+  const source = state.indicators[index], target = state.indicators[(index + 1) % 3]
+  const version = await get(`/indicator-versions/${target.versionId}`)
+  assert.equal(version.status, 'PUBLISHED')
   const policy = await get(`/meta/policy-files/${state.policies[index].id}`)
   if (!rows(await get(`/mappings/indicator-versions/${version.id}/policy-references`)).length)
     await api('POST', `/mappings/indicator-versions/${version.id}/policy-references`, { policyFileVersionId: policy.policyFile.currentPublishedVersionId, relationRole: 'SOURCE', citationText: '全量验收独立口径来源' })
   const compare = await get(`/mappings/compare?sourceIndicatorVersionId=${source.versionId}&targetIndicatorVersionId=${target.versionId}`)
   check(`映射${index + 1}冻结源目标公式不同`, !isDeepStrictEqual(compare.sourceSnapshot, compare.targetSnapshot))
   const group = rows(await get(`/mappings/groups?size=100`)).find(g => g.code === `${tag}_G${index}`)
-    || await api('POST', '/mappings/groups', { code: `${tag}_G${index}`, name: fixtureName(`全量验收费用口径映射组${index + 1}`), canonicalIndicatorVersionId: source.versionId })
+    || await api('POST', '/mappings/groups', { code: `${tag}_G${index}`, name: fixtureName(`出院统计口径比较验收组${['一', '二', '三'][index]}`), canonicalIndicatorVersionId: source.versionId })
   const existingMapping = rows(await get(`/mappings?size=100`)).find(m => m.code === `${tag}_MR${index}`)
-  let detail = existingMapping ? await get(`/mappings/${existingMapping.id}`) : await api('POST', '/mappings', { code: `${tag}_MR${index}`, name: `全量验收指标口径关联复核${index + 1}`, groupId: group.id, targetIndicatorVersionId: target.versionId, mappingType: 'SAME_CONCEPT', comparability: 'NOT_COMPARABLE', evidence: { description: '费用比例、每人次费用和每百人次费用口径不同，不允许直接比较' } })
+  if (index === 2) {
+    await reject('已作为其他语义组基准的指标不能重复归入新组', 'POST', '/mappings', { name: '出院统计交叉语义组拒绝验收', groupId: group.id, targetIndicatorVersionId: target.versionId, mappingType: 'SAME_CONCEPT', comparability: 'NOT_COMPARABLE' }, [409])
+    check('交叉归组失败不篡改原基准版本', rows(await get('/mappings/groups?size=100')).some(item => item.canonicalIndicator?.indicatorVersionId === target.versionId && item.id !== group.id))
+    return
+  }
+  if (existingMapping?.publicationStatus === 'INVALIDATED' || existingMapping?.reviewStatus === 'INVALIDATED') {
+    check(`映射${index + 1}已完成的失效记录可重复复核`, !rows(await get(`/mappings/by-indicator-version/${source.versionId}`)).some(row => row.id === existingMapping.id))
+    return
+  }
+  let detail = existingMapping ? await get(`/mappings/${existingMapping.id}`) : await api('POST', '/mappings', { code: `${tag}_MR${index}`, name: `出院统计口径关联复核${['一', '二', '三'][index]}`, groupId: group.id, targetIndicatorVersionId: target.versionId, mappingType: 'SAME_CONCEPT', comparability: 'NOT_COMPARABLE', evidence: { description: '男性出院占比、非男性出院人次和人均药品费用的公式及单位不同，不允许直接比较' } })
   const id = detail.mapping.id
   state.mappings ||= []; state.mappings.push({ id, groupId: group.id }); await checkpoint()
   await reject(`映射${index + 1}草稿不可直接批准`, 'POST', `/mappings/${id}/approve`, { resourceVersion: detail.mapping.resourceVersion, comment: '全量验收非法跳转' })
@@ -105,7 +105,7 @@ if (mode === '取消重试') for (const [index, month] of [1, 2, 3].entries()) a
     check(`${month}月取消后重试递增尝试次数`, batch.targets.flatMap(t => t.nodes).some(n => Number(n.attemptNo) >= 2))
   } else check(`${month}月完成先于取消时不破坏成功`, batch.status === 'SUCCEEDED')
   const result = await get(`/factor-versions/${version}/trials/${trial.batchId}/results?page=1&size=100`)
-  const source = (await sql('SOURCE', `SELECT COUNT(*) FROM vmq_basicinformationba WHERE sex='1' AND out_date>='2026-0${month}-01' AND out_date<'2026-0${month + 1}-01'`, ['value']))[0]
+  const source = (await sql('SOURCE', `SELECT COUNT(*) FROM vmq_basicinformationba WHERE out_date>='2026-0${month}-01' AND out_date<'2026-0${month + 1}-01'`, ['value']))[0]
   check(`${month}月重试结果与源库相同`, close(rows(result.results)[0]?.valueDecimal, source.value), { result, source })
   await reject(`${month}月成功节点不能重试`, 'POST', `/calc/nodes/${batch.targets[0].nodes.find(n => n.nodeType === 'FACTOR').nodeId}/retry`, {}, [409])
   await api('POST', `/calc/batches/${trial.batchId}/cancel`, {})
