@@ -43,7 +43,8 @@ try {
     ['2026-02-03', '2026-03-07', values[1], '2026-03-08'],
     ['2026-01-01', '2026-03-31', values[2], '2026-04-01']
   ]) {
-    await panel.locator('.report-period-picker').hover()
+    await page.mouse.move(0, 0)
+    await dates.nth(0).hover()
     const clear = panel.locator('.el-range__close-icon')
     if (await dates.nth(0).inputValue()) await clear.click()
     await dates.nth(0).fill(start)
@@ -53,7 +54,7 @@ try {
     await parameter.fill(code)
     assert.ok(await parameter.isVisible())
     const pending = page.waitForResponse(response => response.url().includes('/instant-summary') && response.request().method() === 'POST', { timeout: 120000 })
-    await panel.getByRole('button', { name: '查询', exact: true }).click()
+    await parameter.press('Enter')
     const response = await pending
     const payload = response.request().postDataJSON()
     assert.deepEqual(payload.parameters, { [parameterCode]: code })
@@ -74,6 +75,30 @@ try {
     }
     console.log(JSON.stringify({ start, end, code, status: response.status(), message: result.message, data: result.data }))
     await page.waitForFunction(() => !document.querySelector('.instant-query-panel .el-button.is-loading'))
+  }
+  if (expectedStatus === 200) {
+    await page.mouse.move(0, 0)
+    await dates.nth(0).hover()
+    await panel.locator('.el-range__close-icon').click()
+    await parameter.fill(values[2])
+    const pending = page.waitForResponse(response => response.url().includes('/instant-summary') && response.request().method() === 'POST', { timeout: 120000 })
+    await parameter.press('Enter')
+    const response = await pending
+    assert.equal(response.status(), 200)
+    const payload = response.request().postDataJSON()
+    const start = await dates.nth(0).inputValue()
+    const end = await dates.nth(1).inputValue()
+    assert.ok(start && end, 'blank range resolves to visible source dates')
+    assert.equal(payload.periodStart, `${start}T00:00:00`)
+    const exclusiveEnd = new Date(`${end}T00:00:00Z`)
+    exclusiveEnd.setUTCDate(exclusiveEnd.getUTCDate() + 1)
+    assert.equal(payload.periodEnd, `${exclusiveEnd.toISOString().slice(0, 10)}T00:00:00`)
+    assert.deepEqual(payload.parameters, { [parameterCode]: values[2] })
+    const result = parseJsonPreservingLargeIntegers(await response.text())
+    assert.equal(result.data.rows[0].value, null)
+    assert.equal(await panel.locator('label').filter({ hasText: /^报告期$/ }).count(), 1)
+    checks.push({ name: '报告期留空后回车按源数据范围查询', start, end, passed: true })
+    console.log(JSON.stringify(checks.at(-1)))
   }
   await page.screenshot({ path: `${folder}/runtime-controls-${indicatorId}.png` })
   assert.deepEqual(errors, [])

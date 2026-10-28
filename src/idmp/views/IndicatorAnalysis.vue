@@ -56,7 +56,7 @@
           <span>源数据可用范围：<strong>{{ availablePeriodText || '暂未获取' }}</strong></span>
         </div>
       </div>
-      <div class="instant-query-panel__controls">
+      <div v-query-enter class="instant-query-panel__controls">
         <div v-if="backendAnalysisGranularity !== 'STATIC'" class="instant-query-panel__period">
           <label>报告期</label>
           <div class="date-range-fields report-period-picker" aria-label="报告期范围">
@@ -79,7 +79,7 @@
         </div>
         <RuntimeParameterFields v-if="indicatorRuntimeParameters.length" v-model="indicatorRuntimeParameterValues" :declarations="indicatorRuntimeParameters" :show-metadata="false" @change="invalidateReportSummary()" />
         <div class="instant-query-panel__actions">
-          <el-button type="primary" :loading="rangeSummaryLoading" :disabled="indicatorRuntimeParameterConflicts.length > 0" @click="applyReportPeriod">查询</el-button>
+          <el-button data-query-submit type="primary" :loading="reportSubmitting || rangeSummaryLoading" :disabled="indicatorRuntimeParameterConflicts.length > 0" @click="applyReportPeriod">查询</el-button>
         </div>
       </div>
       <el-alert v-if="indicatorRuntimeParameterConflicts.length" type="error" show-icon :closable="false" :title="`存在不兼容的同名参数：${indicatorRuntimeParameterConflicts.map(item => item.code).join('、')}`" />
@@ -277,7 +277,7 @@ import { resolvePrimaryAnalysisOverview } from '@/idmp/features/dashboard/visual
 import { buildSqlRuntimeParameterValues, collectSqlRuntimeParameters, validateSqlRuntimeParameterValues } from '@/idmp/api/adapters/sqlImport'
 import { exportIndicatorAnalysisPdf } from '@/idmp/api/modules/indicators'
 import { analysisPdfFilename, buildAnalysisPdfReport, downloadAnalysisPdf, renderAnalysisChartPng } from '@/idmp/features/analysis/pdfReport'
-import { formatPeriodLabel, analysisReportContext, resolveReportPeriod, reportPeriodQuery, normalizeAnalysisGranularity, shiftReportDate, analysisFilterParams, analysisFilters, analysisRouteKey } from '@/idmp/features/analysis/reportPeriod.js'
+import { formatPeriodLabel, analysisReportContext, resolveReportPeriod, reportPeriodQuery, normalizeAnalysisGranularity, shiftReportDate, analysisFilterParams, analysisFilters, analysisRouteKey, sourceAvailableReportRange } from '@/idmp/features/analysis/reportPeriod.js'
 import { formatResultPeriod, formatResultPeriodField } from '@/idmp/utils/periodRange.js'
 import { buildReportSummaryRequest } from '@/idmp/features/analysis/reportQuery.js'
 import { createRequestScope, useLatestResult } from '@/idmp/features/analysis/useLatestResult.js'
@@ -302,6 +302,7 @@ const reportSelection = computed(() => resolveReportPeriod(reportPeriodRange.val
   reportGranularity.value === 'STATIC' ? 'STATIC' : reportSummaryGranularity.value,
   { parameters: buildSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value) }))
 const reportDirty = ref(false)
+const reportSubmitting = ref(false)
 const reportFilterParams = computed(() => analysisFilterParams(route.query))
 const reportFilters = computed(() => analysisFilters(route.query))
 const hasReportFilters = computed(() => Object.keys(reportFilters.value).length > 0)
@@ -755,21 +756,35 @@ function switchIndicatorAnalysis() {
 }
 
 async function applyReportPeriod() {
+  if (reportSubmitting.value || rangeSummaryLoading.value) return
   if (!currentIndicatorVersionId.value) return ElMessage.warning('当前指标没有可查询的已发布版本')
   const temporal = backendAnalysisGranularity.value !== 'STATIC'
-  if (temporal) {
-    if (!validateOptionalDateRange(reportPeriodRange.value, '报告期')) return
-    if (!isCompleteDateRange(reportPeriodRange.value)) return ElMessage.warning('请选择完整的报告期范围')
-  }
+  if (temporal && !validateOptionalDateRange(reportPeriodRange.value, '报告期')) return
   const parameterMessage = validateSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)
   if (parameterMessage) return ElMessage.warning(parameterMessage)
-  const query = { ...route.query, ...reportPeriodQuery({ ...reportSelection.value, granularity: backendAnalysisGranularity.value }) }
-  if (temporal && analysisRouteKey(query) !== analysisRouteKey(route.query)) {
-    reportSummaryGranularity.value = reportSelection.value.summaryGranularity
-    localReportRouteKey = analysisRouteKey(query)
-    await router.replace({ path: '/analysis', query })
+  reportSubmitting.value = true
+  try {
+    if (temporal && !isCompleteDateRange(reportPeriodRange.value)) {
+      const versionId = currentIndicatorVersionId.value
+      const availability = availablePeriod.value || await fetchIndicatorAvailablePeriod(versionId)
+      if (currentIndicatorVersionId.value !== versionId || reportPeriodRange.value?.some(Boolean)) return
+      const range = sourceAvailableReportRange(availability)
+      if (!range.length) return ElMessage.warning('暂未取得可用的源数据时间范围，请稍后重试或手动选择报告期')
+      reportPeriodRange.value = range
+      reportSummaryGranularity.value = 'CUSTOM'
+    }
+    const query = { ...route.query, ...reportPeriodQuery({ ...reportSelection.value, granularity: backendAnalysisGranularity.value }) }
+    if (temporal && analysisRouteKey(query) !== analysisRouteKey(route.query)) {
+      reportSummaryGranularity.value = reportSelection.value.summaryGranularity
+      localReportRouteKey = analysisRouteKey(query)
+      await router.replace({ path: '/analysis', query })
+    }
+    await loadRangeSummary()
+  } catch (error) {
+    ElMessage.error(error?.message || '查询条件暂时无法读取，请稍后重试')
+  } finally {
+    reportSubmitting.value = false
   }
-  void loadRangeSummary()
 }
 
 async function loadRangeSummary() {

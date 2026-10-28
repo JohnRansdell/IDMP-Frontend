@@ -1,4 +1,5 @@
 import { createAccessDirective } from '@/idmp/auth/accessDirective.js'
+import { queryEnterDirective } from '@/idmp/utils/queryEnter.js'
 import { createApp } from 'vue'
 import { canRequest } from '@/idmp/auth/session'
 import ElementPlus from 'element-plus'
@@ -13,6 +14,7 @@ const app = createApp(App)
 app.config.globalProperties.$can = canRequest
 // Explicitly annotated actions follow live session grants; the API remains the security boundary.
 app.directive('access', createAccessDirective(canRequest))
+app.directive('query-enter', queryEnterDirective)
 
 app.use(router)
 app.use(ElementPlus, {

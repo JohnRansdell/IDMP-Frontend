@@ -5,7 +5,7 @@
       <template #actions><div class="page-toolbar"><el-button @click="load">刷新</el-button><el-button v-access="'factorTemplate.create'" v-if="canManageTemplates" type="primary" @click="router.push('/factor/templates/new')">新建模板</el-button></div></template>
     </PageHeader>
     <section class="surface-card filter-card template-filter" aria-label="因子模板筛选">
-      <el-form :inline="true" @submit.prevent="load">
+      <el-form v-query-enter :inline="true" @submit.prevent="load">
 
         <el-form-item><el-input v-model.trim="filters.name" class="filter-name" placeholder="模板名称" clearable /></el-form-item>
         <el-form-item><el-select v-model="filters.publicationStatus" class="filter-select filter-select--small" placeholder="发布状态" clearable><el-option label="草稿" value="DRAFT" /><el-option label="已发布" value="PUBLISHED" /></el-select></el-form-item>

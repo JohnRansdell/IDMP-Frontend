@@ -47,7 +47,7 @@
     </StatePanel>
 
     <section class="surface-card filter-card">
-        <el-form :model="filters" aria-label="指标筛选">
+        <el-form v-query-enter :model="filters" aria-label="指标筛选" @submit.prevent="applyFilters">
 
           <el-form-item>
             <el-input
@@ -106,7 +106,7 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :icon="Search" @click="applyFilters">查询</el-button>
+          <el-button type="primary" :icon="Search" native-type="submit">查询</el-button>
           <el-button :icon="RefreshLeft" @click="resetFilters">重置</el-button>
         </el-form-item>
       </el-form>

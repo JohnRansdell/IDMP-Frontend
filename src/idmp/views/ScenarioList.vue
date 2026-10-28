@@ -7,7 +7,7 @@
     </PageHeader>
 
     <section class="surface-card filter-card scenario-filter" aria-label="场景筛选">
-      <el-form :inline="true" @submit.prevent="load">
+      <el-form v-query-enter :inline="true" @submit.prevent="load">
 
         <el-form-item><el-input v-model.trim="filters.name" class="filter-name" clearable placeholder="场景名称" /></el-form-item>
         <el-form-item><el-select v-model="filters.type" class="filter-select" clearable placeholder="场景类型">

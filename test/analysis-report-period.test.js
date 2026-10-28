@@ -3,9 +3,19 @@ import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { buildSqlRuntimeParameterValues } from '../src/idmp/api/adapters/sqlImport.js'
 import { buildReportSummaryRequest } from '../src/idmp/features/analysis/reportQuery.js'
-import { resolveReportPeriod, analysisReportContext, reportPeriodQuery, analysisFilters } from '../src/idmp/features/analysis/reportPeriod.js'
+import { resolveReportPeriod, analysisReportContext, reportPeriodQuery, analysisFilters, sourceAvailableReportRange } from '../src/idmp/features/analysis/reportPeriod.js'
 
 const source = await readFile(new URL('../src/idmp/views/IndicatorAnalysis.vue', import.meta.url), 'utf8')
+
+test('an omitted report period uses actual inclusive source dates, not rounded months or invented bounds', () => {
+  assert.deepEqual(sourceAvailableReportRange({ earliestDataDate: '2025-09-03', latestDataDate: '2026-04-06' }), ['2025-09-03', '2026-04-06'])
+  assert.deepEqual(sourceAvailableReportRange({ earliestDataDate: '2026-04-06T08:00:00', latestDataDate: '2026-04-06T23:59:59' }), ['2026-04-06', '2026-04-06'])
+  for (const availability of [null, {}, { earliestDataDate: '2026-01-01' }, { earliestDataDate: '2026-04-01', latestDataDate: '2026-01-01' }]) {
+    assert.deepEqual(sourceAvailableReportRange(availability), [])
+  }
+  assert.match(source, /sourceAvailableReportRange\(availability\)/)
+  assert.doesNotMatch(source, /if \(!isCompleteDateRange\(reportPeriodRange.value\)\) return ElMessage.warning/)
+})
 
 function page(range, granularity = 'CUSTOM') {
   const state = {

@@ -12,7 +12,7 @@
     <el-tabs v-model="activePane" @tab-change="refreshCurrent">
       <el-tab-pane label="映射关系" name="mappings">
         <section class="surface-card filter-card">
-          <el-form :model="filters" label-width="96px" class="mapping-form" @submit.prevent="loadMappings">
+          <el-form v-query-enter :model="filters" label-width="96px" class="mapping-form" @submit.prevent="loadMappings">
             <div class="mapping-filter">
             <el-form-item label="语义组"><el-select v-model="filters.groupId" clearable filterable placeholder="全部语义组"><el-option v-for="group in groups" :key="group.id" :label="group.name || '未命名语义组'" :value="String(group.id)" /></el-select></el-form-item>
             <el-form-item label="政策文件">

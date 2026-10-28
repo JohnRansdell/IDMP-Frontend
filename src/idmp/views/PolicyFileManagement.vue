@@ -5,7 +5,7 @@
       <template #actions><el-button v-access="'policy.create'" type="primary" :icon="Upload" @click="newPolicy">新建政策文件</el-button></template>
     </PageHeader>
     <section class="surface-card policy-filter-card" aria-label="政策文件筛选">
-      <form class="policy-filters" @submit.prevent="search">
+      <form v-query-enter class="policy-filters" @submit.prevent="search">
         <el-input v-model.trim="filters.name" clearable placeholder="政策文件名称" aria-label="政策文件名称" />
         <el-select v-model="filters.status" clearable placeholder="全部状态" aria-label="发布状态"><el-option label="草稿" value="DRAFT" /><el-option label="已发布" value="PUBLISHED" /></el-select>
         <div class="policy-filter-actions"><el-button type="primary" native-type="submit" :icon="Search">查询</el-button><el-button :icon="Refresh" @click="reset">重置</el-button></div>

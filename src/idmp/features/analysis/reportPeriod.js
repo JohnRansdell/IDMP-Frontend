@@ -1,4 +1,9 @@
 const FORMAL_GRAINS = ['MONTHLY', 'QUARTERLY', 'YEARLY']
+export function sourceAvailableReportRange(availability) {
+  const range = [availability?.earliestDataDate, availability?.latestDataDate].map(value => String(value || '').slice(0, 10))
+  return range.every(value => /^\d{4}-\d{2}-\d{2}$/.test(value)) && range[0] <= range[1] ? range : []
+}
+
 export function formatPeriodLabel(periodStart, periodEnd) {
   const start = String(periodStart || '').slice(0, 10)
   const end = String(periodEnd || '').slice(0, 10)

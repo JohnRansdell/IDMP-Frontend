@@ -28,7 +28,7 @@
     </PageHeader>
 
     <section class="surface-card filter-card factor-filter" aria-label="因子筛选">
-      <el-form :inline="true" @submit.prevent="applyFilters">
+      <el-form v-query-enter :inline="true" @submit.prevent="applyFilters">
 
         <el-form-item>
           <el-input
@@ -37,7 +37,6 @@
             clearable
             placeholder="因子名称"
             aria-label="按因子名称筛选"
-            @keyup.enter="applyFilters"
           />
         </el-form-item>
         <el-form-item>

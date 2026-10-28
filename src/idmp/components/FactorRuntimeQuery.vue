@@ -11,7 +11,7 @@
       <StatePanel v-if="schemaLoading" type="loading" title="正在读取运行参数" />
       <el-alert v-if="schemaError" :title="schemaError" type="error" :closable="false"><el-button @click="load">重试</el-button></el-alert>
       <template v-if="!schemaLoading && !schemaError">
-        <div class="query-controls">
+        <div v-query-enter class="query-controls">
           <div v-if="calculationMode === 'TEMPORAL'" class="query-period">
             <label>查询周期</label>
             <el-date-picker v-model="period" type="datetimerange" value-format="YYYY-MM-DDTHH:mm:ss" range-separator="至" start-placeholder="开始时间" end-placeholder="结束时间" aria-label="因子查询周期" :disabled="recommendationLoading" />
@@ -19,7 +19,7 @@
           <RuntimeParameterFields v-if="declarations.length" v-model="values" :declarations="declarations" :show-metadata="false" />
           <span v-else-if="calculationMode !== 'TEMPORAL'" class="query-empty-parameters">无需填写运行参数</span>
           <div class="query-actions">
-            <el-button type="primary" :loading="queryLoading" :disabled="recommendationLoading" @click="runQuery">查询</el-button>
+            <el-button data-query-submit type="primary" :loading="queryLoading" :disabled="recommendationLoading" @click="runQuery">查询</el-button>
           </div>
         </div>
         <span v-if="recommendationLoading" class="query-status">正在读取推荐周期</span>

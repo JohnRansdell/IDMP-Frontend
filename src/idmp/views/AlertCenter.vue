@@ -9,7 +9,7 @@
     <el-tabs v-model="activeTab" @tab-change="refreshCurrent">
       <el-tab-pane label="预警事件" name="events">
         <section class="surface-card filter-card">
-          <el-form :model="eventFilters" inline @submit.prevent="loadEvents">
+          <el-form v-query-enter :model="eventFilters" inline @submit.prevent="loadEvents">
             <el-form-item label="预警规则"><ResourceReferenceSelect v-model="eventFilters.ruleId" kind="RULE" placeholder="请选择预警规则" /></el-form-item>
             <el-form-item label="指标版本"><el-select v-model="eventFilters.indicatorVersionId" class="indicator-filter" clearable filterable><el-option v-for="item in indicatorVersions" :key="item.id" :label="indicatorLabel(item)" :value="item.id" /></el-select></el-form-item>
             <el-form-item label="状态"><el-select v-model="eventFilters.status" aria-label="事件状态" clearable><el-option v-for="item in WARNING_EVENT_STATUSES" :key="item" :label="warningLabel(item)" :value="item" /></el-select></el-form-item>
@@ -45,7 +45,7 @@
 
       <el-tab-pane label="预警规则" name="rules">
         <section class="surface-card filter-card">
-          <el-form :model="ruleFilters" inline @submit.prevent="loadRules">
+          <el-form v-query-enter :model="ruleFilters" inline @submit.prevent="loadRules">
 
             <el-form-item label="名称"><el-input v-model.trim="ruleFilters.name" /></el-form-item>
             <el-form-item label="是否启用"><el-select v-model="ruleFilters.enableStatus" aria-label="规则是否启用" clearable><el-option label="已启用" value="ENABLED" /><el-option label="未启用" value="DISABLED" /></el-select></el-form-item>

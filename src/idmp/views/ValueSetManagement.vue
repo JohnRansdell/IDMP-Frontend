@@ -6,9 +6,9 @@
     </PageHeader>
 
     <section class="surface-card filter-card value-set-filter" aria-label="值集筛选">
-      <el-form :inline="true" @submit.prevent="loadValueSets">
+      <el-form v-query-enter :inline="true" @submit.prevent="loadValueSets">
 
-        <el-form-item><el-input v-model="filters.name" class="filter-name" clearable placeholder="值集名称" @keyup.enter="loadValueSets" /></el-form-item>
+        <el-form-item><el-input v-model="filters.name" class="filter-name" clearable placeholder="值集名称" /></el-form-item>
         <el-form-item><el-select v-model="filters.status" class="filter-select filter-select--small" clearable placeholder="状态">
           <el-option label="草稿" value="DRAFT" /><el-option label="已发布" value="PUBLISHED" />
         </el-select></el-form-item>

@@ -75,7 +75,7 @@ FROM level4 l4 CROSS JOIN total t;</code></pre>
       <div class="action-bar"><el-button type="primary" :loading="metadataLoading" @click="submitMetadata">确认元数据并进入试算</el-button></div>
     </template>
 
-    <section v-if="canTrial || isSucceeded" class="surface-card section runtime-query-section">
+    <section v-query-enter v-if="canTrial || isSucceeded" class="surface-card section runtime-query-section">
       <div class="section-heading runtime-query-heading"><div><h2>{{ isSucceeded ? '运行条件与即时查询' : '3. 导入试算' }}</h2><span>{{ runtimeConditionHint }}</span></div></div>
       <el-alert v-if="parameterConflicts.length" class="condition-alert" type="error" :closable="false" show-icon :title="`存在不兼容的同名参数：${parameterConflicts.map(item => item.code).join('、')}`" description="同名参数在所有因子中的类型、必填性和模式必须一致。" />
       <div v-if="hasTemporalFactors || runtimeParameters.length" class="runtime-conditions">
@@ -104,8 +104,8 @@ FROM level4 l4 CROSS JOIN total t;</code></pre>
       <div class="runtime-query-toolbar">
         <el-button v-if="canTrial" type="primary" :loading="trialLoading" @click="runTrial">发起试算</el-button>
         <div v-else class="query-actions">
-          <div v-if="publishedFactors.length" class="factor-query-actions"><el-select v-model="selectedFactorVersionId" placeholder="选择因子" aria-label="选择即时查询因子"><el-option v-for="factor in publishedFactors" :key="factor.factorVersionId" :label="factor.factorName || factor.key || '未命名因子'" :value="factor.factorVersionId" /></el-select><el-button :loading="runtimeQueryLoading" @click="runRuntimeQuery('FACTOR')">查询因子</el-button></div>
-          <el-button v-if="importTask.result?.indicatorVersionId" type="primary" :loading="runtimeQueryLoading" @click="runRuntimeQuery('INDICATOR')">查询指标</el-button>
+          <div v-if="publishedFactors.length" class="factor-query-actions"><el-select v-model="selectedFactorVersionId" placeholder="选择因子" aria-label="选择即时查询因子"><el-option v-for="factor in publishedFactors" :key="factor.factorVersionId" :label="factor.factorName || factor.key || '未命名因子'" :value="factor.factorVersionId" /></el-select><el-button :data-query-submit="importTask.result?.indicatorVersionId ? undefined : ''" :loading="runtimeQueryLoading" @click="runRuntimeQuery('FACTOR')">查询因子</el-button></div>
+          <el-button v-if="importTask.result?.indicatorVersionId" data-query-submit type="primary" :loading="runtimeQueryLoading" @click="runRuntimeQuery('INDICATOR')">查询指标</el-button>
         </div>
       </div>
       <div v-if="runtimeQueryResult" class="runtime-result"><div class="result-summary"><strong>即时查询结果</strong><el-tag :type="runtimeQueryResult.executionMode === 'AD_HOC_SOURCE' ? 'warning' : 'success'">{{ runtimeQueryResult.executionMode === 'AD_HOC_SOURCE' ? '按源数据计算' : '正式结果' }}</el-tag><span v-for="(value, code) in runtimeQueryResult.parameterSnapshot || {}" :key="code">{{ runtimeParameters.find(item => item.code === code)?.displayName || code }}：{{ formatRuntimeCell(value) }}</span></div><el-table :data="runtimeQueryResult.rows || []" border max-height="360" empty-text="当前条件没有结果"><el-table-column v-for="column in runtimeResultColumns" :key="column" :prop="column" :label="column" min-width="140"><template #default="{ row }">{{ formatRuntimeCell(formatResultPeriodField(column, row[column])) }}</template></el-table-column></el-table></div>

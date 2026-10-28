@@ -23,18 +23,18 @@
           </div>
         </div>
         <div class="query-controls">
-          <el-form label-position="top" @submit.prevent="loadTask">
+          <el-form v-query-enter label-position="top" @submit.prevent="loadTask">
             <el-form-item label="异步任务 ID">
               <el-input v-model.trim="queryForm.taskId" class="mono-input" placeholder="输入完整任务 ID" />
             </el-form-item>
-            <el-button :loading="taskLoading" @click="loadTask">查询任务</el-button>
+            <el-button :loading="taskLoading" native-type="submit">查询任务</el-button>
           </el-form>
-          <el-form label-position="top" @submit.prevent="loadBatch">
+          <el-form v-query-enter label-position="top" @submit.prevent="loadBatch">
             <el-form-item label="计算批次 ID">
               <el-input v-model.trim="queryForm.batchId" class="mono-input" placeholder="输入完整批次 ID" />
             </el-form-item>
             <div class="query-actions">
-              <el-button :loading="batchLoading" @click="loadBatch">查询批次</el-button>
+              <el-button :loading="batchLoading" native-type="submit">查询批次</el-button>
               <el-button
                 type="danger"
                 plain

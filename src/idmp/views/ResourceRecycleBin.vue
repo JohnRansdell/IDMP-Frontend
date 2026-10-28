@@ -5,7 +5,7 @@
       <template #actions><el-button @click="router.back()">返回{{ resourceLabel }}管理</el-button></template>
     </PageHeader>
     <section class="surface-card filter-card">
-      <el-form :inline="true" @submit.prevent="load">
+      <el-form v-query-enter :inline="true" @submit.prevent="load">
 
         <el-form-item><el-input v-model.trim="filters.name" placeholder="名称" clearable /></el-form-item>
         <el-form-item><el-button type="primary" native-type="submit">查询</el-button></el-form-item>
