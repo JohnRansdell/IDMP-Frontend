@@ -3,7 +3,7 @@
     <el-alert :title="published ? '可查看已保存的政策来源和依据；已保存依据为只读，调整时请创建新的指标草稿版本。' : '至少选择一份政策来源。每份文件可展开补充章节和依据说明，留空不影响发布；草稿内容仅在当前浏览器暂存，发布后保存。'" type="info" :closable="false" show-icon />
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <div class="source-toolbar"><strong>政策来源与依据</strong><el-button :loading="loading" :disabled="saving" @click="loadReferences">刷新已保存来源</el-button></div>
-    <el-select ref="sourceSelect" :model-value="pendingIds" multiple filterable remote :remote-method="search" :loading="searching" :disabled="saving" aria-label="政策文件来源" placeholder="搜索并选择来源政策，可多选" @update:model-value="selectSources" @visible-change="visible => visible && search('')">
+    <el-select default-first-option ref="sourceSelect" :model-value="pendingIds" multiple filterable remote :remote-method="search" :loading="searching" :disabled="saving" aria-label="政策文件来源" placeholder="搜索并选择来源政策，可多选" @update:model-value="selectSources" @visible-change="visible => visible && search('')">
       <el-option v-for="option in options" :key="option.id" :value="String(option.id)" :label="`${option.policyFileName} · 版本 ${option.versionNo}`" :disabled="savedIds.includes(String(option.id))" />
     </el-select>
     <p>已保存来源 {{ sourceReferences.length }} 项，待保存来源 {{ modelValue.length }} 项。文件名称及文号自动读取，无需重复填写。</p>

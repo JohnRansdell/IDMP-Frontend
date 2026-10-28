@@ -1,5 +1,5 @@
 <template>
-  <el-select :model-value="modelValue" filterable clearable placeholder="选择字段" @update:model-value="$emit('update:modelValue', $event)">
+  <el-select default-first-option :model-value="modelValue" filterable clearable placeholder="选择字段" @update:model-value="$emit('update:modelValue', $event)">
     <el-option v-for="field in fields" :key="field.code" :label="fieldOptionLabel(field)" :value="field.code" />
   </el-select>
 </template>

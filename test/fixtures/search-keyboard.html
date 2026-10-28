@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>候选选择键盘验收</title></head>
+<body><div id="app"></div><script type="module">
+import { createApp } from 'vue'
+import ElementPlus from 'element-plus'
+import 'element-plus/dist/index.css'
+import '/src/idmp/styles/searchSelection.scss'
+import Fixture from './SearchKeyboardFixture.vue'
+import { queryEnterDirective } from '/src/idmp/utils/queryEnter.js'
+createApp(Fixture).use(ElementPlus).directive('query-enter', queryEnterDirective).mount('#app')
+</script></body>
+</html>

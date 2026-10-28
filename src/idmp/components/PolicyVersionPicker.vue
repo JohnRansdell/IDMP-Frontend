@@ -1,5 +1,5 @@
 <template>
-  <el-select :model-value="modelValue" filterable remote :remote-method="search" :loading="loading"
+  <el-select default-first-option :model-value="modelValue" filterable remote :remote-method="search" :loading="loading"
     placeholder="搜索已发布政策名称" @update:model-value="$emit('update:modelValue', $event)" @visible-change="value => value && search('')">
     <el-option v-for="item in options" :key="item.id" :value="String(item.id)" :label="`${item.policyFileName} · 版本 ${item.versionNo}`" />
   </el-select>

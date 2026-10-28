@@ -22,10 +22,10 @@
           <span class="trend-advanced-help" tabindex="0" aria-label="高级筛选使用说明" @click.stop>说明</span>
         </el-tooltip>
       </template>
-      <div class="trend-advanced-fields">
+      <div v-query-enter class="trend-advanced-fields">
         <div v-for="field in grainFields" :key="field.code" class="trend-grain-field">
           <label :for="`trend-grain-${field.code}`" :title="field.code">{{ field.label }}</label>
-          <el-select
+          <el-select default-first-option
             :id="`trend-grain-${field.code}`"
             :model-value="grain[field.code]"
             @update:model-value="value => updateGrain(field.code, value)"
@@ -42,7 +42,7 @@
           </el-select>
         </div>
         <div class="trend-advanced-actions">
-          <el-button size="small" type="primary" @click="emit('apply')">应用筛选</el-button>
+          <el-button data-query-submit size="small" type="primary" @click="emit('apply')">应用筛选</el-button>
           <el-button size="small" @click="emit('clear-grain')">清空筛选</el-button>
         </div>
       </div>

@@ -8,7 +8,7 @@
     <p v-else-if="!results.length" role="status">{{ emptyMessage }}</p>
     <template v-else>
       <label class="diagnostic-selector">选择正式结果
-        <el-select-v2 v-model="selectedId" :options="options" filterable placeholder="选择报告期内的一条正式结果查看链路" @change="loadTrace" />
+        <el-select-v2 default-first-option v-model="selectedId" :options="options" filterable placeholder="选择报告期内的一条正式结果查看链路" @change="loadTrace" />
       </label>
       <p v-if="traceLoading" role="status">正在读取结果因子与批次…</p>
       <div v-else-if="traceError" class="diagnostic-error" role="status"><span>{{ traceError }}</span><el-button link type="primary" @click="loadTrace">重试</el-button></div>

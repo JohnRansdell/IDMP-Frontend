@@ -43,7 +43,7 @@
                 <el-input v-model="form.shortName" placeholder="用于图表标签的简短名称" />
               </el-form-item>
               <el-form-item label="指标分类" prop="categoryPath">
-                <el-cascader
+                <SearchableCascader
                   v-model="form.categoryPath"
                   class="category-cascader"
                   :options="indicatorCategoryOptions"
@@ -561,6 +561,7 @@ import {
   Upload
 } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
+import SearchableCascader from '@/idmp/components/SearchableCascader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import IndicatorScenarioLinks from '@/idmp/components/IndicatorScenarioLinks.vue'
 import ResultAvailabilityPanel from '@/idmp/components/ResultAvailabilityPanel.vue'

@@ -46,7 +46,7 @@ test('template pages enforce atomic definitions and use a field selector before 
   const read = name => readFileSync(new URL(`../src/idmp/views/${name}.vue`, import.meta.url), 'utf8')
   assert.match(read('FactorTemplateEditor'), /definition-only atomic-only/)
   assert.match(read('FactorEditor'), /props.atomicOnly && isDerived.value/)
-  assert.match(read('FactorTemplateInstantiate'), /el-select v-if="field.isField"/)
+  assert.match(read('FactorTemplateInstantiate'), /el-select\b[^>]*\bv-if="field.isField"/)
   assert.doesNotMatch(read('FactorTemplateInstantiate'), /allow-create/)
   assert.match(read('FactorEditor'), /router.replace\(`\/factor\/templates\//)
 })

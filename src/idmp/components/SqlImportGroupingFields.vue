@@ -19,7 +19,7 @@
         <strong>{{ factor.name || factor.key }}</strong>
         <el-form label-position="top" class="binding-grid">
           <el-form-item v-for="code in requiredFields" :key="code" :label="fieldLabels[code] || code" :data-field-code="code">
-            <el-select :model-value="factor.dimensionBindings?.[code] || ''" filterable clearable :aria-label="`${factor.name || factor.key} ${fieldLabels[code] || code} 物理字段`" placeholder="选择对应的物理字段" @update:model-value="value => updateBinding(factor, code, value)">
+            <el-select default-first-option :model-value="factor.dimensionBindings?.[code] || ''" filterable clearable :aria-label="`${factor.name || factor.key} ${fieldLabels[code] || code} 物理字段`" placeholder="选择对应的物理字段" @update:model-value="value => updateBinding(factor, code, value)">
               <el-option v-for="field in optionsFor(factor)" :key="field.fieldReference" :value="field.fieldReference" :label="fieldLabel(field, factor)" />
             </el-select>
           </el-form-item>

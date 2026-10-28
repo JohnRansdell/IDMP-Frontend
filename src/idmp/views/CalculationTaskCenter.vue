@@ -67,7 +67,7 @@
               </el-select>
             </el-form-item>
             <el-form-item :label="createForm.ownerType === 'INDICATOR' ? '指标' : '因子'">
-              <el-select
+              <el-select default-first-option
                 v-model="createForm.ownerId"
                 class="owner-select"
                 filterable remote clearable
@@ -113,7 +113,7 @@
               </el-select>
             </el-form-item>
             <el-form-item v-if="createForm.ownerType === 'INDICATOR' && ['FULL', 'RECALC'].includes(createForm.batchType)" label="场景版本（可选）">
-              <el-select
+              <el-select default-first-option
                 v-model="createForm.scenarioVersionId"
                 class="scene-version-select"
                 filterable

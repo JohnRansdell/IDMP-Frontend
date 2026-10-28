@@ -27,7 +27,7 @@
         <div class="indicator-heading">
           <div><h2>已关联指标 <span>{{ boundIndicators.length }}</span></h2><p>维护指标版本、必选设置和上报要求。</p></div>
           <div v-if="capabilities.canEdit" class="indicator-add">
-            <el-select v-model="pendingIndicatorId" filterable clearable :disabled="!editable" aria-label="选择待添加指标" placeholder="搜索指标名称，选择已发布版本" :no-data-text="indicatorOptions.length ? '已关联全部可用指标' : '暂无可用的已发布指标'">
+            <el-select default-first-option v-model="pendingIndicatorId" filterable clearable :disabled="!editable" aria-label="选择待添加指标" placeholder="搜索指标名称，选择已发布版本" :no-data-text="indicatorOptions.length ? '已关联全部可用指标' : '暂无可用的已发布指标'">
               <el-option v-for="item in availableIndicatorOptions" :key="optionVersionId(item)" :label="`${item.indicatorName || item.name || '未命名指标'} · V${item.versionNo || '-'}`" :value="optionVersionId(item)" />
             </el-select>
             <el-button type="primary" plain :disabled="!editable || !pendingIndicatorId" @click="addIndicator">添加指标</el-button>

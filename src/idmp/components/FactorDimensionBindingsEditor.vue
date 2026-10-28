@@ -11,10 +11,10 @@
       <el-form label-position="top" class="bindings__fields">
         <el-form-item v-for="field in fields" :key="field" :label="fieldLabels[field] || field">
           <div class="bindings__selectors">
-            <el-select class="bindings__table-select" :model-value="selectedTable(factor.versionId, field)" filterable clearable :loading="loading" :disabled="disabled || loading || Boolean(error)" :aria-label="`${factor.name || factor.versionId} ${field}物理表`" placeholder="选择物理表" no-data-text="该因子暂无可选物理表" @update:model-value="value => selectTable(factor.versionId, field, value)">
+            <el-select default-first-option class="bindings__table-select" :model-value="selectedTable(factor.versionId, field)" filterable clearable :loading="loading" :disabled="disabled || loading || Boolean(error)" :aria-label="`${factor.name || factor.versionId} ${field}物理表`" placeholder="选择物理表" no-data-text="该因子暂无可选物理表" @update:model-value="value => selectTable(factor.versionId, field, value)">
               <el-option v-for="table in tablesFor(factor.versionId)" :key="table.key" :value="table.key" :label="table.label" />
             </el-select>
-            <el-select class="bindings__field-select" :model-value="modelValue[factor.versionId]?.[field] || ''" filterable clearable :loading="loading" :disabled="disabled || loading || Boolean(error) || !selectedTable(factor.versionId, field)" :aria-label="`${factor.name || factor.versionId} ${field}物理字段`" :placeholder="selectedTable(factor.versionId, field) ? '选择物理字段' : '先选择物理表'" no-data-text="该物理表暂无可选字段" @update:model-value="value => update(factor.versionId, field, value)">
+            <el-select default-first-option class="bindings__field-select" :model-value="modelValue[factor.versionId]?.[field] || ''" filterable clearable :loading="loading" :disabled="disabled || loading || Boolean(error) || !selectedTable(factor.versionId, field)" :aria-label="`${factor.name || factor.versionId} ${field}物理字段`" :placeholder="selectedTable(factor.versionId, field) ? '选择物理字段' : '先选择物理表'" no-data-text="该物理表暂无可选字段" @update:model-value="value => update(factor.versionId, field, value)">
               <el-option v-for="option in fieldsFor(factor.versionId, field)" :key="option.fieldReference" :value="option.fieldReference" :label="option.columnName || option.fieldReference" />
             </el-select>
           </div>

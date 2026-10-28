@@ -63,3 +63,27 @@ test('existing input handlers can consume Enter and unrelated areas never trigge
   query.press()
   assert.equal(query.calls(), 0)
 })
+
+test('a confirmed closed selector submits once, while open, empty and unfinished selectors retain Enter', () => {
+  for (const className of ['el-select', 'el-select-v2']) {
+    const form = fixture(`<div class="${className}"><div class="el-select__selected-item">骨科</div><input role="combobox" aria-expanded="false"></div><button data-query-submit type="button">查询</button>`)
+    assert.equal(form.press().defaultPrevented, true)
+    assert.equal(form.calls(), 1)
+    for (const event of [{ repeat: true }, { isComposing: true }, { keyCode: 229 }, { shiftKey: true }]) form.press(event)
+    assert.equal(form.calls(), 1)
+    const input = form.element.querySelector('input')
+    input.setAttribute('aria-expanded', 'true')
+    assert.equal(form.press().defaultPrevented, false)
+    input.setAttribute('aria-expanded', 'false')
+    input.value = '尚未确认的搜索'
+    assert.equal(form.press().defaultPrevented, false)
+    input.value = ''
+    form.element.querySelector('.el-select__selected-item').classList.add('is-transparent')
+    assert.equal(form.press().defaultPrevented, false)
+    assert.equal(form.calls(), 1)
+    queryEnterDirective.beforeUnmount(form.element)
+    form.element.querySelector('.el-select__selected-item').classList.remove('is-transparent')
+    form.press()
+    assert.equal(form.calls(), 1)
+  }
+})

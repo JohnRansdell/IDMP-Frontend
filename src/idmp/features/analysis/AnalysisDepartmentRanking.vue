@@ -3,7 +3,7 @@
     <el-radio-group v-model="rankGranularity" size="small" aria-label="排名统计粒度" @change="emit('change-granularity')">
       <el-radio-button v-for="item in DRILL_GRANULARITIES" :key="item.value" :value="item.value">{{ item.label }}</el-radio-button>
     </el-radio-group>
-    <el-select v-model="rankSelectedPeriod" filterable size="small" class="rank-period-select"
+    <el-select default-first-option v-model="rankSelectedPeriod" filterable size="small" class="rank-period-select"
       aria-label="排名统计周期" :placeholder="rankPeriodPlaceholder" :loading="rankLoading"
       :disabled="!rankPeriodOptions.length" @change="emit('change-period')">
       <el-option v-for="item in rankPeriodOptions" :key="item.value" :label="item.label" :value="item.value" />

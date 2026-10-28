@@ -5,7 +5,7 @@
         <el-option v-for="[value, label] in expressionTypes" :key="value" :value="value" :label="label" />
       </el-select>
       <template v-if="node.nodeType === 'FACTOR_REF'">
-        <el-select :model-value="String(node.factorVersionId || '')" filterable :disabled="disabled" aria-label="引用因子版本" placeholder="选择已发布因子版本" @update:model-value="value => update('factorVersionId', value)">
+        <el-select default-first-option :model-value="String(node.factorVersionId || '')" filterable :disabled="disabled" aria-label="引用因子版本" placeholder="选择已发布因子版本" @update:model-value="value => update('factorVersionId', value)">
           <el-option v-for="item in versions" :key="item.id" :value="String(item.id)" :label="`${item.factorName || '未命名因子'} · V${item.versionNo}`" />
         </el-select>
         <el-select :model-value="node.alignmentPolicy || 'STRICT_EQUAL'" :disabled="disabled" aria-label="粒度对齐" @update:model-value="value => update('alignmentPolicy', value)">

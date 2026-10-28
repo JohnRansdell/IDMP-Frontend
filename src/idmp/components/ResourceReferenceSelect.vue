@@ -1,5 +1,5 @@
 <template>
-  <el-select :model-value="modelValue" :multiple="multiple" filterable clearable :loading="loading" :placeholder="placeholder" :aria-label="placeholder" @visible-change="visible => visible && load()" @update:model-value="value => emit('update:modelValue', value)">
+  <el-select default-first-option :model-value="modelValue" :multiple="multiple" filterable clearable :loading="loading" :placeholder="placeholder" :aria-label="placeholder" @visible-change="visible => visible && load()" @update:model-value="value => emit('update:modelValue', value)">
     <el-option v-for="item in options" :key="item.value" :value="item.value" :label="item.label" />
     <el-option v-for="value in unresolved" :key="value" :value="value" label="所选记录暂不可用" disabled />
   </el-select>

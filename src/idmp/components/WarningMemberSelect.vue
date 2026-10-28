@@ -1,6 +1,6 @@
 <template>
   <div class="warning-member-select">
-    <el-select :model-value="modelValue" multiple filterable remote :remote-method="searchMembers"
+    <el-select default-first-option :model-value="modelValue" multiple filterable remote :remote-method="searchMembers"
       :loading="loading" :disabled="disabled" :reserve-keyword="false" :debounce="250"
       placeholder="全部成员" :aria-label="`${dimension} 成员`"
       no-data-text="暂无可选成员" @update:model-value="$emit('update:modelValue', $event)">

@@ -4,12 +4,12 @@
       <fieldset :disabled="busy">
         <div class="relation-settings">
           <el-form-item label="关联表数据域">
-            <el-select v-model="form.domainId" filterable :loading="loading.tables" :disabled="busy" @change="loadTables">
+            <el-select default-first-option v-model="form.domainId" filterable :loading="loading.tables" :disabled="busy" @change="loadTables">
               <el-option v-for="domain in domains" :key="domain.id" :label="domain.name || '未命名数据域'" :value="String(domain.id)" />
             </el-select>
           </el-form-item>
           <el-form-item label="关联物理表">
-            <el-select v-model="form.tableId" filterable :loading="loading.tables" :disabled="busy || loading.tables" placeholder="选择关联物理表" @change="loadFields">
+            <el-select default-first-option v-model="form.tableId" filterable :loading="loading.tables" :disabled="busy || loading.tables" placeholder="选择关联物理表" @change="loadFields">
               <el-option v-for="table in targetTables" :key="table.id" :label="`${table.tableComment || table.tableName}（${table.tableName}）`" :value="String(table.id)" />
             </el-select>
           </el-form-item>
@@ -28,11 +28,11 @@
         </div>
         <div class="relation-key-heading"><strong>关联字段</strong><el-button :icon="Plus" :disabled="busy || !targetFields.length" @click="form.keys.push({ left: '', right: '' })">添加字段</el-button></div>
         <div v-for="(key, index) in form.keys" :key="index" class="relation-key-row">
-          <el-select v-model="key.left" filterable :disabled="busy" :aria-label="`来源关联字段 ${index + 1}`" :placeholder="`${source.tableName} 的字段`">
+          <el-select default-first-option v-model="key.left" filterable :disabled="busy" :aria-label="`来源关联字段 ${index + 1}`" :placeholder="`${source.tableName} 的字段`">
             <el-option v-for="field in sourceFields" :key="field.semanticFieldCode" :label="fieldLabel(field, source.tableName)" :value="field.semanticFieldCode" />
           </el-select>
           <span class="relation-equals">=</span>
-          <el-select v-model="key.right" filterable :disabled="busy || loading.fields" :loading="loading.fields" :aria-label="`目标关联字段 ${index + 1}`" placeholder="关联表的字段">
+          <el-select default-first-option v-model="key.right" filterable :disabled="busy || loading.fields" :loading="loading.fields" :aria-label="`目标关联字段 ${index + 1}`" placeholder="关联表的字段">
             <el-option v-for="field in targetFields" :key="field.semanticFieldCode" :label="fieldLabel(field, targetTable?.tableName)" :value="field.semanticFieldCode" />
           </el-select>
           <el-button :icon="Delete" circle plain :disabled="busy || form.keys.length === 1" :title="`删除关联字段 ${index + 1}`" @click="form.keys.splice(index, 1)" />

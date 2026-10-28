@@ -152,7 +152,7 @@
       </div>
       <el-form label-position="top" @submit.prevent="handleAssignRoles">
         <el-form-item label="用户" label-for="role-user">
-          <el-select id="role-user" v-model="selectedUserId" filterable clearable placeholder="选择工号或姓名" :disabled="roleLoading" :loading="usersLoading" @change="loadUserRoles">
+          <el-select default-first-option id="role-user" v-model="selectedUserId" filterable clearable placeholder="选择工号或姓名" :disabled="roleLoading" :loading="usersLoading" @change="loadUserRoles">
             <el-option v-for="user in users" :key="user.id" :value="String(user.id)" :label="`${user.displayName || user.username}（${user.username}）`" />
           </el-select>
         </el-form-item>

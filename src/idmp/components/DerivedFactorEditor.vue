@@ -14,13 +14,13 @@
       </div>
       <div class="formula-builder" v-loading="loading">
         <div class="factor-slot"><label for="derived-left-factor">{{ simpleOperator === 'REF' ? '引用因子' : '左侧因子' }}</label>
-          <el-select id="derived-left-factor" :model-value="simpleLeft" filterable :disabled="disabled" placeholder="搜索已发布因子版本" @update:model-value="value => setFactor('left', value)">
+          <el-select default-first-option id="derived-left-factor" :model-value="simpleLeft" filterable :disabled="disabled" placeholder="搜索已发布因子版本" @update:model-value="value => setFactor('left', value)">
             <el-option v-for="item in versions" :key="item.id ?? item.versionId" :value="String(item.id ?? item.versionId)" :label="versionLabel(item)" />
           </el-select>
         </div>
         <strong v-if="simpleOperator !== 'REF'" class="operator-symbol">{{ operatorSymbol }}</strong>
         <div v-if="simpleOperator !== 'REF'" class="factor-slot"><label for="derived-right-factor">右侧因子</label>
-          <el-select id="derived-right-factor" :model-value="simpleRight" filterable :disabled="disabled" placeholder="搜索已发布因子版本" @update:model-value="value => setFactor('right', value)">
+          <el-select default-first-option id="derived-right-factor" :model-value="simpleRight" filterable :disabled="disabled" placeholder="搜索已发布因子版本" @update:model-value="value => setFactor('right', value)">
             <el-option v-for="item in versions" :key="item.id ?? item.versionId" :value="String(item.id ?? item.versionId)" :label="versionLabel(item)" />
           </el-select>
         </div>
@@ -36,7 +36,7 @@
       <summary>高级设置（选填）</summary>
       <p class="creation-hint">仅在需要指定结果分组、单位或管理归类时调整。已保存配置会保留；未声明的量纲或单位不必猜填。</p>
       <el-form label-position="top" class="definition-fields">
-        <el-form-item label="所属数据域（选填）"><el-select :model-value="modelValue.primaryDomain?.domainCode" clearable filterable :disabled="disabled" placeholder="可留空，计算数据来自引用因子" @update:model-value="setDomain"><el-option v-for="domain in domains" :key="domain.code" :value="domain.code" :label="domain.name || '未命名数据域'" /></el-select></el-form-item>
+        <el-form-item label="所属数据域（选填）"><el-select default-first-option :model-value="modelValue.primaryDomain?.domainCode" clearable filterable :disabled="disabled" placeholder="可留空，计算数据来自引用因子" @update:model-value="setDomain"><el-option v-for="domain in domains" :key="domain.code" :value="domain.code" :label="domain.name || '未命名数据域'" /></el-select></el-form-item>
         <el-form-item label="结果分组"><el-select :model-value="modelValue.output?.grain || []" multiple filterable allow-create default-first-option :disabled="disabled" placeholder="不选表示总体" @update:model-value="value => updateOutput('grain', value)"><el-option v-for="grain in grains" :key="grain" :value="grain" :label="grain" /></el-select></el-form-item>
         <el-form-item label="输出量纲（选填）"><el-input :model-value="modelValue.output?.dimension" :disabled="disabled" placeholder="沿用已确认的定义，可不填写" @update:model-value="value => updateOutput('dimension', value)" /></el-form-item>
         <el-form-item label="输出单位（选填）"><el-input :model-value="modelValue.output?.unit" :disabled="disabled" placeholder="沿用已确认的单位，可不填写" @update:model-value="value => updateOutput('unit', value)" /></el-form-item>

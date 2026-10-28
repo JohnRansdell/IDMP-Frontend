@@ -65,7 +65,7 @@
     </template>
 
     <el-dialog v-model="addDialogVisible" title="接入物理表" width="520px" destroy-on-close>
-      <el-form label-position="top"><el-form-item label="源表或视图"><el-select v-model="tableToAdd" filterable :loading="sourceLoading" placeholder="选择来源对象"><el-option v-for="table in availableSourceTables" :key="table.tableName" :label="table.comment ? `${table.tableName} · ${table.comment}` : table.tableName" :value="table.tableName" /></el-select></el-form-item></el-form>
+      <el-form label-position="top"><el-form-item label="源表或视图"><el-select default-first-option v-model="tableToAdd" filterable :loading="sourceLoading" placeholder="选择来源对象"><el-option v-for="table in availableSourceTables" :key="table.tableName" :label="table.comment ? `${table.tableName} · ${table.comment}` : table.tableName" :value="table.tableName" /></el-select></el-form-item></el-form>
       <StatePanel v-if="sourceError" type="error" title="来源目录加载失败" :description="sourceErrorMessage"><template #actions><el-button @click="loadSourceTables">重试</el-button></template></StatePanel>
       <template #footer><el-button @click="addDialogVisible = false">取消</el-button><el-button v-access="'domain.physicalTables.create'" type="primary" :loading="adding" :disabled="!tableToAdd" @click="submitAddTable">确认接入</el-button></template>
     </el-dialog>
@@ -84,7 +84,7 @@
     </el-dialog>
 
     <el-dialog v-model="valueSetDialogVisible" title="绑定值集" width="500px" destroy-on-close>
-      <el-select v-model="selectedValueSetId" filterable clearable :loading="valueSetLoading" placeholder="选择已发布值集" class="dialog-select" @change="validateSelectedValueSet"><el-option v-for="item in valueSets" :key="item.id" :label="item.name || '未命名值集'" :value="String(item.id)" /></el-select>
+      <el-select default-first-option v-model="selectedValueSetId" filterable clearable :loading="valueSetLoading" placeholder="选择已发布值集" class="dialog-select" @change="validateSelectedValueSet"><el-option v-for="item in valueSets" :key="item.id" :label="item.name || '未命名值集'" :value="String(item.id)" /></el-select>
       <template #footer><el-button @click="valueSetDialogVisible = false">取消</el-button><el-button v-access="'field.valueSet.update'" type="primary" :loading="valueSetSaving" :disabled="!selectedValueSetId" @click="saveValueSetBinding">保存</el-button></template>
     </el-dialog>
 

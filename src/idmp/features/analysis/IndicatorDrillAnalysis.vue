@@ -4,7 +4,7 @@
       <el-radio-group v-model="granularity" size="small" aria-label="下钻统计粒度" @change="loadPeriods()">
         <el-radio-button v-for="item in DRILL_GRANULARITIES" :key="item.value" :value="item.value">{{ item.label }}</el-radio-button>
       </el-radio-group>
-      <el-select
+      <el-select default-first-option
         v-model="selectedPeriod" filterable size="small" class="drill-period-select"
         aria-label="下钻统计周期" :placeholder="periodPlaceholder" :loading="loading"
         :disabled="!periodOptions.length" @change="changePeriod"

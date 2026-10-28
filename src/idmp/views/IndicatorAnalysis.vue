@@ -12,8 +12,8 @@
         <span>更新时间 <strong>{{ analysisUpdatedAt }}</strong></span>
       </template>
       <template #actions>
-        <div class="page-toolbar">
-          <el-select
+        <div v-query-enter class="page-toolbar">
+          <el-select default-first-option
             v-model="selectedIndicatorCode"
             filterable
             class="header-indicator-select"
@@ -34,7 +34,7 @@
               </div>
             </el-option>
           </el-select>
-          <el-button type="primary" @click="switchIndicatorAnalysis">查看分析</el-button>
+          <el-button data-query-submit type="primary" @click="switchIndicatorAnalysis">查看分析</el-button>
           <el-button v-access="'calc.calculation.read'" :disabled="!selectedBackendIndicator || !currentIndicatorVersionId" @click="showDataDiagnostics = true">计算诊断</el-button>
           <el-button v-access="'indicator.export.pdf.create'" :icon="Download" :loading="pdfExportLoading" :disabled="!canExportPdf" @click="exportAnalysisPdf">导出PDF</el-button>
         </div>

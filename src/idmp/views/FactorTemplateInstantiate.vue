@@ -15,8 +15,8 @@
           <el-empty v-if="!parameterFields.length" description="该模板没有可填写的预留参数，将按固定口径创建。" :image-size="64" />
           <div v-else class="parameter-grid">
             <el-form-item v-for="field in parameterFields" :key="field.code" :label="field.label" :required="field.required">
-              <el-select v-if="field.isField" v-model="parameterValues[field.code]" filterable clearable placeholder="请选择字段" no-data-text="当前模板没有符合条件的字段"><el-option v-for="option in field.fieldOptions" :key="option.value" :label="option.label" :value="option.value" /></el-select>
-              <el-select v-else-if="field.enumValues.length" v-model="parameterValues[field.code]" filterable placeholder="请选择标准值"><el-option v-for="option in field.enumValues" :key="String(option)" :label="optionLabel(field, option)" :value="option" /></el-select>
+              <el-select default-first-option v-if="field.isField" v-model="parameterValues[field.code]" filterable clearable placeholder="请选择字段" no-data-text="当前模板没有符合条件的字段"><el-option v-for="option in field.fieldOptions" :key="option.value" :label="option.label" :value="option.value" /></el-select>
+              <el-select default-first-option v-else-if="field.enumValues.length" v-model="parameterValues[field.code]" filterable placeholder="请选择标准值"><el-option v-for="option in field.enumValues" :key="String(option)" :label="optionLabel(field, option)" :value="option" /></el-select>
               <el-input-number v-else-if="field.type === 'number' || field.type === 'integer'" v-model="parameterValues[field.code]" :precision="field.type === 'integer' ? 0 : undefined" :step="field.type === 'integer' ? 1 : 0.1" />
               <el-switch v-else-if="field.type === 'boolean'" v-model="parameterValues[field.code]" />
               <el-input v-else v-model="parameterValues[field.code]" :placeholder="field.placeholder" />

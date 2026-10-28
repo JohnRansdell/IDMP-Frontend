@@ -1,0 +1,7 @@
+// Keyboard candidate focus is distinct from the already selected value.
+.el-select-dropdown__item.is-hovering:not(.is-disabled),
+.el-cascader__suggestion-item.is-keyboard-active:not(.is-disabled) {
+  background-color: var(--idmp-interactive-subtle, #e7f1f8);
+  color: var(--idmp-interactive-active, #0a426f);
+  box-shadow: inset 3px 0 0 var(--idmp-interactive, #1261a6);
+}
