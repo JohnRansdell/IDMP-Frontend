@@ -62,7 +62,7 @@ try {
     check(`场景${scenario + 1}图表画布非空`, canvases.length >= 3 && canvases.some(item => item.data), canvases)
     await page.screenshot({ path: `${folder}/看板交互场景${scenario + 1}.png`, fullPage: true })
   })
-  for (const [index, indicator] of state.indicators.entries()) await run(`嵌套指标编辑试算${index + 1}`, async () => {
+  if (process.argv[2] !== '看板压力') for (const [index, indicator] of state.indicators.entries()) await run(`嵌套指标编辑试算${index + 1}`, async () => {
     await page.goto(`${origin}/indicator/edit/${indicator.id}`)
     await page.getByRole('tab', { name: '2 公式与试算', exact: true }).click()
     await page.waitForLoadState('networkidle')

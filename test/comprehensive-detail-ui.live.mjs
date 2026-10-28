@@ -18,7 +18,7 @@ try {
     const section = page.locator('.runtime-query')
     await section.getByRole('button', { name: '查询', exact: true }).waitFor()
     const dates = section.locator('.el-range-input')
-    for (const [index, value] of ['2026-01-01 00:00:00', '2026-02-01 00:00:00'].entries()) {
+    for (const [index, value] of ['2026-01-01 00:00:00', '2026-01-31 23:59:59'].entries()) {
       await dates.nth(index).fill(value)
       await dates.nth(index).press('Tab')
     }
@@ -53,8 +53,11 @@ try {
       const event = events.find(item => rule.mode !== 'ALL' || Object.keys(item.comparisonContext?.dimensionSnapshot || {}).length > 0) || events[0]
       assert.ok(event)
       await page.goto(`${origin}/alerts`)
-      const ruleFilter = page.locator('.filter-card:visible .el-form-item').filter({ has: page.locator('label').filter({ hasText: /^规则 ID$/ }) })
-      await ruleFilter.locator('input').fill(rule.id)
+      const ruleFilter = page.getByRole('combobox', { name: '请选择预警规则' })
+      await ruleFilter.click()
+      const ruleName = (await get(`/analysis/warning-rules/${rule.id}`)).name
+      await ruleFilter.fill(ruleName)
+      await page.getByRole('option').filter({ hasText: ruleName }).first().click()
       const response = page.waitForResponse(response => new URL(response.url()).searchParams.get('ruleId') === rule.id && new URL(response.url()).pathname.endsWith('/warnings'))
       await page.locator('.filter-card:visible').getByRole('button', { name: '查询', exact: true }).click()
       await response
