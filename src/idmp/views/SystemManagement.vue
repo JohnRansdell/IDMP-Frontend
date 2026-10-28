@@ -90,7 +90,7 @@
         <div>
           <h2>用户列表</h2>
         </div>
-        <el-button :disabled="!hasAccessToken" :loading="usersLoading" @click="loadUsers">读取用户</el-button>
+        <div class="page-toolbar"><el-button type="primary" :icon="Plus" @click="createUserVisible = true">创建用户</el-button><el-button :disabled="!hasAccessToken" :loading="usersLoading" @click="loadUsers">读取用户</el-button></div>
       </div>
       <StatePanel
         v-if="!hasAccessToken"
@@ -181,6 +181,7 @@
         </div>
     </section>
     <StatePanel v-else type="permission" title="仅系统管理员可以分配用户角色" />
+    <SystemUserCreateDialog v-if="canManageUsers" v-model="createUserVisible" :roles="roles" :roles-loading="rolesLoading" :roles-error="rolesError" @reload-roles="loadRoles" @created="loadUsers({ silent: true })" />
   </div>
 </template>
 
@@ -188,7 +189,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
-import { Check, Refresh, UserFilled } from '@element-plus/icons-vue'
+import { Check, Plus, Refresh, UserFilled } from '@element-plus/icons-vue'
+import SystemUserCreateDialog from '@/idmp/components/SystemUserCreateDialog.vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
@@ -210,6 +212,7 @@ const users = ref([])
 const healthResult = ref(null)
 const roles = ref([])
 const roleSection = ref(null)
+const createUserVisible = ref(false)
 const selectedUserId = ref('')
 const selectedUserDetail = ref(null)
 const selectedRoleIds = ref([])

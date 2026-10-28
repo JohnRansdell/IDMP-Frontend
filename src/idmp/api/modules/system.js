@@ -23,6 +23,14 @@ export function fetchSystemUsers() {
   return requestJson('/system/users', { cache: 'no-store' })
 }
 
+export function fetchSystemDepartments() {
+  return requestJson('/system/depts', { cache: 'no-store' })
+}
+
+export function createSystemUser(payload) {
+  return requestJson('/system/users', { method: 'POST', body: JSON.stringify(payload) })
+}
+
 export function fetchSystemRoles() {
   return requestJson('/system/roles', { cache: 'no-store' })
 }

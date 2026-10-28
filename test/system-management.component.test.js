@@ -41,7 +41,7 @@ const roles = [
 function create(authenticated = true, overrides = {}) {
   const calls = { health: 0, users: 0 }, messages = [], roleCalls = { list: 0, details: [], assignments: [] }
   const deps = {
-    PageHeader: Pass, StatePanel: State, StatusBadge: Badge, Refresh: {}, Check: {}, UserFilled: {},
+    PageHeader: Pass, StatePanel: State, StatusBadge: Badge, SystemUserCreateDialog: Pass, Refresh: {}, Check: {}, Plus: {}, UserFilled: {},
     ElMessageBox: { confirm: overrides.confirm || (async () => {}) },
     ElMessage: Object.fromEntries(['success', 'error', 'warning'].map(type => [type, message => messages.push({ type, message })])),
     getStatusLabel: value => value, isAuthenticated: vue.ref(authenticated),
@@ -214,6 +214,7 @@ test('non-administrators cannot load or assign user roles', async () => {
   assert.equal(wrapper.testCalls.users, 0)
   assert.equal(wrapper.roleCalls.list, 0)
   assert.equal(wrapper.find('select').exists(), false)
+  assert.doesNotMatch(wrapper.text(), /创建用户/)
   assert.match(wrapper.text(), /仅系统管理员可以分配用户角色/)
   wrapper.unmount()
 })
