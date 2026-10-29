@@ -18,9 +18,6 @@
           <el-button v-access="'factorTemplate.read'" @click="router.push('/factor/templates')">
             从模板创建因子
           </el-button>
-          <el-button v-access="'factor.create'" v-if="canUseAdvancedCreation" @click="openAdvancedFactorEditor">
-            高级自定义创建
-          </el-button>
           <el-button v-access="'factor.recycleBin.read'" @click="router.push('/factor/recycle-bin')">回收站</el-button>
         </div>
       </template>
@@ -189,7 +186,6 @@ const currentPage = ref(1)
 const pageSize = ref(9)
 const selectedRows = ref([])
 const deleteTarget = ref(null)
-const canUseAdvancedCreation = computed(() => canRequest('POST', '/factors'))
 
 const sourceRows = computed(() => backendFactorRows.value)
 const categoryOptions = computed(() => [...new Set(sourceRows.value.map((item) => item.category).filter(Boolean))])
@@ -235,10 +231,6 @@ const openFactorDetail = row => router.push({ name: 'FactorDetail', params: { id
 
 const openFactorEditor = (id) => {
   router.push(`/factor/edit/${encodeURIComponent(id)}`)
-}
-
-const openAdvancedFactorEditor = () => {
-  router.push('/factor/edit/new?mode=advanced')
 }
 
 const openDelete = row => { deleteTarget.value = row }
