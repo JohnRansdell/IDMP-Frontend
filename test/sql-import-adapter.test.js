@@ -198,6 +198,7 @@ test('SQL import separates creation, metadata and trial payloads', () => {
 
   assert.deepEqual(createPayload.tableMappings, { patient_visit: '102027642460316628' })
   assert.equal(createPayload.sql, 'SELECT 1')
+  assert.equal(createPayload.definitionType, 'SQL')
   assert.equal(Object.hasOwn(metadataPayload, 'indicatorCode'), false)
   assert.equal('tableMappings' in metadataPayload, false)
   assert.equal(Object.hasOwn(metadataPayload.factors[0], 'code'), false)
