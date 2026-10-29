@@ -132,6 +132,7 @@ function normalizeContext(value = {}) {
 }
 
 function normalizeSummary(value = {}) {
+  value = value || {}
   return {
     ...value,
     ...drillResultMetrics(value),

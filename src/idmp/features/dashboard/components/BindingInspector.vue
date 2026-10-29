@@ -9,7 +9,7 @@
     <p>先点击配置槽，再点击字段添加。</p>
     <div class="binding-fields"><button v-for="field in filteredFields" :key="field.id" type="button" :data-testid="`binding-field-${field.id}`" :disabled="!canAdd(field)" @click="add(field)"><span>{{ icon(field) }} {{ field.label }}</span><small>{{ field.semanticType === 'measure' ? '度量' : field.semanticType === 'time' ? '时间' : '维度' }}</small></button></div>
     <h3>字段配置</h3>
-    <template v-if="loadGroupingTargets">
+    <template v-if="groupingEnabled">
       <label for="component-grouping-target">结果分组</label>
       <select id="component-grouping-target" data-testid="component-grouping-target" :value="selectedTarget" :disabled="groupingLoading" @change="chooseGrouping($event.target.value)">
         <option value="" disabled>{{ groupingLoading ? '正在加载分组' : '请选择完整分组' }}</option>
@@ -23,7 +23,7 @@
       <p v-if="slot.id === 'measures' && dualAxisSupported" class="binding-axis-help">添加多个度量后，可分别指定左 Y 轴或右 Y 轴。</p>
       <p v-if="!binding[slot.id]?.length">点击此槽，再从上方添加字段</p>
       <div v-for="(item, index) in binding[slot.id] || []" :key="item.field" class="binding-chip" :data-testid="`binding-chip-${slot.id}-${item.field}`">
-        <span>{{ item.label || item.field }}</span><button v-if="!loadGroupingTargets || slot.id === 'measures' || fields.find(field => field.id === item.field)?.semanticType === 'time'" type="button" :aria-label="`移除${item.label || item.field}`" @click="remove(slot.id, index)">×</button>
+        <span>{{ item.label || item.field }}</span><button v-if="!groupingEnabled || slot.id === 'measures' || fields.find(field => field.id === item.field)?.semanticType === 'time'" type="button" :aria-label="`移除${item.label || item.field}`" @click="remove(slot.id, index)">×</button>
         <select v-if="slot.id === 'measures'" :aria-label="`${item.label}聚合方式`" :data-testid="`binding-aggregation-${item.field}`" :value="item.aggregation" @change="patchItem(slot.id, index, { aggregation: $event.target.value })"><option v-for="value in aggregationOptions(item)" :key="value" :value="value">{{ aggregationLabel(value, item) }}</option></select>
         <label v-if="slot.id === 'measures' && dualAxisSupported" class="binding-axis-select">坐标轴<select :aria-label="`${item.label}坐标轴`" :data-testid="`binding-axis-${item.field}`" :value="item.axis || 'left'" @change="patchItem(slot.id, index, { axis: $event.target.value })"><option value="left">左 Y 轴</option><option value="right">右 Y 轴</option></select></label>
         <span v-if="fields.find(field => field.id === item.field)?.semanticType === 'time'" class="binding-granularity">原始时间粒度（不补造日期）</span>
@@ -61,6 +61,7 @@ const emit = defineEmits(['change', 'query-change'])
 const globalContext = inject('dashboardFilterContext', { definitions: { value: [] } })
 const loadGroupingTargets = inject('dashboardGroupingTargets', null)
 const groupingTargets = ref([]), groupingLoading = ref(false), groupingError = ref('')
+const groupingEnabled = computed(() => Boolean(loadGroupingTargets && (groupingLoading.value || groupingError.value || groupingTargets.value.length)))
 watch(() => [props.widget.id, props.widget.sourceCode, props.widget.config?.analysisIndicatorVersionId], async (_, __, cleanup) => {
   if (!loadGroupingTargets) return
   let current = true
@@ -110,7 +111,7 @@ const slots = computed(() => [{ id: 'dimensions', label: isMap.value ? '区域 /
 watch(() => props.widget.id, () => { search.value = ''; pendingDataset.value = ''; target.value = props.widget.type === 'kpi' ? 'measures' : 'dimensions' }, { immediate: true })
 watch(slots, value => { if (!value.some(slot => slot.id === target.value)) target.value = 'measures' })
 const icon = field => field.semanticType === 'measure' ? '∑' : field.semanticType === 'time' ? '◷' : '▣'
-function canAdd(field) { return target.value === 'filters' ? field.filterable : (!loadGroupingTargets || field.semanticType !== 'dimension') && (target.value === 'measures') === (field.semanticType === 'measure') && !(binding.value[target.value] || []).some(item => item.field === field.id) }
+function canAdd(field) { return target.value === 'filters' ? field.filterable : (!groupingEnabled.value || field.semanticType !== 'dimension') && (target.value === 'measures') === (field.semanticType === 'measure') && !(binding.value[target.value] || []).some(item => item.field === field.id) }
 function aggregationOptions(item) {
   const field = fields.value.find(entry => entry.id === item.field)
   const supported = (field?.aggregations || []).filter(value => Object.hasOwn(AGGREGATIONS, value))

@@ -4,6 +4,7 @@ import { bindGroupingTarget, selectedGroupingTarget } from '../src/idmp/features
 import { compileWidgetData } from '../src/idmp/features/dashboard/bindingEngine.js'
 import { instantChartDrillTarget } from '../src/idmp/features/dashboard/instantChartDrill.js'
 import { loadBackendChartRoot, loadBackendChartLevel } from '../src/idmp/features/dashboard/backendChartDrill.js'
+import { adaptDrillResult } from '../src/idmp/api/adapters/drill.js'
 
 const fields = ['科室', '性别', '年龄段'].map(id => ({ id, label: id, semanticType: 'dimension' }))
 const target = { code: 'BASE', fields: fields.map(field => field.id) }
@@ -33,9 +34,9 @@ test('instant drill carries period and parent scope without a formal result ID',
   const row = { 科室: '15', queryContext: { indicatorVersionId: '9', periodStart: '2026-01-01', periodEnd: '2026-04-01', filters: {} } }
   const target = instantChartDrillTarget(row, targets, { field: '科室', search: async payload => {
     request = payload
-    return { context: { resultId: '', snapshotId: '', indicatorVersionId: '9', currentLevel: 'DOCTOR',
+    return adaptDrillResult({ summary: null, context: { resultId: null, snapshotId: null, indicatorVersionId: '9', currentLevel: 'DOCTOR',
       periodStart: '2026-01-01', periodEnd: '2026-04-01' }, records: [],
-      pageInfo: { hasTotal: true, hasPageNum: true, hasPageSize: true, total: 0, pageNum: 1, pageSize: 200 } }
+      pageInfo: { total: 0, pageNum: 1, pageSize: 200 } })
   } })
   const root = await loadBackendChartRoot(() => assert.fail('no persisted query'), target)
   await loadBackendChartLevel(() => assert.fail('no persisted query'), root, root.initialNavigation)
