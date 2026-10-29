@@ -982,11 +982,16 @@ const activeInteractionFilters = computed(() => Object.values(interactionFilterS
 // Widget-local drill position is deliberately runtime-only and never participates
 // in the schema/history/persistence chain.
 const drillRuntimeState = ref({})
+const currentDashboardWidgets = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.widgets || [])
 const filterDatasets = computed(() => [
   ...[...bindingDatasets.value.entries()].flatMap(([sourceCode, datasets]) => datasets.map(dataset => ({ ...dataset, sourceCode }))),
   ...Object.entries(remoteFieldCatalog.value).map(([sourceCode, fields]) => ({
     sourceCode, fields: dashboardFieldsToFrontend(fields), rows: []
-  }))
+  })),
+  ...[...new Map(currentDashboardWidgets.value.filter(widget => widget.config?.analysisIndicatorVersionId)
+    .map(widget => [`${widget.sourceCode}@${widget.config.analysisIndicatorVersionId}`, widget])).entries()]
+    .map(([key, widget]) => ({ sourceCode: widget.sourceCode,
+      fields: dashboardFieldsToFrontend(remoteVersionFieldCatalog.value[key] || []), rows: [] }))
 ])
 const filterCatalog = computed(() => dashboardFilterCatalog(filterDatasets.value))
 const globalFilterOptionSources = computed(() => availableIndicatorSources.value
@@ -1016,7 +1021,7 @@ watch([globalFilterDefinitions, filterRuntimeValues, currentDependentFilterOptio
   if (JSON.stringify(normalized) !== JSON.stringify(filterRuntimeValues.value)) filterRuntimeValues.value = normalized
 }, { deep: true })
 const filterSourceCatalogKey = computed(() => JSON.stringify(availableIndicatorSources.value.map(source => [source.code, source.indicatorVersionId, source.analysisIndicatorVersionId])))
-watch([globalFilterDefinitions, period, remotePeriodRange, remotePeriodSelection, filterRuntimeValues, remoteFieldCatalog, filterSourceCatalogKey], () => { void loadRemoteFilterOptions() }, { deep: true })
+watch([globalFilterDefinitions, period, remotePeriodRange, remotePeriodSelection, filterRuntimeValues, remoteFieldCatalog, remoteVersionFieldCatalog, filterSourceCatalogKey], () => { void loadRemoteFilterOptions() }, { deep: true })
 watch(requestedDashboardId, nextDashboardId => { if (nextDashboardId !== activeDashboardId.value) void requestDashboardSwitch(nextDashboardId) })
 watch(() => route.query.id, async nextDashboardId => {
   const id = typeof nextDashboardId === 'string' ? nextDashboardId.trim() : ''
@@ -1028,7 +1033,6 @@ watch(() => route.query.edit, value => {
   if (value === '1' && route.name === 'Dashboard' && !isEditing.value) void startDashboardEdit()
 })
 watch(selectedDataCode, code => { if (code) void ensureRemoteDataSourceFields(code) })
-const currentDashboardWidgets = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.widgets || [])
 provide('dashboardFilterContext', { definitions: globalFilterDefinitions, values: filterRuntimeValues, interactions: interactionFilterState })
 provide('dashboardWidgetsContext', { widgets: currentDashboardWidgets, interactions: interactionFilterState, clearInteraction: clearInteractionFilter })
 provide('dashboardDrillContext', { states: drillRuntimeState, advance: advanceWidgetDrill, back: returnWidgetDrillTo, reset: resetWidgetDrill })
@@ -2700,10 +2704,12 @@ async function loadRemoteFilterOptions() {
   const next = {}
   const errors = {}
   await Promise.all(definitions.map(async definition => {
-    const sourceCode = definition.optionSourceCode || widgets.find(widget => widget.sourceCode && resolveGlobalFilterField(definition, remoteFieldCatalog.value[widget.sourceCode] || [])?.filterable)?.sourceCode
+    const sourceWidget = widgets.find(widget => widget.sourceCode && (!definition.optionSourceCode || widget.sourceCode === definition.optionSourceCode)
+      && resolveGlobalFilterField(definition, remoteWidgetFields(widget))?.filterable)
+    const sourceCode = definition.optionSourceCode || sourceWidget?.sourceCode
     if (!sourceCode || !availableIndicatorSources.value.some(source => source.code === sourceCode && source.origin === 'dashboard-data-source')) return
     try {
-      const fields = await ensureRemoteDataSourceFields(sourceCode)
+      const fields = sourceWidget ? remoteWidgetFields(sourceWidget) : await ensureRemoteDataSourceFields(sourceCode)
       if (!resolveGlobalFilterField(definition, fields)?.filterable) return
       const range = remoteSelectedPeriod()
       const query = buildRemoteFilterOptionQuery(definition, definitions, filterRuntimeValues.value, fields, {
@@ -3041,10 +3047,14 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
   }
 }
 
-function remoteWidgetQueryContext(range, widgetOrCode, schema = isEditing.value ? editingDashboardSchema.value : dashboardSchema.value) {
+function remoteWidgetFields(widgetOrCode) {
   const sourceCode = typeof widgetOrCode === 'string' ? widgetOrCode : widgetOrCode.sourceCode
   const versionId = typeof widgetOrCode === 'string' ? null : widgetOrCode.config?.analysisIndicatorVersionId
-  const fields = remoteVersionFieldCatalog.value[`${sourceCode}@${versionId}`] || remoteFieldCatalog.value[sourceCode] || []
+  return remoteVersionFieldCatalog.value[`${sourceCode}@${versionId}`] || remoteFieldCatalog.value[sourceCode] || []
+}
+
+function remoteWidgetQueryContext(range, widgetOrCode, schema = isEditing.value ? editingDashboardSchema.value : dashboardSchema.value) {
+  const fields = remoteWidgetFields(widgetOrCode)
   const definitions = schema?.globalFilters || globalFilterDefinitions.value
   return {
     ...range, definitions, values: schema === dashboardSchema.value || schema === editingDashboardSchema.value ? filterRuntimeValues.value : initialFilterValues(definitions),

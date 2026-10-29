@@ -11,6 +11,7 @@ Object.defineProperty(globalThis, 'navigator', { configurable: true, value: dom.
 const vue = await import('vue')
 const { mount } = await import('@vue/test-utils')
 const engine = await import('../src/idmp/features/dashboard/filterEngine.js')
+const departmentFields = await import('../src/idmp/features/dashboard/departmentFilters.js')
 async function component(file, dependencies) {
   const { descriptor } = parse(await readFile(new URL(`../src/idmp/features/dashboard/components/${file}.vue`, import.meta.url), 'utf8'))
   const compiled = compileScript(descriptor, { id: file, inlineTemplate: true }).content
@@ -22,12 +23,30 @@ async function component(file, dependencies) {
   return Function('vue', 'deps', `const { ${Object.keys(dependencies).join(',')} } = deps;\n${bindings}\n${compiled.replace(/^import .*$/gm, '').replace('export default', 'return')}`)(vue, dependencies)
 }
 const FilterValue = await component('FilterValue', options)
-const FilterBar = await component('DashboardFilterBar', { FilterValue, ...engine })
+const FilterBar = await component('DashboardFilterBar', { FilterValue, ...engine, ...departmentFields })
 const choices = [{ value: '28', label: '神经内科' }, { value: '29', label: '神经外科' }]
 const create = props => mount(FilterValue, { attachTo: document.body, props: { type: 'multi-select', options: choices, modelValue: [], confirmSelection: true, ...props } })
 const open = wrapper => wrapper.get('summary').trigger('click')
 const select = (wrapper, code, checked = true) => wrapper.get(`[data-filter-option="${code}"]`).setValue(checked)
 const action = (wrapper, text) => wrapper.findAll('button').find(button => button.text() === text).trigger('click')
+
+test('global department control resolves configured identity instead of requiring the old field spelling', async () => {
+  const definition = { id: 'dept', field: 'OUT_DEPT_CODE', type: 'multi-select', enabled: true, dataType: 'string', label: '科室' }
+  const wrapper = mount(FilterBar, { props: {
+    definitions: [definition], catalog: [{ id: '出院科室', dataType: 'string', filterable: true, departmentCodeField: '出院科室' }],
+    optionsById: { dept: choices }, values: { dept: [] }
+  } })
+  assert.equal(wrapper.text().includes('已失效'), false)
+  const filter = wrapper.getComponent(FilterValue)
+  await open(filter)
+  await select(filter, '28')
+  await action(filter, '确定')
+  assert.deepEqual(wrapper.emitted('change'), [[{ dept: ['28'] }]])
+  await wrapper.setProps({ catalog: [{ id: '年龄', dataType: 'string', filterable: true }] })
+  assert.equal(wrapper.findComponent(FilterValue).exists(), false)
+  assert.ok(wrapper.text().includes('筛选字段已失效'))
+  wrapper.unmount()
+})
 
 test('multiple department selections update the filter bar only once after confirmation', async () => {
   const wrapper = mount(FilterBar, { props: {
