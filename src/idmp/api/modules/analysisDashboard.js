@@ -3,6 +3,10 @@ import { expandDashboardResponse } from '../../features/dashboard/compactRespons
 
 const DEFAULT_DASHBOARD_CODE = 'quality-overview'
 
+export function fetchIndicatorGroupingTargets(versionId, options = {}) {
+  return requestJson(`/analysis/indicator-versions/${encodeURIComponent(versionId)}/grouping-targets`, options)
+}
+
 export function fetchDashboardCatalog(options = {}) {
   return requestJson('/analysis/dashboards', options)
 }

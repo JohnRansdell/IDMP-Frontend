@@ -14,6 +14,8 @@ export const fetchMedicalDashboardMetadata = (id, options = {}) => requestJson(`
 export const queryMedicalDashboard = (id, body, options = {}) => post(`${dashboardPath(id)}/query`, body, options)
 export const fetchMedicalFilterOptions = (id, code, body) => post(`${dashboardPath(id)}/widgets/${encodeURIComponent(code)}/filter-options`, body)
 export const fetchMedicalPeriods = (id, code) => requestJson(`${dashboardPath(id)}/widgets/${encodeURIComponent(code)}/periods`, read)
+export const fetchMedicalGroupingTargets = (id, code) => requestJson(`${dashboardPath(id)}/widgets/${encodeURIComponent(code)}/grouping-targets`, read)
+export const searchMedicalQueryDrill = (id, code, payload, options = {}) => post(`${dashboardPath(id)}/widgets/${encodeURIComponent(code)}/query-drill`, payload, { timeoutMs: 120000, ...options }).then(adaptDrillResult)
 export const fetchMedicalDrillPath = (id, ticket, resultId) => requestJson(`${dashboardPath(id)}/drill-path?${new URLSearchParams({ drillTicket: ticket, resultId })}`, read)
 export function searchMedicalDrill(id, ticket, resultId, payload, options = {}) {
   return requestJson(`${dashboardPath(id)}/drill`, {

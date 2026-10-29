@@ -1,6 +1,12 @@
 import { requestJson } from '@/idmp/api/request'
 import { adaptDrillResult } from '@/idmp/api/adapters/drill'
 
+export function searchInstantResultDrill(versionId, payload, options = {}) {
+  return requestJson(`/analysis/indicator-versions/${encodeURIComponent(versionId)}/query-drill`, {
+    ...options, timeoutMs: 120000, method: 'POST', body: JSON.stringify(payload)
+  }).then(adaptDrillResult)
+}
+
 export async function searchResultDrill(resultId, payload = {}, options = {}) {
   const source = options.source || 'live'
   options.signal?.throwIfAborted()

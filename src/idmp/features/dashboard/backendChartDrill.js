@@ -41,6 +41,7 @@ export function projectedDrillNavigation(row, path, context) {
   while (index < lastIndex) {
     const level = levels[index]
     const identity = level.memberKeyFieldCode || level.dimensionFieldCode
+    if (!identity) { index += 1; continue }
     const value = row[keys.get(String(identity).toLowerCase())] ?? parents[identity]
     if (value === null || value === undefined || value === '') break
     parents[identity] = String(value)
@@ -57,6 +58,10 @@ export function projectedDrillNavigation(row, path, context) {
 }
 
 export async function loadBackendChartRoot(search, target, { signal } = {}) {
+  if (target?.queryContext) return { ...target, resultId: '', snapshotId: '',
+    levels: target.path.levels, pathCode: target.path.pathCode, maxLevel: target.path.maxLevel,
+    parentKeys: target.initialNavigation?.parentKeys || {}, filters: target.filters || {},
+    periodRange: { periodStart: target.queryContext.periodStart, periodEnd: target.queryContext.periodEnd } }
   if (!target?.resultId) throw new Error('当前指标没有组织下钻结果')
   if (target.drillContext) {
     const context = target.drillContext
@@ -124,8 +129,13 @@ export async function loadBackendChartLevel(search, root, navigation, { signal }
   let total
   for (let pageNum = 1; ; pageNum += 1) {
     signal?.throwIfAborted()
-    const request = buildDrillRequest({ ...root, currentLevel: level, parentKeys }, { path: root, pageNum, pageSize: PAGE_SIZE })
-    const result = await search(request.resultId, request.payload, { source: 'live', signal })
+    const result = root.queryContext
+      ? await root.instantSearch({ context: { ...root.queryContext, filters: root.filters }, pathCode: root.pathCode,
+        currentLevel: level, parentKeys, pageNum, pageSize: PAGE_SIZE }, { signal })
+      : await (async () => {
+        const request = buildDrillRequest({ ...root, currentLevel: level, parentKeys }, { path: root, pageNum, pageSize: PAGE_SIZE })
+        return search(request.resultId, request.payload, { source: 'live', signal })
+      })()
     checkLevel(result, root, level, parentKeys)
     const pageInfo = result.pageInfo || {}
     if (!pageInfo.hasTotal || !pageInfo.hasPageNum || !pageInfo.hasPageSize || pageInfo.pageNum !== pageNum || pageInfo.pageSize < 1 || pageInfo.pageSize > PAGE_SIZE) throw new Error('下钻分页信息不完整，无法绘制完整图表')

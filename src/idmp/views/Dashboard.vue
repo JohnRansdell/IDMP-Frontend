@@ -888,8 +888,17 @@ function getBindingDatasets(widget) {
   return analysisDatasets
 }
 provide('dashboardBindingDatasets', getBindingDatasets)
+provide('dashboardGroupingTargets', async widget => {
+  const source = getWidgetSource(widget)
+  const version = await dashboardIndicatorVersion(source, widget)
+  const id = widget.config?.analysisIndicatorVersionId || version?.id || source?.analysisIndicatorVersionId || source?.indicatorVersionId
+  if (!id) return []
+  const { fetchIndicatorGroupingTargets } = await import('@/idmp/api/modules/analysisDashboard.js')
+  const response = await fetchIndicatorGroupingTargets(id)
+  return response?.data || response || []
+})
 provide('dashboardSupportsBackendDrill', (widget) => {
-  if (medicalMode.value) return Boolean(remoteWidgetDatasets.value[String(widget.id)]?.rows?.some(row => row.drillContext))
+  if (medicalMode.value) return Boolean(remoteWidgetDatasets.value[String(widget.id)]?.rows?.some(row => row.drillContext || row.queryContext))
   const source = getWidgetSource(widget)
   return Boolean(source?.analysisIndicatorId && ['indicator-catalog', 'dashboard-data-source'].includes(source.origin))
 })
@@ -901,6 +910,14 @@ provide('dashboardResolveWidgetDrill', async (widget, params) => {
   if (projected) {
     const tuple = params?.data?.dimensionValues
     const row = projected.rows.find(row => tuple && Object.entries(tuple).every(([field, value]) => row[field] === value))
+    if (row?.queryContext) {
+      const [{ fetchIndicatorGroupingTargets }, { searchInstantResultDrill }, { instantChartDrillTarget }] = await Promise.all([
+        import('@/idmp/api/modules/analysisDashboard.js'), import('@/idmp/api/modules/drill.js'), import('@/idmp/features/dashboard/instantChartDrill.js')])
+      const response = await fetchIndicatorGroupingTargets(row.queryContext.indicatorVersionId)
+      return instantChartDrillTarget(row, response?.data || response, { field: widget.config?.dataBinding?.dimensions?.[0]?.field,
+        search: (payload, options) => searchInstantResultDrill(row.queryContext.indicatorVersionId, payload, options),
+        departmentNames: Object.fromEntries(await fetchDepartmentNames()) })
+    }
     if (!row?.drillContext) throw new Error('当前组件结果没有可用的精确下钻上下文')
     const version = await dashboardIndicatorVersion(source, widget)
     const configuredPaths = version?.drillConfig?.drillPaths || version?.drillPaths || []

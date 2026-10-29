@@ -1,9 +1,10 @@
 import { fetchMedicalDashboard, fetchMedicalDashboardMetadata, openMedicalDashboard, queryMedicalDashboard,
-  fetchMedicalFilterOptions, fetchMedicalDrillPath, searchMedicalDrill } from '../../api/modules/medical'
+  fetchMedicalFilterOptions, fetchMedicalDrillPath, searchMedicalDrill, fetchMedicalGroupingTargets, searchMedicalQueryDrill } from '../../api/modules/medical'
+import { instantChartDrillTarget } from './instantChartDrill.js'
 
 // Reuse the ordinary viewer, but never fall back to its unscoped management APIs.
 export function createMedicalDashboardRuntime(api = { fetchMedicalDashboard, fetchMedicalDashboardMetadata, openMedicalDashboard,
-  queryMedicalDashboard, fetchMedicalFilterOptions, fetchMedicalDrillPath, searchMedicalDrill }) {
+  queryMedicalDashboard, fetchMedicalFilterOptions, fetchMedicalDrillPath, searchMedicalDrill, fetchMedicalGroupingTargets, searchMedicalQueryDrill }) {
   let dashboardId = '', metadata = {}
   const tickets = new Map()
   return {
@@ -36,6 +37,12 @@ export function createMedicalDashboardRuntime(api = { fetchMedicalDashboard, fet
       const tuple = params?.data?.dimensionValues || {}
       const selected = params?.data?.row || dataset?.rows?.find(row => Object.entries(tuple).every(([field, value]) => String(row[field]) === String(value)))
       const context = selected?.drillContext
+      if (selected?.queryContext) {
+        const response = await api.fetchMedicalGroupingTargets(dashboardId, widget.id)
+        return instantChartDrillTarget(selected, response?.data || response, { field: widget.config?.dataBinding?.dimensions?.[0]?.field,
+          search: (payload, options) => api.searchMedicalQueryDrill(dashboardId, widget.id, payload, options),
+          departmentNames: Object.fromEntries(this.departmentNames) })
+      }
       const ticket = tickets.get(String(context?.resultId))
       if (!context || !ticket) throw new Error('当前组件结果没有有效的科室下钻授权，请刷新看板')
       const path = await api.fetchMedicalDrillPath(dashboardId, ticket, context.resultId)

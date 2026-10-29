@@ -33,7 +33,8 @@ export function validateWidgetBinding(kind, binding, fields = []) {
     if (!Array.isArray(binding[slot])) errors.push(`${slot} 配置必须是数组`)
   }
   if (errors.length) return { valid: false, errors }
-  const dimensionCountValid = kind === 'line' || kind === 'bar' ? binding.dimensions.length >= 1 && binding.dimensions.length <= 2 : binding.dimensions.length === capability.dimensions
+  const completeTuple = Boolean(binding.groupingTarget) && ['line', 'bar', 'pie', 'ranking', 'table', 'radar', 'funnel'].includes(kind)
+  const dimensionCountValid = completeTuple ? binding.dimensions.length >= 1 : kind === 'line' || kind === 'bar' ? binding.dimensions.length >= 1 && binding.dimensions.length <= 2 : binding.dimensions.length === capability.dimensions
   if (!dimensionCountValid) errors.push(capability.dimensions ? (kind === 'line' || kind === 'bar' ? '请添加一至两个维度字段' : '请添加一个维度字段') : 'KPI 不支持维度')
   if (!binding.measures.length || binding.measures.length > capability.measures || kind === 'scatter' && binding.measures.length !== 2) errors.push(kind === 'scatter' ? '散点图需要恰好两个度量字段' : capability.measures === 1 ? '此组件仅支持一个度量' : '请添加至少一个度量字段')
   if (binding.series.length > capability.series) errors.push('此组件的系列数量超出限制')
