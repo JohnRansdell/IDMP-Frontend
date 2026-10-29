@@ -272,6 +272,10 @@ onBeforeUnmount(() => {
   min-height: 0;
 }
 
+.idmp-chart-frame.is-fit-container .idmp-chart {
+  min-height: min(160px, calc(100% - 28px));
+}
+
 .idmp-chart__footer {
   display: flex;
   flex-direction: column;

@@ -62,7 +62,8 @@ export const IDMP_CHART_THEME = {
       show: false
     },
     axisLabel: {
-      color: '#52606d'
+      color: '#52606d',
+      hideOverlap: true
     },
     splitLine: {
       lineStyle: { color: '#e3e9ee', type: 'dashed' }
