@@ -70,6 +70,7 @@ test('shared resource contracts preserve opaque IDs, nested versions and sensiti
 test('mapping pages share policy precedence and preserve their summary/detail rendering', () => {
   assert.equal(policyLabel({ policyFileName: 'legacy', policyReferences: [{ policyFileName: 'versioned' }] }), 'versioned')
   const difference = { hasDifferences: true, definition: { different: true, source: null, target: { name: 'definition' } } }
-  assert.deepEqual(buildDifferenceRows(difference), [{ label: '定义', different: true, source: '-', target: '已返回结构化内容' }])
-  assert.deepEqual(buildDifferenceRows(difference, { detailed: true }), [{ label: '指标定义', different: true, source: '未提供', target: 'definition' }])
+  const values = { key: 'definition', sourceValue: null, targetValue: { name: 'definition' } }
+  assert.deepEqual(buildDifferenceRows(difference), [{ ...values, label: '定义', different: true, source: '-', target: '已返回结构化内容' }])
+  assert.deepEqual(buildDifferenceRows(difference, { detailed: true }), [{ ...values, label: '指标定义', different: true, source: '未提供', target: 'definition' }])
 })

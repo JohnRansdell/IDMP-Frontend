@@ -74,6 +74,7 @@
               <div><h2>口径差异对比</h2></div>
               <el-switch v-model="onlyDifferences" active-text="仅看差异" />
             </div>
+            <MappingFormulaComparison v-if="version?.difference?.formulaAst && (!onlyDifferences || version.difference.formulaAst.different)" :source="version.difference.formulaAst.source" :target="version.difference.formulaAst.target" :source-factors="version.difference.factors?.source || []" :target-factors="version.difference.factors?.target || []" />
             <div class="difference-scroll">
               <div class="difference-table">
                 <el-table :data="visibleDifferenceRows" size="small" :max-height="430" empty-text="当前筛选下暂无差异项">
@@ -81,8 +82,8 @@
                   <el-table-column label="结果" width="110">
                     <template #default="{ row }"><StatusBadge :status="row.different ? 'WARNING' : 'PASSED'" :label="row.different ? '存在差异' : '一致'" /></template>
                   </el-table-column>
-                  <el-table-column prop="source" label="源指标" min-width="260"><template #default="{ row }"><span class="difference-value">{{ row.source }}</span></template></el-table-column>
-                  <el-table-column prop="target" label="目标指标" min-width="260"><template #default="{ row }"><span class="difference-value">{{ row.target }}</span></template></el-table-column>
+                  <el-table-column prop="source" label="源指标" min-width="260"><template #default="{ row }"><MappingDifferenceValue :value="row.sourceValue" :counterpart="row.targetValue" /></template></el-table-column>
+                  <el-table-column prop="target" label="目标指标" min-width="260"><template #default="{ row }"><MappingDifferenceValue :value="row.targetValue" :counterpart="row.sourceValue" /></template></el-table-column>
                 </el-table>
               </div>
             </div>
@@ -157,6 +158,8 @@ import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import PolicyVersionPicker from '@/idmp/components/PolicyVersionPicker.vue'
+import MappingDifferenceValue from '@/idmp/components/MappingDifferenceValue.vue'
+import MappingFormulaComparison from '@/idmp/components/MappingFormulaComparison.vue'
 import { approveMapping, createPolicyReference, fetchMapping, fetchPolicyReferences, invalidateMapping, invalidatePolicyReference as invalidatePolicyReferenceRequest, rejectMapping, submitMapping } from '@/idmp/api/modules/mappings'
 import { POLICY_REFERENCE_ROLES, comparabilityLabel, formatIndicatorRef, mappingActionAllowed, mappingActionCompleted, mappingCapabilities, mappingStatusLabel, mappingTypeDescription, mappingTypeLabel, policyReferenceRoleLabel, toOpaqueId } from '@/idmp/api/adapters/mapping'
 
@@ -176,7 +179,7 @@ const version = computed(() => detail.value?.version || null)
 const invalidateReason = computed(() => detail.value?.invalidateReason || '')
 const capabilities = computed(() => mappingCapabilities(detail.value || {}))
 const differenceRows = computed(() => buildDifferenceRows(version.value?.difference))
-const visibleDifferenceRows = computed(() => onlyDifferences.value ? differenceRows.value.filter(item => item.different) : differenceRows.value)
+const visibleDifferenceRows = computed(() => differenceRows.value.filter(item => item.key !== 'formulaAst' && (!onlyDifferences.value || item.different)))
 const evidenceEntries = computed(() => Object.entries(version.value?.evidence || {}).map(([key, value]) => ({ label: evidenceLabel(key), value: evidenceValue(value) })))
 const policySides = computed(() => [
   { key: 'source', label: '源指标政策依据', indicator: mapping.value?.sourceIndicator },
