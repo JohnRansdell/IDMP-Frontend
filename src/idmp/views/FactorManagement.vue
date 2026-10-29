@@ -22,7 +22,6 @@
             高级自定义创建
           </el-button>
           <el-button v-access="'factor.recycleBin.read'" @click="router.push('/factor/recycle-bin')">回收站</el-button>
-          <el-button v-access="'factor.create'" :icon="Upload" @click="showUnavailable('批量导入')">批量导入</el-button>
         </div>
       </template>
     </PageHeader>
@@ -156,8 +155,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from '@/idmp/utils/message'
-import { Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
+import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
   import StatusBadge from '@/idmp/components/StatusBadge.vue'
@@ -241,10 +239,6 @@ const openFactorEditor = (id) => {
 
 const openAdvancedFactorEditor = () => {
   router.push('/factor/edit/new?mode=advanced')
-}
-
-const showUnavailable = (capability) => {
-  ElMessage.info(`${capability}暂不可用。`)
 }
 
 const openDelete = row => { deleteTarget.value = row }

@@ -13,15 +13,6 @@
         <el-button v-access="'indicator.create'" type="primary" :icon="Plus" @click="openEditor('new')">新增指标</el-button>
         <el-button v-access="'indicator.recycleBin.read'" @click="router.push('/indicator/recycle-bin')">回收站</el-button>
         <el-button v-access="'sqlImport.create'" :icon="Upload" @click="router.push('/indicator/import/sql')">SQL 导入</el-button>
-        <el-tooltip content="暂不支持批量导出">
-          <span
-            class="disabled-tooltip-trigger"
-            tabindex="0"
-            aria-label="批量导出不可用：暂不支持批量导出"
-          >
-            <el-button :icon="Download" disabled>批量导出</el-button>
-          </span>
-        </el-tooltip>
         <el-button-group class="view-switch">
           <el-button
             :type="viewMode === 'table' ? 'primary' : 'default'"
@@ -230,7 +221,7 @@
 <script setup>
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Download, Grid, Menu, Plus, RefreshLeft, Search, Upload } from '@element-plus/icons-vue'
+import { Grid, Menu, Plus, RefreshLeft, Search, Upload } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
@@ -444,10 +435,6 @@ onMounted(() => {
 
 .view-switch {
   margin-left: 2px;
-}
-
-.disabled-tooltip-trigger {
-  display: inline-flex;
 }
 
 .indicator-source-notice {
