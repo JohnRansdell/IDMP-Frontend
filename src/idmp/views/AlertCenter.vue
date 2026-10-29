@@ -9,7 +9,7 @@
     <el-tabs v-model="activeTab" @tab-change="refreshCurrent">
       <el-tab-pane v-if="$can('GET', '/analysis/warnings')" label="预警事件" name="events">
         <section class="surface-card filter-card">
-          <el-form v-query-enter :model="eventFilters" inline @submit.prevent="loadEvents">
+          <el-form v-query-enter :model="eventFilters" inline @submit.prevent="searchEvents">
             <el-form-item label="预警规则"><ResourceReferenceSelect v-model="eventFilters.ruleId" kind="RULE" placeholder="请选择预警规则" /></el-form-item>
             <el-form-item label="指标版本"><el-select default-first-option v-model="eventFilters.indicatorVersionId" class="indicator-filter" clearable filterable><el-option v-for="item in indicatorVersions" :key="item.id" :label="indicatorLabel(item)" :value="item.id" /></el-select></el-form-item>
             <el-form-item label="状态"><el-select v-model="eventFilters.status" aria-label="事件状态" clearable><el-option v-for="item in WARNING_EVENT_STATUSES" :key="item" :label="warningLabel(item)" :value="item" /></el-select></el-form-item>
@@ -39,13 +39,13 @@
             <el-table-column label="操作" width="180" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="navigateToEvent(row.id)">详情</el-button><el-button v-access="'warning.acknowledge'" v-if="row.status === 'OPEN'" link type="primary" @click="acknowledgeEvent(row)">确认</el-button><el-button v-access="'warning.close'" v-if="row.status !== 'CLOSED'" link type="danger" @click="closeEvent(row)">关闭</el-button></template></el-table-column>
           </el-table>
           <p v-if="eventDictionaryError" class="event-dictionary-note" role="status">{{ eventDictionaryError }}</p>
-          <div class="table-footer"><span>共 {{ eventTotal }} 条</span><el-pagination v-model:current-page="eventPage" v-model:page-size="eventSize" layout="prev, pager, next, sizes" :page-sizes="[6,9,12]" :total="eventTotal" @current-change="loadEvents" @size-change="loadEvents" /></div>
+          <div class="table-footer"><span>共 {{ eventTotal }} 条</span><el-pagination v-model:current-page="eventPage" v-model:page-size="eventSize" layout="prev, pager, next, sizes" :page-sizes="[6,9,12]" :total="eventTotal" @current-change="loadEvents" @size-change="searchEvents" /></div>
         </section>
       </el-tab-pane>
 
       <el-tab-pane v-if="$can('GET', '/analysis/warning-rules')" label="预警规则" name="rules">
         <section class="surface-card filter-card">
-          <el-form v-query-enter :model="ruleFilters" inline @submit.prevent="loadRules">
+          <el-form v-query-enter :model="ruleFilters" inline @submit.prevent="searchRules">
 
             <el-form-item label="名称"><el-input v-model.trim="ruleFilters.name" /></el-form-item>
             <el-form-item label="是否启用"><el-select v-model="ruleFilters.enableStatus" aria-label="规则是否启用" clearable><el-option label="已启用" value="ENABLED" /><el-option label="未启用" value="DISABLED" /></el-select></el-form-item>
@@ -53,7 +53,7 @@
             <el-form-item><el-button type="primary" native-type="submit">查询</el-button><el-button @click="resetRuleFilters">重置</el-button></el-form-item>
           </el-form>
         </section>
-<section class="surface-card table-card"><div class="table-heading"><div><h2>预警规则</h2><p>规则须先发布再启用；仅后续激活的、周期类型匹配的正式结果参与评估。</p></div></div><StatePanel v-if="ruleError" type="error" title="预警规则读取失败" :description="ruleError" /><StatePanel v-else-if="!ruleLoading && !rules.length" type="empty" title="暂无预警规则" description="可创建一条草稿规则，再发布并启用。" /><el-table v-else v-loading="ruleLoading" :data="rules" table-layout="fixed"><el-table-column prop="name" label="名称" min-width="280"><template #default="{ row }"><span>{{ row.name }}</span></template></el-table-column><el-table-column label="规则类型" width="135"><template #default="{ row }">{{ warningLabel(row.version?.warningType) }}</template></el-table-column><el-table-column label="指标版本" min-width="145"><template #default="{ row }"><span class="mono-data">{{ indicatorLabel(indicatorVersions.find(item => item.id === String(row.version?.indicatorVersionId)) || { name: '指标名称暂不可用' }) }}</span></template></el-table-column><el-table-column label="发布状态" width="110"><template #default="{ row }"><StatusBadge :status="row.version?.publicationStatus" :label="warningLabel(row.version?.publicationStatus)" /></template></el-table-column><el-table-column label="是否启用" width="110"><template #default="{ row }"><StatusBadge :status="row.enableStatus" :label="warningLabel(row.enableStatus)" /></template></el-table-column><el-table-column label="操作" width="300" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openRule(row)">详情</el-button><el-button v-access="'warningVersion.edit'" v-if="ruleCapabilities(row).canEdit" link type="primary" @click="openEditRule(row)">编辑草稿</el-button><el-button v-access="'warningVersion.publish'" v-if="ruleCapabilities(row).canPublish" link type="success" @click="publishRule(row)">发布</el-button><el-button v-access="'warningRule.enable'" v-if="ruleCapabilities(row).canEnable" link type="success" @click="toggleRule(row, true)">启用</el-button><el-button v-access="'warningRule.disable'" v-if="ruleCapabilities(row).canDisable" link type="warning" @click="toggleRule(row, false)">停用</el-button></template></el-table-column></el-table><div class="table-footer"><span>共 {{ ruleTotal }} 条</span><el-pagination v-model:current-page="rulePage" v-model:page-size="ruleSize" layout="prev, pager, next, sizes" :page-sizes="[10,20,50]" :total="ruleTotal" @current-change="loadRules" @size-change="loadRules" /></div></section>
+<section class="surface-card table-card"><div class="table-heading"><div><h2>预警规则</h2><p>规则须先发布再启用；仅后续激活的、周期类型匹配的正式结果参与评估。</p></div></div><StatePanel v-if="ruleError" type="error" title="预警规则读取失败" :description="ruleError" /><StatePanel v-else-if="!ruleLoading && !rules.length" type="empty" title="暂无预警规则" description="可创建一条草稿规则，再发布并启用。" /><el-table v-else v-loading="ruleLoading" :data="rules" table-layout="fixed"><el-table-column prop="name" label="名称" min-width="280"><template #default="{ row }"><span>{{ row.name }}</span></template></el-table-column><el-table-column label="规则类型" width="135"><template #default="{ row }">{{ warningLabel(row.version?.warningType) }}</template></el-table-column><el-table-column label="指标版本" min-width="145"><template #default="{ row }"><span class="mono-data">{{ indicatorLabel(indicatorVersions.find(item => item.id === String(row.version?.indicatorVersionId)) || { name: '指标名称暂不可用' }) }}</span></template></el-table-column><el-table-column label="发布状态" width="110"><template #default="{ row }"><StatusBadge :status="row.version?.publicationStatus" :label="warningLabel(row.version?.publicationStatus)" /></template></el-table-column><el-table-column label="是否启用" width="110"><template #default="{ row }"><StatusBadge :status="row.enableStatus" :label="warningLabel(row.enableStatus)" /></template></el-table-column><el-table-column label="操作" width="300" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openRule(row)">详情</el-button><el-button v-access="'warningVersion.edit'" v-if="ruleCapabilities(row).canEdit" link type="primary" @click="openEditRule(row)">编辑草稿</el-button><el-button v-access="'warningVersion.publish'" v-if="ruleCapabilities(row).canPublish" link type="success" @click="publishRule(row)">发布</el-button><el-button v-access="'warningRule.enable'" v-if="ruleCapabilities(row).canEnable" link type="success" @click="toggleRule(row, true)">启用</el-button><el-button v-access="'warningRule.disable'" v-if="ruleCapabilities(row).canDisable" link type="warning" @click="toggleRule(row, false)">停用</el-button></template></el-table-column></el-table><div class="table-footer"><span>共 {{ ruleTotal }} 条</span><el-pagination v-model:current-page="rulePage" v-model:page-size="ruleSize" layout="prev, pager, next, sizes" :page-sizes="[10,20,50]" :total="ruleTotal" @current-change="loadRules" @size-change="searchRules" /></div></section>
       </el-tab-pane>
 
       <el-tab-pane v-if="$can('GET', '/me/notifications')" label="站内通知" name="notifications">
@@ -173,23 +173,30 @@ async function loadUsers() {
   catch (error) { ElMessage.warning(error?.message || '接收用户列表加载失败，请稍后重试') }
   finally { usersLoading.value = false }
 }
+let eventRequestGeneration = 0, ruleRequestGeneration = 0
+function searchEvents() { eventPage.value = 1; return loadEvents() }
+function searchRules() { rulePage.value = 1; return loadRules() }
 async function loadEvents() {
   if (!canRequest('GET', '/analysis/warnings')) return
+  const generation = ++eventRequestGeneration
   eventLoading.value = true; eventError.value = ''
   try {
     const page = normalizePage(await fetchWarnings({ ...eventFilters, page: eventPage.value, size: eventSize.value }))
+    if (generation !== eventRequestGeneration) return
     events.value = page.records; eventTotal.value = page.total
-  } catch (error) { events.value = []; eventTotal.value = 0; eventError.value = error?.message || '无法读取预警事件' }
-  finally { eventLoading.value = false }
+  } catch (error) { if (generation === eventRequestGeneration) { events.value = []; eventTotal.value = 0; eventError.value = error?.message || '无法读取预警事件' } }
+  finally { if (generation === eventRequestGeneration) eventLoading.value = false }
 }
 async function loadRules() {
   if (!canRequest('GET', '/analysis/warning-rules')) return
+  const generation = ++ruleRequestGeneration
   ruleLoading.value = true; ruleError.value = ''
   try {
     const page = normalizePage(await fetchWarningRules({ ...ruleFilters, page: rulePage.value, size: ruleSize.value }))
+    if (generation !== ruleRequestGeneration) return
     rules.value = page.records.map(normalizeWarningRule); ruleTotal.value = page.total
-  } catch (error) { rules.value = []; ruleTotal.value = 0; ruleError.value = error?.message || '无法读取预警规则' }
-  finally { ruleLoading.value = false }
+  } catch (error) { if (generation === ruleRequestGeneration) { rules.value = []; ruleTotal.value = 0; ruleError.value = error?.message || '无法读取预警规则' } }
+  finally { if (generation === ruleRequestGeneration) ruleLoading.value = false }
 }
 async function loadNotifications() {
   notificationLoading.value = true; notificationError.value = ''
