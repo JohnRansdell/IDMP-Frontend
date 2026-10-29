@@ -94,6 +94,7 @@ import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMoun
 import * as echarts from 'echarts'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import { IDMP_CHART_THEME, normalizeChartOption } from '@/idmp/charts/theme'
+import { withCategoryViewport } from '@/idmp/charts/categoryViewport.js'
 
 const THEME_NAME = 'idmp-clinical'
 echarts.registerTheme(THEME_NAME, IDMP_CHART_THEME)
@@ -159,12 +160,14 @@ const updateChart = () => {
     chartWidth = width
     chartHeight = height
   }
-  if (renderPending) {
+  const sizeChanged = width !== chartWidth || height !== chartHeight
+  if (renderPending || sizeChanged) {
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    const chartOption = normalizeChartOption({
+    const previousStart = renderPending ? 0 : chart.getOption()?.dataZoom?.find(item => item.id === 'idmp-category-slider')?.startValue
+    const chartOption = withCategoryViewport(normalizeChartOption({
       animation: !reducedMotion,
       ...props.option
-    })
+    }), width, height, previousStart)
     const mapDefinition = chartOption.__mapDefinition
     if (mapDefinition?.name && mapDefinition.geoJSON) echarts.registerMap(mapDefinition.name, mapDefinition.geoJSON)
     delete chartOption.__mapDefinition

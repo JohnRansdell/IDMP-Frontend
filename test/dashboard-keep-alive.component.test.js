@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { withCategoryViewport } from '../src/idmp/charts/categoryViewport.js'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { compileScript, parse } from '@vue/compiler-sfc'
@@ -67,6 +68,7 @@ function chartRuntime() {
     init() {
       const chart = { options: [], resizes: [], disposed: false, on() {},
         setOption(option) { this.options.push(option) },
+        getOption() { return this.options.at(-1) || {} },
         resize(size) { this.resizes.push(size) },
         dispose() { this.disposed = true }
       }
@@ -74,7 +76,7 @@ function chartRuntime() {
       return chart
     }
   }
-  return { instances, dependencies: { echarts, StatePanel: Empty, IDMP_CHART_THEME: {}, normalizeChartOption: value => value } }
+  return { instances, dependencies: { echarts, StatePanel: Empty, IDMP_CHART_THEME: {}, normalizeChartOption: value => value, withCategoryViewport } }
 }
 
 test('cached chart pauses detached callbacks, defers data changes, and restores the latest option', async () => {

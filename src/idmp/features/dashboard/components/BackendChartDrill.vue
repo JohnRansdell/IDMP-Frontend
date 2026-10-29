@@ -84,7 +84,7 @@ const rawOption = computed(() => {
     return row ? `${row.dimensionLabel}<br/>指标值：${formatResultValue(row.indicatorValue, { displayValue: row.displayValue, unit: row.unit || props.unit, missing: '—' })}${operandColumns.value.map(operand => `<br/>${operand.label}：${formatResultNumber(operandValue(row, operand), { missing: '—' })}`).join('')}` : ''
   } }
   if (props.kind === 'pie') return { tooltip, legend: { type: 'scroll', bottom: 0 }, series: [{ name: measure.value.label, type: 'pie', radius: ['42%', '67%'], center: ['50%', '44%'], minShowLabelAngle: 2, data }] }
-  return { tooltip, grid: { top: 22, bottom: 34, left: 12, right: 16, containLabel: true }, dataZoom: rows.length > 15 ? [{ type: 'inside', start: 0, end: 15 / rows.length * 100 }, { type: 'slider', height: 12, bottom: 2, start: 0, end: 15 / rows.length * 100 }] : [], xAxis: { type: 'category', data: rows.map(row => row.dimensionLabel), axisLabel: { hideOverlap: true } }, yAxis: { type: 'value', axisLabel: { formatter: props.unit === '%' ? '{value}%' : '{value}' } }, series: [{ type: 'bar', data, barMaxWidth: 42 }] }
+  return { tooltip, grid: { top: 22, bottom: 34, left: 12, right: 16, containLabel: true }, xAxis: { type: 'category', data: rows.map(row => row.dimensionLabel), axisLabel: { hideOverlap: true } }, yAxis: { type: 'value', axisLabel: { formatter: props.unit === '%' ? '{value}%' : '{value}' } }, series: [{ type: 'bar', data, barMaxWidth: 42 }] }
 })
 const chartOption = computed(() => createDashboardChartTheme(applyWidgetVisualStyle(props.widget, rawOption.value), resolveWidgetSurfaceTone(props.widget)))
 
