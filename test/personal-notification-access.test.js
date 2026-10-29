@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {canAccess} from '../src/idmp/auth/permissions.js'
+import {canAccess, canVisit} from '../src/idmp/auth/permissions.js'
 
 const analyst = {status: 'authenticated', user: {id: '123'}, roles: ['DEPARTMENT_ANALYST'], apiRules: [], deniedPaths: []}
 test('登录用户的收件箱和已读操作不依赖角色菜单权限', () => {
@@ -9,10 +9,13 @@ test('登录用户的收件箱和已读操作不依赖角色菜单权限', () =>
   }
   assert.equal(canAccess(analyst, 'DELETE', '/me/notifications/123/read'), false)
   assert.equal(canAccess(analyst, 'GET', '/system/users'), false)
+  assert.equal(canVisit(analyst, '/alerts'), true)
+  assert.equal(canAccess(analyst, 'GET', '/analysis/warnings'), false)
 })
 test('匿名、签名看板专用会话和显式禁止均不能绕过权限', () => {
   for (const session of [{...analyst, status: 'anonymous', user: null}, {...analyst, roles: ['MEDICAL_VIEWER']}, {...analyst, deniedPaths: ['/api/v1/me/notifications/**']}]) {
     assert.equal(canAccess(session, 'GET', '/me/notifications'), false)
+    assert.equal(canVisit(session, '/alerts'), false)
   }
 })
 test('权限豁免只限个人通知既有端点', () => {

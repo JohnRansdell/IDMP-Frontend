@@ -37,6 +37,10 @@ export function canVisit(session, target) {
   }
   const rule = PAGE_ACCESS.find(rule => rule.pattern.test(path))
   if (!rule) return session.roles?.some(role => ['SYSTEM_ADMIN', 'ADMIN'].includes(role)) || false
+  if (rule.alternativeActions?.some(action => {
+    const grant = resolveAccessGrant(action)
+    return Boolean(grant && canAccess(session, ...grant))
+  })) return true
   const grant = rule.resourceIdGroup
     ? resolveAccessGrant({ action: rule.action, resourceId: rule.pattern.exec(path)?.[rule.resourceIdGroup] })
     : resolveAccessGrant(rule.action)

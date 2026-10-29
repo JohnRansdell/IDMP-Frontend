@@ -7,7 +7,7 @@
     </PageHeader>
 
     <el-tabs v-model="activeTab" @tab-change="refreshCurrent">
-      <el-tab-pane label="预警事件" name="events">
+      <el-tab-pane v-if="$can('GET', '/analysis/warnings')" label="预警事件" name="events">
         <section class="surface-card filter-card">
           <el-form v-query-enter :model="eventFilters" inline @submit.prevent="loadEvents">
             <el-form-item label="预警规则"><ResourceReferenceSelect v-model="eventFilters.ruleId" kind="RULE" placeholder="请选择预警规则" /></el-form-item>
@@ -43,7 +43,7 @@
         </section>
       </el-tab-pane>
 
-      <el-tab-pane label="预警规则" name="rules">
+      <el-tab-pane v-if="$can('GET', '/analysis/warning-rules')" label="预警规则" name="rules">
         <section class="surface-card filter-card">
           <el-form v-query-enter :model="ruleFilters" inline @submit.prevent="loadRules">
 
@@ -57,7 +57,18 @@
       </el-tab-pane>
 
       <el-tab-pane v-if="$can('GET', '/me/notifications')" label="站内通知" name="notifications">
-        <section class="surface-card table-card"><div class="table-heading"><div><h2>当前用户站内通知</h2><p>阅读通知不改变对应预警事件的确认或关闭状态。</p></div><el-button :disabled="!notifications.some(item => item.notificationStatus === 'UNREAD')" @click="readAllNotifications">全部已读</el-button></div><StatePanel v-if="notificationError" type="error" title="站内通知读取失败" :description="notificationError" /><StatePanel v-else-if="!notificationLoading && !notifications.length" type="empty" title="暂无有效站内通知" /><el-table v-else v-loading="notificationLoading" :data="notifications" table-layout="fixed"><el-table-column prop="title" label="标题" min-width="150" /><el-table-column prop="content" label="内容" min-width="360" :show-overflow-tooltip="{ popperClass: 'notification-content-tooltip' }" /><el-table-column label="状态" width="100"><template #default="{ row }"><StatusBadge :status="row.notificationStatus" :label="row.notificationStatus === 'UNREAD' ? '未读' : '已读'" /></template></el-table-column><el-table-column prop="createdAt" label="时间" min-width="170" /><el-table-column label="操作" width="160"><template #default="{ row }"><el-button v-if="row.businessRefType === 'WARNING_EVENT'" link type="primary" @click="navigateToEvent(row.businessRefId)">查看预警</el-button><el-button v-if="row.notificationStatus === 'UNREAD'" link type="primary" @click="readNotification(row)">标记已读</el-button></template></el-table-column></el-table></section>
+        <section class="surface-card table-card">
+          <div class="table-heading"><div><h2>当前用户站内通知</h2><p>阅读通知不改变对应预警事件的确认或关闭状态。</p></div><el-button :disabled="!notifications.some(item => item.notificationStatus === 'UNREAD')" @click="readAllNotifications">全部已读</el-button></div>
+          <StatePanel v-if="notificationError" type="error" title="站内通知读取失败" :description="notificationError" />
+          <StatePanel v-else-if="!notificationLoading && !notifications.length" type="empty" title="暂无有效站内通知" />
+          <el-table v-else v-loading="notificationLoading" :data="notifications" table-layout="fixed">
+            <el-table-column prop="title" label="标题" min-width="150" />
+            <el-table-column prop="content" label="内容" min-width="360" :show-overflow-tooltip="{ popperClass: 'notification-content-tooltip' }" />
+            <el-table-column label="状态" width="100"><template #default="{ row }"><StatusBadge :status="row.notificationStatus" :label="row.notificationStatus === 'UNREAD' ? '未读' : '已读'" /></template></el-table-column>
+            <el-table-column prop="createdAt" label="时间" min-width="170" />
+            <el-table-column label="操作" width="160"><template #default="{ row }"><el-button v-if="row.businessRefType === 'WARNING_EVENT' && $can('GET', '/analysis/warnings')" link type="primary" @click="navigateToEvent(row.businessRefId)">查看预警</el-button><el-button v-if="row.notificationStatus === 'UNREAD'" link type="primary" @click="readNotification(row)">标记已读</el-button></template></el-table-column>
+          </el-table>
+        </section>
       </el-tab-pane>
     </el-tabs>
     </div>
@@ -103,7 +114,7 @@ import { WARNING_EVENT_STATUSES, WARNING_PERIOD_TYPES, WARNING_SEVERITIES, WARNI
 
 const router = useRouter()
 const route = useRoute()
-const activeTab = ref('events')
+const activeTab = ref(canRequest('GET', '/analysis/warnings') ? 'events' : canRequest('GET', '/analysis/warning-rules') ? 'rules' : 'notifications')
 const loading = computed(() => eventLoading.value || ruleLoading.value || notificationLoading.value)
 const mutating = ref(false)
 const eventLoading = ref(false); const ruleLoading = ref(false); const notificationLoading = ref(false)
@@ -149,8 +160,9 @@ function ruleCapabilities(rule) { return warningRuleCapabilities(rule) }
 function ruleWorkflowText(rule) { const capabilities = ruleCapabilities(rule); if (capabilities.canPublish) return '① 草稿已保存 → ② 发布规则 → ③ 启用规则'; if (capabilities.canEnable) return '① 草稿已保存 → ② 已发布 → ③ 启用规则'; if (capabilities.canDisable) return '① 草稿已保存 → ② 已发布 → ③ 已启用'; return `当前状态：${warningLabel(rule.version?.publicationStatus)} / ${warningLabel(rule.enableStatus)}` }
 function ruleWorkflowHint(rule) { const capabilities = ruleCapabilities(rule); if (capabilities.canPublish) return '发布用于冻结并校验当前规则定义；发布成功后仍不会触发预警，还需要继续启用。'; if (capabilities.canEnable) return '规则定义已经发布。点击“启用规则”后，后续新激活且范围匹配的正式结果才会参与评估。'; if (capabilities.canDisable) return '规则正在运行，只评估启用之后新激活且周期、有效期匹配的正式结果。'; return '请根据当前状态完成下一步操作。' }
 
-async function bootstrap() { await Promise.all([loadEvents(), loadRules(), loadIndicatorVersions(), loadUsers()]) }
+async function bootstrap() { await Promise.all([loadEvents(), loadRules(), loadIndicatorVersions(), loadUsers(), ...(activeTab.value === 'notifications' ? [loadNotifications()] : [])]) }
 async function loadIndicatorVersions() {
+  if (!canRequest('GET', '/indicator-versions') || (!canRequest('GET', '/analysis/warnings') && !canRequest('GET', '/analysis/warning-rules'))) return
   try { indicatorVersions.value = normalizeList(await fetchAllIndicatorVersions({ publicationStatus: 'PUBLISHED', size: 200 })).map(item => ({ ...item, id: opaqueId(item.id || item.versionId || item.indicatorVersionId) })).filter(item => item.id) }
   catch (error) { ElMessage.warning(error?.message || '已发布指标版本加载失败，请重试') }
 }
@@ -162,6 +174,7 @@ async function loadUsers() {
   finally { usersLoading.value = false }
 }
 async function loadEvents() {
+  if (!canRequest('GET', '/analysis/warnings')) return
   eventLoading.value = true; eventError.value = ''
   try {
     const page = normalizePage(await fetchWarnings({ ...eventFilters, page: eventPage.value, size: eventSize.value }))
@@ -170,6 +183,7 @@ async function loadEvents() {
   finally { eventLoading.value = false }
 }
 async function loadRules() {
+  if (!canRequest('GET', '/analysis/warning-rules')) return
   ruleLoading.value = true; ruleError.value = ''
   try {
     const page = normalizePage(await fetchWarningRules({ ...ruleFilters, page: rulePage.value, size: ruleSize.value }))
@@ -241,9 +255,9 @@ function openResultDrill(event) { eventDialogOpen.value = false; router.push({ p
 async function readNotification(notification) { try { await markNotificationRead(notification.id); notifyNotificationsRead(); await loadNotifications() } catch (error) { ElMessage.error(error?.message || '标记已读失败') } }
 async function readAllNotifications() { try { await markAllNotificationsRead(); notifyNotificationsRead(); ElMessage.success('当前有效通知已全部标记为已读'); await loadNotifications() } catch (error) { ElMessage.error(error?.message || '全部已读失败') } }
 
-watch(activeTab, (tab) => { if (tab === 'notifications' && !notifications.value.length) void loadNotifications() })
 watch([() => route.name, () => route.query.eventId], ([name, rawEventId]) => {
   if (name !== 'AlertCenter') return
+  if (!canRequest('GET', '/analysis/warnings')) return
   const eventId = typeof rawEventId === 'string' && /^[1-9]\d*$/.test(rawEventId) ? rawEventId : ''
   if (!eventId) { eventDialogOpen.value = false; return }
   activeTab.value = 'events'
