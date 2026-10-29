@@ -1,4 +1,5 @@
 import { normalizeDimensionGrain } from './grouping.js'
+import { normalizeOrganizationPath } from '../../utils/organizationDrill.js'
 
 const departmentRoles = new Set(['DEPARTMENT', 'DEPT', 'IN_DEPT', 'OUT_DEPT', 'CHANGE_DEPT'])
 const departmentLevel = () => ({ levelCode: 'DEPARTMENT', levelName: '科室', dimensionFieldCode: '科室', memberKeyFieldCode: '科室' })
@@ -14,7 +15,7 @@ export function activeOrganizationLevels(path) {
 
 export function replaceOrganizationPath(paths, levels) {
   const previous = organizationPath(paths)
-  const next = { pathCode: 'ORGANIZATION', pathName: previous?.pathName || '组织下钻路径', maxLevel: levels.at(-1)?.levelCode || 'HOSPITAL', levels }
+  const next = normalizeOrganizationPath({ pathCode: 'ORGANIZATION', pathName: previous?.pathName || '组织下钻路径', maxLevel: levels.at(-1)?.levelCode || 'HOSPITAL', levels })
   return previous ? paths.map(path => path === previous ? next : path) : [...paths, next]
 }
 
@@ -30,7 +31,7 @@ export function codeOnlyOrganizationPaths(paths) {
 
 export function setOrganizationEnabled(paths, enabled) {
   if (!enabled) return paths.filter(path => path.pathCode !== 'ORGANIZATION')
-  if (organizationPath(paths)) return paths
+  if (organizationPath(paths)) return paths.map(normalizeOrganizationPath)
   return replaceOrganizationPath(paths, [
     { levelCode: 'HOSPITAL', levelName: '医院' },
     departmentLevel()

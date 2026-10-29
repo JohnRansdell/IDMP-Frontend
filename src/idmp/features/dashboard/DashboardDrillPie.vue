@@ -133,7 +133,7 @@ const tableOnlyMode = ref(false)
 const requestGate = createPieDrillRequestGate()
 const currentNavigation = computed(() => history.value.at(-1) || {})
 const levelLabel = computed(() => ({
-  OUT_DEPT: '科室', MEDICAL_GROUP: '医疗组', ATTENDING_DOCTOR: '医师'
+  OUT_DEPT: '科室', MEDICAL_GROUP: '医疗组', ATTENDING_DOCTOR: '医生'
 }[normalizeOrganizationDrillLevel(currentNavigation.value.currentLevel)] || '组织'))
 const isLeaf = computed(() => result.value?.records.length && !result.value.records.some((row) => nextNavigation(row)))
 const reliableTotal = computed(() => {

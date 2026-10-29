@@ -1,4 +1,5 @@
 import { toOpaqueId } from '../../utils/resourceId.js'
+import { normalizeOrganizationPath } from '../../utils/organizationDrill.js'
 import { normalizeDimensionGrain, serializeDrillPaths } from '../../features/indicator/grouping.js'
 import { formulaChildren, arithmeticFormulaText } from '../../features/indicator/arithmeticFormula.js'
 import { normalizeResultMetrics } from './result.js'
@@ -341,7 +342,7 @@ function toApiDate(value) {
 
 export const defaultDrillConfig = Object.freeze({
   pathCode: runtimeEnv.VITE_DEFAULT_DRILL_PATH_CODE || 'ORGANIZATION',
-  maxLevel: runtimeEnv.VITE_DEFAULT_DRILL_MAX_LEVEL || 'OUT_DEPT',
+  maxLevel: runtimeEnv.VITE_DEFAULT_DRILL_MAX_LEVEL || 'DEPARTMENT',
   pathVersionId: ''
 })
 
@@ -359,7 +360,7 @@ export function normalizeDrillPaths(payload, fallback = []) {
     pathVersionId: String(path?.pathVersionId || ''),
     ...(path?.pathName ? { pathName: path.pathName } : {}),
     ...(path?.levels?.length ? { levels: path.levels } : {})
-  })).filter((path) => path.pathCode && path.maxLevel && !isRetiredDrillPath(path.pathCode))
+  })).filter((path) => path.pathCode && path.maxLevel && !isRetiredDrillPath(path.pathCode)).map(normalizeOrganizationPath)
 }
 
 export function normalizeDrillConfig(payload, fallback = defaultDrillConfig) {

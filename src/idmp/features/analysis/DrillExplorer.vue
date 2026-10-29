@@ -132,6 +132,7 @@ import FactorTraceTree from '@/idmp/components/FactorTraceTree.vue'
 import { fetchResultFactors, searchResultDrill } from '@/idmp/api/modules/drill'
 import { canonicalDrillRootResultId, limitDrillNextLevels } from '@/idmp/api/adapters/drill'
 import { assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation } from './drillContext.js'
+import { organizationLevelName } from '../../utils/organizationDrill.js'
 import { isStatusRecord } from '@/idmp/features/analysis/resultAvailability'
 import { getStatusLabel } from '@/idmp/design/status'
 import { formatResultNumber, formatResultValue, resultNumber } from '../shared/resultPresentation.js'
@@ -218,16 +219,17 @@ const resolvedPeriod = computed(() => {
   return start && end ? formatResultPeriod(start, end) : (props.period || '由结果快照确定')
 })
 
-const currentLevelLabel = computed(() => props.configuredPaths.find(path => path.pathCode === lastDrillDimension.value)?.levels?.find(level => level.levelCode === currentLevel.value)?.levelName || ({
+const currentLevelLabel = computed(() => organizationLevelName(lastDrillDimension.value, currentLevel.value,
+  props.configuredPaths.find(path => path.pathCode === lastDrillDimension.value)?.levels?.find(level => level.levelCode === currentLevel.value)?.levelName || ({
   HOSPITAL: '医院',
   OUT_DEPT: '科室',
   DEPARTMENT: '科室',
   MEDICAL_GROUP: '医疗组',
-  ATTENDING_DOCTOR: '主治医师',
-  DOCTOR: '医师',
+  ATTENDING_DOCTOR: '医生',
+  DOCTOR: '医生',
   CASE: '病例',
   PATIENT: '患者'
-}[currentLevel.value] || '当前层'))
+}[currentLevel.value] || '当前层')))
 
 function emptyResult() {
   return { context: {}, breadcrumb: [], summary: {}, columns: [], records: [], nextLevels: [], pageInfo: { total: 0 }, dataSource: 'live' }
@@ -316,7 +318,7 @@ async function loadDrill() {
     assertDrillResponseContext(response, context)
     const root = selectedPath()?.levels?.[0]
     if (lastDrillDimension.value === 'ORGANIZATION' && root && !drillMemberField(selectedPath(), root.levelCode)) {
-      const label = root.levelName || '医院'
+      const label = '全院'
       response.records = response.records.map(row => row.levelCode === root.levelCode && row.dimensionKey === '__UNASSIGNED__'
         ? { ...row, dimensionName: label, dimensionLabel: label } : row)
       response.breadcrumb = response.breadcrumb.map(item => item.level === root.levelCode && item.key === '__UNASSIGNED__'

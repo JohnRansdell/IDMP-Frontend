@@ -3,15 +3,19 @@ import { buildDrillRequest, drillMemberField, drillScope, nextDrillNavigation } 
 import { isDepartmentLevel, namedDrillRecord } from './dimensionNames.js'
 import { numericValue } from './fieldCatalog.js'
 import { resultChartNumber } from '../shared/resultPresentation.js'
+import { normalizeOrganizationPath, organizationLevelName } from '../../utils/organizationDrill.js'
 
 const PAGE_SIZE = 200
 const MAX_CHART_ROWS = 500
-const LEVEL_NAME = { OUT_DEPT: '科室', MEDICAL_GROUP: '医疗组', ATTENDING_DOCTOR: '医师' }
+const LEVEL_NAME = { OUT_DEPT: '科室', MEDICAL_GROUP: '医疗组', ATTENDING_DOCTOR: '医生' }
 
-export function chartDrillLevelName(level, root) { return root?.levels?.find(item => item.levelCode === level)?.levelName || LEVEL_NAME[normalizeOrganizationDrillLevel(level)] || '组织' }
+export function chartDrillLevelName(level, root) {
+  return organizationLevelName(root?.pathCode || 'ORGANIZATION', level,
+    root?.levels?.find(item => item.levelCode === level)?.levelName || LEVEL_NAME[normalizeOrganizationDrillLevel(level)] || '组织')
+}
 
 export function resolveChartDrillPath(paths = [], field = '') {
-  const normalized = paths.map(path => {
+  const normalized = paths.map(normalizeOrganizationPath).map(path => {
     const levels = path.levels?.map(normalizeDrillLevelDefinition)
     return !levels || levels.every((level, index) => level === path.levels[index]) ? path : { ...path, levels }
   })

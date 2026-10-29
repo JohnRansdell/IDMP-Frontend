@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import { JSDOM } from 'jsdom'
 import { formatResultPeriod } from '../src/idmp/utils/periodRange.js'
+import { organizationLevelName } from '../src/idmp/utils/organizationDrill.js'
 import { canonicalDrillRootResultId } from '../src/idmp/api/adapters/drill.js'
 import { formatResultNumber, formatResultValue, resultNumber } from '../src/idmp/features/shared/resultPresentation.js'
 import { getStatusLabel } from '../src/idmp/design/status.js'
@@ -31,8 +32,8 @@ const Button = vue.defineComponent({ setup: (_, { slots }) => () => vue.h('butto
 
 function create(fetchResultFactors = async () => ({ context: {}, factors: [] }), props = {}, drillResponse = {}, interactive = false) {
   const requests = []
-  const component = Function('vue', 'deps', `const { createRequestScope, useRoute, useRouter, StatePanel, FactorTraceTree, searchResultDrill, fetchResultFactors, limitDrillNextLevels, isStatusRecord, getStatusLabel, fetchDepartmentNames, isDepartmentLevel, namedDrillRecord, canonicalDrillRootResultId, assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation, formatResultNumber, formatResultValue, resultNumber, formatResultPeriod } = deps;\n${bindings}\n${code}`)(vue, {
-    createRequestScope, formatResultNumber, formatResultValue, resultNumber, formatResultPeriod,
+  const component = Function('vue', 'deps', `const { createRequestScope, useRoute, useRouter, StatePanel, FactorTraceTree, searchResultDrill, fetchResultFactors, limitDrillNextLevels, isStatusRecord, getStatusLabel, fetchDepartmentNames, isDepartmentLevel, namedDrillRecord, canonicalDrillRootResultId, assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation, formatResultNumber, formatResultValue, resultNumber, formatResultPeriod, organizationLevelName } = deps;\n${bindings}\n${code}`)(vue, {
+    createRequestScope, formatResultNumber, formatResultValue, resultNumber, formatResultPeriod, organizationLevelName,
     canonicalDrillRootResultId, assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation,
     useRoute: () => ({ query: {} }), useRouter: () => ({ push() {}, replace() {} }),
     StatePanel: vue.defineComponent({ props: ['title'], setup: props => () => vue.h('div', props.title) }),
@@ -152,8 +153,8 @@ test('an unbound hospital root is a configured summary, not a missing hospital m
     records: [{ levelCode: 'HOSPITAL', dimensionKey: '__UNASSIGNED__', dimensionName: '未维护医院' }],
     breadcrumb: [{ level: 'HOSPITAL', key: '__UNASSIGNED__', label: '未维护医院' }] })
   await flushPromises()
-  assert.deepEqual(wrapper.vm.getReportSnapshot().section.rows, [['医院']])
-  assert.equal(wrapper.find('.drill-breadcrumb__item').text(), '医院')
+  assert.deepEqual(wrapper.vm.getReportSnapshot().section.rows, [['全院']])
+  assert.equal(wrapper.find('.drill-breadcrumb__item').text(), '全院')
   wrapper.unmount()
 })
 
