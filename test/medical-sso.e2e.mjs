@@ -41,7 +41,7 @@ try {
         else if (path.endsWith('/periods')) data = [{ periodType: 'MONTHLY', periodStart: '2026-01-01T00:00:00', periodEnd: '2026-02-01T00:00:00' }]
         else if (path === '/medical/dashboards/2/query') {
           if (failQuery) return route.fulfill({ status: 403, json: { code: 'COMMON-40300', message: '科室授权已失效' } })
-          const period = { periodStart: body.periodStart, periodEnd: new Date(Date.parse(`${body.periodEnd}T00:00:00Z`) + 86400000).toISOString().slice(0, 10) }
+          const period = { periodStart: body.periodStart, periodEnd: body.periodEnd }
           data = { drillTicket: '11111111-1111-1111-1111-111111111111', data: { widgets: Object.fromEntries(body.widgetCodes.map(code => [code, { status: 'READY', fields, rows: code === 'kpi' ? [{ value: 128, ...period }] : [{ DOCTOR_NAME: '张医生', value: 128, drillContext, ...period }], rowMode: 'PROJECTED', resultId: '55', snapshotId: '66', drillContext }])) } }
         } else if (path.endsWith('/drill-path')) data = { versionId: '77', levels: [{ levelCode: 'OUT_DEPT', levelName: '科室', dimensionFieldCode: 'OUT_DEPT_CODE' }, { levelCode: 'DOCTOR', levelName: '医师', dimensionFieldCode: 'DOCTOR_NO' }] }
         else if (path.endsWith('/drill')) { assert.equal(body.pathCode, undefined); assert.equal(body.snapshotId, '66'); data = { context: { resultId: '55', snapshotId: '66', indicatorVersionId: '10', currentLevel: 'DOCTOR', parentKeys: { OUT_DEPT_CODE: '4101' }, pathCode: 'ORGANIZATION' }, records: [{ levelCode: 'DOCTOR', dimensionKey: '1001', dimensionName: '张医生', indicatorValue: 128, displayValue: '128', numerator: 128 }], pageInfo: { total: 1, pageNum: 1, pageSize: 200 }, nextLevels: [] } }

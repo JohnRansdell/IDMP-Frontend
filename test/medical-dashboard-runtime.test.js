@@ -5,7 +5,7 @@ const source = (await readFile(new URL('../src/idmp/features/dashboard/medicalRu
   .replace(/import[\s\S]*?from ['"][^'"]+['"]/g, '').replace('export function', 'function')
 const create = Function(`${source}; return createMedicalDashboardRuntime`)()
 
-test('shared viewer uses scoped metadata, inclusive wire bounds and per-result drill tickets', async () => {
+test('shared viewer uses scoped metadata, exclusive wire bounds and per-result drill tickets', async () => {
   const calls = []
   const api = {
     openMedicalDashboard: async id => calls.push(['open', id]),
@@ -24,7 +24,7 @@ test('shared viewer uses scoped metadata, inclusive wire bounds and per-result d
   assert.deepEqual([...runtime.departmentNames], [['16', 'Current department']])
   assert.equal(runtime.widgetMetadata('W1').fields[0].code, 'value')
   const results = await Promise.all(['55', '56'].map(code => runtime.query('2', { periodStart: '2026-01-01', periodEnd: '2026-02-01', widgetCodes: [code] })))
-  assert.ok(calls.filter(c => c[0] === 'query').every(c => c[1].periodEnd === '2026-01-31'))
+  assert.ok(calls.filter(c => c[0] === 'query').every(c => c[1].periodEnd === '2026-02-01'))
   assert.equal(results[0].widgets.BLOCKED.status, 'ERROR')
   assert.equal(results[0].widgets.BLOCKED.message, 'No scoped source')
   await runtime.query('2', { periodStart: '2026-02-01', periodEnd: '2026-05-01', granularity: 'CUSTOM', widgetCodes: ['57'] })
@@ -38,4 +38,18 @@ test('shared viewer uses scoped metadata, inclusive wire bounds and per-result d
   assert.throws(() => runtime.searchDrill('forged', {}))
   await runtime.load('2')
   assert.throws(() => runtime.searchDrill('55', {}), /下钻授权已失效/)
+})
+
+for (const [granularity, periodStart, periodEnd] of [
+  ['MONTHLY', '2026-04-01', '2026-05-01'],
+  ['QUARTERLY', '2026-01-01', '2026-04-01'],
+  ['YEARLY', '2026-01-01', '2027-01-01'],
+  ['CUSTOM', '2026-02-01', '2026-05-01']
+]) test(`signed ${granularity} query preserves the shared viewer period`, async () => {
+  const query = { granularity, periodStart, periodEnd, filters: { 性别: ['2'] } }
+  const runtime = create({ queryMedicalDashboard: async (_id, received) => {
+    assert.deepEqual(received, query)
+    return { data: { widgets: {} } }
+  } })
+  await runtime.query('2', query)
 })
