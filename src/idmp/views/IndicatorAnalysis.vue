@@ -153,10 +153,9 @@
             :indicator-id="selectedBackendIndicator.id || selectedBackendIndicator.indicatorId"
             :indicator-version-id="currentIndicatorVersionId"
             :indicator-name="currentProfile.name"
-            :filters="reportFilters"
             :enabled="activeTab === 'drill' && !analysisLoading"
-            :initial-period="backendAnalysis?.overview || {}"
-            :initial-granularity="backendAnalysisGranularity"
+            :initial-period="drillEntryContext.period"
+            :initial-granularity="drillEntryContext.granularity"
             :initial-result-id="route.query.drillResultId || ''"
             :start-level="drillStartLevel"
             :start-parent-keys="drillParentKeys"
@@ -170,7 +169,6 @@
             :result-id="drillResultId"
             :indicator-version-id="currentIndicatorVersionId"
             :path-result-ids="drillPathResultIds"
-            :start-filters="reportFilters"
             :indicator-name="currentProfile.name"
             :period="drillPeriod"
             :granularity="backendAnalysisGranularity"
@@ -269,7 +267,7 @@ import { resolvePrimaryAnalysisOverview } from '@/idmp/features/dashboard/visual
 import { buildSqlRuntimeParameterValues, collectSqlRuntimeParameters, validateSqlRuntimeParameterValues } from '@/idmp/api/adapters/sqlImport'
 import { exportIndicatorAnalysisPdf } from '@/idmp/api/modules/indicators'
 import { analysisPdfFilename, buildAnalysisPdfReport, downloadAnalysisPdf, renderAnalysisChartPng } from '@/idmp/features/analysis/pdfReport'
-import { formatPeriodLabel, analysisReportContext, resolveReportPeriod, reportPeriodQuery, normalizeAnalysisGranularity, shiftReportDate, analysisFilterParams, analysisFilters, analysisRouteKey, sourceAvailableReportRange } from '@/idmp/features/analysis/reportPeriod.js'
+import { formatPeriodLabel, analysisReportContext, resolveReportPeriod, reportPeriodQuery, normalizeAnalysisGranularity, shiftReportDate, analysisFilters, analysisRouteKey, analysisModuleRouteKey, sourceAvailableReportRange } from '@/idmp/features/analysis/reportPeriod.js'
 import { formatResultPeriod } from '@/idmp/utils/periodRange.js'
 import { buildReportSummaryRequest } from '@/idmp/features/analysis/reportQuery.js'
 import { createRequestScope, useLatestResult } from '@/idmp/features/analysis/useLatestResult.js'
@@ -295,13 +293,13 @@ const reportSelection = computed(() => resolveReportPeriod(reportPeriodRange.val
   { parameters: buildSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value), filters: reportFilterDraft.value }))
 const reportDirty = ref(false)
 const reportSubmitting = ref(false)
-const reportFilterParams = computed(() => analysisFilterParams(route.query))
 const reportFilters = computed(() => normalizeReportFilters(analysisFilters(route.query), reportDimensionMetadata.value))
 const reportFilterDraft = ref(normalizeReportFilters(analysisFilters(route.query)))
 const reportDimensionMetadata = computed(() => reportDimensionFields(backendIndicatorVersion.value || {}))
 const hasReportFilters = computed(() => Object.keys(reportFilters.value).length > 0)
 let localReportRouteKey = ''
 let localTrendRouteKey = ''
+let moduleRouteKey = analysisModuleRouteKey(route.query)
 const reportResultModeLabel = computed(() => rangeSummary.value?.executionMode === 'FORMAL_RESULTS' ? '正式结果汇总' : '即时计算')
 const overviewQuery = useLatestResult()
 const trendQuery = useLatestResult()
@@ -327,6 +325,7 @@ const backendIndicators = ref([])
 const indicatorOptionsLoading = ref(false)
 const drillStartLevel = ref(String(route.query.drillStartLevel || 'HOSPITAL').toUpperCase())
 const drillParentKeys = ref(parseDrillParentKeys(route.query.drillParentKeys))
+const drillEntryContext = ref(initialDrillEntryContext())
 const analysisPeriodRange = ref(initialAnalysisPeriodRange())
 const isSourceDefaultTrendRange = ref(false)
 let sourceTrendRangePending = !isCompleteDateRange(analysisPeriodRange.value)
@@ -625,7 +624,6 @@ const currentIndicatorVersionId = computed(() => String(
 const rankPeriodProps = computed(() => ({
   indicatorId: selectedBackendIndicator.value?.id || selectedBackendIndicator.value?.indicatorId || '',
   indicatorVersionId: currentIndicatorVersionId.value,
-  filters: reportFilters.value,
   enabled: activeTab.value === 'rank' && backendAnalysisGranularity.value !== 'STATIC'
 }))
 const { granularity: rankGranularity, selectedPeriod: rankSelectedPeriod, periodOptions: rankPeriodOptions,
@@ -635,7 +633,6 @@ const { granularity: rankGranularity, selectedPeriod: rankSelectedPeriod, period
   loadSelectedPeriod: loadSelectedRankPeriod, retryPeriod: retryRankPeriod } = useAnalysisPeriod({
     get indicatorId() { return rankPeriodProps.value.indicatorId },
     get indicatorVersionId() { return rankPeriodProps.value.indicatorVersionId },
-    get filters() { return rankPeriodProps.value.filters },
     get enabled() { return rankPeriodProps.value.enabled && !analysisLoading.value }
   }, async (indicatorId, params, options) => {
     const paths = backendIndicatorVersion.value?.drillConfig?.drillPaths || []
@@ -771,14 +768,6 @@ async function applyReportPeriod() {
       reportSummaryGranularity.value = reportSelection.value.summaryGranularity
       localReportRouteKey = analysisRouteKey(query)
       await router.replace({ path: '/analysis', query })
-    }
-    if (filtersChanged) {
-      drillStartLevel.value = 'HOSPITAL'
-      drillParentKeys.value = {}
-      overviewQuery.clear()
-      trendGrainDraft.value = {}
-      trendGrainApplied.value = {}
-      void refreshTrendAnalysis()
     }
     await loadRangeSummary()
   } catch (error) {
@@ -984,7 +973,7 @@ function getBackendIndicatorKey(indicator) {
 }
 
 function buildAnalysisParams(range = [], versionId = currentIndicatorVersionId.value, granularity = backendAnalysisGranularity.value) {
-  const params = { granularity, ...reportFilterParams.value }
+  const params = { granularity }
   if (versionId) params.indicatorVersionId = versionId
   if (granularity !== 'STATIC' && isCompleteDateRange(range)
     && !(isSourceDefaultTrendRange.value && range === analysisPeriodRange.value)) {
@@ -1053,13 +1042,13 @@ async function refreshIndicatorAnalysis() {
     if (backendIndicatorVersion.value) void loadAnalysisFormulaFactorVersions(backendIndicatorVersion.value, request)
 
     const backendIndicatorId = String(backendIndicator.id || backendIndicator.indicatorId)
-    if (calculationMode !== 'STATIC' && isCompleteDateRange(reportPeriodRange.value)
+    if ((calculationMode === 'STATIC' ? hasReportFilters.value : isCompleteDateRange(reportPeriodRange.value))
       && !validateSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)) {
       void loadRangeSummary()
     }
     // Overview and trend publish independently, without waiting for one another.
     void refreshTrendAnalysis()
-    const params = { ...buildAnalysisParams(reportPeriodRange.value), sections: [
+    const params = { ...buildAnalysisParams([]), sections: [
       'OVERVIEW', 'CALCULATION_TARGETS', 'TIME_COMPARISON',
       ...(calculationMode === 'STATIC' ? ['DEPARTMENT_COMPARISON'] : [])
     ] }
@@ -1071,6 +1060,9 @@ async function refreshIndicatorAnalysis() {
     if (backendAnalysisGranularity.value !== 'STATIC' && !reportDirty.value && !reportPeriodRange.value.length
       && result.overview?.periodStart && result.overview?.periodEnd) {
       reportPeriodRange.value = [normalizeDateValue(result.overview.periodStart), shiftReportDate(result.overview.periodEnd, -1)]
+      if (hasReportFilters.value && !validateSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value)) {
+        void loadRangeSummary()
+      }
     }
   } catch (error) {
     if (request.isCurrent()) analysisErrorMessage.value = error?.message || '指标配置暂时无法读取，请稍后重试。'
@@ -1151,6 +1143,9 @@ onActivated(() => {
 })
 
 watch(() => analysisRouteKey(route.query), key => {
+  const nextModuleKey = analysisModuleRouteKey(route.query)
+  const modulesChanged = nextModuleKey !== moduleRouteKey
+  moduleRouteKey = nextModuleKey
   if (key === localReportRouteKey) { localReportRouteKey = ''; return }
   if (key === localTrendRouteKey) { localTrendRouteKey = ''; return }
   localReportRouteKey = ''
@@ -1159,9 +1154,17 @@ watch(() => analysisRouteKey(route.query), key => {
   const reportContext = analysisReportContext(route.query)
   reportGranularity.value = reportContext.granularity
   reportSummaryGranularity.value = reportContext.summaryGranularity
+  if (!modulesChanged) {
+    reportPeriodRange.value = initialReportPeriodRange()
+    indicatorRuntimeParameterValues.value = {}
+    reportQuery.clear()
+    if (!pageInactive && !indicatorOptionsLoading.value) void loadRangeSummary()
+    return
+  }
   selectedIndicatorCode.value = indicatorCode.value
   drillStartLevel.value = String(route.query.drillStartLevel || 'HOSPITAL').toUpperCase()
   drillParentKeys.value = parseDrillParentKeys(route.query.drillParentKeys)
+  drillEntryContext.value = initialDrillEntryContext()
   analysisPeriodRange.value = initialAnalysisPeriodRange()
   trendPeriodDraft.value = [...analysisPeriodRange.value]
   isSourceDefaultTrendRange.value = false
@@ -1180,11 +1183,18 @@ watch(() => analysisRouteKey(route.query), key => {
   if (!pageInactive && !indicatorOptionsLoading.value) refreshIndicatorAnalysis()
 })
 
+function initialDrillEntryContext() {
+  const query = route.query
+  return query.drillResultId && query.periodStart && query.periodEnd
+    ? { period: { periodStart: query.periodStart, periodEnd: shiftReportDate(query.periodEnd, 1) },
+      granularity: normalizeAnalysisGranularity(query.granularity) }
+    : { period: {}, granularity: 'MONTHLY' }
+}
+
 function initialAnalysisPeriodRange() {
   const range = route.query.trendStart && route.query.trendEnd
     ? [normalizeDateValue(route.query.trendStart), normalizeDateValue(route.query.trendEnd)]
-    : String(route.query.granularity).toUpperCase() === 'CUSTOM' ? analysisReportContext(route.query).range
-      : readRememberedAnalysisPeriod(route.query.indicator, route.query.indicatorVersionId)
+    : readRememberedAnalysisPeriod(route.query.indicator, route.query.indicatorVersionId)
   return normalizeTrendMonthRange(range)
 }
 

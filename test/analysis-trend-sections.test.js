@@ -38,11 +38,11 @@ test('all trend granularities request only TREND without changing main analysis 
   }
 })
 
-test('both overview and trend preserve inherited dashboard filters', () => {
+test('independent analysis modules never inherit report or dashboard filter values', () => {
   const filters = { 'filter.OUT_DEPT_CODE': ['15', '16'] }
   const view = page({}, filters)
-  assert.deepEqual(view.buildAnalysisParams()['filter.OUT_DEPT_CODE'], ['15', '16'])
-  assert.deepEqual(view.buildTrendAnalysisParams([], '22', 'MONTHLY')['filter.OUT_DEPT_CODE'], ['15', '16'])
+  assert.equal(view.buildAnalysisParams()['filter.OUT_DEPT_CODE'], undefined)
+  assert.equal(view.buildTrendAnalysisParams([], '22', 'MONTHLY')['filter.OUT_DEPT_CODE'], undefined)
 })
 
 test('trend isolation preserves period boundaries and exact combination members', () => {

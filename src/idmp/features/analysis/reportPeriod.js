@@ -80,3 +80,10 @@ export function analysisRouteKey(query = {}) {
   return JSON.stringify(Object.entries(query).filter(([key]) => fields.includes(key) || key.startsWith('filter.'))
     .sort(([a], [b]) => a.localeCompare(b)))
 }
+
+export function analysisModuleRouteKey(query = {}) {
+  const fields = ['indicator', 'indicatorVersionId', 'trendStart', 'trendEnd',
+    'drillResultId', 'drillStartLevel', 'drillParentKeys']
+  return JSON.stringify(Object.entries(query).filter(([key]) => fields.includes(key))
+    .sort(([a], [b]) => a.localeCompare(b)))
+}

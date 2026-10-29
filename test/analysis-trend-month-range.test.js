@@ -52,3 +52,8 @@ test('old URLs, remembered ranges and source defaults normalize to complete mont
   assert.deepEqual(page().sourceAvailableTrendRange({ earliestDataDate: '2024-02-15T00:00:00', latestDataDate: '2024-02-20T00:00:00' }),
     ['2024-02-01', '2024-02-29'])
 })
+
+test('custom report ranges do not seed the independent trend period', () => {
+  assert.deepEqual(page({ granularity: 'CUSTOM', periodStart: '2025-12-01', periodEnd: '2025-12-31' })
+    .initialAnalysisPeriodRange(), [])
+})

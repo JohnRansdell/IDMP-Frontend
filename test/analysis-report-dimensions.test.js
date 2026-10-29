@@ -47,12 +47,14 @@ test('dashboard filter values retain multiple selections, zero and opaque codes;
   assert.deepEqual(reportFilterFields(fields, { dept: ['001'], 原筛选: '保留' }).map(field => field.code), ['DEPT', '原筛选'])
 })
 
-test('editing route filters removes cleared values and invalidates the previous drill anchor', () => {
+test('editing report filters removes cleared values without changing the independent drill anchor', () => {
   const route = { indicator: '1', indicatorVersionId: '2', periodStart: '2026-03-01', periodEnd: '2026-03-31', granularity: 'MONTHLY',
     'filter.科室': ['15', '16'], 'filter.医生': '300112', drillResultId: 'old', drillStartLevel: 'DOCTOR', drillParentKeys: '{}' }
   const next = replaceReportFilterQuery(route, { 科室: ['15'], 医生: [], 性别: ['2'] })
   assert.deepEqual(analysisFilters(next), { 科室: ['15'], 性别: ['2'] })
-  assert.equal(next.drillResultId, undefined)
+  assert.equal(next.drillResultId, 'old')
+  assert.equal(next.drillStartLevel, 'DOCTOR')
+  assert.equal(next.drillParentKeys, '{}')
   assert.equal(next.indicatorVersionId, '2')
   assert.equal(analysisReportContext(next).mode, 'INSTANT')
   assert.equal(analysisReportContext(replaceReportFilterQuery(next, {})).mode, 'FORMAL')

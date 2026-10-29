@@ -53,7 +53,6 @@ export function reportFilterFields(fields, filters) {
 }
 
 export function replaceReportFilterQuery(query, filters) {
-  return { ...Object.fromEntries(Object.entries(query).filter(([key]) => !key.startsWith('filter.')
-    && !['drillResultId', 'drillStartLevel', 'drillParentKeys'].includes(key))),
+  return { ...Object.fromEntries(Object.entries(query).filter(([key]) => !key.startsWith('filter.'))),
     ...Object.fromEntries(Object.entries(normalizeReportFilters(filters)).map(([code, values]) => [`filter.${code}`, values])) }
 }

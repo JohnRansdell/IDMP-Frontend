@@ -50,7 +50,7 @@ test('formal queries use the range endpoint and do not fall back to a different 
     assert.equal(model.primary.value, '-')
     assert.equal(model.summaries[0].value, report.loading ? '查询中' : '查询失败')
   }
-  assert.match(source, /get filters\(\) \{ return rankPeriodProps\.value\.filters \}/)
+  assert.doesNotMatch(source, /get filters\(\) \{ return rankPeriodProps\.value\.filters \}/)
   assert.match(source, /loadDepartmentComparisons\(data, paths, searchResultDrill, analysisFilters\(params\), options\)/)
 })
 
