@@ -1,10 +1,18 @@
 <script>
 import { defineComponent, h } from 'vue'
-import { arithmeticFormulaError, roundingModes, formulaFunctions } from '@/idmp/features/indicator/arithmeticFormula'
+import { arithmeticFormulaError, roundingModes, formulaFunctions, formulaChildren } from '@/idmp/features/indicator/arithmeticFormula'
 
 export default defineComponent({
   props: { formula: Object, factors: { type: Array, default: () => [] } },
   setup(props, { slots }) {
+    let divisions = []
+    let mixedDivisionPolicies = false
+    const divisionPolicy = node => ({ RETURN_NULL: '返回空值', RETURN_ZERO: '返回 0', ERROR: '报错' }[node.zeroDenominatorPolicy || 'RETURN_NULL'])
+    const branch = (condition, whenTrue, whenFalse) => h('span', { class: 'math-condition', role: 'group', 'aria-label': '条件分支' }, [
+      h('span', { class: 'math-branch' }, [h('span', { class: 'math-branch-label' }, '条件'), h('span', { class: 'math-branch-value' }, render(condition))]),
+      h('span', { class: 'math-branch' }, [h('span', { class: 'math-branch-label' }, '满足时'), h('span', { class: 'math-branch-value' }, render(whenTrue))]),
+      h('span', { class: 'math-branch' }, [h('span', { class: 'math-branch-label' }, '否则'), h('span', { class: 'math-branch-value' }, render(whenFalse))])
+    ])
     const rounding = node => `保留 ${node.scale ?? 2} 位小数，${roundingModes.find(([code]) => code === (node.roundingMode || 'HALF_UP'))?.[1] || node.roundingMode}`
     const render = (node, nested = false) => {
       if (node.nodeType === 'FACTOR_REF') {
@@ -16,6 +24,13 @@ export default defineComponent({
         return h('span', { class: 'math-factor' }, slots.factor?.({ id, text }) || text)
       }
       if (node.nodeType === 'CONST') return h('span', node.value === null && node.typeDescriptor?.nullable ? '空值' : String(node.value))
+      if (node.nodeType === 'CONDITION') return branch(node.condition, node.whenTrue, node.whenFalse)
+      if (node.nodeType === 'FUNCTION' && node.functionCode === 'IF') return branch(...node.arguments)
+      if (node.nodeType === 'FUNCTION' && ['AND', 'OR'].includes(node.functionCode)) {
+        const flatten = child => child.nodeType === 'FUNCTION' && child.functionCode === node.functionCode ? child.arguments.flatMap(flatten) : [child]
+        return h('span', { class: 'math-logic' }, ['(', ...node.arguments.flatMap(flatten).flatMap((arg, index) => [index ? h('strong', { class: 'math-logic-operator' }, node.functionCode === 'AND' ? '且' : '或') : '', render(arg)]), ')'])
+      }
+      if (node.nodeType === 'FUNCTION' && node.functionCode === 'NOT') return h('span', { class: 'math-logic' }, ['非 (', render(node.arguments[0]), ')'])
       if (node.nodeType === 'FUNCTION' && node.functionCode === 'ROUND') return h('span', { class: 'math-operation' }, ['ROUND(', render(node.arguments[0]), `；${rounding(node)})`])
       if (['FUNCTION', 'COALESCE'].includes(node.nodeType)) {
         const code = node.nodeType === 'COALESCE' ? 'COALESCE' : node.functionCode
@@ -23,20 +38,24 @@ export default defineComponent({
         return h('span', { class: 'math-operation' }, [`${label}(`, ...node.arguments.flatMap((arg, index) => [index ? '，' : '', render(arg)]), ')'])
       }
       if (node.nodeType === 'UNARY') return h('span', { class: 'math-operation' }, [node.operator === 'NEGATE' ? '负值(' : '绝对值(', render(node.operand), ')'])
-      if (node.nodeType === 'CONDITION') return h('span', { class: 'math-operation' }, ['若 ', render(node.condition), '，则 ', render(node.whenTrue), '，否则 ', render(node.whenFalse)])
       if (node.nodeType === 'COMPARE') return h('span', { class: 'math-operation' }, ['(', render(node.left), { EQ: '=', NE: '≠', GT: '>', GE: '≥', LT: '<', LE: '≤' }[node.comparator], render(node.right), ')'])
-      if (node.operator === 'DIV') return h('span', { class: 'math-fraction', role: 'group', 'aria-label': '分式' }, [h('span', { class: 'math-numerator' }, render(node.left)), h('span', { class: 'math-denominator' }, render(node.right))])
+      if (node.operator === 'DIV') return h('span', { class: 'math-division', title: `分母为 0 时${divisionPolicy(node)}` }, [h('span', { class: 'math-fraction', role: 'group', 'aria-label': '分式' }, [h('span', { class: 'math-numerator' }, render(node.left)), h('span', { class: 'math-denominator' }, render(node.right))]), mixedDivisionPolicies ? h('sup', { class: 'math-rule-ref' }, `[${divisions.indexOf(node) + 1}]`) : null])
       return h('span', { class: 'math-operation' }, [nested ? '(' : '', render(node.left, true), h('span', { class: 'math-operator' }, { ADD: '+', SUB: '−', MUL: '×' }[node.operator]), render(node.right, true), nested ? ')' : ''])
     }
     return () => {
       if (arithmeticFormulaError(props.formula?.root)) return null
       let root = props.formula.root
+      divisions = []
+      const collect = node => { if (node.nodeType === 'BINARY' && node.operator === 'DIV') divisions.push(node); formulaChildren(node).forEach(collect) }
+      collect(root)
+      mixedDivisionPolicies = new Set(divisions.map(divisionPolicy)).size > 1
       const notes = []
       // 只将最外层舍入移到注释；内部舍入仍参与运算，不能省略。
       if (root.nodeType === 'FUNCTION' && root.functionCode === 'ROUND') { notes.push(rounding(root)); root = root.arguments[0] }
       const display = props.formula.display || {}
       const multiplied = display.multiplier != null && Number(display.multiplier) !== 1
       if (display.scale != null && !notes.includes(rounding(display))) notes.push(`展示值${rounding(display)}`)
+      if (divisions.length) notes.push(...(mixedDivisionPolicies ? divisions.map((node, index) => `除法[${index + 1}]分母为 0 时${divisionPolicy(node)}`) : [`${divisions.length > 1 ? '所有除法' : ''}分母为 0 时${divisionPolicy(divisions[0])}`]))
       return h('div', { class: 'indicator-math' }, [h('div', { class: 'math-expression' }, [render(root, multiplied), multiplied ? ` × ${display.multiplier}` : '', display.format === 'PERCENT' ? '（单位：%）' : '']), h('p', { class: 'math-notes' }, [...new Set(notes)].join('；'))])
     }
   }
@@ -44,4 +63,15 @@ export default defineComponent({
 </script>
 <style scoped>
 .indicator-math{max-width:100%;min-width:0}.math-expression{display:flex;flex-wrap:wrap;align-items:center;gap:8px;line-height:1.8;font-size:15px}.math-operation{display:inline-flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:4px;min-width:0;max-width:100%}.math-fraction{display:inline-grid;grid-template-rows:auto auto;text-align:center;vertical-align:middle;min-width:0;max-width:100%}.math-numerator,.math-denominator{display:flex;align-items:center;justify-content:center;min-width:0;overflow-wrap:anywhere;padding:8px}.math-numerator{border-bottom:1px solid var(--idmp-text-secondary)}.math-factor{min-width:0;max-width:100%;overflow-wrap:anywhere}.math-notes{font-size:12px;color:var(--idmp-text-helper);line-height:1.7;margin:12px 0 0}.math-factor :deep(button){max-width:100%;white-space:normal;overflow-wrap:anywhere}
+</style>
+<style scoped>
+.math-condition { display:inline-grid; gap:8px; min-width:0; max-width:100%; border-left:3px solid var(--idmp-border-subtle); padding:8px 12px; text-align:left; }
+.math-branch { display:grid; grid-template-columns:48px minmax(0,1fr); align-items:start; gap:10px; min-width:0; }
+.math-branch-label { color:var(--idmp-text-helper); font-size:13px; padding-top:2px; }
+.math-branch-value { min-width:0; overflow-wrap:anywhere; }
+.math-logic { display:inline-flex; flex-wrap:wrap; align-items:center; gap:6px; max-width:100%; }
+.math-logic-operator { font-size:13px; color:var(--idmp-interactive); }
+.math-division { display:inline-flex; align-items:center; max-width:100%; min-width:0; }
+.math-rule-ref { align-self:flex-start; font-size:11px; color:var(--idmp-text-helper); }
+@media(max-width:600px) { .math-condition { padding:6px; } .math-branch { grid-template-columns:40px minmax(0,1fr); gap:6px; } }
 </style>

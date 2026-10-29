@@ -216,8 +216,7 @@ async function openFactorEditor(versionId) {
 const formulaNotes = computed(() => {
   const rules = readableFormula.value?.rules || []
   if (mathFormulaSupported.value) {
-    const divisions = rules.filter(rule => rule.startsWith('除法 '))
-    return divisions.length === 1 ? divisions.map(rule => rule.slice(rule.lastIndexOf('：') + 1)) : divisions
+    return []
   }
   if (!formulaRatio.value) return rules.filter(rule => rule.startsWith('展示值保留 '))
   return rules.filter(rule => rule.startsWith('展示值保留 ') || rule.startsWith('除法 '))

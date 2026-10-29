@@ -34,6 +34,39 @@ const fraction = binary('DIV', binary('SUB', ref('11'), binary('ADD', ref('12'),
 const formula = { root: round(binary('MUL', fraction, constant('100'))), display: { format: 'NUMBER', multiplier: '1', scale: 2, roundingMode: 'HALF_UP' } }
 const factors = ['总费用', '药品费用', '耗材费用', '出院人次'].map((name, index) => ({ versionId: String(index + 11), name }))
 
+test('nested OR is flattened only within the same operator and CASE has three readable rows', () => {
+  const compare = id => ({ nodeType: 'COMPARE', comparator: 'EQ', left: ref(id), right: constant('0') })
+  const logical = (functionCode, ...args) => ({ nodeType: 'FUNCTION', functionCode, arguments: args })
+  const root = { nodeType: 'CONDITION', condition: logical('OR', logical('OR', compare('11'), compare('12')), logical('AND', compare('13'), compare('14'))), whenTrue: constant('0'), whenFalse: round(fraction) }
+  const before = JSON.stringify(root)
+  const w = mount(Expression, { props: { formula: { root }, factors } })
+  assert.deepEqual(w.findAll('.math-branch-label').map(x => x.text()), ['条件', '满足时', '否则'])
+  assert.equal(w.findAll('.math-logic').length, 2)
+  assert.deepEqual(w.findAll('.math-logic-operator').map(x => x.text()), ['或', '或', '且'])
+  assert.match(w.text(), /ROUND/)
+  assert.equal(JSON.stringify(root), before)
+  w.unmount()
+})
+
+test('mixed division policies use stable references instead of repeating entire expressions', () => {
+  const left = binary('DIV', ref('11'), ref('12'))
+  const right = { ...binary('DIV', ref('13'), ref('14')), zeroDenominatorPolicy: 'RETURN_ZERO' }
+  const w = mount(Expression, { props: { formula: { root: binary('SUB', left, right) }, factors } })
+  assert.deepEqual(w.findAll('.math-rule-ref').map(x => x.text()), ['[1]', '[2]'])
+  assert.match(w.find('.math-notes').text(), /除法\[1\]分母为 0 时返回空值；除法\[2\]分母为 0 时返回 0/)
+  w.unmount()
+})
+
+test('nested conditional false branch and NOT retain nesting and every result', () => {
+  const condition = { nodeType: 'FUNCTION', functionCode: 'IS_NULL', arguments: [ref('11')] }
+  const root = { nodeType: 'FUNCTION', functionCode: 'IF', arguments: [condition, constant('0'), { nodeType: 'CONDITION', condition: { nodeType: 'FUNCTION', functionCode: 'NOT', arguments: [condition] }, whenTrue: ref('12'), whenFalse: ref('13') }] }
+  const w = mount(Expression, { props: { formula: { root }, factors } })
+  assert.equal(w.findAll('.math-condition').length, 2)
+  assert.match(w.text(), /非 \(/)
+  assert.deepEqual(w.findAll('.math-factor').map(x => x.text()), ['总费用', '总费用', '药品费用', '耗材费用'])
+  w.unmount()
+})
+
 test('SQL imported CASE, boolean conditions and NULL remain visible and round-trip without losing semantics', () => {
   const root = { nodeType: 'CONDITION', nullConditionPolicy: 'WHEN_FALSE', condition: {
     nodeType: 'FUNCTION', functionCode: 'OR', arguments: [
@@ -60,7 +93,7 @@ test('outer ROUND and multiplier render a real fraction with separate rounding n
   assert.equal(w.find('.math-numerator').text(), '总费用−(药品费用+耗材费用)')
   assert.equal(w.find('.math-denominator').text(), '出院人次')
   assert.equal(w.find('.math-expression').text(), '总费用−(药品费用+耗材费用)出院人次×100')
-  assert.equal(w.find('.math-notes').text(), '保留 2 位小数，四舍五入')
+  assert.equal(w.find('.math-notes').text(), '保留 2 位小数，四舍五入；分母为 0 时返回空值')
   assert.deepEqual(w.findAll('button').map(b => b.attributes('data-version')), ['11', '12', '13', '14'])
   w.unmount()
 })
@@ -540,7 +573,7 @@ test('conditional formulas retain comparison operands, factor IDs and stable nod
   assert.deepEqual(arithmetic.arithmeticFactorIds(output.root), ['11', '12'])
   assert.ok(output.root.arguments[0].right.nodeId)
   const w = mount(Expression, { props: { formula: output, factors } })
-  assert.ok(w.text().includes('条件选择'))
+  assert.equal(w.find('[aria-label="条件分支"]').exists(), true)
   assert.ok(w.text().includes('>'))
   w.unmount()
 })
