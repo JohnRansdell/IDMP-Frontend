@@ -38,7 +38,7 @@
               <small>指标</small>
               <b>{{ indicatorRef(mapping.sourceIndicator) }}</b>
             </div>
-            <span class="relation-party__version mono-data">指标版本 {{ mapping.sourceIndicator?.indicatorVersionId || '-' }}</span>
+            <span class="relation-party__version mono-data">指标版本 {{ mapping.sourceIndicator?.versionNo ? `V${mapping.sourceIndicator.versionNo}` : '-' }}</span>
           </article>
           <div class="relation-center">
             <span class="relation-center__arrow" aria-hidden="true">→</span>
@@ -56,7 +56,7 @@
               <small>指标</small>
               <b>{{ indicatorRef(mapping.targetIndicator) }}</b>
             </div>
-            <span class="relation-party__version mono-data">指标版本 {{ mapping.targetIndicator?.indicatorVersionId || '-' }}</span>
+            <span class="relation-party__version mono-data">指标版本 {{ mapping.targetIndicator?.versionNo ? `V${mapping.targetIndicator.versionNo}` : '-' }}</span>
           </article>
         </div>
         <dl class="mapping-summary">
@@ -71,7 +71,7 @@
         <el-tabs v-model="activeTab">
           <el-tab-pane label="口径差异" name="difference">
             <div class="difference-toolbar">
-              <div><h2>口径差异对比</h2><p>默认只显示存在差异的项目；。</p></div>
+              <div><h2>口径差异对比</h2></div>
               <el-switch v-model="onlyDifferences" active-text="仅看差异" />
             </div>
             <div class="difference-scroll">
