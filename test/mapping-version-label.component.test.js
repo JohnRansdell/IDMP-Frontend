@@ -20,6 +20,14 @@ visit(descriptor.template.ast)
 assert.equal(labels.length, 2)
 const render = vue.compile(`<div>${labels.join('')}</div>`)
 
+test('manual evidence uses Chinese labels while preserving custom labels', () => {
+  const definition = source.match(/^function evidenceLabel\(key\).*$/m)[0]
+  const evidenceLabel = Function(`${definition}; return evidenceLabel`)()
+  for (const [key, expected] of [['reason', '核对说明'], ['source', '依据来源'], ['reviewBasis', '人工核对依据'], ['differenceNote', '差异说明'], ['supplemental', '补充说明'], ['核对人', '核对人']]) {
+    assert.equal(evidenceLabel(key), expected)
+  }
+})
+
 for (const [name, sourceIndicator, targetIndicator, expected] of [
   ['separate version numbers', { versionNo: '1', indicatorVersionId: '102027642468026658' }, { versionNo: '3', indicatorVersionId: '102027642468062316' }, ['指标版本 V1', '指标版本 V3']],
   ['missing numbers never fall back to identifiers', { indicatorVersionId: '102027642468026658' }, { versionNo: null, indicatorVersionId: '102027642468062316' }, ['指标版本 -', '指标版本 -']],

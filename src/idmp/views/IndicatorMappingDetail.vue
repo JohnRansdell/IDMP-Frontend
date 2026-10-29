@@ -174,7 +174,7 @@ const policySides = computed(() => [
 
 function emptyPolicyForm() { return { policyFileVersionId: '', citationLocation: '', citationText: '', relationRole: 'SOURCE' } }
 function indicatorRef(indicator) { return formatIndicatorRef(indicator || {}) }
-function evidenceLabel(key) { return ({ reviewBasis: '人工核对依据', differenceNote: '差异说明', supplemental: '补充说明' })[key] || key }
+function evidenceLabel(key) { return ({ reviewBasis: '人工核对依据', differenceNote: '差异说明', supplemental: '补充说明', reason: '核对说明', source: '依据来源' })[key] || key }
 function evidenceValue(value) { return typeof value === 'object' ? '已保存结构化内容' : String(value || '未填写') }
 function indicatorVersionId(side) { return toOpaqueId(side === 'source' ? mapping.value?.sourceIndicator?.indicatorVersionId : mapping.value?.targetIndicator?.indicatorVersionId) }
 
