@@ -14,6 +14,11 @@ export function canAccess(session, method, path) {
   const fullPath = path.startsWith('/api/v1/') ? path : `/api/v1${path}`
   if (fullPath.startsWith('/api/v1/system/')) return false
   if (session.deniedPaths?.some(pattern => matchesPath(pattern, fullPath))) return false
+  // Personal notifications are authenticated-only APIs, not role-menu grants.
+  if (session.status === 'authenticated' && session.user && !session.roles?.includes('MEDICAL_VIEWER')) {
+    if (method.toUpperCase() === 'GET' && /^\/api\/v1\/me\/notifications(?:\/unread-count)?$/.test(fullPath)) return true
+    if (method.toUpperCase() === 'POST' && /^\/api\/v1\/me\/notifications\/(?:read-all|[^/]+\/read)$/.test(fullPath)) return true
+  }
   if (session.deniedPaths?.length && method !== 'GET' && fullPath === '/api/v1/analysis/warning-rules') return false
   return (session.apiRules || []).some(rule => (!rule.action || rule.action === '*' || rule.action.toUpperCase() === method.toUpperCase())
     && matchesPath(rule.resourcePattern, fullPath))
