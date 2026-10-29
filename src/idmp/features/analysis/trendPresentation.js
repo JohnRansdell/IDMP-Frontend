@@ -45,6 +45,7 @@ function createTrendFromBackendAnalysis(payload, { unit, display, granularity, r
     labels: payload.trend.map((item) => formatTrendPeriodLabel(item, responseGranularity)),
     actual: payload.trend.map((item) => resultChartNumber(item?.value, { unit, display })),
     display: payload.trend.map((item) => item.displayValue),
+    outcomes: payload.trend.map((item) => item.outcomeStatus),
     peer: payload.trend.map(() => null)
   }
 }
@@ -59,7 +60,8 @@ export function createAnalysisTrendPresentation({ analysis, profile, display, gr
     label,
     actual: trend.actual[index] ?? '-',
     peer: trend.peer[index] ?? '-',
-    actualDisplay: hasResultDisplay(trend.display?.[index]) ? trend.display[index] : formatValue(trend.actual[index]),
+    actualDisplay: trend.outcomes?.[index] === 'NOT_CALCULABLE' ? '无法计算'
+      : hasResultDisplay(trend.display?.[index]) ? trend.display[index] : formatValue(trend.actual[index]),
     peerDisplay: formatValue(trend.peer[index])
   }))
   const actualValues = trend.actual
@@ -137,5 +139,6 @@ export function createAnalysisTrendPresentation({ analysis, profile, display, gr
     },
     series
   }
-  return { trend, hasPeer, rows, option }
+  const notCalculableCount = trend.outcomes?.filter(outcome => outcome === 'NOT_CALCULABLE').length || 0
+  return { trend, hasPeer, rows, option, notCalculableCount }
 }

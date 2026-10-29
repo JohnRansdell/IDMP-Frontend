@@ -507,7 +507,7 @@ const analysisNotice = computed(() => {
     WAITING_FOR_CALCULATION: '该报告期有数据，尚未生成指标结果',
     NO_DATA: '该报告期暂无符合口径的数据',
     INCOMPLETE_DATA: '该报告期缺少部分依赖数据，暂时无法计算',
-    NOT_CALCULABLE: '该报告期的数据不满足计算条件',
+    NOT_CALCULABLE: '该报告期指标无法计算',
     CALCULATION_ERROR: '该报告期的指标计算未完成',
     COVERAGE_INCOMPLETE: '正式结果未覆盖整个报告期',
     UNSUPPORTED_ROLLUP: '现有正式结果无法精确汇总',

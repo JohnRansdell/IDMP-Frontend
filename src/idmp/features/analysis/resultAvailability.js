@@ -4,7 +4,7 @@ const STATUS_COPY = Object.freeze({
   WAITING_FOR_CALCULATION: '探测到完整源数据，尚未生成已激活的正式指标结果。',
   NO_DATA: '当前周期没有匹配的源数据。',
   INCOMPLETE_DATA: '只有部分依赖因子命中源数据，无法形成完整指标结果。',
-  NOT_CALCULABLE: '源数据存在，但按当前公式规则无法计算。',
+  NOT_CALCULABLE: '指标公式返回空值。',
   CALCULATION_ERROR: '源数据存在，但计算执行或公式计算发生异常。',
   UNKNOWN: '源数据画像尚未完成，不能据此判定为无数据。'
 })
@@ -45,13 +45,15 @@ export function resolveResultAvailability(payload = {}) {
   )
   const executionStatus = normalizeStatus(target.executionStatus || data.executionStatus || data.batchStatus || data.targetStatus)
   const outcomeStatus = normalizeStatus(
-    availability.outcomeStatus || target.resultOutcomeStatus || data.resultOutcomeStatus || data.outcomeStatus
+    availability.outcomeStatus || data.overview?.outcomeStatus || target.resultOutcomeStatus || data.resultOutcomeStatus || data.outcomeStatus
   )
   const hasResultRecords = Boolean(
     (Array.isArray(data.results?.records) && data.results.records.length) ||
     (Array.isArray(data.targets) && data.targets.some((item) => Array.isArray(item?.results?.records) && item.results.records.length))
   )
   let status = normalizeStatus(availability.status)
+  if ((!status || status === 'ACTIVE_RESULT') && data.overview
+    && ['NOT_CALCULABLE', 'NO_DATA', 'INCOMPLETE_DATA', 'CALCULATION_ERROR'].includes(outcomeStatus)) status = outcomeStatus
   if (!status) {
     if (data.dataAvailable || (hasResultRecords && outcomeStatus === 'CALCULATED')) status = 'ACTIVE_RESULT'
     else if (executionStatus === 'FAILED' || outcomeStatus === 'CALCULATION_ERROR') status = 'CALCULATION_ERROR'
@@ -64,7 +66,7 @@ export function resolveResultAvailability(payload = {}) {
   }
   return {
     status,
-    message: availability.message || target.errorMessage || data.errorMessage || STATUS_COPY[status] || STATUS_COPY.UNKNOWN,
+    message: (normalizeStatus(availability.status) === status ? availability.message : '') || target.errorMessage || data.errorMessage || STATUS_COPY[status] || STATUS_COPY.UNKNOWN,
     executionStatus,
     outcomeStatus,
     profiles,

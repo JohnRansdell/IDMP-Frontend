@@ -82,6 +82,36 @@ test('overview dirty, loading and failed queries never expose an old result', ()
   }
 })
 
+test('published formula-null result retains its period and explains the outcome without inventing a cause', () => {
+  const model = overview({ formal: { analysis: { dataAvailable: true },
+    overview: { value: null, outcomeStatus: 'NOT_CALCULABLE' }, periodLabel: '2026年3月',
+    availability: { status: 'NOT_CALCULABLE', message: '指标公式返回空值' } } })
+  const wrapper = mount(Overview, { props: { model }, global })
+  assert.equal(wrapper.find('.primary-metric > strong').text(), '-')
+  assert.ok(wrapper.text().includes('该统计周期无法计算指标值'))
+  assert.ok(wrapper.text().includes('2026年3月'))
+  assert.ok(wrapper.text().includes('指标公式返回空值'))
+  assert.ok(!wrapper.text().includes('分母为零'))
+  assert.ok(!wrapper.text().includes('暂无正式结果'))
+  wrapper.unmount()
+})
+
+test('trend preserves null gaps and valid zero months rather than dropping or joining them', () => {
+  const model = trend({ dataAvailable: true, trend: [
+    { periodStart: '2026-01-01', value: 0.23, outcomeStatus: 'CALCULATED' },
+    { periodStart: '2026-02-01', value: null, outcomeStatus: 'NOT_CALCULABLE' },
+    { periodStart: '2026-03-01', value: 0, outcomeStatus: 'CALCULATED' }
+  ] })
+  assert.deepEqual(model.option.series[0].data, [23, null, 0])
+  assert.notEqual(model.option.series[0].connectNulls, true)
+  assert.deepEqual(model.rows.map(row => row.actualDisplay), ['23.00%', '无法计算', '0.00%'])
+  assert.deepEqual(model.trend.labels, ['2026-01', '2026-02', '2026-03'])
+  const wrapper = mount(Trend, { props: trendProps({ model }), global })
+  assert.ok(wrapper.text().includes('1 个周期的指标公式返回空值'))
+  assert.ok(wrapper.text().includes('无法计算'))
+  wrapper.unmount()
+})
+
 test('overview without requested members does not claim missing dimension results and uses API operands', () => {
   const model = overview({ formal: { analysis: { dataAvailable: true },
     overview: { value: 0, numeratorValue: 0, denominatorValue: 429 }, dimensionCount: null, hasDrill: true } })

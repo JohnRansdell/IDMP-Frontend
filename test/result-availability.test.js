@@ -2,6 +2,15 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { resolveResultAvailability } from '../src/idmp/features/analysis/resultAvailability.js'
 
+test('formal result presence does not hide its non-calculable outcome', () => {
+  for (const resultAvailability of [undefined, { status: 'ACTIVE_RESULT', message: '已返回已激活的正式指标结果' }]) {
+    const state = resolveResultAvailability({ dataAvailable: true, resultAvailability, overview: { value: null, outcomeStatus: 'NOT_CALCULABLE' } })
+    assert.equal(state.status, 'NOT_CALCULABLE')
+    assert.equal(state.message, '指标公式返回空值。')
+    assert.equal(state.canCreateBatch, false)
+  }
+})
+
 test('result availability distinguishes calculation error from no data', () => {
   const failed = resolveResultAvailability({
     batchStatus: 'FAILED', resultOutcomeStatus: 'CALCULATION_ERROR',

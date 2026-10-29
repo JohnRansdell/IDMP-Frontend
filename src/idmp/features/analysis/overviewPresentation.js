@@ -60,12 +60,13 @@ export function createOverviewPresentation({ report, formal, selected, unit, dis
     }
     const overview = formal.overview
     if (hasData) {
+      const unavailable = overview.outcomeStatus && overview.outcomeStatus !== 'CALCULATED'
       return {
         label: `${formal.periodLabel || '当前报告期'}指标值`,
-        value: hasResultDisplay(overview.displayValue) ? overview.displayValue : formatResultValue(overview.value, { unit, display }),
+        value: unavailable ? '-' : hasResultDisplay(overview.displayValue) ? overview.displayValue : formatResultValue(overview.value, { unit, display }),
         tone: overview.qualityStatus === 'PASSED' ? 'success' : 'warning',
         status: overview.outcomeStatus || 'ACTIVE',
-        statusLabel: '已发布结果',
+        statusLabel: unavailable ? resultAvailabilityGuidance(overview.outcomeStatus).title : '已发布结果',
         periodLabel: formal.periodLabel || '结果周期未返回'
       }
     }
@@ -103,6 +104,9 @@ export function createOverviewPresentation({ report, formal, selected, unit, dis
         ? { label: '维度结果', value: `${dimensionCount} 个`, description: '本报告期已生成的维度成员数' }
         : { label: '维度分析', value: configured ? '本期暂无结果' : '未配置', description: configured ? '该报告期未生成维度结果' : '该指标未配置维度分析' })
       if (hasData) {
+        if (formal.overview.outcomeStatus && formal.overview.outcomeStatus !== 'CALCULATED') {
+          metrics.push({ label: '结果说明', value: resultAvailabilityGuidance(formal.overview.outcomeStatus, formal.availability?.message).description })
+        }
         metrics.push(
           { label: '质量状态', value: displayStatus(formal.overview?.qualityStatus), tone: formal.overview?.qualityStatus === 'PASSED' ? 'success' : 'warning' },
           { label: '结果口径', value: formal.overview?.dimensions && Object.keys(formal.overview.dimensions).length ? '指定维度' : '全院汇总' }

@@ -52,6 +52,9 @@
     <span>所选时间段没有可展示的趋势点。可查看该指标全部已生成周期。</span>
     <el-button link type="primary" @click="emit('clear-range')">查看全部已有周期</el-button>
   </div>
+  <p v-if="!trendLoading && !trendErrorMessage && model.notCalculableCount" class="trend-empty-guidance">
+    {{ model.notCalculableCount }} 个周期的指标公式返回空值，图中保留为空缺；各周期状态可在趋势数据表中查看。
+  </p>
   <IdmpChart
     :option="trendOption"
     :loading="trendLoading"
