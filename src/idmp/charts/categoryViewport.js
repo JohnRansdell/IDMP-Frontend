@@ -10,16 +10,28 @@ export function withCategoryViewport(option, width, height, previousStart = 0) {
   if (!key || !Array.isArray(axis?.data)) return option
   const horizontal = key === 'xAxis'
   const aligned = { ...axis, axisTick: { ...axis.axisTick, alignWithLabel: true }, axisPointer: { ...axis.axisPointer, snap: true } }
-  const result = { ...option, [key]: Array.isArray(option[key]) ? [aligned] : aligned }
-  if (option.dataZoom && (!Array.isArray(option.dataZoom) || option.dataZoom.length)) return result
+  const result = { ...option, [key]: Array.isArray(option[key]) ? [aligned] : aligned,
+    series: series.map(item => item.type === 'bar' ? { ...item, barMaxWidth: Math.min(Number(item.barMaxWidth) || 24, 24) } : item) }
+  if (option.dataZoom && (!Array.isArray(option.dataZoom) || option.dataZoom.length)) {
+    const categoryIndex = horizontal ? 'xAxisIndex' : 'yAxisIndex'
+    const valueIndex = horizontal ? 'yAxisIndex' : 'xAxisIndex'
+    const stabilize = zoom => {
+      const categoryOnly = zoom[valueIndex] == null && (zoom[categoryIndex] != null || (zoom.orient === 'vertical' ? !horizontal : horizontal))
+      return categoryOnly ? { ...zoom, filterMode: 'none' } : zoom
+    }
+    result.dataZoom = Array.isArray(option.dataZoom) ? option.dataZoom.map(stabilize) : stabilize(option.dataZoom)
+    return result
+  }
   const labels = axis.data.map(value => String(value?.value ?? value ?? ''))
   const longest = Math.max(0, ...labels.map(value => [...value].length))
-  const step = horizontal ? Math.min(132, Math.max(72, longest * 12 / 2 + 20)) : 32
+  const barGroups = new Set(series.filter(item => item.type === 'bar').map((item, i) => item.stack || `series-${i}`)).size
+  const step = horizontal ? Math.max(Math.min(64, Math.max(48, longest * 6 + 12)), barGroups * 18 + 16) : 28
   const available = Math.max(0, (horizontal ? width - 100 : height - 90))
   const count = Math.max(2, Math.floor(available / step))
   if (labels.length <= count) return result
   const start = Math.min(Math.max(0, Math.floor(Number(previousStart) || 0)), labels.length - count)
-  const zoom = { [horizontal ? 'xAxisIndex' : 'yAxisIndex']: 0, filterMode: 'filter', startValue: start, endValue: start + count - 1, zoomLock: true }
+  // Keep the full series for value-axis scaling (including stacks); only clip the category viewport.
+  const zoom = { [horizontal ? 'xAxisIndex' : 'yAxisIndex']: 0, filterMode: 'none', startValue: start, endValue: start + count - 1, zoomLock: true }
   const bottomLegend = (Array.isArray(option.legend) ? option.legend : [option.legend]).some(item => item?.show !== false && item?.bottom != null)
   const sliderBottom = bottomLegend ? 28 : 2
   result.dataZoom = [

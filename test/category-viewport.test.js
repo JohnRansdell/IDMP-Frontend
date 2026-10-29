@@ -7,7 +7,10 @@ const option = { grid: { bottom: 20 }, xAxis: { type: 'category', data: labels }
 test('dense bars scroll categories and values together without dropping zero rows or IDs', () => {
   const before = JSON.stringify(option)
   const result = withCategoryViewport(option, 600, 300)
-  assert.equal(result.series, option.series)
+  assert.equal(result.series[0].data, option.series[0].data)
+  assert.equal(result.series[0].barMaxWidth, 24)
+  assert.equal(result.dataZoom[0].filterMode, 'none')
+  assert.ok(result.dataZoom[0].endValue >= 6, '600px should display at least seven categories')
   assert.equal(result.xAxis.data, labels)
   assert.equal(result.xAxis.axisTick.alignWithLabel, true)
   assert.equal(result.xAxis.axisLabel.interval, 0)
@@ -21,13 +24,14 @@ test('line windows shrink responsively and preserve the scrolled starting index'
   const mobile = withCategoryViewport(line, 300, 320, 12)
   assert.equal(mobile.dataZoom[0].startValue, 12)
   assert.ok(mobile.dataZoom[0].endValue - 12 < desktop.dataZoom[0].endValue)
-  assert.equal(mobile.series, line.series)
+  assert.equal(mobile.series[0], line.series[0])
 })
 test('sparse, existing zoom and noncartesian plots keep their existing presentation', () => {
   const sparse = { ...option, xAxis: { type: 'category', data: ['一月'] } }
   assert.equal(withCategoryViewport(sparse, 1000, 320).dataZoom, undefined)
   const zoom = [{ type: 'slider', start: 30, end: 60 }]
-  assert.equal(withCategoryViewport({ ...option, dataZoom: zoom }, 600, 320).dataZoom, zoom)
+  assert.deepEqual(withCategoryViewport({ ...option, dataZoom: zoom }, 600, 320).dataZoom, [{ ...zoom[0], filterMode: 'none' }])
+  assert.equal(zoom[0].filterMode, undefined)
   const pie = { series: [{ type: 'pie', data: [1, 2] }] }
   assert.equal(withCategoryViewport(pie, 300, 320), pie)
 })
