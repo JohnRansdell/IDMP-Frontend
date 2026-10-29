@@ -88,15 +88,6 @@
           <el-tag :type="runtimeQueryResult.executionMode === 'AD_HOC_SOURCE' ? 'warning' : 'success'">{{ runtimeQueryExecutionModeLabel }}</el-tag>
           <span>参数快照：{{ runtimeQueryParameterSnapshot }}</span>
         </div>
-        <el-collapse v-model="runtimeQueryExpanded">
-          <el-collapse-item name="results" :title="`查询结果明细（${runtimeQueryRows.length} 条）`">
-            <el-table :data="runtimeQueryRows" border max-height="420" empty-text="当前条件没有结果">
-              <el-table-column v-for="column in runtimeQueryColumns" :key="column" :prop="column" :label="column" min-width="140">
-                <template #default="{ row }">{{ formatRuntimeQueryCell(formatResultPeriodField(column, row[column])) }}</template>
-              </el-table-column>
-            </el-table>
-          </el-collapse-item>
-        </el-collapse>
       </div>
     </section>
     <section v-if="analysisNotice" class="analysis-state-notice" :class="`is-${analysisAvailability.status.toLowerCase()}`">
@@ -278,7 +269,7 @@ import { buildSqlRuntimeParameterValues, collectSqlRuntimeParameters, validateSq
 import { exportIndicatorAnalysisPdf } from '@/idmp/api/modules/indicators'
 import { analysisPdfFilename, buildAnalysisPdfReport, downloadAnalysisPdf, renderAnalysisChartPng } from '@/idmp/features/analysis/pdfReport'
 import { formatPeriodLabel, analysisReportContext, resolveReportPeriod, reportPeriodQuery, normalizeAnalysisGranularity, shiftReportDate, analysisFilterParams, analysisFilters, analysisRouteKey, sourceAvailableReportRange } from '@/idmp/features/analysis/reportPeriod.js'
-import { formatResultPeriod, formatResultPeriodField } from '@/idmp/utils/periodRange.js'
+import { formatResultPeriod } from '@/idmp/utils/periodRange.js'
 import { buildReportSummaryRequest } from '@/idmp/features/analysis/reportQuery.js'
 import { createRequestScope, useLatestResult } from '@/idmp/features/analysis/useLatestResult.js'
 import { useReportSummary } from '@/idmp/features/analysis/useReportSummary.js'
@@ -351,7 +342,6 @@ const trendGrainRequestGenerations = new Map()
 const trendGrainApplied = ref({})
 const showDataDiagnostics = ref(false)
 const indicatorRuntimeParameterValues = ref({})
-const runtimeQueryExpanded = ref([])
 const drillExplorerRef = ref()
 const staticDrillExplorerRef = ref()
 const pdfExportLoading = ref(false)
@@ -397,8 +387,6 @@ const indicatorRuntimeParameters = computed(() => collectSqlRuntimeParameters(
     .map(group => ({ ...group, key: group.factorCode || group.factorVersionId }))
 ))
 const indicatorRuntimeParameterConflicts = computed(() => indicatorRuntimeParameters.value.filter(item => item.conflict))
-const runtimeQueryRows = computed(() => Array.isArray(runtimeQueryResult.value?.rows) ? runtimeQueryResult.value.rows : [])
-const runtimeQueryColumns = computed(() => [...new Set(runtimeQueryRows.value.flatMap(row => Object.keys(row || {})))])
 const runtimeQueryExecutionModeLabel = computed(() => runtimeQueryResult.value?.executionMode === 'AD_HOC_SOURCE' ? '源数据即时重算' : '读取正式结果')
 const runtimeQueryParameterSnapshot = computed(() => JSON.stringify(runtimeQueryResult.value?.parameterSnapshot || {}))
 const trendAnalysisGranularity = computed(() => {
@@ -804,12 +792,6 @@ async function loadRangeSummary() {
 function invalidateReportSummary(dirty = true) {
   reportDirty.value = dirty
   reportQuery.clear()
-  runtimeQueryExpanded.value = []
-}
-
-function formatRuntimeQueryCell(value) {
-  if (value === undefined || value === null || value === '') return '-'
-  return typeof value === 'object' ? JSON.stringify(value) : String(value)
 }
 
 function applyTrendConditions() {
@@ -1175,7 +1157,6 @@ watch(() => analysisRouteKey(route.query), key => {
   reportPeriodRange.value = initialReportPeriodRange()
   indicatorRuntimeParameterValues.value = {}
   reportQuery.clear()
-  runtimeQueryExpanded.value = []
   period.value = '月度'
   if (!pageInactive && !indicatorOptionsLoading.value) refreshIndicatorAnalysis()
 })
