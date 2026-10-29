@@ -75,21 +75,7 @@
               <el-switch v-model="onlyDifferences" active-text="仅看差异" />
             </div>
             <MappingFormulaComparison v-if="version?.difference?.formulaAst && (!onlyDifferences || version.difference.formulaAst.different)" :source="version.difference.formulaAst.source" :target="version.difference.formulaAst.target" :source-factors="version.difference.factors?.source || []" :target-factors="version.difference.factors?.target || []" />
-            <div class="difference-scroll">
-              <div class="difference-table">
-                <el-table :data="visibleDifferenceRows" size="small" :max-height="430" empty-text="当前筛选下暂无差异项">
-                  <el-table-column prop="label" label="对比项" width="150" />
-                  <el-table-column label="结果" width="110">
-                    <template #default="{ row }"><StatusBadge :status="row.different ? 'WARNING' : 'PASSED'" :label="row.different ? '存在差异' : '一致'" /></template>
-                  </el-table-column>
-                  <el-table-column prop="source" label="源指标" min-width="260"><template #default="{ row }"><MappingDifferenceValue :value="row.sourceValue" :counterpart="row.targetValue" /></template></el-table-column>
-                  <el-table-column prop="target" label="目标指标" min-width="260"><template #default="{ row }"><MappingDifferenceValue :value="row.targetValue" :counterpart="row.sourceValue" /></template></el-table-column>
-                </el-table>
-              </div>
-            </div>
-            <el-collapse class="technical-collapse">
-              <el-collapse-item title="查看原始差异快照（技术数据）"><pre>{{ formatJson(version?.difference) }}</pre></el-collapse-item>
-            </el-collapse>
+            <MappingDifferenceTable :rows="visibleDifferenceRows" />
           </el-tab-pane>
 
           <el-tab-pane label="人工依据与审核" name="governance">
@@ -158,7 +144,7 @@ import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import PolicyVersionPicker from '@/idmp/components/PolicyVersionPicker.vue'
-import MappingDifferenceValue from '@/idmp/components/MappingDifferenceValue.vue'
+import MappingDifferenceTable from '@/idmp/components/MappingDifferenceTable.vue'
 import MappingFormulaComparison from '@/idmp/components/MappingFormulaComparison.vue'
 import { approveMapping, createPolicyReference, fetchMapping, fetchPolicyReferences, invalidateMapping, invalidatePolicyReference as invalidatePolicyReferenceRequest, rejectMapping, submitMapping } from '@/idmp/api/modules/mappings'
 import { POLICY_REFERENCE_ROLES, comparabilityLabel, formatIndicatorRef, mappingActionAllowed, mappingActionCompleted, mappingCapabilities, mappingStatusLabel, mappingTypeDescription, mappingTypeLabel, policyReferenceRoleLabel, toOpaqueId } from '@/idmp/api/adapters/mapping'
@@ -190,7 +176,6 @@ function emptyPolicyForm() { return { policyFileVersionId: '', citationLocation:
 function indicatorRef(indicator) { return formatIndicatorRef(indicator || {}) }
 function evidenceLabel(key) { return ({ reviewBasis: '人工核对依据', differenceNote: '差异说明', supplemental: '补充说明' })[key] || key }
 function evidenceValue(value) { return typeof value === 'object' ? '已保存结构化内容' : String(value || '未填写') }
-function formatJson(value) { return JSON.stringify(value || {}, null, 2) }
 function indicatorVersionId(side) { return toOpaqueId(side === 'source' ? mapping.value?.sourceIndicator?.indicatorVersionId : mapping.value?.targetIndicator?.indicatorVersionId) }
 
 async function loadDetail() { const id = toOpaqueId(route.params.id); if (!id) return; loading.value = true; error.value = ''; detail.value = null; addingPolicySide.value = ''; try { detail.value = await fetchMapping(id); await Promise.all(['source', 'target'].map(loadPolicyReferences)) } catch (loadError) { error.value = loadError?.message || '无法读取映射详情' } finally { loading.value = false } }
@@ -473,39 +458,11 @@ watch(() => route.params.id, () => { void loadDetail() }, { immediate: true })
   flex: 0 0 auto;
 }
 
-.difference-scroll,
 .policy-table-scroll {
   width: 100%;
   overflow-x: auto;
   border: 1px solid var(--idmp-border-subtle);
   border-radius: var(--idmp-radius-md);
-}
-
-.difference-table {
-  min-width: 780px;
-}
-
-.difference-value {
-  display: block;
-  white-space: normal;
-  word-break: break-word;
-}
-
-.technical-collapse {
-  margin-top: 14px;
-}
-
-.technical-collapse pre {
-  max-height: 260px;
-  overflow: auto;
-  margin: 0;
-  padding: 12px;
-  border-radius: var(--idmp-radius-sm);
-  background: var(--idmp-layer-02);
-  font-size: 12px;
-  line-height: 18px;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
 .governance-grid,

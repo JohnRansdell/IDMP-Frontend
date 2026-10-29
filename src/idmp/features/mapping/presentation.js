@@ -1,3 +1,5 @@
+import { businessDifferenceValue, sameDifferenceValue, visibleDifferenceEntries } from './differenceContent.js'
+
 const differenceLabels = {
   indicatorName: '指标名称', definition: '定义', meaning: '业务含义', formulaAst: '计算公式',
   factors: '因子与过滤', policyReferences: '政策依据', defaultExclusion: '默认排除规则',
@@ -28,9 +30,14 @@ function differenceValue(value, detailed) {
 }
 
 export function buildDifferenceRows(difference, { detailed = false } = {}) {
-  return Object.entries(difference || {}).filter(([, item]) => item && typeof item === 'object' && ('source' in item || 'target' in item)).map(([key, item]) => ({
-    key, sourceValue: item.source, targetValue: item.target,
+  const order = ['indicatorName', 'definition', 'meaning', 'unit', 'direction', 'defaultPeriodType', 'defaultGrain', 'applicableOrgScope', 'displayType', 'displaySpec', 'formulaAst', 'factors', 'policyReferences']
+  return visibleDifferenceEntries(difference).filter(([key, item]) => item && typeof item === 'object' && ('source' in item || 'target' in item) && !(key === 'formulaDisplayText' && difference.formulaAst))
+  .sort(([a], [b]) => (order.includes(a) ? order.indexOf(a) : order.length) - (order.includes(b) ? order.indexOf(b) : order.length)).map(([key, item]) => {
+    const sourceValue = key === 'formulaAst' ? item.source : businessDifferenceValue(item.source)
+    const targetValue = key === 'formulaAst' ? item.target : businessDifferenceValue(item.target)
+    return {
+    key, sourceValue, targetValue,
     label: key === 'definition' && detailed ? '指标定义' : differenceLabels[key] || key,
-    different: Boolean(item?.different), source: differenceValue(item?.source, detailed), target: differenceValue(item?.target, detailed)
-  }))
+    different: key === 'formulaAst' ? Boolean(item?.different) : !sameDifferenceValue(sourceValue, targetValue), source: differenceValue(sourceValue, detailed), target: differenceValue(targetValue, detailed)
+  } })
 }

@@ -13,8 +13,30 @@ export const differenceFieldLabels = {
   operator: '运算符', functionCode: '函数', comparator: '比较方式', value: '值', condition: '条件', whenTrue: '满足时', whenFalse: '否则',
   zeroDenominatorPolicy: '除零处理', nullConditionPolicy: '条件为空时', factorVersionId: '引用因子', typeDescriptor: '类型定义', precision: '精度', unit: '单位', percentile: '分位数'
 }
-const technicalFields = new Set(['id', 'nodeId', 'schemaVersion', 'factorCode', 'indicatorCode', 'policyFileCode', 'factorVersionId', 'indicatorVersionId', 'policyFileVersionId', 'sourceNodePath', 'importId', 'factorKey'])
+const technicalFields = new Set(['id', 'nodeId', 'schemaVersion', 'factorCode', 'indicatorCode', 'policyFileCode', 'factorVersionId', 'indicatorVersionId', 'policyFileVersionId', 'sourceNodePath', 'importId', 'factorKey', 'calculationExpressionAst', 'outputDescriptor', 'sqlTemplate', 'compiledSql', 'querySql', 'sql'])
 export const visibleDifferenceEntries = value => Object.entries(value || {}).filter(([key]) => !technicalFields.has(key))
+export function businessDifferenceValue(value) {
+  if (Array.isArray(value)) return value.map(businessDifferenceValue)
+  if (!value || typeof value !== 'object') return value
+  const named = value.factorName || value.policyFileName
+  return Object.fromEntries(visibleDifferenceEntries(value).filter(([, item]) => !named || !isEmptyDifferenceValue(item)).map(([key, item]) => [key, businessDifferenceValue(item)]))
+}
+export function isEmptyDifferenceValue(value) {
+  return value == null || value === '' || typeof value === 'object' && Object.keys(value).length === 0
+}
+export function differenceItemTitle(value) { return value?.factorName || value?.policyFileName || '' }
+export function differenceItemVersion(value) {
+  const version = value?.versionNo ?? value?.policyVersionNo
+  return version == null || version === '' ? '' : `V${version}`
+}
+export function differenceItemEntries(value) {
+  return visibleDifferenceEntries(value).filter(([key, item]) => !differenceItemTitle(value) || !['factorName', 'policyFileName', 'versionNo', 'policyVersionNo'].includes(key) && !isEmptyDifferenceValue(item))
+}
+export function differenceCounterpart(value, counterparts, index) {
+  if (!Array.isArray(counterparts)) return undefined
+  const title = differenceItemTitle(value)
+  return title ? counterparts.find(item => differenceItemTitle(item) === title) : counterparts[index]
+}
 export const differenceFieldLabel = key => Object.hasOwn(differenceFieldLabels, key) ? differenceFieldLabels[key] : key
 const values = { ADD: '加', SUB: '减', MUL: '乘', DIV: '除', RETURN_NULL: '返回空值', RETURN_ZERO: '返回 0', ERROR: '报错',
   HALF_UP: '四舍五入', HALF_EVEN: '半值取偶数', NUMBER: '数值', PERCENT: '百分比', FORMULA_REF: '公式引用', REFERENCE: '参考依据',
