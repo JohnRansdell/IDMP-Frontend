@@ -385,6 +385,7 @@ function normalizeScope(value) {
 function numericId(value) { return value === null || value === undefined || value === '' ? null : String(value) }
 function frontendBinding(value) {
   const binding = object(value)
-  if (!Array.isArray(binding.dimensions) || !Array.isArray(binding.measures) || !Array.isArray(binding.series) || !Array.isArray(binding.sort)) return null
-  return { ...binding, dataset: binding.dataset || 'backend' }
+  if (!Array.isArray(binding.dimensions) || !Array.isArray(binding.measures)) return null
+  if ((binding.series != null && !Array.isArray(binding.series)) || (binding.sort != null && !Array.isArray(binding.sort))) return null
+  return { ...binding, series: binding.series || [], sort: binding.sort || [], dataset: binding.dataset || 'backend' }
 }
