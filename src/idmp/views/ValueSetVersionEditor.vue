@@ -17,7 +17,11 @@
         <el-alert v-if="!canEdit" title="当前版本不可编辑，仅支持查看、校验或发布状态结果。" type="info" :closable="false" />
         <el-table :data="items" table-layout="fixed" class="items-table">
           <el-table-column label="编码" min-width="170"><template #default="{ row }"><el-input v-model.trim="row.code" :disabled="!canEdit" /></template></el-table-column>
-          <el-table-column label="标准值" min-width="170"><template #default="{ row }"><el-input v-model="row.value" :disabled="!canEdit" /></template></el-table-column>
+          <template v-if="isRange">
+            <el-table-column label="开始值（含）" min-width="170"><template #default="{ row }"><el-input v-model.trim="row.valueStart" aria-label="开始值（含）" :disabled="!canEdit" /></template></el-table-column>
+            <el-table-column label="结束值（不含）" min-width="170"><template #default="{ row }"><el-input v-model.trim="row.valueEnd" aria-label="结束值（不含）" :disabled="!canEdit" /></template></el-table-column>
+          </template>
+          <el-table-column v-else label="标准值" min-width="170"><template #default="{ row }"><el-input v-model="row.value" :disabled="!canEdit" /></template></el-table-column>
           <el-table-column label="标签" min-width="170"><template #default="{ row }"><el-input v-model.trim="row.label" :disabled="!canEdit" /></template></el-table-column>
           <el-table-column label="排序" width="110"><template #default="{ row }"><el-input-number v-model="row.sortOrder" :min="0" :disabled="!canEdit" /></template></el-table-column>
           <el-table-column label="操作" width="90"><template #default="{ $index }"><el-button link type="danger" :disabled="!canEdit" @click="removeItem($index)">删除</el-button></template></el-table-column>
@@ -51,6 +55,7 @@ const canEdit = computed(() => ['DRAFT', 'VALIDATED'].includes(String(version.va
 const canPublish = computed(() => canEdit.value && validation.value?.valid === true)
 const canArchive = computed(() => Boolean(version.value) && String(version.value.publicationStatus).toUpperCase() !== 'PUBLISHED' && String(version.value.publicationStatus).toUpperCase() !== 'ARCHIVED')
 const isContinuous = computed(() => String(version.value?.matchMode || '').toUpperCase() === 'CONTINUOUS')
+const isRange = computed(() => String(version.value?.matchMode || '').toUpperCase() === 'RANGE')
 const continuousSpec = computed(() => version.value?.continuousSpec || {})
 const precisionText = computed(() => { const spec = continuousSpec.value; if (spec.precision == null) return '—'; return spec.scale == null ? String(spec.precision) : `${spec.precision}, ${spec.scale}` })
 const isNumericContinuous = computed(() => ['INTEGER', 'DECIMAL'].includes(String(version.value?.valueType || '').toUpperCase()))

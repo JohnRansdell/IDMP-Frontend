@@ -20,7 +20,14 @@
       </section>
       <section v-if="!isContinuous" class="surface-card table-card">
         <div class="section-title"><div><h2>值项</h2><p class="section-title__description">{{ version?.publicationStatus ? getStatusLabel(version.publicationStatus) : '—' }} · {{ items.length }} 项</p></div></div>
-        <el-table v-if="items.length" :data="items" table-layout="fixed"><el-table-column prop="value" label="标准值" min-width="160" /><el-table-column prop="label" label="标签" min-width="160" /><el-table-column prop="sortOrder" label="排序" width="100" /><el-table-column label="启用状态" width="130"><template #default="{ row }">{{ row.enableStatus ? getStatusLabel(row.enableStatus) : '—' }}</template></el-table-column></el-table>
+        <el-table v-if="items.length" :data="items" table-layout="fixed">
+          <template v-if="isRange">
+            <el-table-column prop="valueStart" label="开始值（含）" min-width="150" />
+            <el-table-column prop="valueEnd" label="结束值（不含）" min-width="150" />
+          </template>
+          <el-table-column v-else prop="value" label="标准值" min-width="160" />
+          <el-table-column prop="label" label="标签" min-width="160" /><el-table-column prop="sortOrder" label="排序" width="100" /><el-table-column label="启用状态" width="130"><template #default="{ row }">{{ row.enableStatus ? getStatusLabel(row.enableStatus) : '—' }}</template></el-table-column>
+        </el-table>
         <StatePanel v-else type="empty" title="暂无值项" description="该版本当前没有值项。" />
       </section>
     </template>
@@ -41,6 +48,7 @@ import { matchModeLabel } from '@/idmp/features/meta'
 const route = useRoute(); const router = useRouter()
 const valueSet = ref(null); const versions = ref([]); const version = ref(null); const items = ref([]); const selectedVersionId = ref(''); const loading = ref(false); const creating = ref(false); const error = ref('')
 const isContinuous = computed(() => String(version.value?.matchMode || valueSet.value?.matchMode || '').toUpperCase() === 'CONTINUOUS')
+const isRange = computed(() => String(version.value?.matchMode || valueSet.value?.matchMode || '').toUpperCase() === 'RANGE')
 const continuousSpec = computed(() => version.value?.continuousSpec || {})
 const precisionText = computed(() => { const spec = continuousSpec.value; if (spec.precision == null) return '—'; return spec.scale == null ? String(spec.precision) : `${spec.precision}, ${spec.scale}` })
 
