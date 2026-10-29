@@ -38,7 +38,7 @@
               <small>指标</small>
               <b>{{ indicatorRef(mapping.sourceIndicator) }}</b>
             </div>
-            <span class="relation-party__version mono-data">指标版本 {{ mapping.sourceIndicator?.versionNo ? `V${mapping.sourceIndicator.versionNo}` : '-' }}</span>
+            <span class="relation-party__version mono-data">指标版本 {{ indicatorVersionLabel(mapping.sourceIndicator) }}</span>
           </article>
           <div class="relation-center">
             <span class="relation-center__arrow" aria-hidden="true">→</span>
@@ -56,7 +56,7 @@
               <small>指标</small>
               <b>{{ indicatorRef(mapping.targetIndicator) }}</b>
             </div>
-            <span class="relation-party__version mono-data">指标版本 {{ mapping.targetIndicator?.versionNo ? `V${mapping.targetIndicator.versionNo}` : '-' }}</span>
+            <span class="relation-party__version mono-data">指标版本 {{ indicatorVersionLabel(mapping.targetIndicator) }}</span>
           </article>
         </div>
         <dl class="mapping-summary">
@@ -147,7 +147,7 @@
 </template>
 
 <script setup>
-import { policyLabel, buildDifferenceRows as mappingDifferenceRows } from '@/idmp/features/mapping/presentation.js'
+import { policyLabel, indicatorVersionLabel, buildDifferenceRows as mappingDifferenceRows } from '@/idmp/features/mapping/presentation.js'
 function buildDifferenceRows(difference) { return mappingDifferenceRows(difference, { detailed: true }) }
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'

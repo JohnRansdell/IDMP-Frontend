@@ -34,15 +34,15 @@
         </section>
 
         <section class="surface-card table-card">
-          <div class="table-heading"><div><h2>映射关系列表</h2><p>源指标、映射关系和目标指标按业务关系分列展示。</p></div><div v-if="currentFilterGroup" class="group-relation-context"><span>当前语义组基准指标</span><strong>{{ indicatorRef(currentFilterGroup.canonicalIndicator) }}</strong></div></div>
+          <div class="table-heading"><div><h2>映射关系列表</h2><p>源指标、映射关系和目标指标按业务关系分列展示。</p></div><div v-if="currentFilterGroup" class="group-relation-context"><span>当前语义组基准指标</span><strong>{{ indicatorRef(currentFilterGroup.canonicalIndicator, true) }}</strong></div></div>
           
           <el-alert v-if="mappingError" :title="mappingError" type="error" :closable="false" />
           <div v-else class="mapping-table-scroll">
             <el-table :aria-busy="loading" :empty-text="loading ? '正在查询…' : '暂无数据'" v-loading="loading" :data="mappings" class="mapping-table" table-layout="fixed">
               <el-table-column label="映射名称" min-width="280"><template #default="{ row }"><div class="mapping-name"><strong>{{ row.name || '未命名映射' }}</strong><span>{{ row.group?.name || '未归类语义组' }}</span></div></template></el-table-column>
-              <el-table-column label="源指标" min-width="270"><template #default="{ row }"><div class="mapping-indicator-cell"><small>源侧政策：{{ policyLabel(row.sourceIndicator) }}</small><strong>{{ indicatorRef(row.sourceIndicator) }}</strong><span class="mono-data">版本 {{ row.sourceIndicator?.indicatorVersionId || '-' }}</span></div></template></el-table-column>
+              <el-table-column label="源指标" min-width="270"><template #default="{ row }"><div class="mapping-indicator-cell"><small>源侧政策：{{ policyLabel(row.sourceIndicator) }}</small><strong>{{ indicatorRef(row.sourceIndicator) }}</strong><span class="mapping-version mono-data">指标版本 {{ indicatorVersionLabel(row.sourceIndicator) }}</span></div></template></el-table-column>
               <el-table-column label="映射关系" width="190" align="center"><template #default="{ row }"><div class="mapping-type-cell"><span class="mapping-type-cell__arrow" aria-hidden="true">→</span><StatusBadge :label="mappingTypeLabel(row.mappingType)" /><small>{{ comparabilityLabel(row.comparability) }}</small></div></template></el-table-column>
-              <el-table-column label="目标指标" min-width="270"><template #default="{ row }"><div class="mapping-indicator-cell"><small>目标侧政策：{{ policyLabel(row.targetIndicator) }}</small><strong>{{ indicatorRef(row.targetIndicator) }}</strong><span class="mono-data">版本 {{ row.targetIndicator?.indicatorVersionId || '-' }}</span></div></template></el-table-column>
+              <el-table-column label="目标指标" min-width="270"><template #default="{ row }"><div class="mapping-indicator-cell"><small>目标侧政策：{{ policyLabel(row.targetIndicator) }}</small><strong>{{ indicatorRef(row.targetIndicator) }}</strong><span class="mapping-version mono-data">指标版本 {{ indicatorVersionLabel(row.targetIndicator) }}</span></div></template></el-table-column>
               <el-table-column label="治理状态" width="140"><template #default="{ row }"><div class="mapping-status-cell"><StatusBadge :status="row.reviewStatus" :label="mappingStatusLabel(row.reviewStatus)" /><small>{{ row.publicationStatus === 'PUBLISHED' ? '已发布' : '未发布' }}</small></div></template></el-table-column>
               <el-table-column label="操作" width="88" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openDetail(row.id)">查看</el-button></template></el-table-column>
             </el-table>
@@ -58,7 +58,7 @@
           <el-alert v-if="groupError" :title="groupError" type="error" :closable="false" />
           <el-table v-else :aria-busy="groupLoading" :empty-text="groupLoading ? '正在查询…' : '暂无语义组'" v-loading="groupLoading" :data="groups" table-layout="fixed">
             <el-table-column prop="name" label="名称" min-width="280"><template #default="{ row }"><span>{{ row.name }}</span></template></el-table-column>
-            <el-table-column label="基准指标版本" min-width="250"><template #default="{ row }">{{ indicatorRef(row.canonicalIndicator) }}</template></el-table-column>
+            <el-table-column label="基准指标版本" min-width="250"><template #default="{ row }">{{ indicatorRef(row.canonicalIndicator, true) }}</template></el-table-column>
             <el-table-column prop="memberCount" label="有效成员" width="110" />
             <el-table-column label="状态" width="110"><template #default="{ row }"><StatusBadge :status="row.status" /></template></el-table-column>
             <el-table-column label="关系" width="100" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openGroupRelations(row)">查看关系</el-button></template></el-table-column>
@@ -80,7 +80,7 @@
     <el-dialog v-model="mappingDialogOpen" :title="editingMappingId ? '编辑映射草稿' : ['选择指标版本', '核对指标口径', '确认映射关系'][creationStep]" width="760px" destroy-on-close @closed="closeMappingDialog">
       <el-steps v-if="!editingMappingId" :active="creationStep" finish-status="success" simple class="mapping-steps"><el-step title="选择版本" /><el-step title="核对口径" /><el-step title="确认映射" /></el-steps>
       <el-form label-position="top" :model="mappingForm">
-        <template v-if="!editingMappingId && creationStep === 0"><el-form-item label="所属语义组" required><el-select default-first-option v-model="mappingForm.groupId" filterable placeholder="选择语义组" style="width:100%"><el-option v-for="group in groups" :key="group.id" :label="group.name || '未命名语义组'" :value="String(group.id)" /></el-select></el-form-item><el-form-item label="源指标版本"><el-input :model-value="indicatorRef(selectedGroup?.canonicalIndicator) || '请先选择语义组'" disabled /></el-form-item><el-form-item label="目标已发布指标版本" required><IndicatorVersionPicker v-model="mappingForm.targetIndicatorVersionId" :options="publishedIndicators" label="目标指标" /></el-form-item></template>
+        <template v-if="!editingMappingId && creationStep === 0"><el-form-item label="所属语义组" required><el-select default-first-option v-model="mappingForm.groupId" filterable placeholder="选择语义组" style="width:100%"><el-option v-for="group in groups" :key="group.id" :label="group.name || '未命名语义组'" :value="String(group.id)" /></el-select></el-form-item><el-form-item label="源指标版本"><el-input :model-value="selectedGroup ? indicatorRef(selectedGroup.canonicalIndicator, true) : '请先选择语义组'" disabled /></el-form-item><el-form-item label="目标已发布指标版本" required><IndicatorVersionPicker v-model="mappingForm.targetIndicatorVersionId" :options="publishedIndicators" label="目标指标" /></el-form-item></template>
         <section v-if="!editingMappingId && creationStep === 1" class="comparison-preview"><div class="section-title compact"><div><h3>口径对比结果</h3><p>{{ comparison?.difference?.hasDifferences ? '发现差异，请在下一步明确映射关系与人工依据。' : '当前返回口径未发现差异，可继续确认映射关系。' }}</p></div></div><MappingFormulaComparison v-if="comparison?.difference?.formulaAst" :source="comparison.difference.formulaAst.source" :target="comparison.difference.formulaAst.target" :source-factors="comparison.difference.factors?.source || []" :target-factors="comparison.difference.factors?.target || []" /><el-table :data="differenceRows.filter(row => row.key !== 'formulaAst')" size="small" max-height="330"><el-table-column prop="label" label="对比项" min-width="150" /><el-table-column label="结果" width="100"><template #default="{ row }"><StatusBadge :status="row.different ? 'WARNING' : 'PASSED'" :label="row.different ? '存在差异' : '一致'" /></template></el-table-column><el-table-column label="源侧" min-width="180"><template #default="{ row }"><MappingDifferenceValue :value="row.sourceValue" :counterpart="row.targetValue" /></template></el-table-column><el-table-column label="目标侧" min-width="180"><template #default="{ row }"><MappingDifferenceValue :value="row.targetValue" :counterpart="row.sourceValue" /></template></el-table-column></el-table></section>
         <template v-if="editingMappingId || creationStep === 2"><div class="form-grid"><el-form-item label="映射名称" required><el-input v-model.trim="mappingForm.name" /></el-form-item><el-form-item label="可比性" required><el-select v-model="mappingForm.comparability"><el-option v-for="item in COMPARABILITY_TYPES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item></div><section class="mapping-type-picker" aria-label="选择映射类型"><div class="mapping-type-picker__head"><strong>映射类型</strong><small>包含关系始终以源指标为参照。</small></div><button v-for="item in MAPPING_TYPES" :key="item.value" type="button" class="mapping-type-option" :class="{ 'is-selected': mappingForm.mappingType === item.value }" @click="mappingForm.mappingType = item.value"><StatusBadge :label="item.label" /><small>{{ mappingTypeDescription(item.value) }}</small></button></section><el-form-item label="人工核对依据"><el-input v-model="mappingForm.reviewBasis" type="textarea" :rows="2" /></el-form-item><el-form-item label="差异说明"><el-input v-model="mappingForm.differenceNote" type="textarea" :rows="2" /></el-form-item></template>
       </el-form>
@@ -91,7 +91,7 @@
 
 <script setup>
 import IndicatorVersionPicker from '@/idmp/components/IndicatorVersionPicker.vue'
-import { policyLabel, buildDifferenceRows } from '@/idmp/features/mapping/presentation.js'
+import { policyLabel, buildDifferenceRows, indicatorVersionLabel } from '@/idmp/features/mapping/presentation.js'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from '@/idmp/utils/message'
@@ -126,7 +126,7 @@ const canCompare = computed(() => Boolean(selectedGroup.value?.canonicalIndicato
 const differenceRows = computed(() => buildDifferenceRows(comparison.value?.difference))
 function emptyGroupForm() { return { code: '', name: '', description: '', canonicalIndicatorVersionId: '' } }
 function emptyMappingForm() { return { code: '', name: '', groupId: '', targetIndicatorVersionId: '', mappingType: 'SAME_CONCEPT', comparability: 'CONDITIONAL', reviewBasis: '', differenceNote: '' } }
-function indicatorRef(value) { return formatIndicatorRef(value || {}) }
+function indicatorRef(value, includeVersion = false) { return formatIndicatorRef(value || {}) + (includeVersion ? ` · ${indicatorVersionLabel(value)}` : '') }
 function normalizeList(payload) { return Array.isArray(payload) ? payload : payload?.records || payload?.items || payload?.list || [] }
 function searchPolicyFiles(keyword) {
   clearTimeout(policySearchTimer)

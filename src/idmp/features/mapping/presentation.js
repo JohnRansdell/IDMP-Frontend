@@ -14,6 +14,11 @@ export function policyLabel(indicator) {
   return policy?.policyFileName || indicator?.policyFileName || '未标注政策来源'
 }
 
+export function indicatorVersionLabel(indicator) {
+  const number = String(indicator?.versionNo ?? '').trim()
+  return number ? `V${number}` : '-'
+}
+
 function differenceValue(value, detailed) {
   if (value === undefined || value === null || value === '') return detailed ? '未提供' : '-'
   if (typeof value !== 'object') return String(value)
