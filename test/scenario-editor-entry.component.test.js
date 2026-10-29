@@ -42,7 +42,7 @@ function create({ published = false, tab = 'indicators', link = true } = {}) {
     replaceScenarioOverrides: async (id, payload) => { writes.push({ kind: 'overrides', id, payload }); detail.version.overrides = payload.overrides; return copy(detail) },
     fetchScenarioMergedPreview: async () => ({}), publishScenarioVersion: async () => ({}), validateScenarioVersion: async () => ({ valid: true })
   }
-  const component = Function('vue', 'deps', `const { useRoute, useRouter, ElMessageBox, ElMessage, PageHeader, ${Object.keys(api).join(',')}, ${Object.keys(adapters).join(',')} } = deps;\n${bindings}\n${code}`)(vue, {
+  const component = Function('vue', 'deps', `const IndicatorVersionPicker = 'div'; const { useRoute, useRouter, ElMessageBox, ElMessage, PageHeader, ${Object.keys(api).join(',')}, ${Object.keys(adapters).join(',')} } = deps;\n${bindings}\n${code}`)(vue, {
     ...api, ...adapters, useRoute: () => route, useRouter: () => ({ push() {}, replace: async value => { route.query = value.query } }),
     ElMessage: { error: message => { throw new Error(message) }, warning() {}, success() {} }, ElMessageBox: {},
     PageHeader: vue.defineComponent({ setup: (_, { slots }) => () => vue.h('div', slots.actions?.()) })

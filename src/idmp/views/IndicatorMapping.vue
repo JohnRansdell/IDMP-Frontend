@@ -22,7 +22,7 @@
                 <el-option v-for="policy in policyFiles" :key="policy.id" :label="policy.label" :value="policy.id" />
               </el-select>
             </el-form-item>
-            <el-form-item label="指标版本"><el-select v-model="filters.indicatorVersionId" clearable filterable allow-create default-first-option placeholder="源或目标已发布版本"><el-option v-for="item in publishedIndicators" :key="item.id" :label="indicatorOptionLabel(item)" :value="String(item.id)" /></el-select></el-form-item>
+            <el-form-item label="指标版本"><IndicatorVersionPicker v-model="filters.indicatorVersionId" :options="publishedIndicators" label="筛选指标" /></el-form-item>
             <el-form-item label="映射类型"><el-select v-model="filters.mappingType" clearable><el-option v-for="item in MAPPING_TYPES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
             <el-form-item label="审核状态"><el-select v-model="filters.reviewStatus" clearable><el-option label="草稿" value="DRAFT" /><el-option label="待审核" value="PENDING_REVIEW" /><el-option label="已驳回" value="REJECTED" /><el-option label="已通过" value="APPROVED" /><el-option label="已失效" value="INVALIDATED" /></el-select></el-form-item>
             </div>
@@ -70,7 +70,7 @@
 
         <el-form-item label="语义组名称" required><el-input v-model.trim="groupForm.name" /></el-form-item>
         <el-form-item label="说明"><el-input v-model="groupForm.description" type="textarea" :rows="3" /></el-form-item>
-        <el-form-item label="基准已发布指标版本" required><el-select default-first-option v-model="groupForm.canonicalIndicatorVersionId" filterable placeholder="请选择已发布指标版本" style="width:100%"><el-option v-for="item in publishedIndicators" :key="item.id" :label="indicatorOptionLabel(item)" :value="String(item.id)" /></el-select></el-form-item>
+        <el-form-item label="基准已发布指标版本" required><IndicatorVersionPicker v-model="groupForm.canonicalIndicatorVersionId" :options="publishedIndicators" label="基准指标" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="groupDialogOpen = false">取消</el-button><el-button v-access="'mapping.groups.create'" type="primary" :loading="mutating" @click="saveGroup">创建</el-button></template>
     </el-dialog>
@@ -78,7 +78,7 @@
     <el-dialog v-model="mappingDialogOpen" :title="editingMappingId ? '编辑映射草稿' : ['选择指标版本', '核对指标口径', '确认映射关系'][creationStep]" width="760px" destroy-on-close @closed="closeMappingDialog">
       <el-steps v-if="!editingMappingId" :active="creationStep" finish-status="success" simple class="mapping-steps"><el-step title="选择版本" /><el-step title="核对口径" /><el-step title="确认映射" /></el-steps>
       <el-form label-position="top" :model="mappingForm">
-        <template v-if="!editingMappingId && creationStep === 0"><el-form-item label="所属语义组" required><el-select default-first-option v-model="mappingForm.groupId" filterable placeholder="选择语义组" style="width:100%"><el-option v-for="group in groups" :key="group.id" :label="group.name || '未命名语义组'" :value="String(group.id)" /></el-select></el-form-item><el-form-item label="源指标版本"><el-input :model-value="indicatorRef(selectedGroup?.canonicalIndicator) || '请先选择语义组'" disabled /></el-form-item><el-form-item label="目标已发布指标版本" required><el-select default-first-option v-model="mappingForm.targetIndicatorVersionId" filterable placeholder="请选择已发布指标版本" style="width:100%"><el-option v-for="item in publishedIndicators" :key="item.id" :label="indicatorOptionLabel(item)" :value="String(item.id)" /></el-select></el-form-item></template>
+        <template v-if="!editingMappingId && creationStep === 0"><el-form-item label="所属语义组" required><el-select default-first-option v-model="mappingForm.groupId" filterable placeholder="选择语义组" style="width:100%"><el-option v-for="group in groups" :key="group.id" :label="group.name || '未命名语义组'" :value="String(group.id)" /></el-select></el-form-item><el-form-item label="源指标版本"><el-input :model-value="indicatorRef(selectedGroup?.canonicalIndicator) || '请先选择语义组'" disabled /></el-form-item><el-form-item label="目标已发布指标版本" required><IndicatorVersionPicker v-model="mappingForm.targetIndicatorVersionId" :options="publishedIndicators" label="目标指标" /></el-form-item></template>
         <section v-if="!editingMappingId && creationStep === 1" class="comparison-preview"><div class="section-title compact"><div><h3>口径对比结果</h3><p>{{ comparison?.difference?.hasDifferences ? '发现差异，请在下一步明确映射关系与人工依据。' : '当前返回口径未发现差异，可继续确认映射关系。' }}</p></div></div><el-table :data="differenceRows" size="small" max-height="330"><el-table-column prop="label" label="对比项" min-width="150" /><el-table-column label="结果" width="100"><template #default="{ row }"><StatusBadge :status="row.different ? 'WARNING' : 'PASSED'" :label="row.different ? '存在差异' : '一致'" /></template></el-table-column><el-table-column prop="source" label="源侧" min-width="180" show-overflow-tooltip /><el-table-column prop="target" label="目标侧" min-width="180" show-overflow-tooltip /></el-table></section>
         <template v-if="editingMappingId || creationStep === 2"><div class="form-grid"><el-form-item label="映射名称" required><el-input v-model.trim="mappingForm.name" /></el-form-item><el-form-item label="可比性" required><el-select v-model="mappingForm.comparability"><el-option v-for="item in COMPARABILITY_TYPES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item></div><section class="mapping-type-picker" aria-label="选择映射类型"><div class="mapping-type-picker__head"><strong>映射类型</strong><small>包含关系始终以源指标为参照。</small></div><button v-for="item in MAPPING_TYPES" :key="item.value" type="button" class="mapping-type-option" :class="{ 'is-selected': mappingForm.mappingType === item.value }" @click="mappingForm.mappingType = item.value"><StatusBadge :label="item.label" /><small>{{ mappingTypeDescription(item.value) }}</small></button></section><el-form-item label="人工核对依据"><el-input v-model="mappingForm.reviewBasis" type="textarea" :rows="2" /></el-form-item><el-form-item label="差异说明"><el-input v-model="mappingForm.differenceNote" type="textarea" :rows="2" /></el-form-item></template>
       </el-form>
@@ -88,6 +88,7 @@
 </template>
 
 <script setup>
+import IndicatorVersionPicker from '@/idmp/components/IndicatorVersionPicker.vue'
 import { policyLabel, buildDifferenceRows } from '@/idmp/features/mapping/presentation.js'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -121,7 +122,6 @@ const differenceRows = computed(() => buildDifferenceRows(comparison.value?.diff
 function emptyGroupForm() { return { code: '', name: '', description: '', canonicalIndicatorVersionId: '' } }
 function emptyMappingForm() { return { code: '', name: '', groupId: '', targetIndicatorVersionId: '', mappingType: 'SAME_CONCEPT', comparability: 'CONDITIONAL', reviewBasis: '', differenceNote: '' } }
 function indicatorRef(value) { return formatIndicatorRef(value || {}) }
-function indicatorOptionLabel(item) { return `${item.name || item.indicatorName || '未命名指标'} · ${item.id}` }
 function normalizeList(payload) { return Array.isArray(payload) ? payload : payload?.records || payload?.items || payload?.list || [] }
 function searchPolicyFiles(keyword) {
   clearTimeout(policySearchTimer)
@@ -156,7 +156,7 @@ async function loadPolicyFiles(keyword = '') {
 }
 async function bootstrap() { await Promise.all([loadGroups(), loadPublishedIndicators()]); await loadMappings() }
 async function loadGroups() { groupLoading.value = true; try { groups.value = normalizePage(await fetchMappingGroups({ page: 1, size: 200 })).items } catch (error) { ElMessage.error(error?.message || '语义组加载失败') } finally { groupLoading.value = false } }
-async function loadPublishedIndicators() { try { publishedIndicators.value = (await fetchAllIndicatorVersions({ publicationStatus: 'PUBLISHED' })).map(item => ({ ...item, id: toOpaqueId(item.id || item.versionId || item.indicatorVersionId) })).filter(item => item.id) } catch (error) { ElMessage.warning(error?.message || '已发布指标版本列表加载失败；仍可手工输入版本 ID。') } }
+async function loadPublishedIndicators() { try { publishedIndicators.value = (await fetchAllIndicatorVersions({ publicationStatus: 'PUBLISHED' })).map(item => ({ ...item, id: toOpaqueId(item.id || item.versionId || item.indicatorVersionId) })).filter(item => item.id) } catch (error) { ElMessage.warning(error?.message || '已发布指标列表加载失败，请刷新后重试。') } }
 async function loadMappings() { loading.value = true; try { const page = normalizePage(await fetchMappings({ ...filters, page: mappingPage.value, size: mappingSize.value })); mappings.value = page.items; mappingTotal.value = page.total } catch (error) { mappings.value = []; mappingTotal.value = 0; ElMessage.error(error?.message || '映射列表加载失败') } finally { loading.value = false } }
 function resetFilters() { Object.assign(filters, { groupId: '', policyFileId: '', indicatorVersionId: '', mappingType: '', reviewStatus: '' }); mappingPage.value = 1; loadMappings() }
 function setMappingTypeFilter(mappingType) { filters.mappingType = mappingType; mappingPage.value = 1; loadMappings() }

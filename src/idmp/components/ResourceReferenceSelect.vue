@@ -1,5 +1,6 @@
 <template>
-  <el-select default-first-option :model-value="modelValue" :multiple="multiple" filterable clearable :loading="loading" :placeholder="placeholder" :aria-label="placeholder" @visible-change="visible => visible && load()" @update:model-value="value => emit('update:modelValue', value)">
+  <IndicatorVersionPicker v-if="kind === 'INDICATOR_VERSION' && !multiple" :model-value="modelValue" :options="indicatorVersions" :loading="loading" @refresh="load" @update:model-value="value => emit('update:modelValue', value)" />
+  <el-select v-else default-first-option :model-value="modelValue" :multiple="multiple" filterable clearable :loading="loading" :placeholder="placeholder" :aria-label="placeholder" @visible-change="visible => visible && load()" @update:model-value="value => emit('update:modelValue', value)">
     <el-option v-for="item in options" :key="item.value" :value="item.value" :label="item.label" />
     <el-option v-for="value in unresolved" :key="value" :value="value" label="所选记录暂不可用" disabled />
   </el-select>
@@ -7,6 +8,7 @@
 </template>
 
 <script setup>
+import IndicatorVersionPicker from '@/idmp/components/IndicatorVersionPicker.vue'
 import { computed, ref, watch } from 'vue'
 import { fetchAllIndicatorVersions } from '@/idmp/api/modules/indicators'
 import { fetchAllScenarios, fetchScenarioVersions } from '@/idmp/api/modules/scenarios'
@@ -18,6 +20,7 @@ import { toUserMessage } from '@/idmp/utils/userMessage.js'
 const props = defineProps({ modelValue: [String, Array], kind: { type: String, required: true }, multiple: Boolean, placeholder: { type: String, default: '请选择' } })
 const emit = defineEmits(['update:modelValue'])
 const options = ref([]), loading = ref(false), error = ref(''), loaded = ref(false)
+const indicatorVersions = ref([])
 const unresolved = computed(() => (Array.isArray(props.modelValue) ? props.modelValue : props.modelValue ? [props.modelValue] : []).filter(value => !options.value.some(item => item.value === String(value))))
 async function load() {
   if (loading.value || loaded.value) return
@@ -35,6 +38,7 @@ async function load() {
         records.push(...versions.filter(version => (version.publicationStatus || version.status) === 'PUBLISHED').map(version => ({ ...version, scenarioName: scenario.name })))
       }
     }
+    if (props.kind === 'INDICATOR_VERSION') indicatorVersions.value = records
     options.value = referenceOptions(records, props.kind); loaded.value = true
   } catch (cause) { error.value = toUserMessage(cause, '选项加载失败，请重试。') }
   finally { loading.value = false }

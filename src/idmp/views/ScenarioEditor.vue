@@ -27,9 +27,7 @@
         <div class="indicator-heading">
           <div><h2>已关联指标 <span>{{ boundIndicators.length }}</span></h2><p>维护指标版本、必选设置和上报要求。</p></div>
           <div v-if="capabilities.canEdit" class="indicator-add">
-            <el-select default-first-option v-model="pendingIndicatorId" filterable clearable :disabled="!editable" aria-label="选择待添加指标" placeholder="搜索指标名称，选择已发布版本" :no-data-text="indicatorOptions.length ? '已关联全部可用指标' : '暂无可用的已发布指标'">
-              <el-option v-for="item in availableIndicatorOptions" :key="optionVersionId(item)" :label="`${item.indicatorName || item.name || '未命名指标'} · V${item.versionNo || '-'}`" :value="optionVersionId(item)" />
-            </el-select>
+            <IndicatorVersionPicker v-model="pendingIndicatorId" :options="availableIndicatorOptions" :disabled="!editable" label="待添加指标" />
             <el-button type="primary" plain :disabled="!editable || !pendingIndicatorId" @click="addIndicator">添加指标</el-button>
           </div>
         </div>
@@ -46,6 +44,7 @@
 </template>
 
 <script setup>
+import IndicatorVersionPicker from '@/idmp/components/IndicatorVersionPicker.vue'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
@@ -225,7 +224,7 @@ onBeforeUnmount(() => { loadRevision++ })
 .indicator-heading h2 span { margin-left: 6px; color: var(--idmp-text-helper); font-size: 13px; font-weight: 400; }
 .indicator-heading p { margin: 5px 0 0; color: var(--idmp-text-helper); font-size: 12px; }
 .indicator-add { display: flex; flex: 1; justify-content: flex-end; gap: 10px; min-width: 0; max-width: 630px; }
-.indicator-add :deep(.el-select) { flex: 1; min-width: 240px; }
+.indicator-add > .indicator-version-picker { flex: 1; min-width: 0; }
 .indicator-name { font-weight: 500; overflow-wrap: anywhere; }
 .indicator-code { display: block; margin-top: 3px; color: var(--idmp-text-helper); font-size: 12px; overflow-wrap: anywhere; }
 .report-text { line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -234,6 +233,5 @@ onBeforeUnmount(() => { loadRevision++ })
   .scenario-tabs :deep(.el-tabs__content) { padding: 14px; }
   .basic-form { grid-template-columns: minmax(0, 1fr); }
   .indicator-add { flex-wrap: wrap; justify-content: flex-start; }
-  .indicator-add :deep(.el-select) { min-width: 0; flex-basis: 100%; }
 }
 </style>
