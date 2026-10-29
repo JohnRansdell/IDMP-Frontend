@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import { JSDOM } from 'jsdom'
 import * as adapters from '../src/idmp/api/adapters/scenario.js'
+import { toUserMessage } from '../src/idmp/utils/userMessage.js'
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>')
 for (const name of ['window', 'document', 'HTMLElement', 'SVGElement', 'Element', 'Node', 'Document', 'Text', 'Comment']) globalThis[name] = dom.window[name]
@@ -26,7 +27,7 @@ const CURRENT_ID = '102027642463173253'
 const OLD_ID = '102027642458358230'
 const copy = value => JSON.parse(JSON.stringify(value))
 
-function create({ published = false, tab = 'indicators', link = true } = {}) {
+function create({ published = false, tab = 'indicators', link = true, readDetail } = {}) {
   const writes = []
   const detail = { scenario: { id: '801', name: '质量安全' }, version: { id: '802', scenarioId: '801',
     publicationStatus: published ? 'PUBLISHED' : 'DRAFT', defaultPeriodType: 'MONTHLY', resourceVersion: 2,
@@ -35,15 +36,15 @@ function create({ published = false, tab = 'indicators', link = true } = {}) {
   const api = {
     fetchAllIndicatorVersions: async () => [{ id: CURRENT_ID, versionNo: 1 }, { id: OLD_ID, versionNo: 2 }],
     fetchScenarioVersions: async () => [{ id: '802', publicationStatus: detail.version.publicationStatus }],
-    fetchScenarioVersion: async () => copy(detail),
+    fetchScenarioVersion: async id => readDetail ? readDetail(id, copy(detail)) : copy(detail),
     createScenarioVersion: async () => { detail.version.id = '803'; detail.version.publicationStatus = 'DRAFT'; return copy(detail) },
     updateScenarioVersion: async (id, payload) => { writes.push({ kind: 'version', id, payload }); return copy(detail) },
     replaceScenarioIndicators: async (id, payload) => { writes.push({ kind: 'indicators', id, payload }); detail.version.indicators = payload.indicators; return copy(detail) },
     replaceScenarioOverrides: async (id, payload) => { writes.push({ kind: 'overrides', id, payload }); detail.version.overrides = payload.overrides; return copy(detail) },
     fetchScenarioMergedPreview: async () => ({}), publishScenarioVersion: async () => ({}), validateScenarioVersion: async () => ({ valid: true })
   }
-  const component = Function('vue', 'deps', `const IndicatorVersionPicker = 'div'; const { useRoute, useRouter, ElMessageBox, ElMessage, PageHeader, ${Object.keys(api).join(',')}, ${Object.keys(adapters).join(',')} } = deps;\n${bindings}\n${code}`)(vue, {
-    ...api, ...adapters, useRoute: () => route, useRouter: () => ({ push() {}, replace: async value => { route.query = value.query } }),
+  const component = Function('vue', 'deps', `const IndicatorVersionPicker = 'div'; const { toUserMessage, useRoute, useRouter, ElMessageBox, ElMessage, PageHeader, ${Object.keys(api).join(',')}, ${Object.keys(adapters).join(',')} } = deps;\n${bindings}\n${code}`)(vue, {
+    ...api, ...adapters, toUserMessage, useRoute: () => route, useRouter: () => ({ push() {}, replace: async value => { route.query = value.query } }),
     ElMessage: { error: message => { throw new Error(message) }, warning() {}, success() {} }, ElMessageBox: {},
     PageHeader: vue.defineComponent({ setup: (_, { slots }) => () => vue.h('div', slots.actions?.()) })
   })
@@ -51,10 +52,48 @@ function create({ published = false, tab = 'indicators', link = true } = {}) {
     stubs: { ElTabPane: { template: '<div><slot/></div>' }, ElForm: { template: '<div><slot/></div>' }, ElFormItem: { template: '<div><slot/></div>' },
       ElInput: true, ElOption: true, ElDatePicker: true, ElAlert: true, ElEmpty: true, ElCollapse: true, ElCollapseItem: true,
       ElSwitch: true, ElInputNumber: true, ElTableColumn: true }, directives: { loading() {} } } })
-  return { wrapper, writes }
+  return { wrapper, writes, route }
 }
 const button = (wrapper, label) => wrapper.findAll('button').find(item => item.text() === label)
 const selectedIds = wrapper => wrapper.findComponent(Table).props('data').map(item => item.indicatorVersionId)
+
+test('loading does not render a blank form or unknown status', async () => {
+  let finish
+  const { wrapper } = create({ readDetail: (id, detail) => new Promise(resolve => { finish = () => resolve(detail) }) })
+  await flushPromises()
+  assert.match(wrapper.get('[role="status"]').text(), /正在加载场景/)
+  assert.equal(wrapper.find('.scenario-tabs').exists(), false)
+  assert.equal(wrapper.find('.page-notice').exists(), false)
+  finish(); await flushPromises()
+  assert.equal(wrapper.find('[role="status"]').exists(), false)
+  assert.equal(wrapper.find('.scenario-tabs').exists(), true)
+  wrapper.unmount()
+})
+
+test('failed load shows retry instead of editable empty data', async () => {
+  let fail = true
+  const { wrapper } = create({ readDetail: (id, detail) => { if (fail) throw new Error('场景不存在'); return detail } })
+  await flushPromises()
+  assert.equal(wrapper.find('[role="alert"]').exists(), true)
+  assert.equal(wrapper.find('.scenario-tabs').exists(), false)
+  fail = false
+  await button(wrapper, '重新加载').trigger('click'); await flushPromises()
+  assert.equal(wrapper.find('[role="alert"]').exists(), false)
+  assert.equal(wrapper.find('.scenario-tabs').exists(), true)
+  wrapper.unmount()
+})
+
+test('a stale failure cannot hide the newer scene', async () => {
+  let rejectOld
+  const { wrapper, route } = create({ readDetail: (id, detail) => id === '802' ? new Promise((resolve, reject) => { rejectOld = reject }) : detail })
+  await flushPromises()
+  route.query.versionId = '804'; await flushPromises()
+  assert.equal(wrapper.find('.scenario-tabs').exists(), true)
+  rejectOld(new Error('旧请求失败')); await flushPromises()
+  assert.equal(wrapper.find('[role="alert"]').exists(), false)
+  assert.equal(wrapper.find('.scenario-tabs').exists(), true)
+  wrapper.unmount()
+})
 
 test('indicator entry preselects an existing draft without dropping other bindings', async () => {
   const { wrapper, writes } = create()

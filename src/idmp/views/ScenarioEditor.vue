@@ -1,5 +1,12 @@
 <template>
   <div class="idmp-page scenario-editor">
+    <div v-if="loading" class="scenario-loading" role="status" aria-live="polite">正在加载场景…</div>
+    <section v-else-if="loadError" role="alert">
+      <el-alert :title="loadError" type="error" :closable="false" show-icon />
+      <el-button @click="load">重新加载</el-button>
+      <el-button @click="router.push({ name: 'ScenarioList' })">返回目录</el-button>
+    </section>
+    <template v-else>
     <PageHeader :title="form.name || '场景编辑'" :status="form.publicationStatus" :status-label="publicationStatusLabel(form.publicationStatus)">
       <template #meta><span>当前版本：V{{ form.versionNo }}</span><span>资源版本：{{ form.resourceVersion }}</span></template>
       <template #actions>
@@ -40,6 +47,7 @@
         </el-table>
       </el-tab-pane>
     </el-tabs>
+    </template>
   </div>
 </template>
 
@@ -50,6 +58,7 @@ import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
 import { useRoute, useRouter } from 'vue-router'
 import PageHeader from '@/idmp/components/PageHeader.vue'
+import { toUserMessage } from '@/idmp/utils/userMessage.js'
 import { fetchIndicatorVersion, fetchAllIndicatorVersions } from '@/idmp/api/modules/indicators'
 import { createScenarioVersion, fetchScenarioVersion, fetchScenarioVersions, publishScenarioVersion, replaceScenarioIndicators, updateScenarioVersion, validateScenarioVersion } from '@/idmp/api/modules/scenarios'
 import { normalizeResourceId, PERIOD_TYPES, publicationStatusLabel, SCENARIO_TYPES, scenarioDetailToForm, scenarioFormToPatch, scenarioVersionCapabilities, toIndicatorBinding } from '@/idmp/api/adapters/scenario'
@@ -60,13 +69,15 @@ const activeTab = ref('basic')
 const saving = ref(false)
 const publishing = ref(false)
 const startingEdit = ref(false)
+const loading = ref(true)
+const loadError = ref('')
 const indicatorOptions = ref([])
 const pendingIndicatorId = ref('')
 const openingIndicatorId = ref('')
 let loadRevision = 0
 const form = reactive({ scenarioId: '', versionId: '', name: '', type: 'CUSTOM', description: '', governingOrgName: '', defaultPeriodType: 'MONTHLY', defaultParameters: {}, defaultDataSourcePriority: {}, displayText: '', effectiveStartDate: '', effectiveEndDate: '', effectiveRange: [], resourceVersion: 0, publicationStatus: 'UNKNOWN', versionNo: '-', indicators: [] })
 const capabilities = computed(() => scenarioVersionCapabilities(form.publicationStatus))
-const editable = computed(() => capabilities.value.canEdit && !saving.value && !publishing.value)
+const editable = computed(() => !loading.value && !loadError.value && capabilities.value.canEdit && !saving.value && !publishing.value)
 const readOnlyMessage = computed(() => ({
   PUBLISHED: '当前为已发布版本，可以查看全部配置；如需修改，请点击“编辑场景”。',
   ARCHIVED: '当前版本已归档，仅支持查看，不能编辑或发布。',
@@ -121,6 +132,8 @@ function applyDetail(detail) {
 }
 async function load() {
   const request = ++loadRevision
+  loading.value = true
+  loadError.value = ''
   try {
     const options = await fetchAllIndicatorVersions({ publicationStatus: 'PUBLISHED' })
     if (request !== loadRevision) return
@@ -131,13 +144,16 @@ async function load() {
       if (request !== loadRevision) return
       versionId = (Array.isArray(list) ? list : []).find((item) => item.publicationStatus === 'DRAFT')?.id || list?.[0]?.id
     }
+    if (!versionId) throw new Error('该场景暂无可查看的版本。')
     if (versionId) {
       const detail = await fetchScenarioVersion(versionId)
       if (request !== loadRevision) return
       applyDetail(detail)
+      loading.value = false
       applyEntryContext()
     }
-  } catch (error) { if (request === loadRevision) ElMessage.error(error?.message || '场景版本加载失败') }
+  } catch (error) { if (request === loadRevision) loadError.value = toUserMessage(error, '场景加载失败，请重试。') }
+  finally { if (request === loadRevision) loading.value = false }
 }
 async function startEditing() {
   if (!capabilities.value.canStartEdit || startingEdit.value) return
@@ -210,6 +226,7 @@ onBeforeUnmount(() => { loadRevision++ })
 
 <style scoped>
 .scenario-editor { min-width: 0; }
+.scenario-loading { padding: 32px 0; color: var(--idmp-text-helper); }
 .page-notice { margin-bottom: 16px; }
 .scenario-tabs { min-width: 0; }
 .scenario-tabs :deep(.el-tabs__content) { padding: 20px; }
