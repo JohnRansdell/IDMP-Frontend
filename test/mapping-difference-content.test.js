@@ -24,14 +24,14 @@ const tableBindings = [...tableCode.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]
 })).join('\n')
 const Table = Function('vue', 'MappingDifferenceValue', `${tableBindings}\n${tableCode.replace(/^import .*$/gm, '').replace('export default', 'return')}`)(vue, Component)
 
-test('formula comparison keeps only equally paired source and target values', async () => {
+test('formula comparison keeps full formulas without a separate change table', async () => {
   const { descriptor } = parse(await readFile(new URL('../src/idmp/components/MappingFormulaComparison.vue', import.meta.url), 'utf8'))
   const w = mount({
     render: vue.compile(descriptor.template.content),
-    setup: () => ({ sides: [], changes: [{ path: ['公式', '左侧'], source: '总费用 - 药品费用', target: '药品费用' }] })
+    setup: () => ({ sides: [{ key: 'source', label: '源指标公式', formula: null }, { key: 'target', label: '目标指标公式', formula: null }] })
   }, { global: { stubs: ['IndicatorFormulaExpression', 'MappingDifferenceValue'] } })
-  assert.deepEqual(w.findAll('thead th').map(cell => cell.text()), ['源指标', '目标指标'])
-  assert.deepEqual(w.findAll('tbody td').map(cell => cell.text()), ['总费用 - 药品费用', '药品费用'])
+  assert.deepEqual(w.findAll('h3').map(cell => cell.text()), ['源指标公式', '目标指标公式'])
+  assert.equal(w.findAll('table, .formula-changes, .formula-same').length, 0)
   assert.doesNotMatch(w.text(), /变更位置|左侧/)
   w.unmount()
 })
