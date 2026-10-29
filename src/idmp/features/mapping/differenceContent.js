@@ -37,7 +37,13 @@ export function sameDifferenceValue(a, b) {
 // Compare calculation structure, never infer mathematical equivalence from its spelling.
 export function formulaDifferences(source, target, sourceFactors = [], targetFactors = []) {
   const changes = []
-  const describe = (value, factors) => value?.nodeType ? arithmeticFormulaText(value, factors) : typeof value === 'object' && value !== null ? JSON.stringify(value) : differenceScalar(value)
+  const describe = (value, factors) => {
+    if (value?.nodeType === 'FACTOR_REF') {
+      const factor = factors.find(item => String(item.versionId ?? item.factorVersionId) === String(value.factorVersionId))
+      return `${factor?.name || factor?.factorName || '未命名因子'} · ${factor?.versionNo != null ? `V${factor.versionNo}` : '版本信息缺失'}`
+    }
+    return value?.nodeType ? arithmeticFormulaText(value, factors) : typeof value === 'object' && value !== null ? JSON.stringify(value) : differenceScalar(value)
+  }
   const walk = (a, b, path) => {
     if (sameDifferenceValue(a, b)) return
     if (a?.nodeType && b?.nodeType && (a.nodeType !== b.nodeType || a.nodeType === 'FACTOR_REF')) {

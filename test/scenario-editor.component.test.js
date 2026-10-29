@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import { JSDOM } from 'jsdom'
 import * as adapters from '../src/idmp/api/adapters/scenario.js'
+import { toUserMessage } from '../src/idmp/utils/userMessage.js'
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>')
 for (const name of ['window', 'document', 'HTMLElement', 'SVGElement', 'Element', 'Node', 'Document', 'Text', 'Comment']) globalThis[name] = dom.window[name]
@@ -32,7 +33,7 @@ function create(overrides = {}, status = 'DRAFT') {
   }
   const snapshot = () => JSON.parse(JSON.stringify(server))
   const deps = {
-    ...adapters, PageHeader: Header, CodeTooltip: Pass,
+    ...adapters, PageHeader: Header, CodeTooltip: Pass, IndicatorVersionPicker: Pass, toUserMessage,
     useRoute: () => ({ params: { scenarioId: '10' }, query: { versionId: '11' } }),
     useRouter: () => ({ push: target => navigations.push(target), replace: async () => {} }),
     ElMessage: { success: value => messages.push(value), error: value => messages.push(value) },

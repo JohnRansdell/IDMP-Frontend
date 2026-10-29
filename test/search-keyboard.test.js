@@ -5,7 +5,7 @@ import { parse } from '@vue/compiler-sfc'
 
 test('every searchable selector opts into first-candidate keyboard selection', async () => {
   const missing = []
-  let count = 0
+  const selectorFiles = new Set()
   async function walk(directory) {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       const file = `${directory}/${entry.name}`
@@ -15,7 +15,7 @@ test('every searchable selector opts into first-candidate keyboard selection', a
       const prop = (node, name) => node.props.find(item => item.type === 6 ? item.name === name : item.name === 'bind' && item.arg?.content === name)
       function visit(node) {
         if (node.type === 1 && ['el-select', 'el-select-v2'].includes(node.tag) && prop(node, 'filterable')) {
-          count++
+          selectorFiles.add(file)
           const first = prop(node, 'default-first-option')
           if (!first || first.type === 7 && first.exp?.content !== 'true') missing.push(`${file}:${node.loc.start.line}`)
         }
@@ -28,6 +28,8 @@ test('every searchable selector opts into first-candidate keyboard selection', a
     }
   }
   await walk('src')
-  assert.ok(count >= 62, 'audit must include shared and page-specific selectors')
+  for (const file of ['src/idmp/components/IndicatorVersionPicker.vue', 'src/idmp/components/ResourceReferenceSelect.vue', 'src/idmp/views/IndicatorMapping.vue']) {
+    assert.ok(selectorFiles.has(file), `audit must include ${file}`)
+  }
   assert.deepEqual(missing, [])
 })

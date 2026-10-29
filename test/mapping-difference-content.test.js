@@ -40,4 +40,9 @@ test('formula changes identify operators, display precision and exact factor ver
   assert.deepEqual(content.formulaDifferences({ root }, { root: { ...root, nodeId: 'other' } }), [])
   const changes = content.formulaDifferences({ root, display: { scale: 2 } }, { root: { ...root, operator: 'DIV' }, display: { scale: 4 } })
   assert.deepEqual(changes.map(x => [x.path.join('/'), x.source, x.target]), [['公式/运算符', '减', '除'], ['展示格式/小数位数', '2', '4']])
+  const versions = content.formulaDifferences(
+    { root: { nodeType: 'FACTOR_REF', factorVersionId: 'old' } }, { root: { nodeType: 'FACTOR_REF', factorVersionId: 'new' } },
+    [{ factorVersionId: 'old', factorName: '老年住院费用', versionNo: 1 }], [{ factorVersionId: 'new', factorName: '老年住院费用', versionNo: 2 }])
+  assert.equal(versions[0].source, '老年住院费用 · V1')
+  assert.equal(versions[0].target, '老年住院费用 · V2')
 })
