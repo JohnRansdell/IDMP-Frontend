@@ -56,7 +56,7 @@
     </section>
     <StatePanel v-else-if="!loading && !memberRecords.length" type="empty" title="当前层暂无数据" description="当前口径下没有可展示的记录。" />
     <div v-else class="table-scroll">
-      <el-table v-loading="loading" :data="memberRecords" table-layout="fixed" class="analysis-table drill-data-table" @sort-change="changeSort">
+      <el-table :aria-busy="loading" :empty-text="loading ? '正在查询…' : '暂无数据'" v-loading="loading" :data="memberRecords" table-layout="fixed" class="analysis-table drill-data-table" @sort-change="changeSort">
         <el-table-column
           v-for="column in visibleColumns"
           :key="column.field"

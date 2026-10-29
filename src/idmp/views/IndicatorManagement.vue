@@ -125,7 +125,7 @@
         </template>
       </StatePanel>
       <div v-else class="table-scroll">
-        <el-table
+        <el-table :aria-busy="tableLoading" :empty-text="tableLoading ? '正在查询…' : '暂无数据'"
           :data="pagedRows"
           v-loading="tableLoading"
           row-key="code"

@@ -12,7 +12,7 @@
       </el-form>
     </section>
     <section class="surface-card">
-      <el-table :data="records" v-loading="loading" empty-text="回收站为空">
+      <el-table :aria-busy="loading" :empty-text="loading ? '正在查询…' : '回收站为空'" :data="records" v-loading="loading" >
 
         <el-table-column prop="resourceName" label="名称" min-width="180" />
         <el-table-column label="删除前状态" width="120"><template #default="{ row }">{{ row.status ? getStatusLabel(row.status) : '-' }}</template></el-table-column>
@@ -24,7 +24,7 @@
           <template #default="{ row }"><el-button link type="primary" @click="showDetail(row)">详情</el-button><el-button link type="success" :loading="restoringId === row.resourceId" @click="restore(row)">恢复</el-button></template>
         </el-table-column>
       </el-table>
-      <div class="pagination-row"><span>共 {{ total }} 条</span><el-pagination v-model:current-page="page" v-model:page-size="size" layout="prev, pager, next, sizes" :page-sizes="[10, 20, 50]" :total="total" @current-change="load" @size-change="applyFilters" /></div>
+      <div class="pagination-row"><span>{{ loading ? '正在查询…' : `共 ${total} 条` }}</span><el-pagination :disabled="loading" v-model:current-page="page" v-model:page-size="size" layout="prev, pager, next, sizes" :page-sizes="[10, 20, 50]" :total="total" @current-change="load" @size-change="applyFilters" /></div>
     </section>
     <el-drawer v-model="detailVisible" :title="`${resourceLabel}回收站详情`" size="520px">
       <template v-if="detail">

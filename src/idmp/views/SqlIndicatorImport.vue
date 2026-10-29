@@ -120,7 +120,7 @@ FROM level4 l4 CROSS JOIN total t;</code></pre>
     <el-dialog v-model="timeFieldDialogVisible" title="选择物理时间字段" width="760px" destroy-on-close>
       <el-alert type="info" :closable="false" show-icon title="可选择 SQL 涉及物理表中的时间字段；文本字段须包含有效日期或时间。" />
       <el-input v-model="timeFieldSearch" class="time-field-search" clearable placeholder="搜索表名、字段名、类型或注释" />
-      <el-table v-loading="timeFieldLoading" :data="filteredPhysicalTimeFields" height="390" row-key="fieldReference" highlight-current-row @row-dblclick="choosePhysicalTimeField">
+      <el-table :aria-busy="timeFieldLoading" :empty-text="timeFieldLoading ? '正在查询…' : '暂无数据'" v-loading="timeFieldLoading" :data="filteredPhysicalTimeFields" height="390" row-key="fieldReference" highlight-current-row @row-dblclick="choosePhysicalTimeField">
         <el-table-column prop="physicalTable" label="物理表" min-width="150" show-overflow-tooltip />
         <el-table-column prop="columnName" label="字段" min-width="160" show-overflow-tooltip />
         <el-table-column prop="columnType" label="类型" width="120" />

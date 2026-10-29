@@ -1,7 +1,7 @@
 <template>
   <div class="idmp-page policy-page">
     <PageHeader title="政策文件">
-      <template #meta><span>共 {{ total }} 份文件</span></template>
+      <template #meta><span>{{ loading ? '正在查询…' : `共 ${total} 份文件` }}</span></template>
       <template #actions><el-button v-access="'policy.create'" type="primary" :icon="Upload" @click="newPolicy">新建政策文件</el-button></template>
     </PageHeader>
     <section class="surface-card policy-filter-card" aria-label="政策文件筛选">
@@ -15,7 +15,7 @@
     <section class="surface-card policy-table-card" aria-label="政策文件列表">
       <div class="policy-table-heading"><h2>文件列表</h2><span>双击或点击查看文件版本与关系</span></div>
       <div class="policy-table-scroll">
-        <el-table v-loading="loading" :data="rows" empty-text="暂无政策文件" @row-dblclick="openDetail">
+        <el-table :aria-busy="loading" :empty-text="loading ? '正在查询…' : '暂无政策文件'" v-loading="loading" :data="rows"  @row-dblclick="openDetail">
           <el-table-column prop="name" label="文件名称" min-width="220" show-overflow-tooltip />
 
           <el-table-column prop="issuingOrganization" label="发布机构" min-width="140" />
@@ -24,7 +24,7 @@
           <el-table-column label="操作" width="140"><template #default="{ row }"><el-button link type="primary" @click="openDetail(row)">查看</el-button><el-button v-access="'policy.edit'" link @click="editPolicy(row)">编辑</el-button></template></el-table-column>
         </el-table>
       </div>
-      <div class="policy-table-footer"><el-pagination v-model:current-page="page" :page-size="20" :total="Number(total)" layout="total, prev, pager, next" @current-change="load" /></div>
+      <div class="policy-table-footer"><el-pagination :disabled="loading" v-model:current-page="page" :page-size="20" :total="Number(total)" :layout="loading ? 'prev, pager, next' : 'total, prev, pager, next'" @current-change="load" /></div>
     </section>
 
     <el-dialog v-model="metadataVisible" :title="metadata.id ? '编辑政策信息' : '新建政策文件'" width="min(620px, 94vw)" :close-on-click-modal="!saving">

@@ -35,9 +35,10 @@
 
         <section class="surface-card table-card">
           <div class="table-heading"><div><h2>映射关系列表</h2><p>源指标、映射关系和目标指标按业务关系分列展示。</p></div><div v-if="currentFilterGroup" class="group-relation-context"><span>当前语义组基准指标</span><strong>{{ indicatorRef(currentFilterGroup.canonicalIndicator) }}</strong></div></div>
-          <StatePanel v-if="!loading && !mappings.length" type="empty" title="暂无映射关系" description="可调整筛选条件，或创建一条人工治理映射。" />
+          
+          <el-alert v-if="mappingError" :title="mappingError" type="error" :closable="false" />
           <div v-else class="mapping-table-scroll">
-            <el-table v-loading="loading" :data="mappings" class="mapping-table" table-layout="fixed">
+            <el-table :aria-busy="loading" :empty-text="loading ? '正在查询…' : '暂无数据'" v-loading="loading" :data="mappings" class="mapping-table" table-layout="fixed">
               <el-table-column label="映射名称" min-width="280"><template #default="{ row }"><div class="mapping-name"><strong>{{ row.name || '未命名映射' }}</strong><span>{{ row.group?.name || '未归类语义组' }}</span></div></template></el-table-column>
               <el-table-column label="源指标" min-width="270"><template #default="{ row }"><div class="mapping-indicator-cell"><small>源侧政策：{{ policyLabel(row.sourceIndicator) }}</small><strong>{{ indicatorRef(row.sourceIndicator) }}</strong><span class="mono-data">版本 {{ row.sourceIndicator?.indicatorVersionId || '-' }}</span></div></template></el-table-column>
               <el-table-column label="映射关系" width="190" align="center"><template #default="{ row }"><div class="mapping-type-cell"><span class="mapping-type-cell__arrow" aria-hidden="true">→</span><StatusBadge :label="mappingTypeLabel(row.mappingType)" /><small>{{ comparabilityLabel(row.comparability) }}</small></div></template></el-table-column>
@@ -46,15 +47,16 @@
               <el-table-column label="操作" width="88" fixed="right"><template #default="{ row }"><el-button link type="primary" @click="openDetail(row.id)">查看</el-button></template></el-table-column>
             </el-table>
           </div>
-          <div class="table-footer"><span>共 {{ mappingTotal }} 条</span><el-pagination v-model:current-page="mappingPage" v-model:page-size="mappingSize" layout="prev, pager, next, sizes" :page-sizes="[10, 20, 50]" :total="mappingTotal" @current-change="loadMappings" @size-change="loadMappings" /></div>
+          <div class="table-footer"><span>{{ loading ? '正在查询…' : `共 ${mappingTotal} 条` }}</span><el-pagination :disabled="loading" v-model:current-page="mappingPage" v-model:page-size="mappingSize" layout="prev, pager, next, sizes" :page-sizes="[10, 20, 50]" :total="mappingTotal" @current-change="loadMappings" @size-change="loadMappings" /></div>
         </section>
       </el-tab-pane>
 
       <el-tab-pane label="语义组" name="groups">
         <section class="surface-card table-card">
           <div class="table-heading"><div><h2>语义组</h2><p>基准指标版本确定后，创建映射时自动成为源指标。</p></div></div>
-          <StatePanel v-if="!groupLoading && !groups.length" type="empty" title="暂无语义组" description="请先选择一个已发布指标版本创建语义组。" />
-          <el-table v-else v-loading="groupLoading" :data="groups" table-layout="fixed">
+          
+          <el-alert v-if="groupError" :title="groupError" type="error" :closable="false" />
+          <el-table v-else :aria-busy="groupLoading" :empty-text="groupLoading ? '正在查询…' : '暂无语义组'" v-loading="groupLoading" :data="groups" table-layout="fixed">
             <el-table-column prop="name" label="名称" min-width="280"><template #default="{ row }"><span>{{ row.name }}</span></template></el-table-column>
             <el-table-column label="基准指标版本" min-width="250"><template #default="{ row }">{{ indicatorRef(row.canonicalIndicator) }}</template></el-table-column>
             <el-table-column prop="memberCount" label="有效成员" width="110" />
@@ -106,6 +108,8 @@ const route = useRoute()
 const router = useRouter()
 const activePane = ref('mappings')
 const loading = ref(false); const groupLoading = ref(false); const mutating = ref(false)
+const mappingError = ref(''), groupError = ref('')
+let mappingRequest = 0, groupRequest = 0
 const mappings = ref([]); const groups = ref([]); const publishedIndicators = ref([])
 const mappingTotal = ref(0); const mappingPage = ref(1); const mappingSize = ref(20)
 const groupDialogOpen = ref(false); const mappingDialogOpen = ref(false); const editingMappingId = ref(''); const editingDetail = ref(null)
@@ -154,10 +158,22 @@ async function loadPolicyFiles(keyword = '') {
     if (revision === policyRequest) policyFilesLoading.value = false
   }
 }
-async function bootstrap() { await Promise.all([loadGroups(), loadPublishedIndicators()]); await loadMappings() }
-async function loadGroups() { groupLoading.value = true; try { groups.value = normalizePage(await fetchMappingGroups({ page: 1, size: 200 })).items } catch (error) { ElMessage.error(error?.message || '语义组加载失败') } finally { groupLoading.value = false } }
+async function bootstrap() { await Promise.all([loadGroups(), loadPublishedIndicators(), loadMappings()]) }
+async function loadGroups() {
+  const request = ++groupRequest
+  groupLoading.value = true; groupError.value = ''
+  try { const result = normalizePage(await fetchMappingGroups({ page: 1, size: 200 })); if (request === groupRequest) groups.value = result.items }
+  catch (error) { if (request === groupRequest) groupError.value = error?.message || '语义组加载失败' }
+  finally { if (request === groupRequest) groupLoading.value = false }
+}
 async function loadPublishedIndicators() { try { publishedIndicators.value = (await fetchAllIndicatorVersions({ publicationStatus: 'PUBLISHED' })).map(item => ({ ...item, id: toOpaqueId(item.id || item.versionId || item.indicatorVersionId) })).filter(item => item.id) } catch (error) { ElMessage.warning(error?.message || '已发布指标列表加载失败，请刷新后重试。') } }
-async function loadMappings() { loading.value = true; try { const page = normalizePage(await fetchMappings({ ...filters, page: mappingPage.value, size: mappingSize.value })); mappings.value = page.items; mappingTotal.value = page.total } catch (error) { mappings.value = []; mappingTotal.value = 0; ElMessage.error(error?.message || '映射列表加载失败') } finally { loading.value = false } }
+async function loadMappings() {
+  const request = ++mappingRequest
+  loading.value = true; mappingError.value = ''
+  try { const page = normalizePage(await fetchMappings({ ...filters, page: mappingPage.value, size: mappingSize.value })); if (request === mappingRequest) { mappings.value = page.items; mappingTotal.value = page.total } }
+  catch (error) { if (request === mappingRequest) mappingError.value = error?.message || '映射列表加载失败' }
+  finally { if (request === mappingRequest) loading.value = false }
+}
 function resetFilters() { Object.assign(filters, { groupId: '', policyFileId: '', indicatorVersionId: '', mappingType: '', reviewStatus: '' }); mappingPage.value = 1; loadMappings() }
 function setMappingTypeFilter(mappingType) { filters.mappingType = mappingType; mappingPage.value = 1; loadMappings() }
 function openGroupRelations(group) { activePane.value = 'mappings'; filters.groupId = String(group.id); mappingPage.value = 1; loadMappings() }
@@ -175,7 +191,7 @@ async function saveMapping() { if (!mappingForm.name || !mappingForm.mappingType
 watch(() => route.query.edit, id => { if (id) void openEditFromRoute(String(id)) }, { immediate: true })
 watch([() => mappingForm.groupId, () => mappingForm.targetIndicatorVersionId], () => { if (!editingMappingId.value) comparison.value = null })
 onMounted(bootstrap)
-onBeforeUnmount(() => { clearTimeout(policySearchTimer); ++policyRequest })
+onBeforeUnmount(() => { clearTimeout(policySearchTimer); ++policyRequest; ++mappingRequest; ++groupRequest })
 </script>
 
 <style scoped lang="scss">

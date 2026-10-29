@@ -24,7 +24,7 @@
       <StatePanel v-if="loading" type="loading" title="正在加载场景目录" />
       <StatePanel v-else-if="loadError" type="error" title="场景目录加载失败" :description="loadError"><template #actions><el-button type="primary" @click="load">重试</el-button></template></StatePanel>
       <template v-else>
-      <el-table v-loading="loading" :data="rows" empty-text="暂无场景">
+      <el-table :aria-busy="loading" :empty-text="loading ? '正在查询…' : '暂无场景'" v-loading="loading" :data="rows" >
         <el-table-column prop="name" label="场景名称" min-width="280"><template #default="{ row }"><span>{{ row.name }}</span></template></el-table-column>
         <el-table-column label="类型" width="130"><template #default="{ row }">{{ scenarioTypeLabel(row.type) }}</template></el-table-column>
         <el-table-column prop="governingOrgName" label="主管部门" min-width="160" />

@@ -3,7 +3,7 @@
     <div class="dependency-heading"><h2>因子依赖关系</h2><el-button :size="compact ? 'small' : 'default'" :icon="Refresh" :loading="loading" @click="load">刷新</el-button></div>
     <el-radio-group v-model="mode" @change="load"><el-radio-button label="upstream">上游依赖</el-radio-button><el-radio-button label="downstream">下游影响</el-radio-button></el-radio-group>
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
-    <el-table v-loading="loading" :data="rows" :max-height="compact ? 220 : undefined" :size="compact ? 'small' : 'default'" empty-text="暂无依赖关系">
+    <el-table :aria-busy="loading" :empty-text="loading ? '正在查询…' : '暂无依赖关系'" v-loading="loading" :data="rows" :max-height="compact ? 220 : undefined" :size="compact ? 'small' : 'default'" >
       <el-table-column prop="factorName" label="因子" :min-width="compact ? 140 : 200" show-overflow-tooltip />
 
       <el-table-column label="关系" :width="compact ? 90 : 120"><template #default="{row}">{{ relation(row) }}</template></el-table-column>

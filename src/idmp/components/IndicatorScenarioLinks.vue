@@ -4,7 +4,7 @@
     <el-alert v-if="!published" title="指标版本发布后可以加入场景；无需先关联场景再发布指标。" type="info" :closable="false" />
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <el-alert v-if="savedVersionId" title="已加入场景草稿。请进入场景编辑页核对覆盖规则、校验并发布，场景计算才会使用该配置。" type="success" :closable="false" />
-    <el-table v-loading="loading" :data="links" empty-text="当前指标版本暂无关联场景">
+    <el-table :aria-busy="loading" :empty-text="loading ? '正在查询…' : '当前指标版本暂无关联场景'" v-loading="loading" :data="links" >
       <el-table-column label="场景" min-width="200"><template #default="{ row }">{{ row.name || row.scenarioName || '未命名场景' }}</template></el-table-column>
       <el-table-column prop="publicationStatus" label="状态" width="120" />
       <el-table-column label="操作" width="150"><template #default="{ row }"><el-button link type="primary" @click="open(row.id || row.scenarioId, row.scenarioVersionId)">查看或配置覆盖</el-button></template></el-table-column>
