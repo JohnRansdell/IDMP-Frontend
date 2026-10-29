@@ -1,6 +1,22 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { dashboardDetailToSchema, schemaToDashboardPayload } from '../src/idmp/api/adapters/dashboard.js'
+import { normalizeDashboardSchema } from '../src/idmp/features/dashboard/schema.js'
 import { createWarningWidgetConfig, normalizeWarningWidgetConfig, warningEventToDashboardItem, warningWidgetQuery } from '../src/idmp/features/dashboard/warningWidget.js'
+
+for (const config of [
+  { status: '', severity: 'HIGH', pageSize: 3, showValue: false, showTime: false },
+  { status: 'CLOSED', severity: '', pageSize: 7, showSeverity: false, ruleId: '102027642468111133' },
+  { status: 'ACKNOWLEDGED', severity: 'MEDIUM', pageSize: 2, indicatorVersionId: '102027642468111104' }
+]) test(`warning component retains ${config.status || 'all'} event filters and presentation after saving`, () => {
+  const warning = normalizeWarningWidgetConfig(config)
+  const schema = normalizeDashboardSchema({ version: 1, widgets: [{ id: 'events', type: 'warnings', config: { warning } }] })
+  const payload = schemaToDashboardPayload(schema)
+  const restored = dashboardDetailToSchema({ version: payload }).widgets[0]
+  assert.deepEqual(restored.config.warning, warning)
+  assert.deepEqual(warningWidgetQuery(restored.config.warning), warningWidgetQuery(warning))
+  assert.equal(restored.config.style.__idmpWarningWidget, undefined)
+})
 
 test('warning widget normalizes only supported dashboard display filters', () => {
   assert.deepEqual(createWarningWidgetConfig(), {

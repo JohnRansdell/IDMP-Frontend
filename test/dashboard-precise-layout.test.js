@@ -5,6 +5,25 @@ import { dashboardDetailToSchema, schemaToDashboardPayload } from '../src/idmp/a
 import { normalizeDashboardSchema } from '../src/idmp/features/dashboard/schema.js'
 import { applyWidgetLayoutToCanvas, drawnRectangleToGridLayout, gridWidthToPercentage, percentageToGridWidth, validatePreciseLayout } from '../src/idmp/features/dashboard/preciseLayout.js'
 const widgets = [{ id: 'kpi', type: 'kpi', config: {}, layout: { x: 0, y: 0, w: 6, h: 3 } }, { id: 'chart', type: 'chart', chartKind: 'line', config: {}, layout: { x: 8, y: 0, w: 8, h: 6 } }]
+
+for (const type of ['chart', 'kpi', 'text', 'warnings', 'ranking', 'metric-group']) {
+  test(`${type} persists layout locks and subsequent unlocking without leaking metadata into style`, () => {
+    const schema = normalizeDashboardSchema({ version: 1, widgets: [{ id: 'audit', type, chartKind: 'bar', config: { locked: true, style: { opacity: 0.8 }, ...(type === 'ranking' ? { ranking: { mode: 'indicators' } } : {}) }, layout: { x: 0, y: 0, w: 6, h: 4 } }] })
+    const roundTrip = value => dashboardDetailToSchema({ version: schemaToDashboardPayload(value) })
+    const restored = roundTrip(schema)
+    assert.equal(restored.widgets[0].config.locked, true)
+    assert.equal(restored.widgets[0].config.style.__idmpLocked, undefined)
+    assert.deepEqual(restored.widgets[0].layout, schema.widgets[0].layout)
+    assert.equal(validatePreciseLayout(restored.widgets, restored.widgets[0].id, { x: 0, y: 5, w: 6, h: 4 }).ok, false)
+    restored.widgets[0].config.locked = false
+    assert.equal(roundTrip(restored).widgets[0].config.locked, false)
+  })
+}
+
+test('historical widgets without a saved lock remain editable', () => {
+  const schema = dashboardDetailToSchema({ version: { widgets: [{ code: 'history', type: 'BAR', style: {} }] } })
+  assert.equal(schema.widgets[0].config.locked, false)
+})
 test('precise layout accepts integer-normalized valid grid geometry and rejects bad mutations', () => {
   assert.deepEqual(validatePreciseLayout(widgets, 'kpi', { x: '0', y: '4', w: '6.2', h: '3' }).layout, { x: 0, y: 4, w: 6, h: 3 })
   assert.equal(validatePreciseLayout(widgets, 'kpi', { x: 0, y: 0, w: 2, h: 1 }).ok, true)

@@ -3,6 +3,7 @@ import { createDefaultBinding, preferredMeasureAggregation } from '../../feature
 import { singleIndicatorTemplatePlan } from '../../features/dashboard/templateBinding.js'
 import { dashboardWidgetResultShape, isPeriodField, normalizePeriodDataset } from '../../features/dashboard/periodFields.js'
 import { immutableResultRows, transformResultRows } from '../../features/dashboard/resultRows.js'
+import { normalizeWarningWidgetConfig } from '../../features/dashboard/warningWidget.js'
 
 const FRONTEND_TYPE_BY_REMOTE = Object.freeze({
   KPI: { type: 'kpi', visualType: 'kpi' },
@@ -27,6 +28,8 @@ const METRIC_GROUP_KEY = '__idmpMetricGroup'
 const INDICATOR_RANKING_KEY = '__idmpIndicatorRanking'
 const TEMPLATE_SLOT_KEY = '__idmpTemplateSlot'
 const CLICK_ACTION_KEY = '__idmpClickAction'
+const LOCKED_KEY = '__idmpLocked'
+const WARNING_WIDGET_KEY = '__idmpWarningWidget'
 
 export function dashboardSummaryToCatalogEntry(item = {}) {
   return {
@@ -130,7 +133,7 @@ export function schemaToDashboardPayload(schema, { resourceVersion, dataSources 
       query: { ...object(config.backendQuery), resultShape: dashboardWidgetResultShape(widget) },
       filterBindings: object(config.interaction).clickFilter || {}, drill: object(config.interaction).drill || {},
       chart: { ...(object(config.chart)), ...(Array.isArray(config.tableColumns) ? { tableColumns: config.tableColumns } : {}), ...(indicatorBindings.length ? { indicatorBindings } : {}), ...(widget.type === 'text' ? { text: object(config.text) } : {}), chartKind: kind },
-      style: { ...object(config.style), ...(config.templateSlot ? { [TEMPLATE_SLOT_KEY]: config.templateSlot } : {}), ...(config.interaction?.clickAction === 'drill' ? { [CLICK_ACTION_KEY]: 'drill' } : {}) }
+      style: { ...object(config.style), [LOCKED_KEY]: config.locked === true, ...(widget.type === 'warnings' ? { [WARNING_WIDGET_KEY]: normalizeWarningWidgetConfig(config.warning) } : {}), ...(config.templateSlot ? { [TEMPLATE_SLOT_KEY]: config.templateSlot } : {}), ...(config.interaction?.clickAction === 'drill' ? { [CLICK_ACTION_KEY]: 'drill' } : {}) }
     }
   }
   return {
@@ -365,11 +368,15 @@ function remoteWidgetToSchemaWidget(widget = {}) {
   delete style[CLICK_ACTION_KEY]
   const templateSlot = object(style[TEMPLATE_SLOT_KEY])
   delete style[TEMPLATE_SLOT_KEY]
+  const locked = style[LOCKED_KEY] === true
+  delete style[LOCKED_KEY]
+  const warningConfig = mapped.type === 'warnings' ? { warning: normalizeWarningWidgetConfig(style[WARNING_WIDGET_KEY]) } : {}
+  delete style[WARNING_WIDGET_KEY]
   const binding = frontendBinding(widget.fieldBindings)
   return {
     id: String(widget.code), type: mapped.type, ...(mapped.chartKind ? { chartKind: chart.chartKind || mapped.chartKind } : {}),
     visualType: mapped.visualType, sourceCode: widget.dataSourceCode || '', sourceName: widget.dataSourceName || '', title: widget.title || '',
-    config: { ...(Object.keys(templateSlot).length ? { templateSlot } : {}), ...(binding ? { dataBinding: binding } : {}), ...(widget.indicatorVersionId ? { analysisIndicatorVersionId: stringId(widget.indicatorVersionId) } : {}), ...(Array.isArray(chart.tableColumns) ? { tableColumns: chart.tableColumns } : {}), ...(Array.isArray(chart.indicatorBindings) ? { indicatorBindings: chart.indicatorBindings } : {}), ...(Object.keys(query).length ? { backendQuery: query } : {}), ...(Object.keys(interaction).length ? { interaction } : {}), ...(Object.keys(chart).length ? { chart } : {}), style, ...(remoteType === 'TEXT' ? { text: object(widget.text || chart.text) } : {}) },
+    config: { locked, ...warningConfig, ...(Object.keys(templateSlot).length ? { templateSlot } : {}), ...(binding ? { dataBinding: binding } : {}), ...(widget.indicatorVersionId ? { analysisIndicatorVersionId: stringId(widget.indicatorVersionId) } : {}), ...(Array.isArray(chart.tableColumns) ? { tableColumns: chart.tableColumns } : {}), ...(Array.isArray(chart.indicatorBindings) ? { indicatorBindings: chart.indicatorBindings } : {}), ...(Object.keys(query).length ? { backendQuery: query } : {}), ...(Object.keys(interaction).length ? { interaction } : {}), ...(Object.keys(chart).length ? { chart } : {}), style, ...(remoteType === 'TEXT' ? { text: object(widget.text || chart.text) } : {}) },
     layout: { x: Number(widget.position?.x || 0), y: Number(widget.position?.y || 0), w: Number(widget.position?.w || 4), h: Number(widget.position?.h || 3) }
   }
 }
