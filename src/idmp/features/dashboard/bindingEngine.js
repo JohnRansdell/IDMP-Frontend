@@ -243,10 +243,8 @@ export function compileWidgetData(kind, binding, dataset) {
     if (kind === 'bar' && !binding.dimensions.some(dimension => dataset.fields.find(field => field.id === dimension.field)?.semanticType === 'time')) {
       order = order.filter(index => series.some(item => {
         const value = item.values[index]
-        return typeof value === 'number' && Number.isFinite(value) && value !== 0
+        return typeof value === 'number' && Number.isFinite(value)
       }))
-      // Zero is a valid result. Keep the categories when the whole comparison is zero.
-      if (!order.length) order = categoryKeys.map((_, index) => index).filter(index => series.some(item => typeof item.values[index] === 'number' && Number.isFinite(item.values[index])))
     }
     const categoryValues = [...categories.values()]
     const sortedCategories = order.map(index => Array.isArray(categoryValues[index].visible) ? categoryValues[index].visible.join(' / ') : String(categoryValues[index].visible))

@@ -144,7 +144,7 @@ test('department grouping and aggregation produce correct values', () => {
   assert.deepEqual(compileWidgetData('bar', config, dataset).series[0].values, [3, 7])
 })
 
-test('bar charts omit zero-only categories in mixed results and retain all-zero comparisons', () => {
+test('bar charts retain valid zero categories in mixed and all-zero comparisons', () => {
   const fields = createFieldCatalog([
     { department: '零值科室', value: 0, target: 0 },
     { department: '保留科室', value: 0, target: 2 },
@@ -167,13 +167,39 @@ test('bar charts omit zero-only categories in mixed results and retain all-zero 
   }
 
   const bar = compileWidgetData('bar', config, source)
-  assert.deepEqual(bar.categories, ['保留科室', '非零科室'])
-  assert.deepEqual(bar.series.map(item => item.values), [[0, 3], [2, 0]])
+  assert.deepEqual(bar.categories, ['零值科室', '保留科室', '非零科室'])
+  assert.deepEqual(bar.series.map(item => item.values), [[0, 0, 3], [0, 2, 0]])
   assert.deepEqual(compileWidgetData('line', config, source).categories, ['零值科室', '保留科室', '非零科室'])
   const zero = compileWidgetData('bar', config, { ...source, rows: [{ department: '零值科室', value: 0, target: 0 }] })
   assert.equal(zero.status, 'ready')
   assert.deepEqual(zero.categories, ['零值科室'])
   assert.deepEqual(zero.series.map(item => item.values), [[0], [0]])
+})
+
+test('formal bar results retain zero values with display text and drill tuples after sorting', () => {
+  const rows = [
+    { department: '低于基准', value: -2, displayValue: '-2.00' },
+    { department: '没有发生', value: 0, displayValue: '0.00' },
+    { department: '发生事件', value: 0.04, displayValue: '0.04' },
+    { department: '不可计算', value: null, displayValue: null }
+  ]
+  const config = { dataset: 'comparison', dimensions: [{ field: 'department' }],
+    measures: [{ field: 'value', aggregation: 'direct' }], series: [], sort: [{ field: 'value', direction: 'desc' }] }
+  const result = compileWidgetData('bar', config, { serverCalculated: true, fields: createFieldCatalog(rows), rows })
+  assert.equal(result.status, 'ready')
+  assert.deepEqual(result.categories, ['发生事件', '没有发生', '低于基准'])
+  assert.deepEqual(result.series[0].values, [0.04, 0, -2])
+  assert.deepEqual(result.series[0].displayValues, ['0.04', '0.00', '-2.00'])
+  assert.deepEqual(result.dimensionTuples, [{ department: '发生事件' }, { department: '没有发生' }, { department: '低于基准' }])
+})
+
+test('all-zero bars preserve requested dimension sorting rather than input order', () => {
+  const rows = [{ department: '2', value: 0 }, { department: '10', value: 0 }, { department: '1', value: 0 }]
+  const config = { dataset: 'comparison', dimensions: [{ field: 'department' }],
+    measures: [{ field: 'value', aggregation: 'direct' }], series: [], sort: [{ field: 'department', direction: 'asc' }] }
+  const result = compileWidgetData('bar', config, { serverCalculated: true, fields: createFieldCatalog(rows), rows })
+  assert.deepEqual(result.dimensionTuples.map(row => row.department), ['1', '2', '10'])
+  assert.deepEqual(result.series[0].values, [0, 0, 0])
 })
 
 test('KPI display formatting removes floating-point tails without changing binding values', () => {
