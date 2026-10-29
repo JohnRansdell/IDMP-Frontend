@@ -28,8 +28,8 @@
 
     <div class="drill-summary-strip" aria-label="当前层汇总">
       <div><span>指标值</span><strong>{{ formatResultValue(result.summary.indicatorValue, { displayValue: result.summary.displayValue, unit: result.summary.unit || result.context.unit }) }}</strong></div>
-      <div v-if="result.summary.numerator != null"><span>分子</span><strong>{{ formatResultNumber(result.summary.numerator) }}</strong></div>
-      <div v-if="result.summary.denominator != null"><span>分母</span><strong>{{ formatResultNumber(result.summary.denominator) }}</strong></div>
+      <div v-if="resultNumber(result.summary.numerator) !== null"><span>分子</span><strong>{{ formatResultNumber(result.summary.numerator) }}</strong></div>
+      <div v-if="resultNumber(result.summary.denominator) !== null"><span>分母</span><strong>{{ formatResultNumber(result.summary.denominator) }}</strong></div>
       <div><span>质量状态</span><strong>{{ result.summary.qualityStatus ? getStatusLabel(result.summary.qualityStatus) : '-' }}</strong></div>
     </div>
 
@@ -67,9 +67,7 @@
         >
           <template #default="{ row }">
             <strong v-if="column.field === 'dimensionLabel' || column.field === 'dimensionName'">{{ row[column.field] || '-' }}</strong>
-            <span v-else-if="['displayValue', 'indicatorValue'].includes(column.field)">{{ formatResultValue(row.indicatorValue, { displayValue: row.displayValue, unit: row.unit || result.context.unit }) }}</span>
-            <span v-else-if="['numerator', 'denominator'].includes(column.field)">{{ formatResultNumber(row[column.field]) }}</span>
-            <span v-else>{{ row[column.field] ?? '-' }}</span>
+            <span v-else>{{ formatDrillCell(row, column.field) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="118" fixed="right">
@@ -136,7 +134,7 @@ import { canonicalDrillRootResultId, limitDrillNextLevels } from '@/idmp/api/ada
 import { assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation } from './drillContext.js'
 import { isStatusRecord } from '@/idmp/features/analysis/resultAvailability'
 import { getStatusLabel } from '@/idmp/design/status'
-import { formatResultNumber, formatResultValue } from '../shared/resultPresentation.js'
+import { formatResultNumber, formatResultValue, resultNumber } from '../shared/resultPresentation.js'
 import { formatResultPeriod } from '../../utils/periodRange.js'
 
 const props = defineProps({
@@ -196,9 +194,10 @@ const navigationAnchors = shallowRef({})
 const isFactorTraceMode = ref(false)
 const statusRecord = computed(() => result.value.records.find(isStatusRecord) || null)
 const memberRecords = computed(() => result.value.records.filter((item) => !isStatusRecord(item)))
+const operandFields = ['numerator', 'denominator', 'numeratorValue', 'denominatorValue']
 const visibleColumns = computed(() => result.value.columns.filter((column) => (
   String(column.field || '').toLowerCase() !== 'factorsourceprofiles'
-  && (!['numerator', 'denominator'].includes(column.field) || memberRecords.value.some(row => row[column.field] != null))
+  && (!operandFields.includes(column.field) || memberRecords.value.some(row => resultNumber(row[column.field]) !== null))
 )))
 const activeResultId = computed(() => String(
   navigationAnchors.value[navigationKey()]?.resultId ||
@@ -234,6 +233,17 @@ function emptyResult() {
   return { context: {}, breadcrumb: [], summary: {}, columns: [], records: [], nextLevels: [], pageInfo: { total: 0 }, dataSource: 'live' }
 }
 
+function formatDrillCell(row, field) {
+  if (['displayValue', 'indicatorValue'].includes(field)) return formatResultValue(row.indicatorValue, {
+    displayValue: row.displayValue, unit: row.unit || result.value.context.unit
+  })
+  if (operandFields.includes(field)) return formatResultNumber(row[field])
+  if (['qualityStatus', 'resultOutcomeStatus', 'outcomeStatus', 'sourceDataStatus', 'calculationExecutionStatus'].includes(field)) {
+    return row[field] ? getStatusLabel(row[field]) : '-'
+  }
+  return String(row[field] ?? '-')
+}
+
 function getReportSnapshot() {
   if (isFactorTraceMode.value) return {
     loading: factorTraceLoading.value,
@@ -248,7 +258,7 @@ function getReportSnapshot() {
     title: `当前下钻结果：${currentLevelLabel.value}`,
     description: errorMessage.value || `${resolvedPeriod.value}；路径：${result.value.breadcrumb.map(item => item.label).join(' / ')}；已加载 ${memberRecords.value.length} 条 / 共 ${result.value.pageInfo.total || 0} 条`,
     columns: columns.length ? columns.map(column => column.label) : ['结果'],
-    rows: columns.length ? memberRecords.value.map(row => columns.map(column => String(row[column.field] ?? '-'))) : []
+    rows: columns.length ? memberRecords.value.map(row => columns.map(column => formatDrillCell(row, column.field))) : []
   } }
 }
 defineExpose({ getReportSnapshot })

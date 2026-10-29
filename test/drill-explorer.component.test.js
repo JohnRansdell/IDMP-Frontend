@@ -5,7 +5,8 @@ import { compileScript, parse } from '@vue/compiler-sfc'
 import { JSDOM } from 'jsdom'
 import { formatResultPeriod } from '../src/idmp/utils/periodRange.js'
 import { canonicalDrillRootResultId } from '../src/idmp/api/adapters/drill.js'
-import { formatResultNumber, formatResultValue } from '../src/idmp/features/shared/resultPresentation.js'
+import { formatResultNumber, formatResultValue, resultNumber } from '../src/idmp/features/shared/resultPresentation.js'
+import { getStatusLabel } from '../src/idmp/design/status.js'
 import { assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation } from '../src/idmp/features/analysis/drillContext.js'
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>')
@@ -30,8 +31,8 @@ const Button = vue.defineComponent({ setup: (_, { slots }) => () => vue.h('butto
 
 function create(fetchResultFactors = async () => ({ context: {}, factors: [] }), props = {}, drillResponse = {}, interactive = false) {
   const requests = []
-  const component = Function('vue', 'deps', `const { createRequestScope, useRoute, useRouter, StatePanel, FactorTraceTree, searchResultDrill, fetchResultFactors, limitDrillNextLevels, isStatusRecord, getStatusLabel, fetchDepartmentNames, isDepartmentLevel, namedDrillRecord, canonicalDrillRootResultId, assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation, formatResultNumber, formatResultValue, formatResultPeriod } = deps;\n${bindings}\n${code}`)(vue, {
-    createRequestScope, formatResultNumber, formatResultValue, formatResultPeriod,
+  const component = Function('vue', 'deps', `const { createRequestScope, useRoute, useRouter, StatePanel, FactorTraceTree, searchResultDrill, fetchResultFactors, limitDrillNextLevels, isStatusRecord, getStatusLabel, fetchDepartmentNames, isDepartmentLevel, namedDrillRecord, canonicalDrillRootResultId, assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation, formatResultNumber, formatResultValue, resultNumber, formatResultPeriod } = deps;\n${bindings}\n${code}`)(vue, {
+    createRequestScope, formatResultNumber, formatResultValue, resultNumber, formatResultPeriod,
     canonicalDrillRootResultId, assertDrillResponseContext, buildDrillRequest, drillMemberField, nextDrillNavigation,
     useRoute: () => ({ query: {} }), useRouter: () => ({ push() {}, replace() {} }),
     StatePanel: vue.defineComponent({ props: ['title'], setup: props => () => vue.h('div', props.title) }),
@@ -41,7 +42,7 @@ function create(fetchResultFactors = async () => ({ context: {}, factors: [] }),
       const response = typeof drillResponse === 'function' ? await drillResponse(id, payload) : drillResponse
       return { context: {}, breadcrumb: [], summary: {}, columns: [], records: [], nextLevels: [], pageInfo: {}, ...response }
     },
-    fetchResultFactors, limitDrillNextLevels: levels => levels, isStatusRecord: () => false, getStatusLabel: value => value,
+    fetchResultFactors, limitDrillNextLevels: levels => levels, isStatusRecord: () => false, getStatusLabel,
     fetchDepartmentNames: async () => new Map(), isDepartmentLevel, namedDrillRecord
   })
   const wrapper = mount(component, {
@@ -60,6 +61,44 @@ function create(fetchResultFactors = async () => ({ context: {}, factors: [] }),
   return { wrapper, requests }
 }
 function button(wrapper, text) { return wrapper.findAll('button').find(item => item.text() === text) }
+
+test('drill table and report translate result states without changing business dimension text', async () => {
+  const { wrapper } = create(undefined, { startPathCode: 'CUSTOM_CLASS', startLevel: 'CLASS',
+    configuredPaths: [{ pathCode: 'CUSTOM_CLASS', levels: [{ levelCode: 'CLASS', memberKeyFieldCode: '分类' }] }] }, { columns: [
+    { field: 'dimensionName', label: '分类' }, { field: 'qualityStatus', label: '质量状态' },
+    { field: 'resultOutcomeStatus', label: '计算结论' }, { field: 'sourceDataStatus', label: '源数据' },
+    { field: 'calculationExecutionStatus', label: '执行状态' }
+  ], records: [{ dimensionKey: 'PASSED', dimensionName: 'PASSED', qualityStatus: 'PASSED', resultOutcomeStatus: 'CALCULATED',
+    sourceDataStatus: 'HAS_DATA', calculationExecutionStatus: 'UNKNOWN' }] }, true)
+  await flushPromises()
+  assert.deepEqual(wrapper.vm.getReportSnapshot().section.rows, [['PASSED', '已通过', '已计算', '有源数据', '状态未知']])
+  assert.match(wrapper.text(), /已通过/)
+  assert.doesNotMatch(wrapper.text(), /CALCULATED|HAS_DATA|UNKNOWN/)
+  wrapper.unmount()
+})
+
+test('non-ratio drill hides absent operand columns and summary placeholders', async () => {
+  const { wrapper } = create(undefined, {}, {
+    summary: { numerator: '-', denominator: '' },
+    columns: [{ field: 'numeratorValue', label: '分子' }, { field: 'denominatorValue', label: '分母' }, { field: 'indicatorValue', label: '指标值' }],
+    records: [{ numeratorValue: '-', denominatorValue: null, indicatorValue: '0.0023', displayValue: '0.23%' }]
+  }, true)
+  await flushPromises()
+  assert.deepEqual(wrapper.vm.getReportSnapshot().section.columns, ['指标值'])
+  assert.deepEqual(wrapper.vm.getReportSnapshot().section.rows, [['0.23%']])
+  assert.doesNotMatch(wrapper.find('.drill-summary-strip').text(), /分子|分母/)
+  wrapper.unmount()
+})
+
+test('zero operands remain visible in drill summaries and exported rows', async () => {
+  const { wrapper } = create(undefined, {}, { summary: { numerator: 0, denominator: '0' },
+    columns: [{ field: 'numerator', label: '分子' }, { field: 'denominator', label: '分母' }, { field: 'numeratorValue', label: '分子' }, { field: 'denominatorValue', label: '分母' }],
+    records: [{ numerator: 0, denominator: '0', numeratorValue: 0, denominatorValue: '0' }] }, true)
+  await flushPromises()
+  assert.deepEqual(wrapper.vm.getReportSnapshot().section.rows, [['0', '0', '0', '0']])
+  assert.match(wrapper.find('.drill-summary-strip').text(), /分子0分母0/)
+  wrapper.unmount()
+})
 
 test('drill banner and exported report both show the inclusive final date', async () => {
   const { wrapper } = create(undefined, {}, {
