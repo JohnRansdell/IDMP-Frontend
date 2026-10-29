@@ -405,7 +405,7 @@ watch(() => route.params.id, () => { void loadDetail() }, { immediate: true })
 
 .mapping-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr));
   gap: 1px;
   margin: 20px 0 0;
   overflow: hidden;
@@ -534,10 +534,6 @@ watch(() => route.params.id, () => { void loadDetail() }, { immediate: true })
 }
 
 @media (max-width: 1180px) {
-  .mapping-summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .governance-grid,
   .policy-grid {
     grid-template-columns: 1fr;

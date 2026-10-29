@@ -24,6 +24,18 @@ const tableBindings = [...tableCode.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]
 })).join('\n')
 const Table = Function('vue', 'MappingDifferenceValue', `${tableBindings}\n${tableCode.replace(/^import .*$/gm, '').replace('export default', 'return')}`)(vue, Component)
 
+test('formula comparison keeps only equally paired source and target values', async () => {
+  const { descriptor } = parse(await readFile(new URL('../src/idmp/components/MappingFormulaComparison.vue', import.meta.url), 'utf8'))
+  const w = mount({
+    render: vue.compile(descriptor.template.content),
+    setup: () => ({ sides: [], changes: [{ path: ['公式', '左侧'], source: '总费用 - 药品费用', target: '药品费用' }] })
+  }, { global: { stubs: ['IndicatorFormulaExpression', 'MappingDifferenceValue'] } })
+  assert.deepEqual(w.findAll('thead th').map(cell => cell.text()), ['源指标', '目标指标'])
+  assert.deepEqual(w.findAll('tbody td').map(cell => cell.text()), ['总费用 - 药品费用', '药品费用'])
+  assert.doesNotMatch(w.text(), /变更位置|左侧/)
+  w.unmount()
+})
+
 test('business factor details and policies remain readable without SQL or compiler configuration', () => {
   const value = [{ factorName: '老年住院费用', versionNo: '2', factorVersionId: '90071992547409931', parameterValue: { 年龄下限: 65 }, filterConditionDisplayText: '仅统计已出院患者', calculationExpressionAst: { sqlTemplate: 'SELECT SUM(total_cost) FROM 病案表', dimensionBindings: { 科室: 'out_dept_code' } } }, { policyFileName: '质量统计要求', citationText: '仅统计住院患者' }]
   const w = mount(Component, { props: { value, counterpart: [] } })
