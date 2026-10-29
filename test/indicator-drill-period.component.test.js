@@ -324,6 +324,8 @@ test('analysis page keeps temporal and static drill component refs separate', as
   assert.match(page, /<IndicatorDrillAnalysis\s+[^>]*ref="drillExplorerRef"/)
   assert.match(page, /<DrillExplorer\s+[^>]*ref="staticDrillExplorerRef"/)
   assert.equal((page.match(/ref="drillExplorerRef"/g) || []).length, 1)
+  assert.doesNotMatch(page, /自动显示组织、疾病和因子下钻路径/)
+  assert.match(page, /当前没有可下钻的结果，请确认指标已配置下钻路径/)
 })
 
 test('switching away cancels unfinished requests and resumes the same initial period and parent scope', async () => {

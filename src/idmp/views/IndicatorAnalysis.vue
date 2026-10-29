@@ -182,7 +182,7 @@
             embedded
           />
           <div v-else class="analysis-empty-state">
-            {{ analysisErrorMessage || '当前指标尚无可下钻的已激活结果；待结果批次生成后将自动显示组织、疾病和因子下钻路径。' }}
+            {{ analysisErrorMessage || '当前没有可下钻的结果，请确认指标已配置下钻路径，并检查所选统计周期是否有数据。' }}
           </div>
         </el-tab-pane>
       </el-tabs>
