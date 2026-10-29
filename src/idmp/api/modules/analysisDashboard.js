@@ -1,5 +1,6 @@
 import { requestJson } from '@/idmp/api/request'
 import { expandDashboardResponse } from '../../features/dashboard/compactResponse.js'
+import { completeDashboardSourceBindings } from '../adapters/dashboardSourceIdentity.js'
 
 const DEFAULT_DASHBOARD_CODE = 'quality-overview'
 
@@ -19,8 +20,22 @@ export function createDashboard({ code: _code, ...payload }, options = {}) {
   })
 }
 
-export function fetchDashboardDefinition(code = DEFAULT_DASHBOARD_CODE, options = {}) {
-  return requestJson(`/analysis/dashboards/${encodeURIComponent(code)}`, options)
+async function completeVersions(versions, options) {
+  return completeDashboardSourceBindings(versions, {
+    fetchVersion: id => requestJson(`/indicator-versions/${encodeURIComponent(id)}`, options),
+    fetchIndicator: id => requestJson(`/indicators/${encodeURIComponent(id)}`, options),
+    signal: options.signal
+  })
+}
+
+async function completeDefinition(detail, options) {
+  if (!detail?.version) return detail
+  const [version] = await completeVersions([detail.version], options)
+  return { ...detail, version }
+}
+
+export async function fetchDashboardDefinition(code = DEFAULT_DASHBOARD_CODE, options = {}) {
+  return completeDefinition(await requestJson(`/analysis/dashboards/${encodeURIComponent(code)}`, options), options)
 }
 
 export function queryDashboard(code = DEFAULT_DASHBOARD_CODE, payload = {}, options = {}) {
@@ -60,16 +75,16 @@ export function publishDashboard(id, resourceVersion, options = {}) {
   })
 }
 
-export function fetchDashboardVersions(id, options = {}) {
-  return requestJson(`/analysis/dashboards/${encodeURIComponent(id)}/versions`, options)
+export async function fetchDashboardVersions(id, options = {}) {
+  return completeVersions(await requestJson(`/analysis/dashboards/${encodeURIComponent(id)}/versions`, options), options)
 }
 
-export function restoreDashboardVersion(id, versionId, options = {}) {
-  return requestJson(`/analysis/dashboards/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/restore`, {
+export async function restoreDashboardVersion(id, versionId, options = {}) {
+  return completeDefinition(await requestJson(`/analysis/dashboards/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}/restore`, {
     ...options,
     method: 'POST',
     body: JSON.stringify({})
-  })
+  }), options)
 }
 
 export function fetchDashboardDataSources(options = {}) {

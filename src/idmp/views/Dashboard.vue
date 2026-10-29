@@ -881,7 +881,7 @@ function getBindingDatasets(widget) {
     if (remote) return [{ ...remote, id: indicatorBindings.length > 1 ? 'multi-indicator' : bindingDatasetId || remote.id }, ...analysisDatasets]
     if (analysisDatasets.length) return analysisDatasets
     if (source.origin !== 'dashboard-data-source') return []
-    const fields = dashboardFieldsToFrontend(remoteFieldCatalog.value[source.code] || [])
+    const fields = dashboardFieldsToFrontend(remoteWidgetFields(widget))
     return fields.length ? [{ id: 'backend', label: `${source.name} · 正式结果`, fields, rows: [] }] : []
   }
   if (remote) return [{ ...remote, id: indicatorBindings.length > 1 ? 'multi-indicator' : widget?.config?.dataBinding?.dataset || remote.id }]
@@ -2240,7 +2240,14 @@ async function startDashboardEdit() {
       // Keep server identity and appearance; never carry fixture bindings into real queries.
       beginDashboardEdit(dashboardDetailToEditableSchema(workingDetail))
       ElMessage.info('旧版组件已清空，请重新配置指标组件，保存并发布后生效。')
-    } else beginDashboardEdit(applyDefaultDashboardBindings(schema, remoteFieldCatalog.value))
+    } else {
+      beginDashboardEdit(applyDefaultDashboardBindings(schema, remoteFieldCatalog.value))
+      const loaded = await loadPublishedIndicatorCatalog()
+      if (targetDashboardId !== activeDashboardId.value || !isEditing.value) return
+      if (!loaded) throw new Error(indicatorCatalogError.value || '指标目录暂不可用')
+      await mapWithConcurrency(designerWidgets.value.filter(widget => getWidgetSource(widget)?.origin === 'dashboard-data-source'),
+        3, widget => previewRemoteWidget(widget))
+    }
   } catch (error) {
     ElMessage.error(`读取看板草稿失败：${error.message || '未知错误'}`)
   } finally {
@@ -2750,7 +2757,7 @@ async function previewRemoteWidget(widget, { templateAutoConfigure = false } = {
   const widgetId = String(widget.id)
   const generation = (remoteWidgetPreviewGenerations.get(widgetId) || 0) + 1
   remoteWidgetPreviewGenerations.set(widgetId, generation)
-  const fields = remoteFieldCatalog.value[widget.sourceCode] || []
+  const fields = remoteWidgetFields(widget)
   remoteWidgetDatasets.value = {
     ...remoteWidgetDatasets.value,
     [widgetId]: widgetResultToDataset({ status: 'LOADING', rows: [] }, fields, 'backend')

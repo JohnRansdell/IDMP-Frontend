@@ -125,7 +125,7 @@ const fields = [
 ]
 const binding = { dimensions: [{ field: 'department' }], series: [], measures: [{ field: 'value', aggregation: 'sum' }], sort: [] }
 
-test('identical chart and table bindings share grouping without sharing sort or zero filtering', () => {
+test('identical chart and table bindings share grouping without sharing sort and retain zero categories', () => {
   let dimensionReads = 0
   const rows = immutableResultRows(['A', 'B', 'A'].map((department, index) => Object.freeze({
     get department() { dimensionReads++; return department }, departmentName: `${department}科`, value: index === 1 ? 0 : 1
@@ -135,7 +135,8 @@ test('identical chart and table bindings share grouping without sharing sort or 
   const reads = dimensionReads
   const table = compileWidgetData('table', { ...binding, sort: [{ field: 'department', direction: 'desc' }] }, dataset)
   assert.equal(dimensionReads, reads)
-  assert.deepEqual(bar.categories, ['A科'])
+  assert.deepEqual(bar.categories, ['A科', 'B科'])
+  assert.deepEqual(bar.series[0].values, [2, 0])
   assert.deepEqual(table.categories, ['B科', 'A科'])
   assert.deepEqual(table.series[0].values, [0, 2])
   assert.deepEqual(compileWidgetData('table', binding, dataset).categories, ['A科', 'B科'])
