@@ -106,7 +106,6 @@
     </section>
 
     <el-dialog v-model="createDialogVisible" title="新建数据域" width="520px" destroy-on-close>
-      <div class="dialog-api-note">POST /api/v1/meta/data-domains</div>
       <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-position="top">
 
         <el-form-item label="数据域名称" prop="name">
@@ -292,7 +291,6 @@ function formatErrorMessage(error, fallback) {
 .filter-bar { display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr)) auto; gap: 10px; margin-bottom: 14px; }
 .pagination-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; }
 .pagination-summary { color: var(--idmp-text-helper); font-size: 12px; }
-.dialog-api-note { margin-bottom: 18px; color: var(--idmp-text-helper); font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; }
 .field-help { margin-top: 5px; color: var(--idmp-text-helper); font-size: 12px; line-height: 18px; }
 .create-error { margin-top: 8px; }
 @media (max-width: 900px) { .model-summary-grid { grid-template-columns: 1fr; } .filter-bar { grid-template-columns: 1fr 1fr; } .pagination-bar { align-items: flex-start; flex-direction: column; } }
