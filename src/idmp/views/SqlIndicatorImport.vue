@@ -31,7 +31,7 @@ FROM level4 l4 CROSS JOIN total t;</code></pre>
         <p>SQL 解析后会列出因子及指标公式，请核对统计口径。可选择仅创建因子，或同时创建引用这些因子的指标；是否创建指标，不由 SQL 是否使用 CTE 决定。可拆分的统计步骤会成为独立因子，明细查询不单独作为统计因子。单次最多创建 10 个因子。</p>
         <p>指标通过公式引用因子结果，支持加、减、乘、除、括号和数值常量，以及 <code>ROUND</code>、<code>COALESCE</code>、<code>NULLIF</code>、<code>ABS</code>、<code>CASE WHEN</code>、比较和与或非条件。使用 <code>NULLIF(除数, 0)</code> 可让除数为零时返回空值。</p>
         <h3>时间、分组与下钻</h3>
-        <p>时序因子在解析后选择物理时间字段，统计周期通过试算或查询条件传入，不用业务参数代替。固定业务筛选保留在 SQL 中；固定日期条件也会限制可查询的数据范围。</p>
+        <p>时序因子在解析后选择统计时间字段，试算或查询时填写统计周期。系统按所选字段追加周期筛选，SQL 原有条件（包括日期条件）全部保留，两者同时生效；若范围没有交集，查询将没有数据。所选时间字段不必出现在原 SQL 的结果列或筛选条件中，但必须属于该查询使用的物理表。</p>
         <p>需要自动拆分并按维度计算时，统计层保持单值聚合，不预先添加 <code>GROUP BY</code>、<code>HAVING</code> 或分页；组合粒度与下钻路径在元数据中配置，并为各因子绑定对应字段。复杂查询能否拆分和重新分组，以解析诊断及试算结果为准。</p>
         <h3>可选业务参数</h3>
         <p>需要查询时填写筛选值，可将完整条件写成 <code v-text="'[[AND s.surgery_level = {{surgeryLevel}}]]'" />。其中 <code v-text="'{{surgeryLevel}}'" /> 是参数值的位置，参数名称为 <code>surgeryLevel</code>，须在运行参数中声明其名称和类型。</p>
@@ -142,7 +142,7 @@ import PageHeader from '@/idmp/components/PageHeader.vue'
 import JsonCodePreview from '@/idmp/components/JsonCodePreview.vue'
 import SqlImportGroupingFields from '@/idmp/components/SqlImportGroupingFields.vue'
 import { normalizeDimensionGrain, serializeDrillPaths, sqlImportGroupingFields, sqlImportGroupingFieldLabels, selectSqlDimensionBindings, validateSqlDimensionBindings } from '@/idmp/features/indicator/grouping'
-import { sqlPhysicalFieldLabel, sqlPhysicalFieldName } from '@/idmp/features/indicator/sqlImportFields'
+import { sqlPhysicalFieldLabel, sqlPhysicalFieldName, sqlTimeFieldDescription } from '@/idmp/features/indicator/sqlImportFields'
 import { SQL_RUNTIME_PARAMETER_TYPES, buildSqlImportCreatePayload, buildSqlImportMetadataPayload, buildSqlImportTrialPayload, buildSqlRuntimeQueryPayload, canFinalizeSqlImport, canSubmitSqlImportMetadata, canTrialSqlImport, collectSqlRuntimeParameters, mergeSqlFactorMetadata, normalizeSqlImportOperationError, normalizeSqlImportTask, shouldPollSqlImport, sqlImportResourceTypeLabel, sqlImportStatusLabel, sqlImportStepLabel, validateSqlRuntimeParameterSyntax } from '@/idmp/api/adapters/sqlImport'
 import { abandonSqlImport, createSqlImport, fetchSqlImport, finalizeSqlImport, retrySqlImport, trialSqlImport, updateSqlImportMetadata } from '@/idmp/api/modules/sqlImports'
 import { fetchCalcBatch } from '@/idmp/api/modules/calculation'
@@ -209,7 +209,7 @@ const runtimeParameters = computed(() => collectSqlRuntimeParameters(factorMetad
 function key(prefix) { return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}` }; function factorOutputAlias(id) { return preview.value?.factors?.find(x => x.key === id)?.outputAlias }; function timeFieldOptions(factor) { return preview.value?.factors?.find(x => x.key === factor.key)?.timeFieldOptions || [] }; function mappingPlaceholder(row) { return row.candidates?.length ? '请选择语义映射' : (tableMappings[row.physicalTable] ? '已自动确定' : '暂无可选映射') }
 function selectedTimeFieldOption(factor) { return timeFieldOptions(factor).find(item => item.fieldReference === factor.timeField) }
 function timeFieldOptionLabel(option, factor) { return `${option.recommended ? '推荐 · ' : ''}${sqlPhysicalFieldLabel(option, timeFieldOptions(factor))}` }
-function timeFieldOptionDescription(option) { const reasons = option.recommendationReasons?.join('；'); return reasons || (option.recommended ? '推荐时间字段，请确认符合本次统计口径。' : '所选字段须属于 SQL 使用的表，并包含有效日期或时间。') }
+function timeFieldOptionDescription(option) { return sqlTimeFieldDescription(option) }
 function parameterTypeLabel(type) { return ({ STRING: '文本', INTEGER: '整数', DECIMAL: '小数', BOOLEAN: '布尔', DATE: '日期', DATETIME: '日期时间' })[type] || type }
 function addRuntimeParameter(factor) { if (!Array.isArray(factor.parameters)) factor.parameters = []; factor.parameters.push({ code: '', type: 'STRING', required: false, parameterMode: 'TEMPORARY' }) }
 function removeRuntimeParameter(factor, index) { factor.parameters.splice(index, 1) }
