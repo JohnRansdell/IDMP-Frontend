@@ -10,10 +10,14 @@ test('dense bars scroll categories and values together without dropping zero row
   assert.equal(result.series[0].data, option.series[0].data)
   assert.equal(result.series[0].barMaxWidth, 24)
   assert.equal(result.dataZoom[0].filterMode, 'none')
-  assert.ok(result.dataZoom[0].endValue >= 6, '600px should display at least seven categories')
+  assert.ok(result.dataZoom[0].endValue >= 10, '600px should display at least eleven categories')
   assert.equal(result.xAxis.data, labels)
   assert.equal(result.xAxis.axisTick.alignWithLabel, true)
   assert.equal(result.xAxis.axisLabel.interval, 0)
+  assert.equal(result.xAxis.axisLabel.hideOverlap, false)
+  const longName = '老年医学科干部保健科综合一病区'
+  assert.equal(result.xAxis.axisLabel.formatter(longName).replaceAll('\n', ''), longName)
+  assert.ok(result.xAxis.axisLabel.height >= 15)
   assert.ok(result.dataZoom[0].endValue < labels.length - 1)
   assert.equal(result.dataZoom[0].xAxisIndex, 0)
   assert.equal(JSON.stringify(option), before)
@@ -40,4 +44,23 @@ test('horizontal bars scroll on Y and reserve room for bottom legends', () => {
   assert.equal(withCategoryViewport(horizontal, 600, 250).dataZoom[0].yAxisIndex, 0)
   const result = withCategoryViewport({ ...option, legend: { bottom: 0 } }, 600, 300)
   assert.ok(result.grid.bottom > result.dataZoom[1].bottom + result.dataZoom[1].height)
+})
+
+test('full category labels reserve stable height and trade density for space in shallow charts', () => {
+  const names = labels.map((_, i) => `老年医学科干部保健科综合一病区${i}`)
+  const input = { ...option, xAxis: { type: 'category', data: names } }
+  const normal = withCategoryViewport(input, 600, 360)
+  const shallow = withCategoryViewport(input, 600, 180)
+  assert.ok(shallow.dataZoom[0].endValue < normal.dataZoom[0].endValue)
+  for (const result of [normal, shallow]) {
+    const axis = result.xAxis.axisLabel
+    for (const name of names) {
+      const formatted = axis.formatter(name)
+      assert.equal(formatted.replaceAll('\n', ''), name)
+      assert.ok(formatted.split('\n').length * axis.lineHeight <= axis.height)
+    }
+    assert.equal(axis.interval, 0)
+    assert.equal(axis.hideOverlap, false)
+  }
+  assert.equal(withCategoryViewport(input, 600, 360, 10).xAxis.axisLabel.height, normal.xAxis.axisLabel.height)
 })
