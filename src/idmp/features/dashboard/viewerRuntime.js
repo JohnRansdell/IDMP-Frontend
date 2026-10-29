@@ -31,8 +31,11 @@ export function createPlatformDashboardRuntime(api) {
       return { ...detail, version: api.selectVersion(detail, versions, { editing: false }) }
     },
     query: (id, query, options) => api.query(id, query, { ...options, cache: 'no-store' }),
-    async metadata(sourceCode, _widget, options) {
-      const [fields, periods] = await Promise.all([api.fetchFields(sourceCode, options), api.fetchPeriods(sourceCode, options)])
+    async metadata(sourceCode, widget, options) {
+      const [fields, periods] = await Promise.all([
+        api.fetchFields(sourceCode, { ...options, indicatorVersionId: widget?.config?.analysisIndicatorVersionId }),
+        api.fetchPeriods(sourceCode, options)
+      ])
       return { fields, periods }
     },
     filterOptions: (sourceCode, _widget, query) => api.fetchFilterOptions(sourceCode, query),

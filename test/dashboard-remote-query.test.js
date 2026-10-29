@@ -7,7 +7,7 @@ const widget = { id: 'w1', sourceCode: 'indicator-a', config: {} }
 
 test('dashboard query errors are not presented as missing formal results', () => {
   assert.deepEqual(resolveDashboardQueryState({ widgets: { a: { status: 'READY' }, b: { status: 'ERROR' } } }, 2), { status: 'ready', message: '' })
-  assert.deepEqual(resolveDashboardQueryState({ widgets: { a: { status: 'ERROR', message: '组件必须指定数据源' } } }, 1), { status: 'error', message: '组件必须指定数据源' })
+  assert.deepEqual(resolveDashboardQueryState({ widgets: { a: { status: 'ERROR', message: '组件必须指定数据源' } } }, 1), { status: 'ready', message: '' })
   assert.deepEqual(resolveDashboardQueryState({ widgets: { a: { status: 'NO_ACTIVE_RESULT' } } }, 1), { status: 'empty', message: '' })
   assert.deepEqual(resolveDashboardQueryState({ widgets: {} }, 1), { status: 'error', message: '看板组件没有返回结果，请重新加载。' })
 })
