@@ -1,6 +1,19 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { resolveResultAvailability } from '../src/idmp/features/analysis/resultAvailability.js'
+import { normalizeIndicatorInstantSummary } from '../src/idmp/api/adapters/indicator.js'
+
+test('empty input, real zero, missing inputs and unknown evidence remain distinct', () => {
+  for (const [qualityFlag, value, expected] of [
+    ['NO_DATA', 0, 'NO_DATA'], ['NO_DATA', null, 'NO_DATA'],
+    ['PASSED', 0, 'READY'], ['NOT_CALCULABLE', null, 'VALUE_NOT_CALCULABLE'],
+    ['MISSING_FACTOR', null, 'INCOMPLETE_DATA'], ['UNKNOWN', null, 'UNKNOWN']
+  ]) {
+    const result = normalizeIndicatorInstantSummary({ indicatorVersionId: '1', rows: [{ qualityFlag, value }] }, '2026-09-01', '2026-09-30')
+    assert.equal(result.status, expected)
+  }
+  assert.equal(resolveResultAvailability({ dataAvailable: true, overview: { value: null, outcomeStatus: 'UNKNOWN' } }).status, 'UNKNOWN')
+})
 
 test('formal result presence does not hide its non-calculable outcome', () => {
   for (const resultAvailability of [undefined, { status: 'ACTIVE_RESULT', message: '已返回已激活的正式指标结果' }]) {

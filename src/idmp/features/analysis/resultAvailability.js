@@ -6,7 +6,7 @@ const STATUS_COPY = Object.freeze({
   INCOMPLETE_DATA: '只有部分依赖因子命中源数据，无法形成完整指标结果。',
   NOT_CALCULABLE: '指标公式返回空值。',
   CALCULATION_ERROR: '源数据存在，但计算执行或公式计算发生异常。',
-  UNKNOWN: '源数据画像尚未完成，不能据此判定为无数据。'
+  UNKNOWN: '暂时无法确认该报告期的源数据状态，不能据此判断为无数据或依赖缺失。'
 })
 
 export function resultAvailabilityGuidance(status, message = '') {
@@ -16,6 +16,7 @@ export function resultAvailabilityGuidance(status, message = '') {
     NOT_CALCULABLE: ['该统计周期无法计算指标值', STATUS_COPY.NOT_CALCULABLE, ''],
     VALUE_NOT_CALCULABLE: ['该统计周期无法计算指标值', STATUS_COPY.NOT_CALCULABLE, ''],
     INCOMPLETE_DATA: ['该统计周期的计算输入不完整', STATUS_COPY.INCOMPLETE_DATA, ''],
+    UNKNOWN: ['暂时无法确认结果状态', STATUS_COPY.UNKNOWN, ''],
     CALCULATION_ERROR: ['该统计周期计算失败', '请查看计算记录了解失败原因。', ''],
     CALCULATION_IN_PROGRESS: ['该统计周期正在计算', STATUS_COPY.CALCULATION_IN_PROGRESS, ''],
     WAITING_FOR_CALCULATION: ['该统计周期尚待计算', STATUS_COPY.WAITING_FOR_CALCULATION, ''],
@@ -53,14 +54,14 @@ export function resolveResultAvailability(payload = {}) {
   )
   let status = normalizeStatus(availability.status)
   if ((!status || status === 'ACTIVE_RESULT') && data.overview
-    && ['NOT_CALCULABLE', 'NO_DATA', 'INCOMPLETE_DATA', 'CALCULATION_ERROR'].includes(outcomeStatus)) status = outcomeStatus
+    && ['NOT_CALCULABLE', 'NO_DATA', 'INCOMPLETE_DATA', 'CALCULATION_ERROR', 'UNKNOWN'].includes(outcomeStatus)) status = outcomeStatus
   if (!status) {
     if (data.dataAvailable || (hasResultRecords && outcomeStatus === 'CALCULATED')) status = 'ACTIVE_RESULT'
     else if (executionStatus === 'FAILED' || outcomeStatus === 'CALCULATION_ERROR') status = 'CALCULATION_ERROR'
     else if (outcomeStatus === 'NOT_CALCULABLE') status = 'NOT_CALCULABLE'
     else if (executionStatus === 'RUNNING' || executionStatus === 'QUEUED') status = 'CALCULATION_IN_PROGRESS'
     else if (profiles.length && profiles.every((item) => item.sourceDataStatus === 'NO_DATA')) status = 'NO_DATA'
-    else if (profiles.some((item) => item.sourceDataStatus === 'HAS_DATA') && profiles.some((item) => item.sourceDataStatus === 'NO_DATA')) status = 'INCOMPLETE_DATA'
+    else if (profiles.some((item) => item.sourceDataStatus === 'UNKNOWN')) status = 'UNKNOWN'
     else if (profiles.some((item) => item.sourceDataStatus === 'HAS_DATA')) status = 'WAITING_FOR_CALCULATION'
     else status = 'UNKNOWN'
   }

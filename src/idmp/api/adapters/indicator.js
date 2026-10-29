@@ -312,12 +312,19 @@ export function normalizeIndicatorInstantSummary(result, periodStart, periodEnd)
     throw new Error('即时查询未返回当前筛选范围的单条汇总结果')
   }
   const row = result.rows[0] && normalizeResultMetrics(result.rows[0])
+  const outcome = row?.qualityFlag
+  const status = !row || outcome === 'NO_DATA' ? 'NO_DATA'
+    : outcome === 'UNKNOWN' ? 'UNKNOWN'
+      : outcome === 'MISSING_FACTOR' || outcome === 'INCOMPLETE_DATA' ? 'INCOMPLETE_DATA'
+        : outcome === 'CALCULATION_ERROR' ? 'CALCULATION_ERROR'
+          : row.value == null ? 'VALUE_NOT_CALCULABLE' : 'READY'
   return {
     indicatorVersionId: result.indicatorVersionId,
     periodStart,
     periodEnd,
-    status: !row ? 'NO_DATA' : row.value == null ? 'VALUE_NOT_CALCULABLE' : 'READY',
-    message: !row ? '该报告期没有符合条件的数据' : null,
+    status,
+    message: status === 'NO_DATA' ? '该报告期没有符合条件的数据'
+      : status === 'UNKNOWN' ? '暂时无法确认该报告期的源数据状态' : null,
     executionMode: result.executionMode,
     value: row?.value ?? null,
     displayValue: row?.displayValue ?? null,

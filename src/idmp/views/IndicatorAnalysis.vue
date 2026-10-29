@@ -1323,6 +1323,7 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
 }
 
 .analysis-state-notice.is-no_data,
+.analysis-state-notice.is-unknown,
 .analysis-state-notice.is-waiting_for_calculation,
 .analysis-state-notice.is-not_calculable {
   border-color: #fedf89;
