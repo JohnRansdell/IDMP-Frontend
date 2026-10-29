@@ -82,19 +82,22 @@ test('instant summary preserves multiple department and diagnosis members', () =
   assert.match(source, /fetchInstant: queryIndicatorSummary/)
 })
 
-test('non-parameterized formal request owns its version, inclusive dates and prefixed filters', () => {
+test('unfiltered formal requests keep inclusive dates while dimension selections query the source', () => {
   for (const [granularity, range] of [
     ['MONTHLY', ['2024-02-01', '2024-02-29']], ['QUARTERLY', ['2026-01-01', '2026-03-31']],
     ['YEARLY', ['2026-01-01', '2026-12-31']]
   ]) {
-    const request = buildReportSummaryRequest({ indicatorId: '11', versionId: '22', range, granularity,
-      filters: { OUT_DEPT_CODE: ['15', '16'], IN_ICD10: ['J18.900'] } })
+    const request = buildReportSummaryRequest({ indicatorId: '11', versionId: '22', range, granularity })
     assert.equal(request.mode, 'FORMAL')
     assert.equal(request.method, 'GET')
     assert.equal(request.path, '/analysis/indicators/11/range-summary')
-    assert.deepEqual(request.params, { indicatorVersionId: '22', periodStart: range[0], periodEnd: range[1], granularity,
-      'filter.OUT_DEPT_CODE': ['15', '16'], 'filter.IN_ICD10': ['J18.900'] })
+    assert.deepEqual(request.params, { indicatorVersionId: '22', periodStart: range[0], periodEnd: range[1], granularity })
     assert.equal(request.payload, undefined)
+    const filters = { OUT_DEPT_CODE: ['15', '16'], IN_ICD10: ['J18.900'] }
+    const filtered = buildReportSummaryRequest({ indicatorId: '11', versionId: '22', range, granularity, filters })
+    assert.equal(filtered.mode, 'INSTANT')
+    assert.deepEqual(filtered.payload.filters, filters)
+    assert.equal(filtered.payload.periodStart, `${range[0]}T00:00:00`)
   }
 })
 

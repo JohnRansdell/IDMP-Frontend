@@ -2,7 +2,7 @@ import { resolveReportPeriod, serializeAnalysisFilters, shiftReportDate } from '
 
 // The formal API takes inclusive dates; the instant API takes an exclusive end timestamp.
 export function buildReportSummaryRequest({ indicatorId, versionId, range, granularity, filters = {}, parameters }) {
-  const period = resolveReportPeriod(range, granularity, { parameters })
+  const period = resolveReportPeriod(range, granularity, { parameters, filters })
   if (!versionId || (period.summaryGranularity !== 'STATIC' && !period.range.length)) return null
   const [periodStart = '', periodEnd = ''] = period.range
   if (period.mode === 'FORMAL') {

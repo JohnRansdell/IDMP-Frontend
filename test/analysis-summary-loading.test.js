@@ -20,7 +20,7 @@ function harness() {
   const state = {
     reportDirty: ref(false), selectedBackendIndicator: ref({ id: '11' }), currentIndicatorVersionId: ref('22'),
     reportSelection: ref(resolveReportPeriod(['2026-01-01', '2026-01-31'], 'MONTHLY')),
-    reportFilters: ref({ OUT_DEPT_CODE: ['15'] }), indicatorRuntimeParameters: ref([]), indicatorRuntimeParameterValues: ref({}),
+    reportFilters: ref({}), indicatorRuntimeParameters: ref([]), indicatorRuntimeParameterValues: ref({}),
     rangeSummary: ref(null), rangeSummaryErrorMessage: ref(''), rangeSummaryLoading: ref(false),
     runtimeQueryResult: ref(null), runtimeQueryExpanded: ref([]), reportParameterSnapshot: ref({})
   }

@@ -49,7 +49,7 @@
       :closable="false"
       :title="analysisErrorMessage || rangeSummaryErrorMessage"
     />
-    <section v-if="($can('POST', '/analysis/indicator-versions/1/instant-summary') || $can('GET', '/analysis/indicators/1/range-summary')) && selectedBackendIndicator && (backendAnalysisGranularity !== 'STATIC' || indicatorRuntimeParameters.length)" class="surface-card instant-query-panel" aria-label="查询条件">
+    <section v-if="($can('POST', '/analysis/indicator-versions/1/instant-summary') || $can('GET', '/analysis/indicators/1/range-summary')) && selectedBackendIndicator && (backendAnalysisGranularity !== 'STATIC' || indicatorRuntimeParameters.length || reportDimensionMetadata.length || hasReportFilters)" class="surface-card instant-query-panel" aria-label="查询条件">
       <div class="instant-query-panel__header">
         <h2>查询条件</h2>
         <div v-if="backendAnalysisGranularity !== 'STATIC'" class="instant-query-panel__context">
@@ -73,10 +73,9 @@
             />
           </div>
         </div>
-        <div v-if="hasReportFilters" class="instant-query-panel__period">
-          <label>筛选范围</label>
-          <span v-for="(values, field) in reportFilters" :key="field">{{ field }}：{{ Array.isArray(values) ? values.join('、') : values }}</span>
-        </div>
+        <ReportDimensionFilters :model-value="reportFilterDraft" :fields="reportDimensionMetadata"
+          :indicator-id="selectedBackendIndicator.id || selectedBackendIndicator.indicatorId" :version-id="currentIndicatorVersionId"
+          @update:model-value="updateReportFilters" />
         <RuntimeParameterFields v-if="indicatorRuntimeParameters.length" v-model="indicatorRuntimeParameterValues" :declarations="indicatorRuntimeParameters" :show-metadata="false" @change="invalidateReportSummary()" />
         <div class="instant-query-panel__actions">
           <el-button data-query-submit type="primary" :loading="reportSubmitting || rangeSummaryLoading" :disabled="indicatorRuntimeParameterConflicts.length > 0" @click="applyReportPeriod">查询</el-button>
@@ -248,6 +247,8 @@ import { Download } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import ResultAvailabilityPanel from '@/idmp/components/ResultAvailabilityPanel.vue'
 import RuntimeParameterFields from '@/idmp/components/RuntimeParameterFields.vue'
+import ReportDimensionFilters from '@/idmp/features/analysis/ReportDimensionFilters.vue'
+import { reportDimensionFields, normalizeReportFilters, replaceReportFilterQuery } from '@/idmp/features/analysis/reportDimensions.js'
 import DrillExplorer from '@/idmp/features/analysis/DrillExplorer.vue'
 import IndicatorDrillAnalysis from '@/idmp/features/analysis/IndicatorDrillAnalysis.vue'
 import { fetchIndicatorAnalysis, fetchIndicatorRangeSummary, fetchIndicatorAvailablePeriod, fetchIndicatorGrainOptions, fetchAllIndicators, fetchIndicatorVersion, fetchAllIndicatorVersions, queryIndicatorSummary } from '@/idmp/api/modules/indicators'
@@ -291,11 +292,13 @@ const reportGranularity = ref(initialReportContext.granularity)
 const reportSummaryGranularity = ref(initialReportContext.summaryGranularity)
 const reportSelection = computed(() => resolveReportPeriod(reportPeriodRange.value,
   reportGranularity.value === 'STATIC' ? 'STATIC' : reportSummaryGranularity.value,
-  { parameters: buildSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value) }))
+  { parameters: buildSqlRuntimeParameterValues(indicatorRuntimeParameters.value, indicatorRuntimeParameterValues.value), filters: reportFilterDraft.value }))
 const reportDirty = ref(false)
 const reportSubmitting = ref(false)
 const reportFilterParams = computed(() => analysisFilterParams(route.query))
-const reportFilters = computed(() => analysisFilters(route.query))
+const reportFilters = computed(() => normalizeReportFilters(analysisFilters(route.query), reportDimensionMetadata.value))
+const reportFilterDraft = ref(normalizeReportFilters(analysisFilters(route.query)))
+const reportDimensionMetadata = computed(() => reportDimensionFields(backendIndicatorVersion.value || {}))
 const hasReportFilters = computed(() => Object.keys(reportFilters.value).length > 0)
 let localReportRouteKey = ''
 let localTrendRouteKey = ''
@@ -761,11 +764,21 @@ async function applyReportPeriod() {
       reportPeriodRange.value = range
       reportSummaryGranularity.value = 'CUSTOM'
     }
-    const query = { ...route.query, ...reportPeriodQuery({ ...reportSelection.value, granularity: backendAnalysisGranularity.value }) }
-    if (temporal && analysisRouteKey(query) !== analysisRouteKey(route.query)) {
+    const filters = normalizeReportFilters(reportFilterDraft.value, reportDimensionMetadata.value)
+    const filtersChanged = JSON.stringify(normalizeReportFilters(reportFilters.value, reportDimensionMetadata.value)) !== JSON.stringify(filters)
+    const query = { ...(filtersChanged ? replaceReportFilterQuery(route.query, filters) : route.query), ...reportPeriodQuery({ ...reportSelection.value, granularity: backendAnalysisGranularity.value }) }
+    if (analysisRouteKey(query) !== analysisRouteKey(route.query)) {
       reportSummaryGranularity.value = reportSelection.value.summaryGranularity
       localReportRouteKey = analysisRouteKey(query)
       await router.replace({ path: '/analysis', query })
+    }
+    if (filtersChanged) {
+      drillStartLevel.value = 'HOSPITAL'
+      drillParentKeys.value = {}
+      overviewQuery.clear()
+      trendGrainDraft.value = {}
+      trendGrainApplied.value = {}
+      void refreshTrendAnalysis()
     }
     await loadRangeSummary()
   } catch (error) {
@@ -773,6 +786,11 @@ async function applyReportPeriod() {
   } finally {
     reportSubmitting.value = false
   }
+}
+
+function updateReportFilters(value) {
+  reportFilterDraft.value = value
+  invalidateReportSummary()
 }
 
 async function loadRangeSummary() {
@@ -1137,6 +1155,7 @@ watch(() => analysisRouteKey(route.query), key => {
   if (key === localTrendRouteKey) { localTrendRouteKey = ''; return }
   localReportRouteKey = ''
   localTrendRouteKey = ''
+  reportFilterDraft.value = normalizeReportFilters(analysisFilters(route.query))
   const reportContext = analysisReportContext(route.query)
   reportGranularity.value = reportContext.granularity
   reportSummaryGranularity.value = reportContext.summaryGranularity

@@ -30,17 +30,18 @@ export function formalReportGranularity(range, requested = 'CUSTOM') {
 }
 
 // Report ranges are inclusive calendar dates. CUSTOM remains custom even for a full quarter/year.
-export function resolveReportPeriod(range = [], requested = 'MONTHLY', { parameters = {} } = {}) {
+export function resolveReportPeriod(range = [], requested = 'MONTHLY', { parameters = {}, filters = {} } = {}) {
   const dates = range.length === 2 && range.every(Boolean) ? range.map(value => String(value).slice(0, 10)) : []
   const grain = String(requested).toUpperCase()
   const summaryGranularity = grain === 'STATIC' ? 'STATIC'
     : dates.length ? formalReportGranularity(dates, grain) : grain
   const hasRuntimeValues = Object.values(parameters).some(value => value !== null && value !== undefined && value !== '')
+  const hasFilters = Object.values(filters).some(value => (Array.isArray(value) ? value : [value]).some(item => item !== null && item !== undefined && item !== ''))
   return {
     range: summaryGranularity === 'STATIC' ? [] : dates,
     summaryGranularity,
-    // Saved results do not represent the user's business-parameter selection.
-    mode: !hasRuntimeValues && FORMAL_GRAINS.includes(summaryGranularity) ? 'FORMAL' : 'INSTANT'
+    // Filtered totals must preserve source-level statistics, not merge grouped rows.
+    mode: !hasRuntimeValues && !hasFilters && FORMAL_GRAINS.includes(summaryGranularity) ? 'FORMAL' : 'INSTANT'
   }
 }
 
@@ -58,7 +59,7 @@ export function analysisReportContext(query = {}) {
   const range = query.periodStart && query.periodEnd ? [String(query.periodStart).slice(0, 10),
     String(query.periodEnd).slice(0, 10)] : []
   const summaryGranularity = String(query.summaryGranularity || query.granularity || 'MONTHLY').toUpperCase()
-  return { ...resolveReportPeriod(range, summaryGranularity), granularity: normalizeAnalysisGranularity(query.granularity) }
+  return { ...resolveReportPeriod(range, summaryGranularity, { filters: analysisFilters(query) }), granularity: normalizeAnalysisGranularity(query.granularity) }
 }
 
 export function serializeAnalysisFilters(filters = {}) {
