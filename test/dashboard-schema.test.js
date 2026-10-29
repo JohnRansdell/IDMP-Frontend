@@ -7,7 +7,6 @@ import {
   assertDashboardPersistenceContract,
   getDashboardSchemaStorageKey,
   mergeWidgetMetadataAndLayout,
-  migrateDashboardSchema,
   normalizeDashboardSchema,
   semanticDashboardEquals,
   synchronizeDashboardGridLayout,
@@ -142,11 +141,6 @@ test('validation is read-only and rejects an invalid version before normalizatio
   assert.throws(() => normalizeDashboardSchema(raw), /normalization requires dashboard schema version 1/)
 })
 
-test('legacy migration declares its source and target version explicitly', () => {
-  const migrated = migrateDashboardSchema({ id: 'legacy', layout: { engine: 'gridstack', columns: 24, float: false }, widgets: [] }, { fromVersion: 'legacy-pixel-layout', toVersion: 1 })
-  assert.equal(migrated.version, 1)
-  assert.throws(() => migrateDashboardSchema({}, { fromVersion: 0, toVersion: 1 }), /unsupported dashboard migration/)
-})
 
 test('persistence contract rejects undeclared fields instead of silently dropping them', () => {
   const schema = normalizeDashboardSchema({ version: 1, id: 'demo', widgets: [{ id: 'a', type: 'kpi', config: { style: {}, dimension: { field: 'department' } } }] })

@@ -15,17 +15,6 @@ export const DRILL_LEVELS = Object.freeze({
   PATIENT: 'PATIENT'
 })
 
-const DRILL_LEVEL_RANKS = Object.freeze({
-  ORGANIZATION: Object.freeze({
-    HOSPITAL: 1,
-    OUT_DEPT: 2,
-    DEPARTMENT: 2,
-    MEDICAL_GROUP: 3,
-    ATTENDING_DOCTOR: 4,
-    DOCTOR: 4
-  })
-})
-
 export function normalizeOrganizationDrillLevel(value) {
   const level = typeof value === 'string' ? value.trim().toUpperCase() : ''
   return { DEPARTMENT: 'OUT_DEPT', DOCTOR: 'ATTENDING_DOCTOR' }[level] || level
@@ -42,38 +31,17 @@ export function normalizeDrillLevelDefinition(level = {}) {
     ...(displayFieldCode ? { displayFieldCode } : {}) }
 }
 
-// Older built-in paths did not carry field bindings. Keep their protocol here, not in views.
-export function legacyDrillLevelDefinition(levelCode) {
-  const fields = {
-    HOSPITAL: ['HOSPITAL_CODE', 'HOSPITAL_NAME'],
-    OUT_DEPT: ['OUT_DEPT_CODE', 'OUT_DEPT_NAME'], DEPARTMENT: ['DEPARTMENT_CODE', 'DEPARTMENT_NAME'],
-    MEDICAL_GROUP: ['MEDICAL_GROUP_CODE', 'MEDICAL_GROUP_NAME'],
-    ATTENDING_DOCTOR: ['ATTENDING_DOCTOR_CODE', 'ATTENDING_DOCTOR_NAME'], DOCTOR: ['DOCTOR_CODE', 'DOCTOR_NAME']
-  }
-  const [memberKeyFieldCode, displayFieldCode] = fields[levelCode] || []
-  return { levelCode, memberKeyFieldCode, displayFieldCode }
-}
-
 export function canonicalDrillRootResultId(result, rootLevel) {
   const level = normalizeOrganizationDrillLevel(rootLevel)
   const root = result?.records?.find(row => normalizeOrganizationDrillLevel(row.levelCode) === level && row.resultId)
   return toOpaqueId(root?.resultId)
 }
 
-export function legacyProjectedOrganizationLevels(fieldLevels = {}) {
-  return ['HOSPITAL', 'OUT_DEPT', 'MEDICAL_GROUP', 'ATTENDING_DOCTOR'].map(code => {
-    const level = legacyDrillLevelDefinition(code)
-    const field = code === 'ATTENDING_DOCTOR' && Object.hasOwn(fieldLevels, 'ATTENDING_DOCTOR') ? 'ATTENDING_DOCTOR' : level.memberKeyFieldCode
-    return { ...level, dimensionFieldCode: field, memberKeyFieldCode: field }
-  }).filter(level => Object.hasOwn(fieldLevels, level.memberKeyFieldCode))
-}
-
-export function limitDrillNextLevels(nextLevels = [], pathCode = '', maxLevel = '') {
-  const levels = Array.isArray(nextLevels) ? nextLevels : []
-  const ranks = DRILL_LEVEL_RANKS[pathCode] || {}
-  const maxRank = ranks[maxLevel]
-  if (!maxRank) return levels
-  return levels.filter((level) => ranks[level] && ranks[level] <= maxRank)
+export function limitDrillNextLevels(nextLevels = [], path, maxLevel = path?.maxLevel) {
+  if (!path?.levels?.length) return []
+  const maxIndex = path.levels.findIndex(level => level.levelCode === maxLevel)
+  const allowed = new Set((maxIndex < 0 ? path.levels : path.levels.slice(0, maxIndex + 1)).map(level => level.levelCode))
+  return (Array.isArray(nextLevels) ? nextLevels : []).filter(level => allowed.has(level))
 }
 
 export function reconcileScenarioPointWithRoot(point = {}, drillResult = {}, rootLevel = 'HOSPITAL') {
@@ -165,18 +133,6 @@ export function deriveDrillPathResultIds(analysis = {}, configuredPaths = []) {
   const candidates = [analysis.overview, ...(Array.isArray(analysis.dimensionComparison) ? analysis.dimensionComparison : [])]
     .filter((item) => item?.resultId)
   const selected = {}
-  let organizationRank = Number.POSITIVE_INFINITY
-
-  candidates.forEach((item) => {
-    const dimensions = normalizeDimensionKeys(item.dimensions)
-    const organizationScore = scoreOrganizationDimensions(dimensions)
-    // 下钻接口必须始终使用路径根结果作为锚点；组织路径优先全院，而不是更深的科室/医生结果。
-    if (organizationScore > 0 && organizationScore < organizationRank) {
-      organizationRank = organizationScore
-      selected.ORGANIZATION = toOpaqueId(item.resultId)
-    }
-  })
-
   if (departmentAnchor) {
     selected.ORGANIZATION = toOpaqueId(departmentAnchor.resultId)
   }
@@ -191,26 +147,10 @@ export function deriveDrillPathResultIds(analysis = {}, configuredPaths = []) {
   if (customAnchor) {
     configuredPaths.forEach((path) => {
       const code = String(path?.pathCode || '')
-      if (code.startsWith('CUSTOM_')) selected[code] = customAnchor
+      if (code.startsWith('CUSTOM_') || (code === 'ORGANIZATION' && !selected[code])) selected[code] = customAnchor
     })
   }
   return selected
-}
-
-function normalizeDimensionKeys(dimensions = {}) {
-  return new Set(Object.keys(dimensions || {}).map((key) => key.toLowerCase()))
-}
-
-function scoreOrganizationDimensions(keys) {
-  if (hasAnyKey(keys, ['attending_doctor_code', 'attending_doctor_name', 'doctor_code', 'doctor_name'])) return 40
-  if (hasAnyKey(keys, ['medical_group_code', 'medical_group_name'])) return 30
-  if (hasAnyKey(keys, ['out_dept_code', 'out_dept_name', 'department_code', 'department_name'])) return 20
-  if (hasAnyKey(keys, ['hospital_code', 'hospital_name'])) return 10
-  return 0
-}
-
-function hasAnyKey(keys, candidates) {
-  return candidates.some((key) => keys.has(key))
 }
 
 function normalizeRecord(item = {}) {

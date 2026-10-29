@@ -105,7 +105,7 @@ test('projected results use backend drill instead of substituting a local hierar
 
 test('projected drill reuses the returned snapshot and carries filters through each level', async () => {
   const context = { resultId: '100', snapshotId: '200', parentKeys: { HOSPITAL_CODE: 'H' }, filters: { OUT_DEPT_CODE: '28', DISEASE: 'X' } }
-  const root = await loadBackendChartRoot(() => { throw new Error('must not reload root') }, { resultId: '100', indicatorVersionId: '300', drillContext: context })
+  const root = await loadBackendChartRoot(() => { throw new Error('must not reload root') }, { resultId: '100', indicatorVersionId: '300', drillContext: context, path: { pathCode: 'ORGANIZATION', levels: [{ levelCode: 'HOSPITAL', memberKeyFieldCode: 'HOSPITAL_CODE' }, { levelCode: 'OUT_DEPT', memberKeyFieldCode: 'OUT_DEPT_CODE' }] } })
   const navigation = initialBackendChartNavigation(root)
   const result = await loadBackendChartLevel(async (id, payload) => {
     assert.equal(id, '100')
@@ -127,9 +127,8 @@ test('drill uses exact department parents instead of remerging BASE rows for red
   assert.equal(navigation.initialNavigation.currentLevel, 'DOCTOR')
   assert.deepEqual(navigation.initialNavigation.parentKeys, { HOSPITAL_CODE: 'H', OUT_DEPT_CODE: '28' })
   assert.deepEqual(navigation.filters, { disease: 'X' }, 'The selected department code owns scope; stale display names are not filters')
-  const legacyPath = projectedDrillNavigation({ out_dept_code: '28', OUT_DEPT_NAME: 'Neurology' }, { pathCode: 'ORGANIZATION', levels: null, maxLevel: 'ATTENDING_DOCTOR' },
-    { currentLevel: 'OUT_DEPT', parentKeys: { HOSPITAL_CODE: 'H' }, filters: {}, fieldLevels: { HOSPITAL_CODE: 1, OUT_DEPT_CODE: 2, ATTENDING_DOCTOR: 3 } })
-  assert.equal(legacyPath.initialNavigation.currentLevel, 'ATTENDING_DOCTOR')
+  assert.throws(() => projectedDrillNavigation({ out_dept_code: '28', OUT_DEPT_NAME: 'Neurology' }, { pathCode: 'ORGANIZATION', levels: null, maxLevel: 'ATTENDING_DOCTOR' },
+    { currentLevel: 'OUT_DEPT', parentKeys: { HOSPITAL_CODE: 'H' }, filters: {}, fieldLevels: { HOSPITAL_CODE: 1, OUT_DEPT_CODE: 2, ATTENDING_DOCTOR: 3 } }), /缺少层级配置/)
 })
 
 test('missing backend dimension fields do not silently become an unassigned category', () => {

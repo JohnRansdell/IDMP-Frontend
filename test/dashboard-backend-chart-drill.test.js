@@ -4,15 +4,42 @@ import { readFile } from 'node:fs/promises'
 import { computed, reactive, ref } from 'vue'
 import {
   backendChartMeasure, backendChartValue, findBackendChartRow, loadBackendChartLevel,
-  loadBackendChartRoot, nextBackendChartNavigation, projectedDrillNavigation
+  loadBackendChartRoot, nextBackendChartNavigation, projectedDrillNavigation, initialBackendChartNavigation
 } from '../src/idmp/features/dashboard/backendChartDrill.js'
+
+test('missing path metadata never starts a guessed organization request', async () => {
+  for (const path of [undefined, { pathCode: 'ORGANIZATION' }, { pathCode: 'ORGANIZATION', levels: [] }]) {
+    await assert.rejects(loadBackendChartRoot(() => assert.fail('must not query without bindings'),
+      { resultId: '结果', path }), /缺少层级配置/)
+  }
+})
+
+test('custom paths follow their configured order and maximum without requiring departments', async () => {
+  const path = { pathCode: 'CUSTOM_CASE', maxLevel: 'CATEGORY', levels: [
+    { levelCode: 'ROOT', levelName: '全部病例' },
+    { levelCode: 'CATEGORY', levelName: '病例分类', memberKeyFieldCode: '分类' },
+    { levelCode: 'SEVERITY', levelName: '严重程度', memberKeyFieldCode: '严重程度' }
+  ] }
+  const root = await loadBackendChartRoot(async (id, payload) => {
+    assert.equal(payload.pathCode, path.pathCode)
+    assert.equal(payload.currentLevel, 'ROOT')
+    return { context: { resultId: id, currentLevel: 'ROOT', snapshotId: '快照', indicatorVersionId: '版本' },
+      records: [{ resultId: id, levelCode: 'ROOT' }] }
+  }, { resultId: '结果', indicatorVersionId: '版本', path })
+  assert.deepEqual(root.parentKeys, {})
+  assert.equal(initialBackendChartNavigation(root).currentLevel, 'CATEGORY')
+  assert.equal(nextBackendChartNavigation({ nextLevels: ['SEVERITY'] }, { dimensionKey: '一类' },
+    { currentLevel: 'CATEGORY' }, path.maxLevel, { ...root, levels: path.levels }), null)
+  assert.deepEqual(nextBackendChartNavigation({ nextLevels: ['CATEGORY'] }, { dimensionLabel: '全部病例' },
+    { currentLevel: 'ROOT' }, path.maxLevel, root), { currentLevel: 'CATEGORY', parentKeys: {}, label: '全部病例' })
+})
 
 test('range drill keeps its dates across paged requests and rejects a single-month response', async () => {
   const periodRange = { periodStart: '2026-02-01', periodEnd: '2026-05-01' }
   const root = await loadBackendChartRoot(() => assert.fail('range entry must not reload analysis'), {
     resultId: '55', indicatorVersionId: '10',
     drillContext: { resultId: '55', snapshotId: '66', currentLevel: 'DOCTOR', parentKeys: { 科室: '15' }, filters: {}, periodRange },
-    path: { levels: [{ levelCode: 'DEPT', dimensionFieldCode: '科室' }, { levelCode: 'DOCTOR', dimensionFieldCode: '医生' }], maxLevel: 'DOCTOR' }
+    path: { pathCode: 'ORGANIZATION', levels: [{ levelCode: 'DEPT', dimensionFieldCode: '科室' }, { levelCode: 'DOCTOR', dimensionFieldCode: '医生' }], maxLevel: 'DOCTOR' }
   })
   const navigation = { currentLevel: 'DOCTOR', parentKeys: { 科室: '15' } }
   const response = { context: { resultId: '55', snapshotId: '66', indicatorVersionId: '10', currentLevel: 'DOCTOR', ...periodRange },
@@ -81,16 +108,16 @@ test('formal chart drill resolves the canonical root and skips an absent medical
     }
     throw new Error('unexpected request')
   }
-  const target = { resultId: 'department-anchor', indicatorVersionId: 'version-1', maxLevels: { ORGANIZATION: 'ATTENDING_DOCTOR' }, configuredPaths: [{ pathCode: 'ORGANIZATION' }] }
+  const target = { resultId: 'department-anchor', indicatorVersionId: 'version-1', maxLevels: { ORGANIZATION: 'ATTENDING_DOCTOR' }, path: { pathCode: 'ORGANIZATION', maxLevel: 'ATTENDING_DOCTOR', levels: [{ levelCode: 'HOSPITAL', memberKeyFieldCode: 'HOSPITAL_CODE' }, { levelCode: 'OUT_DEPT', memberKeyFieldCode: 'OUT_DEPT_CODE' }, { levelCode: 'ATTENDING_DOCTOR', memberKeyFieldCode: 'DOCTOR_NO' }] } }
   const root = await loadBackendChartRoot(search, target)
   assert.equal(root.resultId, 'canonical-root')
   assert.equal(root.snapshotId, 'organization-snapshot')
-  const navigation = { currentLevel: 'OUT_DEPT', parentKeys: { HOSPITAL_CODE: root.hospitalCode }, label: '全部科室' }
+  const navigation = { currentLevel: 'OUT_DEPT', parentKeys: root.parentKeys, label: '全部科室' }
   const result = await loadBackendChartLevel(search, root, navigation)
   assert.equal(result.records.length, 3, 'duplicate department codes with distinct published rows remain visible')
   const clicked = findBackendChartRow(result, { data: { row: result.records[2] } })
   assert.equal(clicked.resultId, 'row-c')
-  assert.deepEqual(nextBackendChartNavigation(result, result.records[0], navigation, root.maxLevel), {
+  assert.deepEqual(nextBackendChartNavigation(result, result.records[0], navigation, root.maxLevel, root), {
     currentLevel: 'ATTENDING_DOCTOR', parentKeys: { HOSPITAL_CODE: 'HOSPITAL-1', OUT_DEPT_CODE: '17' }, label: 'MICU'
   })
   assert.equal(backendChartValue(result.records[0], 'bar', '%'), 20)

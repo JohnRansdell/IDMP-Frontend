@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import { JSDOM } from 'jsdom'
 import { runtimeParameterDefinition, validateFilterNode, editableFilterTree, serializeFilterNode } from '../src/idmp/utils/dslBuilder.js'
-import { factorCalculationMode, factorPeriodColumn, canonicalPeriodColumn, withoutLegacyPeriod } from '../src/idmp/utils/factorPeriod.js'
+import { factorCalculationMode, factorPeriodColumn } from '../src/idmp/utils/factorPeriod.js'
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>')
 for (const name of ['window', 'document', 'HTMLElement', 'SVGElement', 'Element', 'Node', 'Document', 'Text', 'Comment']) globalThis[name] = dom.window[name]
@@ -72,7 +72,7 @@ async function mountSourceEditor(overrides = {}) {
     fetchSourceTables: async () => [], fetchPhysicalTables: async () => [],
     adaptSourceTableList: rows => rows, adaptPhysicalTableList: rows => rows,
     fetchFactorVersionsByFactor: async () => [], editableFilterTree,
-    factorCalculationMode, factorPeriodColumn, canonicalPeriodColumn, withoutLegacyPeriod, useFactorVersionWorkflow,
+    factorCalculationMode, factorPeriodColumn, useFactorVersionWorkflow,
     ...overrides
   })
   const code = script.content.replace(/^import .*$/gm, '').replace('export default', 'return')

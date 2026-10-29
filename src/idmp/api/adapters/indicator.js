@@ -6,8 +6,6 @@ import { normalizeResultMetrics } from './result.js'
 import { isRetiredDrillPath } from '../../features/indicator/drillPathPolicy.js'
 import { isRatioFormula } from '../../features/shared/formulaPresentation.js'
 
-const runtimeEnv = typeof import.meta.env === 'object' && import.meta.env ? import.meta.env : {}
-
 export function normalizeIndicatorDataSources(sources = []) {
   return sources.map(source => typeof source === 'string' ? { sourceCategory: source } : { ...source })
 }
@@ -152,9 +150,7 @@ function resolveFactorVersionName(factorVersion, versionId, role) {
 export function normalizeIndicatorTrialResults(payload = {}) {
   const data = payload?.data || payload || {}
   const responseTargets = Array.isArray(data.targets) ? data.targets : []
-  const targets = responseTargets.length
-    ? responseTargets.map(normalizeIndicatorTrialTarget).filter(Boolean)
-    : createLegacyIndicatorTrialTargets(data)
+  const targets = responseTargets.map(normalizeIndicatorTrialTarget).filter(Boolean)
 
   return {
     batchId: toOpaqueId(data.batchId),
@@ -177,15 +173,8 @@ export function selectDefaultIndicatorTrialTarget(targets = []) {
     || null
 }
 
-export function formatIndicatorTrialPeriod(record = {}, target = {}) {
+export function formatIndicatorTrialDimensions(record = {}) {
   const dimensions = record?.dimensions || record?.dimensionValues || {}
-  const year = presentDimension(dimensions, 'time_year', 'TIME_YEAR')
-  const quarter = presentDimension(dimensions, 'time_quarter', 'TIME_QUARTER')
-  const month = presentDimension(dimensions, 'time_month', 'TIME_MONTH')
-  const level = String(target?.levelCode || '').toUpperCase()
-  if (level === 'MONTH' && year !== '' && month !== '') return `${year}-${String(month).padStart(2, '0')}`
-  if (level === 'QUARTER' && year !== '' && quarter !== '') return `${year} Q${quarter}`
-  if (level === 'YEAR' && year !== '') return String(year)
   const entries = Object.entries(dimensions).filter(([, value]) => value !== undefined && value !== null && value !== '')
   return entries.length ? entries.map(([key, value]) => `${key}=${value}`).join('，') : '总体'
 }
@@ -240,35 +229,6 @@ function normalizeIndicatorTrialRecord(record = {}) {
     qualityFlags: Array.isArray(record.qualityFlags) ? [...record.qualityFlags] : []
   }
 }
-
-function createLegacyIndicatorTrialTargets(data) {
-  const results = data.results || {}
-  if (!Array.isArray(results.records)) return []
-  return [normalizeIndicatorTrialTarget({
-    targetId: data.targetId,
-    targetCode: data.targetCode || 'LEGACY',
-    targetStatus: data.targetStatus,
-    resultSetId: data.resultSetId,
-    resultSetStatus: data.resultSetStatus,
-    qualityStatus: data.qualityStatus,
-    resultOutcomeStatus: data.resultOutcomeStatus,
-    resultQualityFlags: data.resultQualityFlags,
-    errorMessage: data.errorMessage,
-    factorDataProfiles: data.factorDataProfiles,
-    periodStart: data.periodStart,
-    periodEnd: data.periodEnd,
-    results
-  }, 0)].filter(Boolean)
-}
-
-function presentDimension(dimensions, ...keys) {
-  for (const key of keys) {
-    const value = dimensions?.[key]
-    if (value !== undefined && value !== null && value !== '') return value
-  }
-  return ''
-}
-
 
 function toCount(value, fallback) {
   const number = Number(value)
@@ -340,21 +300,10 @@ function toApiDate(value) {
   return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : text
 }
 
-export const defaultDrillConfig = Object.freeze({
-  pathCode: runtimeEnv.VITE_DEFAULT_DRILL_PATH_CODE || 'ORGANIZATION',
-  maxLevel: runtimeEnv.VITE_DEFAULT_DRILL_MAX_LEVEL || 'DEPARTMENT',
-  pathVersionId: ''
-})
-
-export function normalizeDrillPaths(payload, fallback = []) {
-  const paths = payload?.drillPaths
-    || payload?.drillConfig?.paths
-    || payload?.drillConfig?.drillPaths
-    || payload?.drillConfig
-    || fallback
-
-  const list = Array.isArray(paths) ? paths : [paths]
-  return list.map((path) => ({
+export function normalizeDrillPaths(payload) {
+  const paths = payload?.drillConfig?.drillPaths ?? []
+  if (!Array.isArray(paths)) throw new Error('下钻路径必须是列表')
+  return paths.map((path) => ({
     pathCode: String(path?.pathCode || ''),
     maxLevel: String(path?.maxLevel || ''),
     pathVersionId: String(path?.pathVersionId || ''),
@@ -363,25 +312,12 @@ export function normalizeDrillPaths(payload, fallback = []) {
   })).filter((path) => path.pathCode && path.maxLevel && !isRetiredDrillPath(path.pathCode)).map(normalizeOrganizationPath)
 }
 
-export function normalizeDrillConfig(payload, fallback = defaultDrillConfig) {
-  const path = normalizeDrillPaths(payload)[0]
-
-  return {
-    pathCode: String(path?.pathCode || fallback.pathCode || ''),
-    maxLevel: String(path?.maxLevel || fallback.maxLevel || ''),
-    pathVersionId: String(path?.pathVersionId || payload?.drillConfig?.pathVersionId || fallback.pathVersionId || '')
-  }
-}
-
-export function buildIndicatorVersionPayload({ copyFromVersionId = '', drillConfig, drillPaths, formula, calculationMode, dimensionGrain, factorDimensionBindings, dataOwnership } = {}) {
-  const normalizedPaths = Array.isArray(drillPaths)
-    ? drillPaths
-    : drillConfig ? [drillConfig] : []
+export function buildIndicatorVersionPayload({ copyFromVersionId = '', drillPaths = [], formula, calculationMode, dimensionGrain, factorDimensionBindings, dataOwnership } = {}) {
   return {
     ...(copyFromVersionId ? { copyFromVersionId: String(copyFromVersionId) } : {}),
     ...(formula ? { formula } : {}),
     ...(calculationMode ? { calculationMode: String(calculationMode).toUpperCase() } : {}),
-    drillPaths: serializeDrillPaths(normalizedPaths),
+    drillPaths: serializeDrillPaths(drillPaths),
     ...(factorDimensionBindings !== undefined ? { factorDimensionBindings } : {}),
     ...(dataOwnership != null ? { dataOwnership: { ...dataOwnership } } : {}),
     ...(dimensionGrain !== undefined ? { dimensionGrain: normalizeDimensionGrain(dimensionGrain) } : {})
@@ -392,7 +328,7 @@ export function normalizeDrillCapabilities(payload = {}) {
   const data = payload?.data || payload || {}
   return {
     factorVersionIds: Array.isArray(data.factorVersionIds) ? data.factorVersionIds.map((id) => String(id)) : [],
-    defaultOrganizationPath: data.defaultOrganizationPath ? normalizeDrillPaths({ drillPaths: [data.defaultOrganizationPath] })[0] : null,
+    defaultOrganizationPath: data.defaultOrganizationPath ? normalizeDrillPaths({ drillConfig: { drillPaths: [data.defaultOrganizationPath] } })[0] : null,
     suggestedDataOwnership: data.suggestedDataOwnership ? { ...data.suggestedDataOwnership } : null,
     configuredDataOwnership: data.configuredDataOwnership ? { ...data.configuredDataOwnership } : null,
     dimensionGrainOptions: Array.isArray(data.dimensionGrainOptions) ? data.dimensionGrainOptions.map(String) : [],
@@ -436,24 +372,4 @@ export function validateDrillSelection(capabilities = {}, drillPaths = []) {
     }
   }
   return ''
-}
-
-export function requiredGrainForDrill(drillConfig = {}) {
-  const pathCode = String(drillConfig.pathCode || '').toUpperCase()
-  const maxLevel = String(drillConfig.maxLevel || '').toUpperCase()
-  if (pathCode !== 'ORGANIZATION') return []
-  if (maxLevel === 'HOSPITAL') return ['HOSPITAL_CODE']
-  if (maxLevel === 'OUT_DEPT') return ['HOSPITAL_CODE', 'OUT_DEPT_CODE']
-  return []
-}
-
-export function findUnsupportedDrillFactors(factors = [], drillConfig = {}) {
-  const required = requiredGrainForDrill(drillConfig)
-  if (!required.length) return []
-  return factors.map((factor) => {
-    const grain = factor?.dsl?.output?.grain || factor?.output?.grain || factor?.dsl?.groupBy || []
-    const available = new Set(grain.map((item) => String(item?.fieldCode || item).toUpperCase()))
-    const missing = required.filter((code) => !available.has(code))
-    return missing.length ? { factor, missing } : null
-  }).filter(Boolean)
 }

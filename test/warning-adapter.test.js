@@ -41,7 +41,7 @@ test('warning adapter preserves opaque IDs and only sends the IN_APP policy', ()
   assert.equal(payload.indicatorVersionId, '102027642460303757')
   assert.deepEqual(payload.notificationPolicy, { channels: ['IN_APP'], recipientUserIds: ['1'] })
   assert.deepEqual(payload.scenarioScope, {})
-  assert.deepEqual(payload.scopePolicy, { includeNoScenario: true })
+  assert.deepEqual(payload.scopePolicy, { includeNoScenario: true, resultScope: { mode: 'MAIN' } })
 })
 
 test('warning request serializes large IDs as exact JSON integers', () => {
@@ -63,7 +63,7 @@ test('scenario-based warning types and stale scenario form fields are ignored', 
   rule.includeNoScenario = false
   assert.equal(validateWarningRuleForm(rule), '')
   assert.deepEqual(buildWarningRulePayload(rule).scenarioScope, {})
-  assert.deepEqual(buildWarningRulePayload(rule).scopePolicy, { includeNoScenario: true })
+  assert.deepEqual(buildWarningRulePayload(rule).scopePolicy, { includeNoScenario: true, resultScope: { mode: 'MAIN' } })
 })
 
 test('warning capabilities distinguish draft publishing and published enablement', () => {
@@ -108,4 +108,17 @@ test('warning list version preserves draft metadata and publication actions', ()
 test('warning page response normalizes current server pagination shape', () => {
   const page = normalizePage({ records: [{ id: '9001' }], total: '1', pageNum: 1, pageSize: 20 })
   assert.deepEqual(page, { records: [{ id: '9001' }], total: 1, page: 1, size: 20 })
+})
+
+
+test('omitted warning scope is explicitly MAIN in requests and rule editing', () => {
+  assert.deepEqual(buildWarningRulePayload(validRule()).scopePolicy.resultScope, { mode: 'MAIN' })
+  const original = { version: { scopePolicy: { includeNoScenario: false } } }
+  assert.deepEqual(normalizeWarningRule(original).version.scopePolicy, { includeNoScenario: false, resultScope: { mode: 'MAIN' } })
+  assert.equal(original.version.scopePolicy.resultScope, undefined)
+  for (const mode of ['ALL', 'GROUPED']) {
+    const resultScope = { mode, ...(mode === 'GROUPED' ? { dimensions: ['科室'], targetCode: 'BASE' } : {}) }
+    assert.deepEqual(normalizeWarningRule({ version: { scopePolicy: { resultScope } } }).version.scopePolicy.resultScope, resultScope)
+    assert.deepEqual(buildWarningRulePayload({ ...validRule(), resultScope }).scopePolicy.resultScope, resultScope)
+  }
 })

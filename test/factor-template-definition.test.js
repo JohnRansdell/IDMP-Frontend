@@ -2,10 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { templatePeriodField, validateTemplateConditions, describeTemplateConditions, templateDefinitionFromFactor } from '../src/idmp/utils/factorTemplateDefinition.js'
 import { buildFactorDsl, editableFilterTree } from '../src/idmp/utils/dslBuilder.js'
-import { withoutLegacyPeriod } from '../src/idmp/utils/factorPeriod.js'
 
 function buildFactorTemplateDefinition(form, fields=[]) {
-  return templateDefinitionFromFactor(buildFactorDsl({...form,fields,sourceAlias:form.primaryOptions?.sourceAlias,periodColumn:form.periodFieldCode,joins:form.extraDefinition?.joins,fieldCode:form.fieldCode||form.extraDefinition?.aggregationField?.fieldCode,filters:form.scopeMode==='ALL'?{nodeType:'TRUE'}:withoutLegacyPeriod(form.filters)}), {output:form.output})
+  return templateDefinitionFromFactor(buildFactorDsl({...form,fields,sourceAlias:form.primaryOptions?.sourceAlias,periodColumn:form.periodFieldCode,joins:form.extraDefinition?.joins,fieldCode:form.fieldCode||form.extraDefinition?.aggregationField?.fieldCode,filters:form.scopeMode==='ALL'?{nodeType:'TRUE'}:form.filters}), {output:form.output})
 }
 
 test('shared factor definition drops obsolete template settings without restoring stale source or grain', () => {
@@ -37,15 +36,15 @@ test('temporal templates keep business filters and add explicit period binding',
   assert.equal(dsl.periodColumn, 'operation_date')
   assert.equal(templatePeriodField(dsl), 'operation_date')
 })
-test('no TRUE children are generated inside AND and imported period is not duplicated', () => {
+test('literal date filters remain business conditions in temporal and static templates', () => {
   const form = designer(); form.calculationMode = 'TEMPORAL'
-  const period = { nodeType: 'PREDICATE', fieldCode: 'old_time', operator: 'BETWEEN', parameter: 'period' }
+  const period = { nodeType: 'PREDICATE', fieldCode: 'out_date', operator: 'BETWEEN', value: { start: '2026-01-01', end: '2026-06-30' } }
   form.filters = { nodeType: 'AND', children: [{ nodeType: 'TRUE' }, period] }
   const dsl = buildFactorTemplateDefinition(form)
-  assert.deepEqual(dsl.filters, { nodeType: 'TRUE' })
+  assert.deepEqual(dsl.filters, form.filters)
   assert.equal(dsl.periodColumn, 'operation_date')
   form.calculationMode = 'STATIC'
-  assert.deepEqual(buildFactorTemplateDefinition(form).filters, { nodeType: 'TRUE' })
+  assert.deepEqual(buildFactorTemplateDefinition(form).filters, form.filters)
   assert.equal('periodColumn' in buildFactorTemplateDefinition(form), false)
 })
 

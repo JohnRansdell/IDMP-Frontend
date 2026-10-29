@@ -1,8 +1,9 @@
-import { legacyDrillLevelDefinition, normalizeDrillLevelDefinition, normalizeOrganizationDrillLevel } from '../../api/adapters/drill.js'
+import { normalizeDrillLevelDefinition, normalizeOrganizationDrillLevel } from '../../api/adapters/drill.js'
 
 export function drillLevelDefinition(path, levelCode) {
   const level = path?.levels?.find(item => item.levelCode === levelCode)
-  return level ? normalizeDrillLevelDefinition(level) : legacyDrillLevelDefinition(levelCode)
+  if (!level) throw new Error('下钻路径缺少当前层级配置，请检查指标的下钻配置。')
+  return normalizeDrillLevelDefinition(level)
 }
 
 export function drillMemberField(path, levelCode) {
@@ -16,8 +17,8 @@ const keyOf = (object, field) => Object.keys(object).find(key => key.toLowerCase
 export function drillScope(context, path) {
   const parentKeys = { ...context.parentKeys }
   const filters = Object.fromEntries(Object.entries(context.filters || {}).map(([key, value]) => [key, Array.isArray(value) ? [...value] : value]))
-  const levels = path?.levels?.length ? path.levels.map(normalizeDrillLevelDefinition)
-    : ['HOSPITAL', 'OUT_DEPT', 'DEPARTMENT', 'MEDICAL_GROUP', 'ATTENDING_DOCTOR', 'DOCTOR'].map(legacyDrillLevelDefinition)
+  if (!path?.levels?.length) throw new Error('下钻路径缺少层级配置，请检查指标的下钻配置。')
+  const levels = path.levels.map(normalizeDrillLevelDefinition)
   for (const level of levels) {
     const identity = level.memberKeyFieldCode || level.dimensionFieldCode
     const display = level.displayFieldCode

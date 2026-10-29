@@ -189,17 +189,6 @@ export function assertDashboardPersistenceContract(schema) {
   return true
 }
 
-export function migrateDashboardSchema(input, { fromVersion, toVersion = DASHBOARD_SCHEMA_VERSION } = {}) {
-  if (fromVersion !== 'legacy-pixel-layout' || toVersion !== DASHBOARD_SCHEMA_VERSION) {
-    throw new TypeError(`unsupported dashboard migration: ${String(fromVersion)} -> ${String(toVersion)}`)
-  }
-  const migrated = normalizeDashboardSchema({ ...input, version: DASHBOARD_SCHEMA_VERSION })
-  const validation = validateDashboardSchema(migrated)
-  if (!validation.valid) throw new TypeError(`dashboard migration failed: ${validation.errors.join('; ')}`)
-  assertDashboardPersistenceContract(migrated)
-  return migrated
-}
-
 export function semanticDashboardEquals(left, right) {
   return JSON.stringify(createPersistableDashboardSnapshot(left)) === JSON.stringify(createPersistableDashboardSnapshot(right))
 }

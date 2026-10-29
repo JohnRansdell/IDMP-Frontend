@@ -44,30 +44,15 @@ function fieldText(value) {
   return text.toLowerCase() === 'null' ? '' : text
 }
 
-function legacyField(dimensions, field) {
-  const key = Object.keys(dimensions || {}).find((key) => key.toLowerCase() === field)
-  return fieldText(key == null ? null : dimensions[key])
-}
-
-export function normalizeDepartmentComparisons(rows, dimensionRows = [], namesByCode = {}) {
-  const directRows = Array.isArray(rows) ? rows : []
-  const fallbackRows = Array.isArray(dimensionRows) ? dimensionRows : []
-  const normalize = (items) => items.flatMap((row) => {
-    if (!row || typeof row !== 'object') return []
-    const rawCode = fieldText(row.departmentCode)
-      || legacyField(row.dimensions, 'out_dept_code')
-      || legacyField(row.dimensions, 'out_dept_id')
-    const hasDepartment = Object.hasOwn(row, 'departmentCode') || Object.keys(row.dimensions || {}).some(key => ['out_dept_code', 'out_dept_id'].includes(key.toLowerCase()))
-    if (!rawCode && !hasDepartment) return []
-    const departmentCode = rawCode || '__UNASSIGNED__'
+export function normalizeDepartmentComparisons(rows, namesByCode = {}) {
+  return (Array.isArray(rows) ? rows : []).flatMap(row => {
+    if (!row || typeof row !== 'object' || !Object.hasOwn(row, 'departmentCode')) return []
+    const departmentCode = fieldText(row.departmentCode) || '__UNASSIGNED__'
     const departmentName = missingMemberCode(departmentCode) ? unknownMemberName({ levelCode: 'DEPARTMENT' })
       : fieldText(namesByCode[departmentCode]) || fieldText(row.departmentName)
-      || legacyField(row.dimensions, 'out_dept_name')
       || unknownMemberName({ levelCode: 'DEPARTMENT' }, departmentCode)
     return [{ ...row, departmentCode, departmentName }]
   })
-  const normalizedDirect = normalize(directRows)
-  return normalizedDirect.length ? normalizedDirect : normalize(fallbackRows)
 }
 
 export function departmentAchievement(row, analysis = {}) {
@@ -85,8 +70,7 @@ export function departmentAchievement(row, analysis = {}) {
 export function departmentDrillDefinition(paths = []) {
   for (const path of paths) {
     const index = (path.levels || []).findIndex(level =>
-      ['OUT_DEPT_CODE', 'OUT_DEPT_ID', 'DEPARTMENT_CODE'].includes(String(level.memberKeyFieldCode || level.dimensionFieldCode || '').toUpperCase())
-      || ['OUT_DEPT', 'DEPARTMENT'].includes(level.levelCode)
+      ['OUT_DEPT', 'DEPT', 'DEPARTMENT', 'IN_DEPT', 'CHANGE_DEPT'].includes(level.levelCode)
     )
     if (index >= 0) return { path, level: path.levels[index], index }
   }
@@ -100,12 +84,7 @@ export async function loadDepartmentComparisons(analysis, paths, searchDrill, fi
   if (direct.length) return direct
   const definition = departmentDrillDefinition(paths)
   const anchor = definition && deriveDrillPathResultIds(analysis, paths)[definition.path.pathCode]
-  if (!definition || !anchor) {
-    // 只复用科室单一粒度的结果，不能把科室与病种等组合结果当作科室汇总。
-    const dimensions = (analysis?.dimensionComparison || []).filter(row => drillPeriodKey(row) === period
-      && Object.keys(row.dimensions || {}).every(key => ['out_dept_code', 'out_dept_id', 'out_dept_name', 'department_code', 'department_name', 'hospital_code', 'hospital_name'].includes(key.toLowerCase())))
-    return normalizeDepartmentComparisons([], dimensions)
-  }
+  if (!definition || !anchor) return []
   const rows = []
   let receivedCount = 0
   for (let pageNum = 1; pageNum <= 100; pageNum += 1) {

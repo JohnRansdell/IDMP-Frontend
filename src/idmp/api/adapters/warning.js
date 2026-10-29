@@ -34,7 +34,7 @@ export function normalizeWarningRule(rule = {}) {
   const fallbackPublication = rule.draftVersionId
     ? 'DRAFT'
     : (rule.currentPublishedVersionId ? 'PUBLISHED' : rule.publicationStatus)
-  const version = { ...sourceVersion }
+  const version = { ...sourceVersion, scopePolicy: { ...sourceVersion.scopePolicy, resultScope: sourceVersion.scopePolicy?.resultScope ?? { mode: 'MAIN' } } }
   const versionId = sourceVersion.id || sourceVersion.versionId || fallbackVersionId
   const publicationStatus = sourceVersion.publicationStatus || fallbackPublication
   if (versionId) version.id = versionId
@@ -77,7 +77,7 @@ export function buildWarningRulePayload(form) {
     periodType: form.periodType,
     // Keep the backend DTO shape, but never bind a rule to a scenario.
     scenarioScope: {},
-    scopePolicy: { includeNoScenario: true, ...(form.resultScope ? { resultScope: form.resultScope } : {}) },
+    scopePolicy: { includeNoScenario: true, resultScope: form.resultScope ?? { mode: 'MAIN' } },
     condition: form.conditionTree ? cleanWarningCondition(form.conditionTree, form.warningType) : condition,
     dedupPolicy: { scope: 'PERIOD' },
     notificationPolicy: { channels: ['IN_APP'], ...recipientPolicy },

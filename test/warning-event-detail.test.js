@@ -8,21 +8,22 @@ const event = (snapshot = {}, mode = 'ALL') => ({ actualValue: 0.41924399, warni
 
 test('rule scope and the individual result are independent, including ALL and legacy rules', () => {
   assert.deepEqual(warningEventScope(event()), { rule: '全部结果', result: '总体结果' })
-  assert.deepEqual(warningEventScope(event({ time_month: '2026-04' }, 'MAIN')), { rule: '总体结果', result: '总体结果' })
+  assert.deepEqual(warningEventScope(event({ time_month: '2026-04' }, 'MAIN')), { rule: '总体结果', result: '分组结果' })
   assert.deepEqual(warningEventScope(event({ out_dept_code: '9012' })), { rule: '全部结果', result: '分组结果' })
   assert.deepEqual(warningEventScope(event({ 医生: 'A' }, 'GROUPED')), { rule: '分组结果', result: '分组结果' })
-  assert.deepEqual(warningEventScope({ comparisonContext: { dimensionSnapshot: {} } }), { rule: '全部结果', result: '总体结果' })
+  assert.deepEqual(warningEventScope({ comparisonContext: { dimensionSnapshot: {} } }), { rule: '未记录', result: '总体结果' })
   assert.equal(warningEventScope({}).result, '未记录')
 })
 
-test('all non-time dimensions and exact member values remain visible with optional dictionary labels', () => {
+test('all explicit business dimensions and exact member values remain visible with optional dictionary labels', () => {
   const data = event({ OUT_DEPT_CODE: '9012', 科室名称: '骨科(东院)', 医生: 'A', TIME_MONTH: '2026-04', 自定义维度: null, 备注: '' })
   const rows = warningEventDimensions(data, new Map([['9012', '骨科（东院）']]))
-  assert.equal(rows.length, 5)
+  assert.equal(rows.length, 6)
   assert.deepEqual(rows[0], { field: 'OUT_DEPT_CODE', label: '出院科室编码（OUT_DEPT_CODE）', value: '9012（骨科（东院））' })
   assert.equal(rows[1].value, '骨科(东院)', 'Historical snapshot names are not overwritten')
-  assert.equal(rows[3].value, '空值')
-  assert.equal(rows[4].value, '空字符串')
+  assert.equal(rows[3].value, '2026-04')
+  assert.equal(rows[4].value, '空值')
+  assert.equal(rows[5].value, '空字符串')
   assert.equal(warningEventDimensions(data)[0].value, '9012')
 })
 

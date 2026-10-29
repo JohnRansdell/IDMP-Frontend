@@ -40,6 +40,6 @@ test('dictionary names override result labels without changing codes, values or 
   assert.equal(row.OUT_DEPT_NAME, '旧名称')
   assert.equal(namedDrillRecord({ dimensionKey: '22', dimensionName: '旧名称' }, { levelName: '科室' },
     new Map([['22', '泌尿外科']])).dimensionLabel, '泌尿外科')
-  assert.equal(normalizeDepartmentComparisons([{ departmentCode: '22', departmentName: '旧名称', value: 0.5 }], [],
+  assert.equal(normalizeDepartmentComparisons([{ departmentCode: '22', departmentName: '旧名称', value: 0.5 }],
     { 22: '泌尿外科' })[0].departmentName, '泌尿外科')
 })

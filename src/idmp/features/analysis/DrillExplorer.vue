@@ -210,7 +210,7 @@ function navigationKey(level = currentLevel.value, keys = parentKeys.value) {
 }
 const availableNextLevels = computed(() => {
   const pathCode = lastDrillDimension.value
-  return limitDrillNextLevels(result.value.nextLevels, pathCode, props.maxLevels?.[pathCode])
+  return limitDrillNextLevels(result.value.nextLevels, selectedPath(), props.maxLevels?.[pathCode])
 })
 const resolvedPeriod = computed(() => {
   if (props.granularity === 'STATIC') return '静态结果'

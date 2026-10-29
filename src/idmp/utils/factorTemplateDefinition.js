@@ -10,7 +10,7 @@ export function templateDefinitionFromFactor(dsl, original) {
 }
 
 export function templatePeriodField(definition) {
-  return definition?.nodeType ? factorPeriodColumn({ filters: definition }) : factorPeriodColumn(definition)
+  return factorPeriodColumn(definition)
 }
 
 export function validateTemplateConditions(designer, fields = []) {

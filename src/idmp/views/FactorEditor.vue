@@ -1,7 +1,7 @@
 <template>
   <div class="idmp-page factor-editor" :class="{ 'definition-only': definitionOnly }" :inert="definitionOnly && disabled">
-  <PageHeader v-if="!definitionOnly" :title="pageTitle"><template #actions><div class="page-toolbar"><el-button :icon="ArrowLeft" @click="router.push('/factor')">返回列表</el-button><el-button type="primary" :loading="loading.save" :disabled="workflow.published || (!!unsupportedDsl && !isNativeSql) || !!periodConfigurationError || joins.some(item=>item.saving||item.configuring)" @click="saveFactor">{{ isCreate ? '保存因子定义' : '保存修改' }}</el-button></div></template></PageHeader>
-  <el-alert v-if="periodConfigurationError" type="error" :closable="false" :title="periodConfigurationError" /><el-alert v-if="!isCreate" class="editor-alert" :type="unsupportedDsl && !isNativeSql ? 'warning' : 'info'" show-icon :closable="false" :title="workflow.published ? '当前版本已发布，计算口径只读。' : unsupportedDsl && !isNativeSql ? '该因子使用暂不支持的高级表达式，计算口径只读。' : workflow.message || '保存草稿后可继续完成编译、试算和发布。'" />
+  <PageHeader v-if="!definitionOnly" :title="pageTitle"><template #actions><div class="page-toolbar"><el-button :icon="ArrowLeft" @click="router.push('/factor')">返回列表</el-button><el-button type="primary" :loading="loading.save" :disabled="workflow.published || (!!unsupportedDsl && !isNativeSql) || joins.some(item=>item.saving||item.configuring)" @click="saveFactor">{{ isCreate ? '保存因子定义' : '保存修改' }}</el-button></div></template></PageHeader>
+  <el-alert v-if="!isCreate" class="editor-alert" :type="unsupportedDsl && !isNativeSql ? 'warning' : 'info'" show-icon :closable="false" :title="workflow.published ? '当前版本已发布，计算口径只读。' : unsupportedDsl && !isNativeSql ? '该因子使用暂不支持的高级表达式，计算口径只读。' : workflow.message || '保存草稿后可继续完成编译、试算和发布。'" />
     <section v-if="!definitionOnly" class="surface-card editor-section">
       <div class="section-title"><span class="section-number">1</span><div><h2>基础信息</h2><p>填写因子的名称和业务说明，保存后会生成可继续校验的因子草稿。</p></div></div>
       <el-form ref="basicFormRef" :model="basicForm" :rules="basicRules" :disabled="workflow.published || loading.save || loading.compile" label-width="88px">
@@ -129,7 +129,7 @@ import { resourceConflictEditorPath, resolveResourceConflict } from '@/idmp/api/
 import { compileFactorVersion, createFactor, fetchFactor, fetchCompileArtifact, fetchFactorTemplateParameterSchema, fetchFactorTrialPeriodRecommendation, fetchFactorTrialResults, fetchFactorVersion, fetchFactorVersionsByFactor, instantiateFactorTemplateVersion, publishFactorVersion, trialFactorVersion, updateFactor } from '@/idmp/api/modules/factors'
 import { fetchAsyncTask } from '@/idmp/api/modules/calculation'
 import { fieldByCode } from '@/idmp/utils/semanticField'
-import { buildFactorDsl, hasUnsupportedFactorDslExpressions, validateFilterNode, validateExpression, editableFilterTree, describeFieldExpression } from '@/idmp/utils/dslBuilder'; import { factorCalculationMode, factorPeriodColumn, canonicalPeriodColumn, withoutLegacyPeriod } from '@/idmp/utils/factorPeriod'
+import { buildFactorDsl, hasUnsupportedFactorDslExpressions, validateFilterNode, validateExpression, editableFilterTree, describeFieldExpression } from '@/idmp/utils/dslBuilder'; import { factorCalculationMode, factorPeriodColumn } from '@/idmp/utils/factorPeriod'
 import { normalizeTrialPeriodRecommendation, recommendationPeriod, resolveTrialPeriod } from '@/idmp/utils/trialPeriodRecommendation'
 import { getStatusLabel } from '@/idmp/design/status'
 import { sqlPhysicalFieldLabel, sqlPhysicalFieldName } from '@/idmp/features/indicator/sqlImportFields'
@@ -148,7 +148,7 @@ const sourceTables = ref([])
 const sourceTablesLoading = ref(false)
 const sourceMode = ref('PHYSICAL')
 const existingRuntimeParameters = ref([])
-const unsupportedDsl = ref(null); const periodConfigurationError = ref('')
+const unsupportedDsl = ref(null)
 const isNativeSql = computed(() => unsupportedDsl.value?.definitionType === 'SQL')
 const versionResourceVersion = ref(null)
 const savedDefinition = ref('')
@@ -227,7 +227,7 @@ async function loadDefinition(dsl) {
     dslForm.periodColumn = factorPeriodColumn(dsl)
     dslForm.domainCode = dsl.primaryDomain?.domainCode || ''
     sourceMode.value = dslForm.domainCode ? 'DOMAIN' : 'PHYSICAL'
-    dslForm.tableName = dsl.primaryDomain?.tableName || dsl.primaryDomain?.semanticTableCode || ''
+    dslForm.tableName = dsl.primaryDomain?.tableName || ''
     dslForm.baseAlias = dsl.primaryDomain?.sourceAlias || 'base'
     joins.value = (dsl.joins || []).map((item,index)=>({...item,inline:!item.relationId&&!!item.tableName,
       relationId:toOpaqueId(item.relationId),fromAlias:item.fromAlias||dslForm.baseAlias,sourceAlias:item.sourceAlias||`join${index+1}`,fields:[]}))
@@ -236,7 +236,7 @@ async function loadDefinition(dsl) {
     dslForm.fieldCode = aggregateField?.parameterRef ? '${' + aggregateField.parameterRef + '}' : fieldKey(aggregateField)
     dslForm.groupBy = (dsl.groupBy || []).map(fieldKey)
     Object.keys(filters).forEach(key=>delete filters[key])
-    Object.assign(filters,toEditableFilterRoot(withoutLegacyPeriod(dsl.filters)))
+    Object.assign(filters,toEditableFilterRoot(dsl.filters))
     scopeMode.value = filters.children?.length ? 'FILTERED' : 'ALL'
     await loadTables(true)
   } finally { definitionReady.value = true }
@@ -287,7 +287,7 @@ async function loadExisting() {
     definitionKind.value = dsl.definitionKind === 'DERIVED' ? 'DERIVED' : 'SOURCE'
     if (isDerived.value) {
       derivedDsl.value = JSON.parse(JSON.stringify(dsl)); dslForm.calculationMode = factorCalculationMode(dsl)
-      hydrateWorkflow(factor, version); unsupportedDsl.value = null; periodConfigurationError.value = ''
+      hydrateWorkflow(factor, version); unsupportedDsl.value = null
       savedDefinition.value = definitionSnapshot(currentDsl.value)
       if (workflow.compiled) { await loadRuntimeDeclarations(); await loadTrialRecommendation({ applyDefault: true }) }
       return
@@ -296,17 +296,14 @@ async function loadExisting() {
     dslForm.calculationMode = factorCalculationMode(dsl); dslForm.periodColumn = factorPeriodColumn(dsl)
     dslForm.domainCode = dsl.primaryDomain?.domainCode ?? dsl.domainCode ?? ''
     sourceMode.value = dslForm.domainCode ? 'DOMAIN' : 'PHYSICAL'
-    dslForm.tableName = dsl.primaryDomain?.tableName ?? dsl.primaryDomain?.semanticTableCode ?? ''
+    dslForm.tableName = dsl.primaryDomain?.tableName ?? ''
     dslForm.baseAlias = dsl.primaryDomain?.sourceAlias || 'base'
     joins.value = (dsl.joins || []).map((item, index) => ({ ...item, inline: !item.relationId && !!item.tableName, relationId: toOpaqueId(item.relationId), fromAlias: item.fromAlias || dslForm.baseAlias, sourceAlias: item.sourceAlias || `join${index + 1}`, fields: [] }))
     dslForm.aggregation = dsl.aggregation?.function ?? 'COUNT'; dslForm.fieldCode = fieldKey(dsl.aggregation?.fieldRef ?? dsl.aggregation?.fieldCode)
     dslForm.groupBy = (dsl.groupBy || []).map(fieldKey)
-    Object.keys(filters).forEach(key => delete filters[key]); Object.assign(filters, toEditableFilterRoot(withoutLegacyPeriod(dsl.filters)))
+    Object.keys(filters).forEach(key => delete filters[key]); Object.assign(filters, toEditableFilterRoot(dsl.filters))
     scopeMode.value = filters.children?.length ? 'FILTERED' : 'ALL'; hydrateWorkflow(factor, version)
     if (dsl.definitionType === 'SQL') await loadNativePeriodBinding(); else await loadTables(true)
-    if (!isNativeSql.value) {
-      try { canonicalPeriodColumn(dsl.periodColumn, dsl.filters, fields.value) } catch (error) { periodConfigurationError.value = error.message; throw error }
-    }
     savedDefinition.value = definitionSnapshot(currentDsl.value)
     if (workflow.compiled) { await loadRuntimeDeclarations(); await loadTrialRecommendation({ applyDefault: true }) }
   } catch (e) { ElMessage.warning(e?.message || '因子详情读取失败') }
@@ -515,16 +512,12 @@ function pruneFilterNode(node,valid){if(!node)return;if(node.nodeType==='PREDICA
 async function loadParameterSchema(){if(!template.templateId)return;loading.template=true;try{const data=await fetchFactorTemplateParameterSchema(template.templateId);parameters.value=normalize(data?.parameters??data);parameters.value.forEach(x=>{if(!(x.code in parameterValues))parameterValues[x.code]=x.defaultValue??''})}catch(e){ElMessage.error(e?.message||'模板参数读取失败')}finally{loading.template=false}}
 function selectAggregation(value){dslForm.aggregation=value;if(value!=='COUNT'&&!aggregatableFields.value.some(field=>field.code===dslForm.fieldCode))dslForm.fieldCode=''}
 function buildDsl(){return buildFactorDsl({domainCode:dslForm.domainCode,tableName:dslForm.tableName,sourceAlias:dslForm.baseAlias,joins:joins.value.filter(isJoinComplete),aggregation:dslForm.aggregation,fieldCode:dslForm.fieldCode,fieldExpression:aggregateExpression.value,groupBy:dslForm.groupBy,filters:scopeMode.value==='ALL'?{nodeType:'TRUE'}:filters,fields:fields.value,missingRowPolicy:existingDslMissingRowPolicy.value,calculationMode:dslForm.calculationMode,periodColumn:dslForm.periodColumn})}
-function hasPeriodParameter(node){return !!node&&(node.nodeType==='PREDICATE'&&node.parameter==='period'||(node.children||[]).some(hasPeriodParameter)||hasPeriodParameter(node.child))}
-function removePeriodPredicates(node){if(!node||typeof node!=='object')return;if(Array.isArray(node.children)){node.children=node.children.filter(item=>!(item?.nodeType==='PREDICATE'&&item.parameter==='period'));node.children.forEach(removePeriodPredicates)}if(node.child)removePeriodPredicates(node.child)}
-watch(()=>dslForm.calculationMode,(mode)=>{if(mode==='STATIC'){dslForm.periodColumn='';removePeriodPredicates(filters);trialPeriod.value=[];trialRecommendation.value=null;trialRecommendationError.value=''}})
-function hasInvalidPeriodParameter(node){if(!node)return false;if(node.nodeType==='PREDICATE')return node.parameter==='period'&&!periodFields.value.some(field=>field.code===node.fieldCode);return hasInvalidPeriodParameter(node.child)||(node.children||[]).some(hasInvalidPeriodParameter)}
+watch(()=>dslForm.calculationMode,(mode)=>{if(mode==='STATIC'){dslForm.periodColumn='';trialPeriod.value=[];trialRecommendation.value=null;trialRecommendationError.value=''}})
 async function saveFactor() {
   if (workflow.published || loading.save || loading.compile) return
   if (isDerived.value) return saveDerivedFactor()
   if (isNativeSql.value) return saveNativeSqlFactor()
   if (joins.value.some(item => item.saving || item.configuring)) return ElMessage.warning('请先完成或取消关联配置')
-  if (periodConfigurationError.value) return ElMessage.warning(periodConfigurationError.value)
   if (unsupportedDsl.value) return ElMessage.warning('该因子使用 SQL 或不支持的表达式，请通过原创建方式修改计算口径')
   if (!(await basicFormRef.value?.validate().catch(() => false))) return
   if (sourceMode.value === 'DOMAIN' && !dslForm.domainCode) return ElMessage.warning('请选择数据域')
@@ -536,7 +529,6 @@ async function saveFactor() {
   if (aggregateExpression.value) validateExpression(aggregateExpression.value, errors, fields.value)
   if (errors.length) return ElMessage.warning(errors[0])
   if (dslForm.calculationMode === 'TEMPORAL' && !periodFields.value.some(field => field.code === dslForm.periodColumn)) return ElMessage.warning('请选择当前参与计算的日期时间字段作为统计周期字段')
-  if (scopeMode.value === 'FILTERED' && hasPeriodParameter(filters) && hasInvalidPeriodParameter(filters)) return ElMessage.warning('统计周期必须绑定到当前参与计算的日期时间字段')
   if (dslForm.aggregation !== 'COUNT' && !dslForm.fieldCode && !aggregateExpression.value) return ElMessage.warning('请选择统计字段')
   loading.save = true
   try {

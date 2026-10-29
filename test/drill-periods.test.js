@@ -36,7 +36,7 @@ test('custom drill anchors belong to the selected period, never to a stale lates
     ]
   }
   assert.deepEqual(drillPeriodAnchor(analysis, '2026-03-01/2026-04-01', paths), {
-    resultId: 'march', pathResultIds: { ORGANIZATION: 'march', CUSTOM_DEPT: 'march' }
+    resultId: 'march', pathResultIds: { CUSTOM_DEPT: 'march' }
   })
   assert.equal(drillPeriodAnchor(analysis, '2025-01-01/2025-02-01', paths).resultId, '')
   assert.equal(drillPeriodKey(null), '')

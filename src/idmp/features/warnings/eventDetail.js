@@ -2,7 +2,6 @@ import { describeWarningCondition } from '../../api/adapters/warning.js'
 import { formatResultPeriod } from '../../utils/periodRange.js'
 import { isDepartmentCodeField } from '../shared/departmentDictionary.js'
 
-const TIME_KEYS = new Set(['time_year', 'time_quarter', 'time_month', 'time_day', 'time_week'])
 const SCOPE_LABELS = { MAIN: '总体结果', GROUPED: '分组结果', ALL: '全部结果' }
 const PERIOD_LABELS = { DAILY: '日度', MONTHLY: '月度', QUARTERLY: '季度', YEARLY: '年度' }
 const FIELD_LABELS = {
@@ -17,7 +16,6 @@ const valueText = value => value === null ? '空值' : value === '' ? '空字符
 
 export function warningEventDimensions(event, departmentNames = new Map()) {
   return Object.entries(event.comparisonContext?.dimensionSnapshot || {})
-    .filter(([field]) => !TIME_KEYS.has(field.toLowerCase()))
     .map(([field, value]) => {
       const name = isDepartmentCodeField(field) ? departmentNames.get(String(value)) : ''
       const label = FIELD_LABELS[field.toLowerCase()]
@@ -31,7 +29,7 @@ export function warningEventScope(event) {
   const hasSnapshot = context.dimensionSnapshot && typeof context.dimensionSnapshot === 'object'
     && !Array.isArray(context.dimensionSnapshot)
   return {
-    rule: SCOPE_LABELS[context.resultScope?.mode] || '全部结果',
+    rule: SCOPE_LABELS[context.resultScope?.mode] || '未记录',
     result: hasSnapshot ? warningEventDimensions(event).length ? '分组结果' : '总体结果' : '未记录'
   }
 }

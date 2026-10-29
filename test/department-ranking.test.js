@@ -33,12 +33,12 @@ test('custom department identity is independent of user-defined logical field na
   assert.equal(normalized.snapshotId, row.snapshotId)
 })
 
-test('legacy department fields remain readable with either casing', () => {
+test('unconfigured legacy department fields never become department identities', () => {
   const rows = normalizeDepartmentComparisons([
     { dimensions: { out_dept_code: '10', out_dept_name: '妇科' } },
     { dimensions: { OUT_DEPT_ID: '11', OUT_DEPT_NAME: '内科' } }
   ])
-  assert.deepEqual(rows.map((row) => [row.departmentCode, row.departmentName]), [['10', '妇科'], ['11', '内科']])
+  assert.deepEqual(rows, [])
 })
 
 test('explicit identity wins over legacy fields and missing names fall back to real codes', () => {

@@ -1,4 +1,10 @@
 import test from 'node:test'
+
+test('physical source selection never falls back to a semantic table code', () => {
+  const dsl = buildFactorDsl({ semanticTableCode: 'OLD_TABLE', aggregation: 'COUNT', calculationMode: 'STATIC' })
+  assert.equal(dsl.primaryDomain.tableName, undefined)
+  assert.equal(dsl.primaryDomain.semanticTableCode, undefined)
+})
 import assert from 'node:assert/strict'
 import { buildFactorDsl, getAggregationLabel, hasUnsupportedFactorDslExpressions, validateFilterNode } from '../src/idmp/utils/dslBuilder.js'
 
@@ -9,14 +15,14 @@ test('聚合方式显示中文且未知码原样返回', () => {
 })
 
 test('cascade context contract requires explicit semantic table selection', () => {
-  const dsl = { primaryDomain: { domainCode: 'D', semanticTableCode: 'T2' }, aggregation: { function: 'COUNT', fieldCode: 'F2' }, groupBy: ['F2'] }
-  assert.equal(dsl.primaryDomain.semanticTableCode, 'T2')
+  const dsl = { primaryDomain: { domainCode: 'D', tableName: 'T2' }, aggregation: { function: 'COUNT', fieldCode: 'F2' }, groupBy: ['F2'] }
+  assert.equal(dsl.primaryDomain.tableName, 'T2')
   assert.equal(dsl.aggregation.fieldCode, 'F2')
   assert.deepEqual(dsl.groupBy, ['F2'])
 })
 
 test('COUNT supports optional field semantics for COUNT(field) and COUNT(*)', () => {
-  const common = { domainCode: 'D', semanticTableCode: 'T', aggregation: 'COUNT', groupBy: [], filters: { nodeType: 'TRUE' } }
+  const common = { domainCode: 'D', tableName: 'T', aggregation: 'COUNT', groupBy: [], filters: { nodeType: 'TRUE' } }
   assert.deepEqual(buildFactorDsl({ ...common, fieldCode: 'DEATH_DISCUSSION' }).aggregation, {
     function: 'COUNT',
     fieldCode: 'DEATH_DISCUSSION'
@@ -24,15 +30,14 @@ test('COUNT supports optional field semantics for COUNT(field) and COUNT(*)', ()
   assert.deepEqual(buildFactorDsl({ ...common, fieldCode: '' }).aggregation, { function: 'COUNT' })
 })
 
-test('explicit period filter is complete without a literal value', () => {
-  const filters = { nodeType: 'AND', children: [{ nodeType: 'PREDICATE', fieldCode: 'OUT_DATE', operator: 'BETWEEN', parameter: 'period', value: '' }] }
+test('explicit period field is independent of business filter parameters', () => {
+  const filters = { nodeType: 'AND', children: [{ nodeType: 'PREDICATE', fieldCode: 'OUT_DATE', operator: 'BETWEEN', parameter: 'businessRange', value: '' }] }
   assert.deepEqual(validateFilterNode(filters), [])
-  const dsl = buildFactorDsl({ domainCode: 'D', semanticTableCode: 'T', aggregation: 'COUNT', filters })
-  assert.equal(dsl.periodColumn, 'OUT_DATE')
-  assert.deepEqual(dsl.filters, { nodeType: 'TRUE' })
-  assert.deepEqual(buildFactorDsl({ domainCode: 'D', semanticTableCode: 'T', aggregation: 'COUNT', filters }).parameters, [
-    { code: 'period', type: 'PERIOD', source: 'RUNTIME' }
-  ])
+  const dsl = buildFactorDsl({ domainCode: 'D', tableName: 'T', aggregation: 'COUNT', calculationMode: 'TEMPORAL', periodColumn: 'IN_DATE', filters })
+  assert.equal(dsl.periodColumn, 'IN_DATE')
+  assert.equal(dsl.filters.children[0].parameter, 'businessRange')
+  assert.ok(dsl.parameters.some(item => item.code === 'period'))
+  assert.ok(dsl.parameters.some(item => item.code === 'businessRange'))
 })
 
 test('filter validation reports the exact missing step', () => {
@@ -44,7 +49,7 @@ test('filter validation reports the exact missing step', () => {
 test('value-set predicates serialize stable item codes and validate selections', () => {
   const filters = { nodeType: 'AND', children: [{ nodeType: 'PREDICATE', fieldCode: 'PATIENT_SEX', operator: 'IN_VALUE_SET', itemCodes: ['MALE'] }] }
   assert.deepEqual(validateFilterNode(filters), [])
-  assert.deepEqual(buildFactorDsl({ domainCode: 'D', semanticTableCode: 'T', aggregation: 'COUNT', filters }).filters.children[0], {
+  assert.deepEqual(buildFactorDsl({ domainCode: 'D', tableName: 'T', aggregation: 'COUNT', filters }).filters.children[0], {
     nodeType: 'PREDICATE', fieldCode: 'PATIENT_SEX', operator: 'IN_VALUE_SET', itemCodes: ['MALE']
   })
   assert.deepEqual(validateFilterNode({ nodeType: 'PREDICATE', fieldCode: 'PATIENT_SEX', operator: 'IN_VALUE_SET', itemCodes: [] }), ['请填写或选择条件值'])
@@ -53,7 +58,7 @@ test('value-set predicates serialize stable item codes and validate selections',
 test('value-set predicates carry the bound published version into compiler DSL', () => {
   const filters = { nodeType: 'AND', children: [{ nodeType: 'PREDICATE', fieldCode: 'PATIENT_SEX', operator: 'IN_VALUE_SET', itemCodes: ['MALE'] }] }
   const fields = [{ code: 'PATIENT_SEX', valueSetVersionId: '102027642458358887' }]
-  const dsl = buildFactorDsl({ domainCode: 'D', semanticTableCode: 'T', aggregation: 'COUNT', filters, fields })
+  const dsl = buildFactorDsl({ domainCode: 'D', tableName: 'T', aggregation: 'COUNT', filters, fields })
   assert.deepEqual(dsl.filters.children[0], {
     nodeType: 'PREDICATE',
     fieldCode: 'PATIENT_SEX',
@@ -67,7 +72,7 @@ test('continuous range predicates serialize the bound version and preserve a hal
   const filters = { nodeType: 'AND', children: [{ nodeType: 'PREDICATE', fieldCode: 'TOTAL_COST', operator: 'BETWEEN', value: { start: '1000.00', end: '5000.00' } }] }
   const fields = [{ code: 'TOTAL_COST', dataType: 'DECIMAL', valueSetMatchMode: 'CONTINUOUS', valueSetVersionId: '102027642460303012', continuousSpec: { unit: 'CNY', precision: 18, scale: 2, minimumValue: '0.00', maximumValue: '100000000.00' } }]
   assert.deepEqual(validateFilterNode(filters, [], fields), [])
-  assert.deepEqual(buildFactorDsl({ domainCode: 'D', semanticTableCode: 'T', aggregation: 'COUNT', filters, fields }).filters.children[0], {
+  assert.deepEqual(buildFactorDsl({ domainCode: 'D', tableName: 'T', aggregation: 'COUNT', filters, fields }).filters.children[0], {
     nodeType: 'PREDICATE',
     fieldCode: 'TOTAL_COST',
     operator: 'BETWEEN',
@@ -86,14 +91,14 @@ test('continuous range validation enforces range order, scale and bounds', () =>
 
 test('factor dsl serializes governed joins and qualified field references', () => {
   const dsl = buildFactorDsl({
-    domainCode: 'VISIT', semanticTableCode: 'VISIT_TABLE', sourceAlias: 'base',
+    domainCode: 'VISIT', tableName: 'VISIT_TABLE', sourceAlias: 'base',
     joins: [{ relationId: '91', fromAlias: 'base', sourceAlias: 'dept', extra: 'ignored' }],
     aggregation: 'COUNT_DISTINCT', fieldCode: 'base.VISIT_ID', groupBy: ['dept.DEPT_NAME'],
     filters: { nodeType: 'AND', children: [{ nodeType: 'PREDICATE', fieldCode: 'dept.DEPT_TYPE', operator: 'IN_VALUE_SET', itemCodes: ['CLINICAL'] }] },
     fields: [{ code: 'dept.DEPT_TYPE', valueSetVersionId: '7' }]
   })
 
-  assert.deepEqual(dsl.primaryDomain, { domainCode: 'VISIT', semanticTableCode: 'VISIT_TABLE', sourceAlias: 'base' })
+  assert.deepEqual(dsl.primaryDomain, { domainCode: 'VISIT', tableName: 'VISIT_TABLE', sourceAlias: 'base' })
   assert.deepEqual(dsl.joins, [{ relationId: '91', fromAlias: 'base', sourceAlias: 'dept' }])
   assert.deepEqual(dsl.aggregation, { function: 'COUNT_DISTINCT', fieldRef: { sourceAlias: 'base', fieldCode: 'VISIT_ID' } })
   assert.deepEqual(dsl.groupBy, [{ sourceAlias: 'dept', fieldCode: 'DEPT_NAME' }])
@@ -101,7 +106,7 @@ test('factor dsl serializes governed joins and qualified field references', () =
 })
 
 test('factor dsl carries the explicit static calculation mode', () => {
-  const dsl = buildFactorDsl({ domainCode: 'D', semanticTableCode: 'T', aggregation: 'COUNT', filters: { nodeType: 'TRUE' }, calculationMode: 'STATIC' })
+  const dsl = buildFactorDsl({ domainCode: 'D', tableName: 'T', aggregation: 'COUNT', filters: { nodeType: 'TRUE' }, calculationMode: 'STATIC' })
   assert.equal(dsl.calculationMode, 'STATIC')
 })
 
@@ -115,7 +120,7 @@ test('advanced server-side predicate expressions are never silently flattened on
   assert.equal(hasUnsupportedFactorDslExpressions({ filters }), false)
   assert.deepEqual(buildFactorDsl({
     domainCode: 'JOIN_TRANSFER',
-    semanticTableCode: 'TRANSFER',
+    tableName: 'TRANSFER',
     aggregation: 'COUNT',
     groupBy: [],
     filters
@@ -124,14 +129,14 @@ test('advanced server-side predicate expressions are never silently flattened on
 
 test('existing missing-row policy is preserved when the visual editor saves a factor', () => {
   const dsl = buildFactorDsl({
-    domainCode: 'VISIT', semanticTableCode: 'VISIT_TABLE', aggregation: 'COUNT',
+    domainCode: 'VISIT', tableName: 'VISIT_TABLE', aggregation: 'COUNT',
     filters: { nodeType: 'TRUE' }, missingRowPolicy: 'KEEP_NULL'
   })
   assert.equal(hasUnsupportedFactorDslExpressions({ missingRowPolicy: 'KEEP_NULL' }), false)
   assert.equal(dsl.missingRowPolicy, 'KEEP_NULL')
 })
 test('physical table DSL emits tableName and physical alias-qualified columns', () => {
-  const dsl = buildFactorDsl({ domainCode: 'VISIT', tableName: 'visit', semanticTableCode: 'OLD_TABLE', aggregation: 'COUNT_DISTINCT', fieldCode: 'join1.visit_id', groupBy: ['dept_code', 'join1.diagnosis'], joins: [{ relationId: '100', fromAlias: 'base', sourceAlias: 'join1' }], filters: { nodeType: 'PREDICATE', fieldCode: 'in_date', operator: 'BETWEEN', parameter: 'period' } })
+  const dsl = buildFactorDsl({ domainCode: 'VISIT', tableName: 'visit', semanticTableCode: 'OLD_TABLE', aggregation: 'COUNT_DISTINCT', fieldCode: 'join1.visit_id', groupBy: ['dept_code', 'join1.diagnosis'], joins: [{ relationId: '100', fromAlias: 'base', sourceAlias: 'join1' }], calculationMode: 'TEMPORAL', periodColumn: 'in_date', filters: { nodeType: 'TRUE' } })
   assert.deepEqual(dsl.primaryDomain, { domainCode: 'VISIT', tableName: 'visit', sourceAlias: 'base' })
   assert.deepEqual(dsl.aggregation.fieldRef, { sourceAlias: 'join1', fieldCode: 'visit_id' })
   assert.deepEqual(dsl.groupBy, ['dept_code', { sourceAlias: 'join1', fieldCode: 'diagnosis' }])

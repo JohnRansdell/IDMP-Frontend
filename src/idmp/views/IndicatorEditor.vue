@@ -434,7 +434,7 @@
                   <strong>试算结果</strong>
                   <small>批次 {{ indicatorWorkflow.batchId }} · 共 {{ indicatorTrialResultCount }} 条</small>
                 </div>
-                <el-radio-group v-if="indicatorTrialTargets.length > 1" v-model="selectedIndicatorTrialTargetKey" size="small" aria-label="试算结果时间粒度">
+                <el-radio-group v-if="indicatorTrialTargets.length > 1" v-model="selectedIndicatorTrialTargetKey" size="small" aria-label="试算结果分组目标">
                   <el-radio-button v-for="target in indicatorTrialTargets" :key="target.key" :value="target.key">
                     {{ indicatorTrialTargetLabel(target) }}（{{ target.total }}）
                   </el-radio-button>
@@ -443,7 +443,7 @@
               <StatePanel v-if="!selectedIndicatorTrialTarget || !indicatorTrialRows.length" type="empty" title="当前粒度暂无试算结果" description="当前目标暂无可展示的试算记录，请查看试算状态。" />
               <template v-else>
                 <el-table :data="indicatorTrialRows" size="small" border table-layout="fixed" class="indicator-trial-result-table">
-                  <el-table-column label="时间" min-width="140"><template #default="{ row }"><span class="mono-data">{{ formatIndicatorTrialPeriod(row, selectedIndicatorTrialTarget) }}</span></template></el-table-column>
+                  <el-table-column label="分组维度" min-width="140"><template #default="{ row }"><span class="mono-data">{{ formatIndicatorTrialDimensions(row) }}</span></template></el-table-column>
                   <el-table-column label="指标结果" min-width="130"><template #default="{ row }"><strong>{{ indicatorTrialResultValue(row) }}</strong></template></el-table-column>
                   <el-table-column v-if="indicatorTrialHasNumerator" label="分子" min-width="110"><template #default="{ row }">{{ row.numeratorValue ?? '-' }}</template></el-table-column>
                   <el-table-column v-if="indicatorTrialHasDenominator" label="分母" min-width="110"><template #default="{ row }">{{ row.denominatorValue ?? '-' }}</template></el-table-column>
@@ -593,7 +593,7 @@ import {
   drillPathLabel,
   normalizeDrillCapabilities,
   normalizeDrillPaths,
-  formatIndicatorTrialPeriod,
+  formatIndicatorTrialDimensions,
   normalizeIndicatorTrialResults,
   selectDefaultIndicatorTrialTarget,
   validateDrillSelection
@@ -1956,7 +1956,6 @@ function resetIndicatorTrialResultCollection() {
 }
 
 function indicatorTrialTargetLabel(target) {
-  if (target.pathCode === 'TIME') return drillLevelLabel(target.levelCode)
   const path = drillPathLabel(target.pathCode)
   const level = drillLevelLabel(target.levelCode)
   return path === '-' ? level : `${path} · ${level}`

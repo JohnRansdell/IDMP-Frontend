@@ -499,6 +499,8 @@ import { fetchIndicatorAnalysis, fetchIndicatorVersion, fetchAllIndicators } fro
 import { deriveDrillPathResultIds } from '@/idmp/api/adapters/drill'
 import { searchResultDrill } from '@/idmp/api/modules/drill'
 import { initialBackendChartNavigation, loadBackendChartLevel, loadBackendChartRoot, resolveChartDrillPath } from '@/idmp/features/dashboard/backendChartDrill.js'
+import { resolveAnalysisDrillPaths } from '@/idmp/features/analysis/departmentRanking.js'
+import { fetchDrillPathVersion } from '@/idmp/api/modules/meta.js'
 import { normalizeDepartmentDataset } from '@/idmp/features/dashboard/dimensionNames.js'
 import { explainComparisonAvailability } from '@/idmp/features/dashboard/comparisonAvailability.js'
 import DashboardPeriodPicker from '@/idmp/features/dashboard/components/DashboardPeriodPicker.vue'
@@ -920,7 +922,7 @@ provide('dashboardResolveWidgetDrill', async (widget, params) => {
     }
     if (!row?.drillContext) throw new Error('当前组件结果没有可用的精确下钻上下文')
     const version = await dashboardIndicatorVersion(source, widget)
-    const configuredPaths = version?.drillConfig?.drillPaths || version?.drillPaths || []
+    const configuredPaths = await resolveAnalysisDrillPaths(version?.drillConfig?.drillPaths || version?.drillPaths || [], fetchDrillPathVersion)
     const path = resolveChartDrillPath(configuredPaths, widget.config?.dataBinding?.dimensions?.[0]?.field)
     return { resultId: row.drillContext.resultId, drillContext: row.drillContext, selectedRow: row, path, configuredPaths,
       indicatorVersionId: String(widget.config?.analysisIndicatorVersionId || source.analysisIndicatorVersionId || source.indicatorVersionId || ''),
@@ -944,7 +946,7 @@ provide('dashboardResolveWidgetDrill', async (widget, params) => {
     fetchIndicatorAnalysis(source.analysisIndicatorId, query),
     dashboardIndicatorVersion(source, widget)
   ])
-  const configuredPaths = version?.drillConfig?.drillPaths || version?.drillPaths || []
+  const configuredPaths = await resolveAnalysisDrillPaths(version?.drillConfig?.drillPaths || version?.drillPaths || [], fetchDrillPathVersion)
   const path = resolveChartDrillPath(configuredPaths, widget.config?.dataBinding?.dimensions?.[0]?.field)
   if (configuredPaths.length && !path) throw new Error('该指标版本未配置科室下钻路径')
   const pathCode = path?.pathCode || 'ORGANIZATION'

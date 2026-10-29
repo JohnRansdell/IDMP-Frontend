@@ -4,7 +4,7 @@
     <section v-loading="loading.page" class="surface-card wizard-card">
       <template v-if="!loadError">
         <el-steps :active="workflowActive" finish-status="success" simple class="wizard-steps"><el-step title="填写实例信息" /><el-step title="创建因子草稿" /><el-step title="编译校验" /><el-step title="试算验证（可选）" /><el-step title="发布版本" /></el-steps>
-        <div class="template-summary"><div><span>模板</span><strong>{{ template.name || '-' }}</strong></div><div><span>版本</span><strong>V{{ version.versionNo || '-' }}</strong></div><div><span>适用数据域</span><strong>{{ domainSummary }}</strong></div></div>
+        <div class="template-summary"><div><span>模板</span><strong>{{ template.name || '-' }}</strong></div><div><span>版本</span><strong>V{{ version.versionNo || '-' }}</strong></div><div><span>物理表</span><strong>{{ sourceTable }}</strong></div></div>
         <el-alert type="info" :closable="false" show-icon title="计算口径由模板固定。创建草稿后将在本页继续编译、可选试算和发布。" />
         <el-form ref="formRef" :model="form" :rules="formRules" label-position="top" class="instantiate-form" :disabled="Boolean(createdFactor)">
           <div class="section-title"><span>1</span><div><h2>因子基本信息</h2><p>填写本次实例的业务标识。</p></div></div>
@@ -55,20 +55,12 @@ import { useRoute, useRouter } from 'vue-router'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import { compileFactorVersion, fetchFactorTemplateParameterSchema, fetchFactorTemplateVersion, fetchFactorTrialResults, fetchFactorVersion, instantiateFactorTemplateVersion, publishFactorVersion, trialFactorVersion } from '@/idmp/api/modules/factors'
 import { fetchAsyncTask } from '@/idmp/api/modules/calculation'
-import { fetchDataDomains } from '@/idmp/api/modules/meta'
-import { adaptDataDomainList } from '@/idmp/api/adapters/meta'
 import { templateParameterFields } from '@/idmp/utils/templateParameterFields.js'
 
-const domainNames = ref({})
-async function loadDomainNames() {
-  try { domainNames.value = Object.fromEntries(adaptDataDomainList(await fetchDataDomains()).map(item => [item.code, item.name])) }
-  catch { domainNames.value = {} }
-}
-onMounted(loadDomainNames)
 
 const route = useRoute(); const router = useRouter(); const formRef = ref(); const workflowSection = ref(); const loading = reactive({ page: false, compile: false, trial: false, result: false, publish: false, status: false }); const submitting = ref(false); const loadError = ref(''); const template = reactive({}); const version = reactive({}); const parameterFields = ref([]); const parameterValues = reactive({}); const createdFactor = ref(null); const calculationMode = ref('TEMPORAL'); const showTrial = ref(false); const trialPeriod = ref([]); const trialPagination = reactive({page:1,size:100,total:0}); const trialRows = ref([]); const workflow = reactive({ factorId: '', versionId: '', status: 'DRAFT', artifactId: '', compiled: false, published: false, taskId: '', batchId: '', taskStatus: '', qualityStatus: '', resultsLoaded: false, message: '', messageType: 'info' }); const form = reactive({ factorCode: '', factorName: '', description: '', category: '' })
 const formRules = { factorName: [{ required: true, message: '请输入因子名称', trigger: 'blur' }] }
-const domainSummary = computed(() => (version.applicableDomains || version.templateDefinition?.applicableDomains || []).map(item => item.domainName || domainNames.value[typeof item === 'string' ? item : item.domainCode || item.code] || '名称未提供').filter(Boolean).join('、') || '-')
+const sourceTable = computed(() => version.templateDefinition?.primaryDomain?.tableName || '未配置')
 const workflowActive = computed(() => workflow.published ? 5 : workflow.compiled ? 3 : createdFactor.value ? 2 : 1); const workflowProgress = computed(() => workflow.published ? 4 : workflow.resultsLoaded ? 3 : workflow.compiled ? 2 : 1); const isTerminalTask = computed(() => ['SUCCEEDED', 'SUCCESS', 'FAILED', 'CANCELED', 'CANCELLED', 'PARTIAL_SUCCEEDED'].includes(String(workflow.taskStatus).toUpperCase())); const canPublish = computed(() => workflow.compiled && !workflow.published && !loading.publish); const trialButtonLabel = computed(() => loading.trial || loading.result ? '正在试算并读取结果' : workflow.resultsLoaded ? '重新试算并查看结果' : workflow.taskId && !isTerminalTask.value ? '继续查询试算状态' : '试算并查看结果')
 const isStaticFactor = computed(() => calculationMode.value === 'STATIC')
 const factorVersionWorkflow = useFactorVersionWorkflow({

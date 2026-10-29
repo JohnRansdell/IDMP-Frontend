@@ -27,10 +27,8 @@ import {
   createIndicatorDataExplanation,
   drillLevelLabel,
   drillPathLabel,
-  findUnsupportedDrillFactors,
-  formatIndicatorTrialPeriod,
+  formatIndicatorTrialDimensions,
   normalizeDrillCapabilities,
-  normalizeDrillConfig,
   normalizeDrillPaths,
   normalizeIndicatorTrialResults,
   normalizeIndicatorAnalysisParams,
@@ -75,69 +73,34 @@ test('instant summary displays only an ungrouped source result for the exact sel
   }, '2026-02-05', '2026-03-05'), /当前筛选范围的单条汇总/)
 })
 
-test('indicator trial adapter keeps every returned time target and defaults to month', () => {
-  const payload = {
-    batchId: '102027642460316627',
-    batchStatus: 'SUCCEEDED',
-    qualityStatus: 'PASSED',
-    results: {
-      records: [{ resultId: 'duplicated-year', dimensions: { time_year: 2025 }, displayValue: '5.43%' }]
-    },
+test('trial targets preserve complete business grain independently of the reporting period', () => {
+  const normalized = normalizeIndicatorTrialResults({
+    batchId: '9001', periodStart: '2026-01-01', periodEnd: '2026-02-01',
     targets: [
-      {
-        targetId: '102027642460316628',
-        targetCode: 'DRILL:TIME:YEAR',
-        drillPathCode: 'TIME',
-        drillLevelCode: 'YEAR',
-        grain: ['TIME_YEAR'],
-        targetStatus: 'READY',
-        results: { records: [{ resultId: '102027642460316687', dimensions: { time_year: 2025 }, resultValue: 0.05430839, displayValue: '5.43%' }], total: '1', pageNum: 1, pageSize: 100, pages: 1 }
-      },
-      {
-        targetId: '102027642460316638',
-        targetCode: 'DRILL:TIME:QUARTER',
-        drillPathCode: 'TIME',
-        drillLevelCode: 'QUARTER',
-        grain: ['TIME_YEAR', 'TIME_QUARTER'],
-        results: { records: [{ dimensions: { time_year: 2025, time_quarter: 4 }, displayValue: '5.43%' }], total: '1' }
-      },
-      {
-        targetId: '102027642460316648',
-        targetCode: 'DRILL:TIME:MONTH',
-        drillPathCode: 'TIME',
-        drillLevelCode: 'MONTH',
-        grain: ['TIME_YEAR', 'TIME_QUARTER', 'TIME_MONTH'],
-        results: { records: [
-          { resultId: '102027642460316700', dimensions: { time_year: 2025, time_quarter: 4, time_month: 12 }, numeratorValue: null, denominatorValue: null, resultValue: 0.05430839, displayValue: '5.43%' },
-          { resultId: '102027642460316701', dimensions: { time_year: 2026, time_quarter: 1, time_month: 1 }, resultValue: 0.0584114, displayValue: '5.84%' }
-        ], total: '2', pageNum: 1, pageSize: 100, pages: 1 }
-      }
+      { targetCode: 'BASE', grain: ['科室', '性别'], results: { records: [
+        { resultId: '9002', dimensions: { 科室: '骨科', 性别: '女' }, resultValue: 0.05 }
+      ], total: 1 } },
+      { targetCode: 'DRILL:ORGANIZATION:HOSPITAL', drillPathCode: 'ORGANIZATION',
+        drillLevelCode: 'HOSPITAL', grain: [], results: { records: [{ dimensions: {}, resultValue: 0.04 }] } },
+      { targetCode: 'DRILL:CUSTOM:MONTH', drillPathCode: 'CUSTOM', drillLevelCode: 'MONTH',
+        grain: ['time_month'], results: { records: [{ dimensions: { time_month: 4 } }] } }
     ]
-  }
-
-  const normalized = normalizeIndicatorTrialResults(payload)
+  })
   assert.equal(normalized.targets.length, 3)
-  assert.deepEqual(normalized.targets.map((target) => target.levelCode), ['YEAR', 'QUARTER', 'MONTH'])
-  assert.equal(normalized.targets.flatMap((target) => target.records).some((record) => record.resultId === 'duplicated-year'), false)
-  const month = selectDefaultIndicatorTrialTarget(normalized.targets)
-  assert.equal(month.levelCode, 'MONTH')
-  assert.deepEqual(month.records.map((record) => formatIndicatorTrialPeriod(record, month)), ['2025-12', '2026-01'])
-  assert.equal(month.records[0].numeratorValue, null)
-  assert.equal(month.records[0].denominatorValue, null)
-  assert.equal(month.records[0].resultId, '102027642460316700')
-  assert.equal(month.total, 2)
+  assert.equal(selectDefaultIndicatorTrialTarget(normalized.targets).targetCode, 'BASE')
+  assert.equal(formatIndicatorTrialDimensions(normalized.targets[0].records[0]), '科室=骨科，性别=女')
+  assert.equal(formatIndicatorTrialDimensions(normalized.targets[1].records[0]), '总体')
+  assert.equal(formatIndicatorTrialDimensions(normalized.targets[2].records[0]), 'time_month=4')
+  assert.equal(normalized.periodStart, '2026-01-01')
 })
 
-test('indicator trial adapter retains the legacy top-level result shape', () => {
+test('indicator trial adapter does not fabricate targets from legacy top-level results', () => {
   const normalized = normalizeIndicatorTrialResults({
     targetId: 99,
     batchStatus: 'SUCCEEDED',
     results: { records: [{ resultId: 101, dimensions: {}, displayValue: '0.00%', resultValue: 0 }], total: '1' }
   })
-  assert.equal(normalized.targets.length, 1)
-  assert.equal(normalized.targets[0].targetCode, 'LEGACY')
-  assert.equal(normalized.targets[0].records[0].resultId, '101')
-  assert.equal(normalized.targets[0].records[0].resultValue, 0)
+  assert.deepEqual(normalized.targets, [])
 })
 
 test('formula node combination preserves a single factor reference', () => {
@@ -230,10 +193,10 @@ test('grain option query preserves search and dependent selections', () => {
 test('indicator version payload always includes the selected drill path', () => {
   const payload = buildIndicatorVersionPayload({
     copyFromVersionId: 901,
-    drillConfig: {
+    drillPaths: [{
       pathCode: 'ORGANIZATION',
       maxLevel: 'OUT_DEPT'
-    }
+    }]
   })
 
   assert.deepEqual(payload, {
@@ -302,40 +265,26 @@ test('drill capability adapter preserves bigint ids and validates selected level
   ])
 })
 
-test('organization drill validation reports factor grain gaps before version creation', () => {
-  const unsupported = findUnsupportedDrillFactors([
-    { name: '总体因子', dsl: { output: { grain: [] } } },
-    { name: '科室因子', dsl: { output: { grain: ['HOSPITAL_CODE', 'OUT_DEPT_CODE'] } } }
-  ], { pathCode: 'ORGANIZATION', maxLevel: 'OUT_DEPT' })
-
-  assert.equal(unsupported.length, 1)
-  assert.equal(unsupported[0].factor.name, '总体因子')
-  assert.deepEqual(unsupported[0].missing, ['HOSPITAL_CODE', 'OUT_DEPT_CODE'])
-  assert.deepEqual(findUnsupportedDrillFactors([
-    { dsl: { output: { grain: [] } } }
-  ], { pathCode: 'TIME', maxLevel: 'MONTH' }), [])
-})
 
 test('indicator version payload rejects an incomplete drill configuration', () => {
   assert.throws(
-    () => buildIndicatorVersionPayload({ drillConfig: { pathCode: '', maxLevel: '' } }),
+    () => buildIndicatorVersionPayload({ drillPaths: [{ pathCode: '', maxLevel: '' }] }),
     /下钻路径和最大层级不能为空/
   )
 })
 
-test('indicator version adapter restores drill config from backend response', () => {
-  const config = normalizeDrillConfig({
+test('indicator version adapter restores path-local version ids from the canonical response', () => {
+  const paths = normalizeDrillPaths({
     drillConfig: {
-      pathVersionId: 7001,
-      paths: [{ pathCode: 'ORGANIZATION', maxLevel: 'OUT_DEPT' }]
+      drillPaths: [{ pathCode: 'ORGANIZATION', maxLevel: 'OUT_DEPT', pathVersionId: '9223372036854775807' }]
     }
   })
 
-  assert.deepEqual(config, {
+  assert.deepEqual(paths, [{
     pathCode: 'ORGANIZATION',
     maxLevel: 'OUT_DEPT',
-    pathVersionId: '7001'
-  })
+    pathVersionId: '9223372036854775807'
+  }])
 })
 
 test('analysis explanation keeps ratio definitions separate from official result values', () => {

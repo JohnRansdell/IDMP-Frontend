@@ -523,7 +523,6 @@ const rankingResult = computed(() => backendAnalysisGranularity.value === 'STATI
 const backendDepartmentComparisons = computed(() =>
   normalizeDepartmentComparisons(
     rankingResult.value?.departmentComparison,
-    backendAnalysisGranularity.value === 'STATIC' ? rankingResult.value?.dimensionComparison : [],
     departmentNamesByCode.value
   )
 )

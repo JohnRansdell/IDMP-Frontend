@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { normalizeOrganizationPath, organizationLevelName } from '../src/idmp/utils/organizationDrill.js'
-import { normalizeDrillPaths, defaultDrillConfig } from '../src/idmp/api/adapters/indicator.js'
+import { normalizeDrillPaths } from '../src/idmp/api/adapters/indicator.js'
 import { setOrganizationEnabled, setOrganizationDepth } from '../src/idmp/features/indicator/organizationDrill.js'
 import { chartDrillLevelName, resolveChartDrillPath } from '../src/idmp/features/dashboard/backendChartDrill.js'
 
@@ -12,7 +12,7 @@ const legacy = { pathCode: 'ORGANIZATION', pathVersionId: '123', maxLevel: 'ATTE
 ] }
 
 test('旧组织路径统一名称但保留结果定位、层级编码与字段绑定', () => {
-  const paths = normalizeDrillPaths({ drillPaths: [legacy] })
+  const paths = normalizeDrillPaths({ drillConfig: { drillPaths: [legacy] } })
   assert.deepEqual(paths[0].levels.map(l => l.levelName), ['医院', '科室', '医生'])
   assert.equal(paths[0].pathVersionId, '123')
   assert.equal(paths[0].levels[1].levelCode, 'OUT_DEPT')
@@ -24,7 +24,6 @@ test('旧组织路径统一名称但保留结果定位、层级编码与字段�
 test('新建与启用已有组织路径使用相同中文角色', () => {
   const path = setOrganizationDepth(setOrganizationEnabled([], true), 'ATTENDING_DOCTOR')[0]
   assert.deepEqual(path.levels.map(l => l.levelName), ['医院', '科室', '医生'])
-  assert.equal(defaultDrillConfig.maxLevel, 'DEPARTMENT')
   assert.equal(setOrganizationEnabled([legacy], true)[0].levels[1].levelName, '科室')
 })
 

@@ -18,7 +18,7 @@ test('retired built-in paths are omitted before validation in ordinary and SQL a
   assert.deepEqual(metadata.drillPaths, [path])
   assert.equal(Object.hasOwn(metadata, 'timeDrillEnabled'), false)
   const configured = [...legacy.map(item => ({ ...item, maxLevel: 'ROOT' })), path]
-  assert.deepEqual(normalizeDrillPaths({ drillPaths: configured }).map(item => item.pathCode), [path.pathCode])
+  assert.deepEqual(normalizeDrillPaths({ drillConfig: { drillPaths: configured } }).map(item => item.pathCode), [path.pathCode])
   assert.deepEqual(normalizeDrillCapabilities({ dimensions: configured }).dimensions.map(item => item.pathCode), [path.pathCode])
   const disease = { ...path, pathCode: 'CUSTOM_DISEASE', pathName: '病种下钻' }
   assert.deepEqual(serializeDrillPaths([...legacy, disease]), [disease])

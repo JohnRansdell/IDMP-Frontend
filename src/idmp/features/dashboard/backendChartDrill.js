@@ -1,4 +1,4 @@
-import { canonicalDrillRootResultId, legacyProjectedOrganizationLevels, limitDrillNextLevels, normalizeDrillLevelDefinition, normalizeOrganizationDrillLevel } from '../../api/adapters/drill.js'
+import { canonicalDrillRootResultId, normalizeDrillLevelDefinition } from '../../api/adapters/drill.js'
 import { buildDrillRequest, drillMemberField, drillScope, nextDrillNavigation } from '../analysis/drillContext.js'
 import { isDepartmentLevel, namedDrillRecord } from './dimensionNames.js'
 import { numericValue } from './fieldCatalog.js'
@@ -7,11 +7,10 @@ import { normalizeOrganizationPath, organizationLevelName } from '../../utils/or
 
 const PAGE_SIZE = 200
 const MAX_CHART_ROWS = 500
-const LEVEL_NAME = { OUT_DEPT: '科室', MEDICAL_GROUP: '医疗组', ATTENDING_DOCTOR: '医生' }
 
 export function chartDrillLevelName(level, root) {
   return organizationLevelName(root?.pathCode || 'ORGANIZATION', level,
-    root?.levels?.find(item => item.levelCode === level)?.levelName || LEVEL_NAME[normalizeOrganizationDrillLevel(level)] || '组织')
+    root?.levels?.find(item => item.levelCode === level)?.levelName || '组织')
 }
 
 export function resolveChartDrillPath(paths = [], field = '') {
@@ -27,16 +26,16 @@ export function resolveChartDrillPath(paths = [], field = '') {
 export function initialBackendChartNavigation(root) {
   if (root.initialNavigation) return root.initialNavigation
   if (root.levels) {
-    const level = root.levels.find(isDepartmentLevel) || root.levels[1]
+    const level = root.levels[1]
     if (!level) throw new Error('当前下钻路径没有可展示的成员层级')
-    return { currentLevel: level.levelCode, parentKeys: { ...root.parentKeys }, label: `全部${level.levelName || '科室'}` }
+    return { currentLevel: level.levelCode, parentKeys: { ...root.parentKeys }, label: `全部${level.levelName || '成员'}` }
   }
-  return { currentLevel: 'OUT_DEPT', parentKeys: { HOSPITAL_CODE: root.hospitalCode }, label: '全部科室' }
+  throw new Error('下钻路径缺少层级配置，请检查指标的下钻配置。')
 }
 
 export function projectedDrillNavigation(row, path, context) {
-  const levels = path?.levels?.length ? path.levels.map(normalizeDrillLevelDefinition)
-    : path?.pathCode === 'ORGANIZATION' ? legacyProjectedOrganizationLevels(context.fieldLevels) : []
+  if (!path?.levels?.length) throw new Error('下钻路径缺少层级配置，请检查指标的下钻配置。')
+  const levels = path.levels.map(normalizeDrillLevelDefinition)
   const keys = new Map(Object.keys(row).map(field => [field.toLowerCase(), field]))
   const parents = { ...context.parentKeys }
   let index = Math.max(0, levels.findIndex(level => level.levelCode === context.currentLevel))
@@ -62,6 +61,7 @@ export function projectedDrillNavigation(row, path, context) {
 }
 
 export async function loadBackendChartRoot(search, target, { signal } = {}) {
+  if (!target?.path?.levels?.length) throw new Error('下钻路径缺少层级配置，请检查指标的下钻配置。')
   if (target?.queryContext) return { ...target, resultId: '', snapshotId: '',
     levels: target.path.levels, pathCode: target.path.pathCode, maxLevel: target.path.maxLevel,
     parentKeys: target.initialNavigation?.parentKeys || {}, filters: target.filters || {},
@@ -77,54 +77,34 @@ export async function loadBackendChartRoot(search, target, { signal } = {}) {
     return { resultId: context.resultId, snapshotId: context.snapshotId, indicatorVersionId: target.indicatorVersionId,
       periodRange: context.periodRange,
       ...(levels.length ? { ...(path?.pathCode ? { pathCode: path.pathCode } : {}), levels: maxIndex >= 0 ? levels.slice(0, maxIndex + 1) : levels } : {}),
-      ...drillScope({ ...context, ...projected, parentKeys: projected.initialNavigation?.parentKeys || context.parentKeys }, path), hospitalCode: context.parentKeys?.HOSPITAL_CODE,
+      ...drillScope({ ...context, ...projected, parentKeys: projected.initialNavigation?.parentKeys || context.parentKeys }, path),
       departmentNames: target.departmentNames, maxLevel: path?.maxLevel || '',
       ...projected }
   }
-  if (target.path?.pathCode && target.path.pathCode !== 'ORGANIZATION') {
-    const path = target.path
-    const maxIndex = (path.levels || []).findIndex(level => level.levelCode === path.maxLevel)
-    const levels = maxIndex >= 0 ? path.levels.slice(0, maxIndex + 1) : path.levels || []
-    const rootLevel = levels[0]
-    if (!rootLevel || !levels.some(isDepartmentLevel)) throw new Error('下钻路径缺少根层级或科室层级')
-    const { payload } = buildDrillRequest({ resultId: target.resultId, pathCode: path.pathCode, currentLevel: rootLevel.levelCode }, { path, pageSize: PAGE_SIZE })
-    const first = await search(target.resultId, payload, { source: 'live', signal })
-    const resultId = canonicalDrillRootResultId(first, rootLevel.levelCode) || first.context?.resultId
-    if (!resultId || !first.context?.snapshotId || first.dataSource === 'mock') throw new Error('下钻根结果缺少正式结果或快照上下文')
-    const canonical = resultId === target.resultId ? first : await search(resultId, payload, { source: 'live', signal })
-    if (canonical.context?.currentLevel !== rootLevel.levelCode || canonical.dataSource === 'mock' || !canonical.context?.snapshotId) throw new Error('下钻根层级或快照无效')
-    if (target.indicatorVersionId && canonical.context.indicatorVersionId && canonical.context.indicatorVersionId !== target.indicatorVersionId) throw new Error('下钻结果与指标版本不一致')
-    const record = canonical.records.find(row => row.levelCode === rootLevel.levelCode)
-    const rootField = drillMemberField(path, rootLevel.levelCode)
-    return { resultId, snapshotId: canonical.context.snapshotId, indicatorVersionId: canonical.context.indicatorVersionId,
-      pathCode: path.pathCode, levels, maxLevel: path.maxLevel, departmentNames: target.departmentNames,
-      parentKeys: rootField && record?.dimensionKey ? { [rootField]: record.dimensionKey } : {} }
-  }
-  const { payload } = buildDrillRequest({ resultId: target.resultId, currentLevel: 'HOSPITAL' }, { pageSize: PAGE_SIZE })
+  const path = target.path
+  const maxIndex = (path.levels || []).findIndex(level => level.levelCode === path.maxLevel)
+  const levels = maxIndex >= 0 ? path.levels.slice(0, maxIndex + 1) : path.levels || []
+  const rootLevel = levels[0]
+  if (!rootLevel || levels.length < 2) throw new Error('下钻路径缺少可展示的成员层级')
+  const { payload } = buildDrillRequest({ resultId: target.resultId, pathCode: path.pathCode, currentLevel: rootLevel.levelCode }, { path, pageSize: PAGE_SIZE })
   const first = await search(target.resultId, payload, { source: 'live', signal })
-  checkRoot(first, target)
-  const canonicalId = canonicalDrillRootResultId(first, 'HOSPITAL')
-  if (!canonicalId) throw new Error('全院下钻结果缺少根结果 ID')
-  const canonical = canonicalId === target.resultId ? first : await search(canonicalId, payload, { source: 'live', signal })
-  checkRoot(canonical, target)
-  const hospital = canonical.records.find(row => normalizeOrganizationDrillLevel(row.levelCode) === 'HOSPITAL')
-  if (!hospital?.dimensionKey || !canonical.context?.snapshotId) throw new Error('全院下钻结果缺少医院或快照上下文')
-  return {
-    resultId: canonicalId,
-    snapshotId: canonical.context.snapshotId,
-    indicatorVersionId: canonical.context.indicatorVersionId,
-    hospitalCode: hospital.dimensionKey,
-    departmentNames: target.departmentNames,
-    maxLevel: target.maxLevels?.ORGANIZATION || ''
-  }
+  const resultId = canonicalDrillRootResultId(first, rootLevel.levelCode) || first.context?.resultId
+  if (!resultId || !first.context?.snapshotId || first.dataSource === 'mock') throw new Error('下钻根结果缺少正式结果或快照上下文')
+  const canonical = resultId === target.resultId ? first : await search(resultId, payload, { source: 'live', signal })
+  if (canonical.context?.currentLevel !== rootLevel.levelCode || canonical.dataSource === 'mock' || !canonical.context?.snapshotId) throw new Error('下钻根层级或快照无效')
+  if (target.indicatorVersionId && canonical.context.indicatorVersionId && canonical.context.indicatorVersionId !== target.indicatorVersionId) throw new Error('下钻结果与指标版本不一致')
+  const record = canonical.records.find(row => row.levelCode === rootLevel.levelCode)
+  const rootField = drillMemberField(path, rootLevel.levelCode)
+  return { resultId, snapshotId: canonical.context.snapshotId, indicatorVersionId: canonical.context.indicatorVersionId,
+    pathCode: path.pathCode, levels, maxLevel: path.maxLevel, departmentNames: target.departmentNames,
+    parentKeys: rootField && record?.dimensionKey ? { [rootField]: record.dimensionKey } : {} }
 }
 
 export async function loadBackendChartLevel(search, root, navigation, { signal } = {}) {
-  const level = root.levels ? navigation?.currentLevel : normalizeOrganizationDrillLevel(navigation?.currentLevel)
-  if (root.levels ? !root.levels.some(item => item.levelCode === level) : !LEVEL_NAME[level]) throw new Error('不支持的组织下钻层级')
+  const level = navigation?.currentLevel
+  if (!root.levels?.some(item => item.levelCode === level)) throw new Error('下钻路径缺少当前层级配置')
   const parentKeys = navigation.parentKeys || {}
-  if (!root.levels && (parentKeys.HOSPITAL_CODE !== root.hospitalCode || (level !== 'OUT_DEPT' && !parentKeys.OUT_DEPT_CODE))) throw new Error('下钻父级上下文不完整')
-  if (root.levels) for (const parent of root.levels.slice(0, root.levels.findIndex(item => item.levelCode === level))) {
+  for (const parent of root.levels.slice(0, root.levels.findIndex(item => item.levelCode === level))) {
     const field = drillMemberField(root, parent.levelCode)
     if (field && (parentKeys[field] === undefined || parentKeys[field] === '')) throw new Error('下钻父级上下文不完整')
   }
@@ -153,7 +133,7 @@ export async function loadBackendChartLevel(search, root, navigation, { signal }
     if (records.length >= total) break
   }
   if (records.some(row => !row.dimensionKey)) throw new Error('下钻组织编码缺失，不能绘制图表')
-  const definition = root.levels?.find(item => item.levelCode === level) || { levelCode: level, levelName: LEVEL_NAME[level], displayFieldCode: level === 'OUT_DEPT' ? 'OUT_DEPT_NAME' : level === 'ATTENDING_DOCTOR' ? 'ATTENDING_DOCTOR_NAME' : 'MEDICAL_GROUP_NAME' }
+  const definition = root.levels.find(item => item.levelCode === level)
   const names = new Map(Object.entries(root.departmentNames || {}))
   return { ...first, records: records.map(row => namedDrillRecord(row, definition, names)) }
 }
@@ -161,19 +141,13 @@ export async function loadBackendChartLevel(search, root, navigation, { signal }
 export function nextBackendChartNavigation(result, row, navigation, maxLevel = '', root) {
   if (root?.levels) {
     const index = root.levels.findIndex(level => level.levelCode === navigation?.currentLevel)
-    const current = root.levels[index]
     const next = root.levels[index + 1]
-    const field = current && drillMemberField(root, current.levelCode)
-    if (!field || !row?.dimensionKey || !next || !(result?.nextLevels || []).includes(next.levelCode)) return null
+    if (index < 0 || !next || !(result?.nextLevels || []).includes(next.levelCode)) return null
+    const maxIndex = root.levels.findIndex(level => level.levelCode === (maxLevel || root.maxLevel))
+    if (maxIndex >= 0 && index + 1 > maxIndex) return null
     return nextDrillNavigation(navigation, row, next.levelCode, root)
   }
-  const currentLevel = normalizeOrganizationDrillLevel(navigation?.currentLevel)
-  const field = drillMemberField(undefined, currentLevel)
-  if (!field || !row?.dimensionKey) return null
-  const available = limitDrillNextLevels(result?.nextLevels, 'ORGANIZATION', maxLevel).map(normalizeOrganizationDrillLevel)
-  const nextLevel = row.nextLevel ? normalizeOrganizationDrillLevel(row.nextLevel) : available[0]
-  if (!LEVEL_NAME[nextLevel] || !available.includes(nextLevel)) return null
-  return nextDrillNavigation({ ...navigation, currentLevel }, row, nextLevel)
+  return null
 }
 
 export function findBackendChartRow(result, params = {}) {
@@ -221,21 +195,15 @@ export function backendChartValue(row, kind, unit = '', field = 'value') {
   return resultChartNumber(row?.indicatorValue, { unit: row?.unit || unit })
 }
 
-function checkRoot(result, target) {
-  if (normalizeOrganizationDrillLevel(result?.context?.currentLevel) !== 'HOSPITAL' || result?.dataSource === 'mock') throw new Error('返回结果不是正式全院下钻结果')
-  if (target.configuredPaths?.length && !target.configuredPaths.some(path => path.pathCode === 'ORGANIZATION')) throw new Error('指标版本未配置组织下钻路径')
-  if (result.context?.indicatorVersionId && target.indicatorVersionId && result.context.indicatorVersionId !== target.indicatorVersionId) throw new Error('下钻结果与指标版本不一致')
-}
-
 function checkLevel(result, root, level, parentKeys) {
   const context = result?.context || {}
   if (root.periodRange && (context.periodStart?.slice(0, 10) !== root.periodRange.periodStart
     || context.periodEnd?.slice(0, 10) !== root.periodRange.periodEnd)) throw new Error('下钻结果与所选统计区间不一致')
-  const currentLevel = root.levels ? context.currentLevel : normalizeOrganizationDrillLevel(context.currentLevel)
+  const currentLevel = context.currentLevel
   if (result?.dataSource === 'mock' || context.resultId !== root.resultId || context.snapshotId !== root.snapshotId || context.indicatorVersionId !== root.indicatorVersionId || currentLevel !== level || (root.pathCode && context.pathCode && context.pathCode !== root.pathCode)) throw new Error('下钻结果版本、快照或层级不一致')
   for (const [field, value] of Object.entries(parentKeys)) {
-    const actual = context.parentKeys?.[field] ?? result.breadcrumb?.find(crumb => drillMemberField(undefined, normalizeOrganizationDrillLevel(crumb.level)) === field)?.key
+    const actual = context.parentKeys?.[field] ?? result.breadcrumb?.find(crumb => drillMemberField(root, crumb.level) === field)?.key
     if (actual !== undefined && String(actual) !== String(value)) throw new Error('下钻结果父级上下文不一致')
   }
-  if (result.records.some(row => row.levelCode && (root.levels ? row.levelCode : normalizeOrganizationDrillLevel(row.levelCode)) !== level)) throw new Error('下钻结果包含其他组织层级')
+  if (result.records.some(row => row.levelCode && row.levelCode !== level)) throw new Error('下钻结果包含其他组织层级')
 }

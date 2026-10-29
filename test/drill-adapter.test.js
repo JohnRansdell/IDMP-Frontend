@@ -27,7 +27,7 @@ test('drill adapter normalizes opaque ids and paged response fields', () => {
   assert.deepEqual(result.nextLevels, ['MEDICAL_GROUP'])
 })
 
-test('drill adapter uses backend column titles and derives separate multi-path anchors', () => {
+test('drill adapter uses explicit result anchors without guessing grain from field names', () => {
   const result = adaptDrillResult({ data: { columns: [{ field: 'dimensionName', title: '医院' }] } })
   assert.equal(result.columns[0].label, '医院')
 
@@ -41,7 +41,7 @@ test('drill adapter uses backend column titles and derives separate multi-path a
   })
 
   assert.deepEqual(pathResultIds, {
-    ORGANIZATION: 'hospital-result'
+    ORGANIZATION: 'case-result'
   })
 })
 
@@ -119,9 +119,9 @@ test('scenario comparison point is replaced by the canonical root result', () =>
 })
 
 test('drill adapter stops at the version configured maximum level', () => {
-  assert.deepEqual(limitDrillNextLevels(['OUT_DEPT'], 'ORGANIZATION', 'OUT_DEPT'), ['OUT_DEPT'])
-  assert.deepEqual(limitDrillNextLevels(['ATTENDING_DOCTOR'], 'ORGANIZATION', 'OUT_DEPT'), [])
-  assert.deepEqual(limitDrillNextLevels(['ATTENDING_DOCTOR'], 'ORGANIZATION', 'ATTENDING_DOCTOR'), ['ATTENDING_DOCTOR'])
+  assert.deepEqual(limitDrillNextLevels(['OUT_DEPT'], { levels: [{ levelCode: 'HOSPITAL' }, { levelCode: 'OUT_DEPT' }, { levelCode: 'ATTENDING_DOCTOR' }] }, 'OUT_DEPT'), ['OUT_DEPT'])
+  assert.deepEqual(limitDrillNextLevels(['ATTENDING_DOCTOR'], { levels: [{ levelCode: 'HOSPITAL' }, { levelCode: 'OUT_DEPT' }, { levelCode: 'ATTENDING_DOCTOR' }] }, 'OUT_DEPT'), [])
+  assert.deepEqual(limitDrillNextLevels(['ATTENDING_DOCTOR'], { levels: [{ levelCode: 'HOSPITAL' }, { levelCode: 'OUT_DEPT' }, { levelCode: 'ATTENDING_DOCTOR' }] }, 'ATTENDING_DOCTOR'), ['ATTENDING_DOCTOR'])
 })
 
 test('drill adapter preserves missing values and normalizes metric and level aliases', () => {

@@ -14,7 +14,7 @@ const period = { periodStart: '2026-02-01', periodEnd: '2026-05-01' }
 test('the configured identity takes precedence over logical dimensions and historical aliases', () => {
   assert.equal(drillMemberField(path, 'OUT_DEPT'), '科室编码')
   assert.equal(drillMemberField(path, 'DOCTOR'), '医生工号')
-  assert.equal(drillMemberField(undefined, 'OUT_DEPT'), 'OUT_DEPT_CODE')
+  assert.throws(() => drillMemberField(undefined, 'OUT_DEPT'), /缺少/)
   assert.equal(drillMemberField({ levels: [{ levelCode: 'OUT_DEPT' }] }, 'OUT_DEPT'), '')
 })
 
@@ -105,7 +105,7 @@ test('projected navigation removes obsolete names only after resolving the selec
 })
 
 test('formal dates validate a response but never accidentally request an interval aggregate', () => {
-  const request = buildDrillRequest({ resultId: '结果甲', period, currentLevel: 'OUT_DEPT' })
+  const request = buildDrillRequest({ resultId: '结果甲', period, currentLevel: 'OUT_DEPT' }, { path })
   assert.equal(request.payload.periodRange, undefined)
   assert.doesNotThrow(() => assertDrillResponseContext({ context: { periodStart: '2026-02-01T00:00:00', periodEnd: '2026-05-01T00:00:00' } }, { period }))
   assert.throws(() => assertDrillResponseContext({ context: { periodStart: '2026-02-01', periodEnd: '2026-03-01' } }, { period }), /统计周期不一致/)

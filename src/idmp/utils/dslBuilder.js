@@ -1,4 +1,4 @@
-import { canonicalPeriodColumn, withoutLegacyPeriod } from './factorPeriod.js'
+import { fieldReferenceCode } from './factorPeriod.js'
 
 const AGGREGATION_LABELS = {
   COUNT: '记录计数',
@@ -47,10 +47,9 @@ export function serializeFilterNode(node, fields = []) {
 }
 
 
-export function buildFactorDsl({ domainCode, tableName, semanticTableCode, sourceAlias = 'base', joins = [], aggregation, fieldCode, fieldExpression, groupBy = [], filters, fields = [], periodColumn = '', missingRowPolicy = null, calculationMode = 'TEMPORAL' }) {
+export function buildFactorDsl({ domainCode, tableName, sourceAlias = 'base', joins = [], aggregation, fieldCode, fieldExpression, groupBy = [], filters, fields = [], periodColumn = '', missingRowPolicy = null, calculationMode = 'TEMPORAL' }) {
   const mode = String(calculationMode).toUpperCase()
-  const period = canonicalPeriodColumn(periodColumn, filters, fields)
-  const businessFilters = withoutLegacyPeriod(filters)
+  const period = fieldReferenceCode(periodColumn)
   const fieldReference = serializeFieldReference(fieldCode)
   const aggregationNode = fieldExpression ? { function: aggregation, fieldExpression: serializeExpression(fieldExpression) } : aggregation === 'COUNT'
     ? { function: 'COUNT', ...(fieldCode ? (typeof fieldReference === 'string' ? { fieldCode: fieldReference } : { fieldRef: fieldReference }) : {}) }
@@ -60,14 +59,14 @@ export function buildFactorDsl({ domainCode, tableName, semanticTableCode, sourc
     dslType: 'FACTOR',
     calculationMode: mode,
     ...(mode === 'TEMPORAL' && period ? { periodColumn: period } : {}),
-    primaryDomain: { ...(domainCode ? { domainCode } : {}), ...(tableName ? { tableName } : semanticTableCode ? { semanticTableCode } : {}), ...(joins.length ? { sourceAlias } : {}) },
+    primaryDomain: { ...(domainCode ? { domainCode } : {}), ...(tableName ? { tableName } : {}), ...(joins.length ? { sourceAlias } : {}) },
     ...(joins.length ? { joins: joins.map(({ relationId, fromAlias, sourceAlias: joinedAlias, tableName, joinType, cardinality, keys }) => ({
       ...(relationId ? { relationId: String(relationId) } : { tableName, joinType, cardinality, keys: (keys || []).map(({ fromField, targetField }) => ({ fromField, targetField })) }), fromAlias, sourceAlias: joinedAlias
     })) } : {}),
-    filters: serializeFilterNode(businessFilters, fields),
+    filters: serializeFilterNode(filters, fields),
     aggregation: aggregationNode,
     groupBy: groupBy.map(serializeFieldReference),
-    parameters: mode === 'TEMPORAL' && period ? [{ code: 'period', type: 'PERIOD', source: 'RUNTIME' }, ...collectParameters(businessFilters, [], fields)] : collectParameters(businessFilters, [], fields),
+    parameters: mode === 'TEMPORAL' && period ? [{ code: 'period', type: 'PERIOD', source: 'RUNTIME' }, ...collectParameters(filters, [], fields)] : collectParameters(filters, [], fields),
     ...(missingRowPolicy ? { missingRowPolicy: String(missingRowPolicy) } : {}),
     output: { valueType: 'DECIMAL', semanticKind: 'MEASURE', dimension: aggregationNode.function, nullable: false }
   }
@@ -151,7 +150,7 @@ export function runtimeParameterDefinition(node, fields = []) {
 export function collectParameters(node, result = [], fields = []) {
   if (!node) return result
   if (node.nodeType === 'PREDICATE' && node.parameter) {
-    const definition = node.parameter === 'period' ? { code: 'period', type: 'PERIOD', source: 'RUNTIME' } : runtimeParameterDefinition(node, fields)
+    const definition = runtimeParameterDefinition(node, fields)
     const previous = result.find(item => item.code === node.parameter)
     if (!previous || JSON.stringify(previous) !== JSON.stringify(definition)) result.push(definition)
   }
@@ -174,7 +173,7 @@ export function validateFilterNode(node, errors = [], fields = []) {
     else if (['IS_NULL', 'IS_NOT_NULL'].includes(node.operator)) return errors
     else if (node.operator === 'BETWEEN' && !node.parameter && isContinuousField(fields.find((item) => item.code === node.fieldCode))) validateContinuousRange(node, fields.find((item) => item.code === node.fieldCode), errors)
     else if (node.operator === 'IN_VALUE_SET' ? isEmptyFilterValue(node.itemCodes) : (!node.parameter && isEmptyFilterValue(node.value))) errors.push('请填写或选择条件值')
-    if (node.parameter && node.parameter !== 'period' && (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(node.parameter) || ['periodStart', 'periodEnd'].includes(node.parameter))) errors.push('运行参数名称不合法或与系统统计周期参数重名')
+    if (node.parameter && (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(node.parameter) || ['period', 'periodStart', 'periodEnd'].includes(node.parameter))) errors.push('运行参数名称不合法或与系统统计周期参数重名')
     return errors
   }
   if (node.nodeType === 'NOT') return validateFilterNode(node.child, errors, fields)
