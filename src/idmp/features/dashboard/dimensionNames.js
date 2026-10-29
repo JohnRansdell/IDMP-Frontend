@@ -121,6 +121,7 @@ export function normalizeDepartmentDataset(dataset, { paths = [], names = new Ma
 export function visibleDimensionName(row, dimension, dataset = {}) {
   const field = dimension.field
   const raw = dimensionFieldValue(row, field)
+  if (field === 'periodStart' && dimension.periodFormat === 'MONTHLY' && /^\d{4}-\d{2}-\d{2}(?:T|\s|$)/.test(String(raw || ''))) return String(raw).slice(0, 7)
   if (['periodstart', 'periodend'].includes(String(field).replaceAll('_', '').toLowerCase())) return formatResultPeriodField(field, raw)
   const configured = Object.entries(dataset.dimensionLevels || {}).find(([key]) => key.toLowerCase() === String(field).toLowerCase())?.[1]
   const department = (dataset.departmentFields || []).some(key => key.toLowerCase() === String(field).toLowerCase())

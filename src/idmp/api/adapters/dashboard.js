@@ -1,7 +1,7 @@
 import { normalizeDashboardSchema } from '../../features/dashboard/schema.js'
 import { createDefaultBinding, preferredMeasureAggregation } from '../../features/dashboard/smartDefaultBinding.js'
 import { singleIndicatorTemplatePlan } from '../../features/dashboard/templateBinding.js'
-import { dashboardWidgetResultShape, isPeriodField, normalizePeriodDataset } from '../../features/dashboard/periodFields.js'
+import { dashboardWidgetResultShape, isPeriodField, normalizePeriodDataset, normalizePeriodBinding } from '../../features/dashboard/periodFields.js'
 import { immutableResultRows, transformResultRows } from '../../features/dashboard/resultRows.js'
 import { normalizeWarningWidgetConfig } from '../../features/dashboard/warningWidget.js'
 
@@ -129,7 +129,7 @@ export function schemaToDashboardPayload(schema, { resourceVersion, dataSources 
         indicatorVersionId: numericId(config.analysisIndicatorVersionId || source.indicatorVersionId || source.analysisIndicatorVersionId),
         ...(indicatorVersionIds.length > 1 ? { indicatorVersionIds } : {})
       }),
-      position: { ...widget.layout }, fieldBindings: config.dataBinding || {},
+      position: { ...widget.layout }, fieldBindings: normalizePeriodBinding(config.dataBinding) || {},
       query: { ...object(config.backendQuery), resultShape: dashboardWidgetResultShape(widget) },
       filterBindings: object(config.interaction).clickFilter || {}, drill: object(config.interaction).drill || {},
       chart: { ...(object(config.chart)), ...(Array.isArray(config.tableColumns) ? { tableColumns: config.tableColumns } : {}), ...(indicatorBindings.length ? { indicatorBindings } : {}), ...(widget.type === 'text' ? { text: object(config.text) } : {}), chartKind: kind },
@@ -394,5 +394,5 @@ function frontendBinding(value) {
   const binding = object(value)
   if (!Array.isArray(binding.dimensions) || !Array.isArray(binding.measures)) return null
   if ((binding.series != null && !Array.isArray(binding.series)) || (binding.sort != null && !Array.isArray(binding.sort))) return null
-  return { ...binding, series: binding.series || [], sort: binding.sort || [], dataset: binding.dataset || 'backend' }
+  return normalizePeriodBinding({ ...binding, series: binding.series || [], sort: binding.sort || [], dataset: binding.dataset || 'backend' })
 }

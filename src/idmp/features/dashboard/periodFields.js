@@ -4,6 +4,18 @@ export function isPeriodField(field) {
   return periodCodes.has(String(field || '').replaceAll('_', '').toLowerCase())
 }
 
+export function normalizePeriodBinding(binding) {
+  if (!binding || typeof binding !== 'object') return binding
+  const normalize = item => {
+    if (!item || !isPeriodField(item.field)) return item
+    const code = String(item.field).replaceAll('_', '').toLowerCase()
+    return { ...item, field: code === 'periodend' ? 'periodEnd' : 'periodStart',
+      ...(['month', 'statmonth'].includes(code) ? { periodFormat: 'MONTHLY' } : {}) }
+  }
+  return { ...binding, ...Object.fromEntries(['dimensions', 'series', 'sort'].filter(slot => Array.isArray(binding[slot]))
+    .map(slot => [slot, binding[slot].map(normalize)])) }
+}
+
 export function dashboardWidgetResultShape(widget = {}) {
   const kind = widget.type === 'chart' ? widget.chartKind || 'line' : widget.type
   if (['kpi', 'gauge'].includes(kind)) return 'OVERVIEW'

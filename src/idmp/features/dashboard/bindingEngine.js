@@ -232,7 +232,8 @@ export function compileWidgetData(kind, binding, dataset) {
     const sort = binding.sort[0]
     if (sort) {
       const measureSeries = series.find(item => item.field === sort.field)
-      const values = measureSeries?.values || [...categories.values()].map(item => item.raw)
+      const dimensionIndex = binding.dimensions.findIndex(item => item.field === sort.field)
+      const values = measureSeries?.values || [...categories.values()].map(item => item.raw[dimensionIndex])
       order.sort((a, b) => {
         if (values[a] === null) return values[b] === null ? 0 : 1
         if (values[b] === null) return -1
