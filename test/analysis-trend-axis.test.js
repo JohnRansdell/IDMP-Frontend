@@ -17,7 +17,7 @@ test('trend axes measure full tick labels for all units without changing result 
       profile: { unit }, granularity: 'MONTHLY'
     })
     assert.equal(option.grid.containLabel, true)
-    assert.equal(option.yAxis.axisLabel.formatter, `{value}${unit}`)
+    assert.equal(option.yAxis.axisLabel.formatter(0), `0${unit}`)
     assert.equal(option.yAxis.nameTextStyle.align, 'left')
     assert.deepEqual(option.series[0].data, rows.map(row => row.actual))
     const exported = analysisChartExportOption(option)

@@ -1,4 +1,5 @@
 import { IDMP_CHART_COLORS } from '../../charts/theme.js'
+import { valueAxisScale } from '../../charts/valueAxisScale.js'
 import { formatResultValue, hasResultDisplay, resultChartNumber, resultUnit } from '../shared/resultPresentation.js'
 import { formatPeriodLabel } from './reportPeriod.js'
 import { formatResultPeriod } from '../../utils/periodRange.js'
@@ -129,12 +130,11 @@ export function createAnalysisTrendPresentation({ analysis, profile, display, gr
     },
     yAxis: {
       type: 'value',
-      min: ({ min }) => Math.min(0, min, profile.markLineValue ?? 0),
-      max: isChartNumber(profile.markLineValue)
-        ? ({ max }) => Math.max(max, profile.markLineValue) : profile.yAxisMax,
+      ...valueAxisScale([...actualValues, ...trend.peer,
+        ...(isChartNumber(profile.markLineValue) ? [Number(profile.markLineValue)] : []),
+        ...(isChartNumber(profile.yAxisMax) ? [Number(profile.yAxisMax)] : [])], profile.unit || ''),
       name: profile.unit ? `单位：${profile.unit}` : '指标值',
       nameTextStyle: { align: 'left', padding: [0, 0, 4, 0] },
-      axisLabel: { formatter: `{value}${profile.unit || ''}` },
       splitLine: { lineStyle: { type: 'dashed' } }
     },
     series
