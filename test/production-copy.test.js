@@ -19,7 +19,8 @@ test('necessary persistence privacy and syntax constraints remain visible with a
  const sqlImport=await readFile(new URL('views/SqlIndicatorImport.vue',root),'utf8')
  assert.match(sqlImport,/<summary>因子与指标 SQL 定义规范<\/summary>/)
  for(const heading of ['查询语句','统计查询','导入结果与指标公式','时间、分组与下钻','可选业务参数'])assert.ok(sqlImport.includes(`<h3>${heading}</h3>`),heading)
- for(const constraint of ['COUNT(*)','COUNT(DISTINCT','CTE 只是组织查询的写法','是否创建指标，不由 SQL 是否使用 CTE 决定','须在运行参数中声明其名称和类型','未填写时，整段可选条件不参与筛选'])assert.ok(sqlImport.includes(constraint),constraint)
+ for(const constraint of ['COUNT(*)','COUNT(DISTINCT','CTE 只是组织查询的写法','是否创建指标，不由 SQL 是否使用 CTE 决定','解析后会显示在动态传入参数列表中','未填写时，整段可选条件不参与筛选'])assert.ok(sqlImport.includes(constraint),constraint)
+ assert.doesNotMatch(sqlImport,/须在运行参数中声明其名称和类型/)
  assert.doesNotMatch(sqlImport,/不使用冒号参数|<h3>指标定义<\/h3>|<h3>因子定义<\/h3>/)
  assert.match(await readFile(new URL('features/analysis/DrillExplorer.vue',root),'utf8'),/授权范围.*脱敏和审计/)
  for(const file of ['features/dashboard/components/WarningWidgetInspector.vue','features/dashboard/components/ComponentScopeInspector.vue']){
