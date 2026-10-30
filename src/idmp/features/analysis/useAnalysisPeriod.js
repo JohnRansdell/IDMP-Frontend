@@ -10,6 +10,7 @@ export function useAnalysisPeriod(props, fetchIndicatorAnalysis) {
   const analysis = shallowRef(null)
   const loading = ref(false)
   const errorMessage = ref('')
+  const loadingStage = ref('periods')
   const initialized = ref(false)
   const useInitialContext = ref(false)
   const granularityLabel = computed(() => DRILL_GRANULARITIES.find(item => item.value === granularity.value)?.label)
@@ -43,6 +44,7 @@ export function useAnalysisPeriod(props, fetchIndicatorAnalysis) {
     const requestedGranularity = currentRequest.granularity
     loading.value = true
     errorMessage.value = ''
+    loadingStage.value = 'periods'
     analysis.value = null
     periodOptions.value = []
     selectedPeriod.value = ''
@@ -69,6 +71,7 @@ export function useAnalysisPeriod(props, fetchIndicatorAnalysis) {
   async function resolveSelectedPeriod(currentRequest) {
     const selected = periodOptions.value.find(item => item.value === selectedPeriod.value)
     if (!selected) return
+    loadingStage.value = 'results'
     // Period discovery never loads members; resolve ranking and drill anchors for one selected period.
     const data = await fetchAnalysis({ granularity: currentRequest.granularity,
       periodStart: selected.periodStart, periodEnd: shiftReportDate(selected.periodEnd, -1),
@@ -131,6 +134,6 @@ export function useAnalysisPeriod(props, fetchIndicatorAnalysis) {
   onDeactivated(() => { inactive = true; suspend() })
   onActivated(() => { inactive = false; resume() })
 
-  return { granularity, selectedPeriod, periodOptions, analysis, loading, errorMessage, initialized, useInitialContext,
+  return { granularity, selectedPeriod, periodOptions, analysis, loading, errorMessage, loadingStage, initialized, useInitialContext,
     granularityLabel, periodPlaceholder, selectedPeriodLabel, loadPeriods, loadSelectedPeriod, focusPeriod, retryPeriod }
 }

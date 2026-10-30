@@ -126,6 +126,19 @@ test('quarter/year use separate formal results; an empty year never retains mont
   wrapper.unmount()
 })
 
+test('周期列表失败与所选周期结果失败分别显示准确标题', async () => {
+  for (const stage of ['periods', 'results']) {
+    const wrapper = create(async (_, params) => {
+      if (stage === 'periods' || params.sections !== 'TREND') throw new Error('统计配置暂不可用')
+      return response([april])
+    })
+    await flushPromises()
+    assert.match(wrapper.text(), stage === 'periods' ? /下钻周期加载失败/ : /所选周期下钻结果加载失败/)
+    assert.match(wrapper.text(), /统计配置暂不可用/)
+    wrapper.unmount()
+  }
+})
+
 test('department filters reach period and drill requests and invalidate cached results', async () => {
   const requests = []
   const wrapper = create(async (_, params) => { requests.push(params); return response([march, april]) }, { filters: { OUT_DEPT_CODE: ['15'] } })

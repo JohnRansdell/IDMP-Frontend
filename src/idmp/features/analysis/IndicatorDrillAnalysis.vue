@@ -13,7 +13,7 @@
       </el-select>
     </div>
     <StatePanel v-if="loading" type="loading" title="正在读取下钻正式结果" />
-    <StatePanel v-else-if="errorMessage" type="error" title="下钻周期加载失败" :description="errorMessage">
+    <StatePanel v-else-if="errorMessage" type="error" :title="loadingStage === 'periods' ? '下钻周期加载失败' : '所选周期下钻结果加载失败'" :description="errorMessage">
       <template #actions><el-button size="small" @click="retryPeriod">重试</el-button></template>
     </StatePanel>
     <StatePanel v-else-if="!periodOptions.length" type="empty" :title="`暂无${granularityLabel}可用下钻结果`" description="当前范围没有可展示的下钻结果，请调整周期或筛选条件，具体状态可查看计算记录。" />
@@ -56,7 +56,7 @@ const props = defineProps({
   startLevel: { type: String, default: 'HOSPITAL' },
   startParentKeys: { type: Object, default: () => ({}) }
 })
-const { granularity, selectedPeriod, periodOptions, analysis, loading, errorMessage, initialized, useInitialContext,
+const { granularity, selectedPeriod, periodOptions, analysis, loading, errorMessage, loadingStage, initialized, useInitialContext,
   granularityLabel, periodPlaceholder, selectedPeriodLabel, loadPeriods: readPeriods, loadSelectedPeriod, focusPeriod, retryPeriod } = useAnalysisPeriod(props, fetchIndicatorAnalysis)
 const explorer = ref()
 const entryContext = ref(null)
