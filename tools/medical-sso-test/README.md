@@ -32,13 +32,17 @@ contains only this identity; the previous synthetic identities are no longer off
 Before using an existing employee account, explicitly bind the verified external
 subject to that account in `sys_medical_identity`; do not create another account or
 change its password or roles. The external token verifier is still simulated.
-Token-only entry
-opens the ordinary platform homepage using that user's configured platform roles.
+Platform entry now signs employee number, display name, Unix timestamp and a random nonce
+with the private `platformSigningKeyBase64` configuration, matching the API's
+`IDMP_PLATFORM_SSO_KEY_BASE64`. This key must differ from the dashboard signing key.
+It does not request an external token or call the external verifier. Its login link
+expires after 120 seconds and is single-use. The employee account must already exist.
+The resulting platform session lasts ten minutes and uses that user's configured platform roles.
 Accounts without permissions see an authorization notice; SSO never assigns an
 administrator role. Signed entry explicitly requests `entry: "DASHBOARD"` from
 `/auth/sso/exchange` and remains restricted to department-isolated dashboards.
 The exchange API defaults to `entry: "PLATFORM"` when omitted. Neither entry issues
-refresh cookies, and both expire with the external token.
+refresh cookies. Dashboard sessions still expire with the external token.
 
 The base URL contains only `dashboardID`, not the administrator's identity. The
 external backend fills `doctorNo` and `deptCode` from its authenticated visitor and

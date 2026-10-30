@@ -5,7 +5,7 @@ import * as vue from 'vue'
 
 const source = (await readFile(new URL('../src/idmp/auth/session.js', import.meta.url), 'utf8'))
   .replace(/import[\s\S]*?from ['"][^'"]+['"]/g, '').replace(/export /g, '')
-  .replace("await import('@/idmp/api/modules/medical')", 'await Promise.resolve({ exchangeMedicalToken: exchangeSso })')
+  .replace("await import('@/idmp/api/modules/medical')", 'await Promise.resolve({ exchangeSsoCredentials: exchangeSso })')
 function createSession(respond, { token = '', cookie = '', medical = false } = {}) {
   const calls = [], events = []
   let entry = ''
@@ -14,35 +14,37 @@ function createSession(respond, { token = '', cookie = '', medical = false } = {
     requestJson: async (path, options) => { calls.push(path); return respond(path, options) },
     getAccessToken: () => token, setAccessToken: value => { token = value; medical = false }, clearAccessToken: () => { token = '' },
     isMedicalSession: () => medical, setMedicalAccessToken: (value, mode) => { medical = true; token = value; entry = mode },
-    exchangeSso: (value, mode) => { calls.push('/auth/sso/exchange'); return respond('/auth/sso/exchange', { body: JSON.stringify({ token: value, entry: mode }) }) },
+    isMedicalDashboardSession: () => medical && entry === 'DASHBOARD',
+    exchangeSso: (value, mode) => { calls.push('/auth/sso/exchange'); return respond('/auth/sso/exchange', { body: JSON.stringify({ ...value, entry: mode }) }) },
     setSessionRecoveryHandler: () => {}, document: { cookie }, window: { dispatchEvent: event => events.push(event.type) },
     setStorageUser: () => {}, invalidateRequestSession: () => {}
   }
-  const session = Function(...Object.keys(deps), `${source}; return { sessionState, isAuthenticated, loginWithPassword, loginWithMedicalToken, logoutSession, refreshSession, restoreSession, ensureAuthenticatedSession, invalidateSession }`)(...Object.values(deps))
+  const session = Function(...Object.keys(deps), `${source}; return { sessionState, isAuthenticated, loginWithPassword, loginWithSsoCredentials, logoutSession, refreshSession, restoreSession, ensureAuthenticatedSession, invalidateSession }`)(...Object.values(deps))
   return { ...session, calls, events, token: () => token, entry: () => entry }
 }
 const login = { accessToken: 'valid', user: { username: 'tester', roles: ['SYSTEM_ADMIN'] }, csrfToken: 'csrf', expiresInSeconds: 1800 }
 const me = { user: login.user, roles: login.user.roles, permissions: ['*'] }
+const signedLogin = { doctorNo: '300112', displayName: '杜琴', timestamp: 1793318400, nonce: '0123456789abcdef', sign: 'a'.repeat(64) }
 
 test('platform SSO hydrates assigned permissions and menus without password login or refresh', async () => {
   const user = { username: 'sso-user', roles: ['ANALYST'] }
   const session = createSession((path, options) => {
-    if (path === '/medical/logout') return null
+    if (path === '/auth/logout') { assert.equal(options.credentials, 'omit'); return null }
     if (path === '/auth/sso/exchange') {
-      assert.deepEqual(JSON.parse(options.body), { token: 'external', entry: 'PLATFORM' })
+      assert.deepEqual(JSON.parse(options.body), { ...signedLogin, entry: 'PLATFORM' })
       return { session: { accessToken: 'external-platform', user, permissions: ['indicator:view'], expiresInSeconds: 590 } }
     }
     assert.equal(path, '/auth/me')
     return { user, roles: ['ANALYST'], permissions: ['indicator:view'], menus: [{ path: '/indicator' }], dataScopes: [{ scopeType: 'DEPT' }] }
   })
-  await session.loginWithMedicalToken('external')
+  await session.loginWithSsoCredentials(signedLogin)
   assert.equal(session.entry(), 'PLATFORM')
   assert.equal(session.isAuthenticated.value, true)
   assert.deepEqual(session.sessionState.roles, ['ANALYST'])
   assert.deepEqual(session.sessionState.menus, [{ path: '/indicator' }])
   assert.deepEqual(session.calls, ['/auth/sso/exchange', '/auth/me'])
   await session.logoutSession()
-  assert.equal(session.calls.at(-1), '/medical/logout')
+  assert.equal(session.calls.at(-1), '/auth/logout')
 })
 
 test('signed entry keeps dashboard-only mode and does not hydrate ordinary platform permissions', async () => {
@@ -51,7 +53,7 @@ test('signed entry keeps dashboard-only mode and does not hydrate ordinary platf
     assert.equal(JSON.parse(options.body).entry, 'DASHBOARD')
     return { session: { accessToken: 'viewer', user: { roles: ['MEDICAL_VIEWER'] }, permissions: ['medical:dashboard:view'] } }
   })
-  await session.loginWithMedicalToken('external', 'DASHBOARD')
+  await session.loginWithSsoCredentials({ token: 'external' }, 'DASHBOARD')
   assert.equal(session.entry(), 'DASHBOARD')
   assert.deepEqual(session.calls, ['/auth/sso/exchange'])
 })
@@ -61,7 +63,7 @@ test('failed platform identity hydration clears the external credential', async 
     if (path === '/auth/sso/exchange') return { session: { accessToken: 'bad-session' } }
     throw Error('identity unavailable')
   })
-  await assert.rejects(session.loginWithMedicalToken('external'), /identity unavailable/)
+  await assert.rejects(session.loginWithSsoCredentials(signedLogin), /identity unavailable/)
   assert.equal(session.token(), '')
   assert.equal(session.sessionState.status, 'anonymous')
 })

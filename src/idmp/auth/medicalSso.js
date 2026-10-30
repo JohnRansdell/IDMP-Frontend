@@ -5,6 +5,26 @@ export function scalarParameter(query, key) {
   return value
 }
 
+export function resolveSsoEntry(query) {
+  const target = safeMedicalRedirect(scalarParameter(query, 'redirect'))
+  const dashboardEntry = query.dashboardID !== undefined || query.deptCode !== undefined
+    || target.startsWith('/medical-dashboard') || new URL(target, 'https://idmp.invalid').searchParams.has('dashboardID')
+  if (dashboardEntry) {
+    if (['timestamp', 'nonce', 'displayName'].some(key => query[key] !== undefined)) throw new Error('登录凭证与入口不匹配')
+    const token = scalarParameter(query, 'token')
+    if (!token || token.length > 8192) throw new Error('缺少有效登录凭证，请从医务系统重新进入')
+    const signed = signedDashboardParameters(query)
+    return { entry: 'DASHBOARD', payload: { token }, target: signed ? { path: '/medical-dashboard', query: signed } : target }
+  }
+  if (query.token !== undefined) throw new Error('平台登录链接已失效，请从来源系统重新进入或使用工号密码登录')
+  const values = Object.fromEntries(['doctorNo', 'displayName', 'timestamp', 'nonce', 'sign'].map(key => [key, scalarParameter(query, key)]))
+  if (!/^[A-Za-z0-9_@.-]{1,64}$/.test(values.doctorNo) || !values.displayName || values.displayName.length > 128
+      || !/^\d{1,12}$/.test(values.timestamp) || !Number.isSafeInteger(Number(values.timestamp))
+      || !/^[A-Za-z0-9_-]{16,128}$/.test(values.nonce) || !/^[0-9a-f]{64}$/.test(values.sign))
+    throw new Error('登录链接参数不完整或格式错误，请从来源系统重新进入')
+  return { entry: 'PLATFORM', payload: { ...values, timestamp: Number(values.timestamp) }, target }
+}
+
 export function signedDashboardParameters(query) {
   const keys = ['dashboardID', 'doctorNo', 'deptCode', 'sign']
   if (!keys.some(key => query?.[key] !== undefined)) return null

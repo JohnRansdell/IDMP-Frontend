@@ -7,6 +7,7 @@ import {
   requestJson,
   setAccessToken,
   isMedicalSession,
+  isMedicalDashboardSession,
   setMedicalAccessToken,
   invalidateRequestSession,
   setSessionRecoveryHandler
@@ -58,12 +59,12 @@ export async function loginWithPassword(payload) {
   return result
 }
 
-export async function loginWithMedicalToken(token, entry = 'PLATFORM') {
+export async function loginWithSsoCredentials(payload, entry = 'PLATFORM') {
   setMedicalAccessToken('', entry)
   clearSession()
   const revision = sessionRevision
-  const { exchangeMedicalToken } = await import('@/idmp/api/modules/medical')
-  const result = await exchangeMedicalToken(token, entry)
+  const { exchangeSsoCredentials } = await import('@/idmp/api/modules/medical')
+  const result = await exchangeSsoCredentials(payload, entry)
   if (revision !== sessionRevision) throw new Error('登录状态已变更，请重新登录')
   setMedicalAccessToken(result.session.accessToken, entry)
   state.user = result.session.user
@@ -156,7 +157,7 @@ export async function logoutSession(allSessions = false) {
   const medical = isMedicalSession()
   const csrfToken = medical ? '' : readCsrfToken() || state.csrfToken
   try {
-    return await requestJson(medical ? '/medical/logout' : allSessions ? '/auth/logout-all' : '/auth/logout', {
+    return await requestJson(isMedicalDashboardSession() ? '/medical/logout' : allSessions ? '/auth/logout-all' : '/auth/logout', {
       method: 'POST',
       credentials: medical ? 'omit' : 'include',
       headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {},

@@ -1,7 +1,25 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { scalarParameter, signedDashboardParameters, safeMedicalRedirect, dashboardIntegrationUrl } from '../src/idmp/auth/medicalSso.js'
+import { scalarParameter, signedDashboardParameters, safeMedicalRedirect, dashboardIntegrationUrl, resolveSsoEntry } from '../src/idmp/auth/medicalSso.js'
 import { getAccessToken, setAccessToken, setMedicalAccessToken, clearAccessToken, isMedicalSession, isMedicalDashboardSession, requestJson } from '../src/idmp/api/request.js'
+
+test('平台免登只提交工号姓名及签名信息，不要求外部用户标识和科室', () => {
+  const query = { doctorNo: '300112', displayName: '杜琴', timestamp: '1793318400', nonce: '0123456789abcdef', sign: 'a'.repeat(64) }
+  assert.deepEqual(resolveSsoEntry(query), { entry: 'PLATFORM', payload: { ...query, timestamp: 1793318400 }, target: '/dashboard' })
+  for (const bad of [{ ...query, timestamp: ['1', '2'] }, { ...query, timestamp: 'NaN' }, { ...query, sign: '' },
+    { ...query, nonce: 'short' }, { ...query, token: 'legacy' }, { ...query, doctorNo: 'a\nb' },
+    { ...query, displayName: '' }, { ...query, redirect: 'https://evil.example' }, { token: 'legacy' }])
+    assert.throws(() => resolveSsoEntry(bad))
+})
+
+test('看板免登入口保持原有凭证，不与平台签名混用', () => {
+  const signed = { dashboardID: '0002', doctorNo: '1001', deptCode: '4101', sign: 'a'.repeat(64) }
+  assert.deepEqual(resolveSsoEntry({ token: 'external', ...signed }), {
+    entry: 'DASHBOARD', payload: { token: 'external' }, target: { path: '/medical-dashboard', query: signed }
+  })
+  assert.equal(resolveSsoEntry({ token: 'external', redirect: '/medical-dashboard?id=2' }).entry, 'DASHBOARD')
+  assert.throws(() => resolveSsoEntry({ token: 'external', ...signed, nonce: '0123456789abcdef' }))
+})
 
 test('medical link accepts exactly the three identity parameters and signature', () => {
   const values = { dashboardID: '0002', doctorNo: '1001', deptCode: '4101', sign: 'a'.repeat(64) }
