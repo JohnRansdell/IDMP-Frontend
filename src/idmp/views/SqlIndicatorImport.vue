@@ -2,8 +2,10 @@
   <div class="idmp-page sql-import-page">
     <PageHeader title="SQL 导入因子/指标"><template #actions><el-button v-if="canStartNewImport" type="primary" plain @click="startNewImport">开始新的导入</el-button><el-button :icon="ArrowLeft" @click="router.push('/indicator')">返回指标目录</el-button></template></PageHeader>
     <section class="surface-card section">
-      <div class="section-heading"><div><h2>1. 提交并解析 SQL</h2><span>创建导入会话后，系统只解析，不创建资源。</span></div><el-button type="primary" :loading="createLoading" :disabled="Boolean(importTask?.importId) || !sql.trim()" @click="createImport">解析 SQL</el-button></div>
-      <el-input v-model="sql" type="textarea" :rows="13" class="sql-editor" placeholder="请输入 MySQL 8 SELECT SQL" />
+      <div class="section-heading"><div><h2>1. 提交并解析 SQL</h2><span>创建导入会话后，系统只解析，不创建资源。</span></div><el-button type="primary" :loading="createLoading" :disabled="importBusy || !sql.trim()" @click="createImport">{{ importTask?.importId ? '重新解析 SQL' : '解析 SQL' }}</el-button></div>
+      <el-input v-model="sql" :disabled="importBusy" type="textarea" :rows="13" class="sql-editor" placeholder="请输入 MySQL 8 SELECT SQL" />
+      <el-alert v-if="sqlChanged" type="info" :closable="false" title="SQL 已修改，请重新解析后确认元数据。" />
+      <el-alert v-if="operationError && (sqlChanged || !importTask)" type="error" :closable="false" :title="operationError.message" />
       <details class="sql-definition-hint">
         <summary>因子与指标 SQL 定义规范</summary>
         <h3>查询语句</h3>
@@ -39,6 +41,7 @@ FROM level4 l4 CROSS JOIN total t;</code></pre>
       </details>
     </section>
 
+    <template v-if="!sqlChanged && !createLoading">
     <section v-if="importTask" class="surface-card section">
       <div class="section-heading"><div><h2>导入会话</h2><span>{{ sqlImportStepLabel(importTask.step) }}</span></div><el-tag :type="tagType">{{ sqlImportStatusLabel(importTask.status) }}</el-tag></div>
       <el-alert v-if="importTask.error" type="error" :closable="false" show-icon :title="importTask.error" />
@@ -117,6 +120,7 @@ FROM level4 l4 CROSS JOIN total t;</code></pre>
     <section v-if="importTask?.status === 'ABANDONED'" class="surface-card section"><el-result icon="warning" title="导入已放弃，半成品清理已完成" sub-title="现在可以开始新的导入。"><template #extra><el-button type="primary" @click="startNewImport">开始新的导入</el-button><el-button @click="router.push('/indicator')">返回指标目录</el-button></template></el-result></section>
     <section v-if="isSucceeded" class="surface-card section"><el-result icon="success" title="SQL 导入及发布已完成" sub-title="因子和指标已经由导入流程完成编译与发布；可在上方修改条件并即时查询。"><template #extra><el-button @click="router.push('/indicator')">返回指标目录</el-button><el-button v-if="importTask.result?.indicatorId" type="primary" @click="router.push(`/indicator/edit/${importTask.result.indicatorId}`)">查看指标</el-button><el-button v-if="importTask.result?.initializationBatchId" @click="router.push({ path: '/calc', query: { batchId: importTask.result.initializationBatchId } })">跟踪静态初始化批次</el-button></template></el-result><el-alert v-if="importTask.result?.initializationBatchId" :type="initializationStatus === 'SUCCEEDED' ? 'success' : initializationStatus === 'FAILED' ? 'error' : 'info'" :closable="false" show-icon :title="`初始化批次 ${importTask.result.initializationBatchId}：${initializationStatus ? sqlImportStatusLabel(initializationStatus) : '正在查询'}`" /></section>
 
+    </template>
     <el-dialog v-model="timeFieldDialogVisible" title="选择物理时间字段" width="760px" destroy-on-close>
       <el-alert type="info" :closable="false" show-icon title="可选择 SQL 涉及物理表中的时间字段；文本字段须包含有效日期或时间。" />
       <el-input v-model="timeFieldSearch" class="time-field-search" clearable placeholder="搜索表名、字段名、类型或注释" />
@@ -203,6 +207,9 @@ function validateGrouping() {
 const operationError = ref(null); const createLoading = ref(false); const metadataLoading = ref(false); const trialLoading = ref(false); const finalizeLoading = ref(false); const actionLoading = ref(false); const initializationStatus = ref(''); let timer = null; let initializationTimer = null
 const parameterTypes = SQL_RUNTIME_PARAMETER_TYPES; const runtimeParameterValues = reactive({}); const runtimeQueryLoading = ref(false); const runtimeQueryResult = ref(null); const selectedFactorVersionId = ref('')
 const timeFieldDialogVisible = ref(false); const timeFieldLoading = ref(false); const timeFieldSearch = ref(''); const physicalTimeFields = ref([]); const activeTimeFieldFactor = ref(null)
+const parsedSql = ref(null)
+const sqlChanged = computed(() => parsedSql.value !== null && sql.value.trim() !== parsedSql.value.trim())
+const importBusy = computed(() => createLoading.value || metadataLoading.value || trialLoading.value || finalizeLoading.value || actionLoading.value || runtimeQueryLoading.value || shouldPollSqlImport(importTask.value))
 const preview = computed(() => importTask.value?.preview || null); const canEditMetadata = computed(() => canSubmitSqlImportMetadata(importTask.value)); const canTrial = computed(() => canTrialSqlImport(importTask.value)); const canFinalize = computed(() => canFinalizeSqlImport(importTask.value)); const canStartNewImport = computed(() => ['ABANDONED', 'SUCCEEDED'].includes(String(importTask.value?.status || '').toUpperCase())); const hasTemporalFactors = computed(() => factorMetadata.value.some(x => x.calculationMode === 'TEMPORAL')); const mixedModes = computed(() => hasTemporalFactors.value && factorMetadata.value.some(x => x.calculationMode === 'STATIC')); const tagType = computed(() => ({ SUCCEEDED: 'success', FAILED: 'danger', TRIAL_SUCCEEDED: 'success', READY_FOR_TRIAL: 'warning', AWAITING_METADATA: 'info', ABANDONED: 'info', CLEANUP_FAILED: 'danger' })[importTask.value?.status] || 'warning')
 const filteredPhysicalTimeFields = computed(() => { const keyword = timeFieldSearch.value.trim().toLowerCase(); return keyword ? physicalTimeFields.value.filter(item => [item.physicalTable, item.columnName, item.columnType, item.comment].some(value => String(value || '').toLowerCase().includes(keyword))) : physicalTimeFields.value })
 const runtimeParameters = computed(() => collectSqlRuntimeParameters(factorMetadata.value)); const parameterConflicts = computed(() => runtimeParameters.value.filter(item => item.conflict)); const isSucceeded = computed(() => importTask.value?.status === 'SUCCEEDED'); const publishedFactors = computed(() => importTask.value?.result?.factors || []); const runtimeResultColumns = computed(() => [...new Set((runtimeQueryResult.value?.rows || []).flatMap(row => Object.keys(row || {})))]); const runtimeConditionHint = computed(() => isSucceeded.value ? '修改日期或业务参数后即时查询；临时参数会触发源数据重算。' : (hasTemporalFactors.value ? '' : '填写 SQL 运行参数；静态导入不传统计周期。'))
@@ -234,8 +241,39 @@ function accept(payload) {
   schedule(); if (task.status === 'SUCCEEDED' && task.result?.initializationBatchId) scheduleInitializationPoll(task.result.initializationBatchId)
 }
 function schedule() { clearTimeout(timer); if (shouldPollSqlImport(importTask.value)) timer = setTimeout(refresh, 1500) }
-async function refresh() { if (!importTask.value?.importId) return; try { accept(await fetchSqlImport(importTask.value.importId)) } catch (e) { captureOperationError(e, '导入状态读取失败，请稍后重试') } }
-async function createImport() { const syntaxMessage = validateSqlRuntimeParameterSyntax(sql.value); if (syntaxMessage) return ElMessage.warning({ message: syntaxMessage, duration: 8000, showClose: true }); operationError.value = null; createLoading.value = true; try { accept(await createSqlImport(buildSqlImportCreatePayload({ sql: sql.value, tableMappings }), key('sql-import'))); ElMessage.success('SQL 已解析，请确认治理元数据') } catch (e) { captureOperationError(e, 'SQL 解析失败') } finally { createLoading.value = false } }
+async function refresh() {
+  const importId = importTask.value?.importId
+  if (!importId) return
+  try {
+    const task = await fetchSqlImport(importId)
+    if (importTask.value?.importId !== importId || createLoading.value) return
+    accept(task)
+    if (parsedSql.value === null) { sql.value = preview.value?.normalizedSql || ''; parsedSql.value = sql.value }
+  } catch (e) { if (importTask.value?.importId === importId) captureOperationError(e, '导入状态读取失败，请稍后重试') }
+}
+async function createImport() {
+  if (importBusy.value || !sql.value.trim()) return
+  const syntaxMessage = validateSqlRuntimeParameterSyntax(sql.value)
+  if (syntaxMessage) return ElMessage.warning({ message: syntaxMessage, duration: 8000, showClose: true })
+  createLoading.value = true
+  operationError.value = null
+  try {
+    const previous = importTask.value
+    if (previous?.resources?.some(resource => !resource.published)) {
+      try { await ElMessageBox.confirm('重新解析将清理本次导入中尚未发布的资源，并重新确认元数据和试算。已发布资源不受影响。', '重新解析 SQL', { type: 'warning' }) } catch { return }
+    }
+    if (previous?.importId && !['SUCCEEDED', 'ABANDONED', 'ABANDONED_WITH_RETAINED'].includes(previous.status)) {
+      accept(await abandonSqlImport(previous.importId, '用户修改 SQL 后重新解析', key('sql-reparse-cleanup')))
+    }
+    const submittedSql = sql.value
+    const task = await createSqlImport(buildSqlImportCreatePayload({ sql: submittedSql }), key('sql-import'))
+    resetImportState()
+    parsedSql.value = submittedSql
+    accept(task)
+    ElMessage.success('SQL 已解析，请确认治理元数据')
+  } catch (e) { captureOperationError(e, 'SQL 解析失败') }
+  finally { createLoading.value = false; schedule() }
+}
 function validateMetadata() { if (!factorMetadata.value.every(x => x.name && (x.calculationMode !== 'TEMPORAL' || x.timeField))) return '请补全因子名称和时序因子的时间字段'; const parameterMessage = validateRuntimeDeclarations(); if (parameterMessage) return parameterMessage; if (scope.value === 'FACTORS_AND_INDICATOR') { if (!indicator.name) return '请填写指标名称'; const modes = new Set(factorMetadata.value.map(x => x.calculationMode)); if (modes.size !== 1) return '创建指标时，全部因子必须使用相同计算模式'; if (!hasFormula(preview.value?.formula?.template)) return '解析结果没有可提交的指标公式，请调整 SQL 后重新解析，或改为仅创建因子' } return validateGrouping() }
 async function submitMetadata() { const message = validateMetadata(); if (message) return ElMessage.warning(message); operationError.value = null; metadataLoading.value = true; try { indicator.formula = preview.value?.formula?.template || {}; let activeImportId = importTask.value.importId; if (needsMappedReparse()) { const previousImportId = activeImportId; const previousFactors = factorMetadata.value; const mappedTask = await createSqlImport(buildSqlImportCreatePayload({ sql: sql.value || preview.value?.normalizedSql, tableMappings }), key('sql-import-mapped')); accept(mappedTask); activeImportId = importTask.value.importId; if (!activeImportId) throw new Error('映射重解析未返回新的导入会话 ID'); factorMetadata.value = mergeSqlFactorMetadata(previousFactors, preview.value?.factors || []); indicator.formula = preview.value?.formula?.template || {}; const mappedValidation = validateMetadata(); if (mappedValidation) throw new Error(`映射重解析后需要重新确认：${mappedValidation}`); void abandonSqlImport(previousImportId, '已按人工确认的表映射重新创建导入会话', key('sql-reparse-cleanup')).catch(() => {}); } accept(await updateSqlImportMetadata(activeImportId, metadataPayload())); ElMessage.success('元数据已确认，可发起试算') } catch (e) { captureOperationError(e, '元数据提交失败') } finally { metadataLoading.value = false } }
 async function runTrial() { const valueMessage = validateRuntimeValues(); if (valueMessage) return ElMessage.warning(valueMessage); const payload = buildSqlImportTrialPayload(factorMetadata.value, trialPeriod.value, runtimeParameterValues); if (hasTemporalFactors.value && (!payload.periodStart || !payload.periodEnd)) return ElMessage.warning('请选择完整试算周期'); operationError.value = null; trialLoading.value = true; try { accept(await trialSqlImport(importTask.value.importId, payload, key('sql-trial'))) } catch (e) { captureOperationError(e, '导入试算失败') } finally { trialLoading.value = false } }
@@ -245,7 +283,8 @@ async function retryImport() { operationError.value = null; actionLoading.value 
 async function abandonImport() { try { await ElMessageBox.confirm('将异步清理尚未发布的半成品资源。', '确认放弃', { type: 'warning' }) } catch { return }; operationError.value = null; actionLoading.value = true; try { accept(await abandonSqlImport(importTask.value.importId, '用户放弃此次 SQL 导入', key('sql-abandon'))) } catch (e) { captureOperationError(e, '放弃失败') } finally { actionLoading.value = false } }
 function captureOperationError(error, fallback) { const normalized = normalizeSqlImportOperationError(error, fallback); operationError.value = normalized; ElMessage.error(normalized.message || fallback) }
 function openConflictResource() { const resource = operationError.value?.resource; if (!resource?.id) return; const path = String(resource.type).toUpperCase().includes('INDICATOR') ? `/indicator/edit/${encodeURIComponent(resource.id)}` : `/factor/edit/${encodeURIComponent(resource.id)}`; router.push(path) }
-function startNewImport() { clearTimeout(timer); clearTimeout(initializationTimer); importTask.value = null; factorMetadata.value = []; Object.keys(tableMappings).forEach(item => delete tableMappings[item]); Object.keys(runtimeParameterValues).forEach(item => delete runtimeParameterValues[item]); scope.value = 'FACTORS_AND_INDICATOR'; category.value = ''; trialPeriod.value = []; initializationStatus.value = ''; selectedFactorVersionId.value = ''; runtimeQueryResult.value = null; operationError.value = null; Object.assign(indicator, { code: '', name: '', description: '', formula: null, drillPaths: [], dimensionGrain: [] }); sql.value = ''; const query = { ...route.query }; delete query.importId; router.replace({ path: '/indicator/import/sql', query }) }
+function resetImportState() { clearTimeout(timer); clearTimeout(initializationTimer); importTask.value = null; parsedSql.value = null; factorMetadata.value = []; Object.keys(tableMappings).forEach(item => delete tableMappings[item]); Object.keys(runtimeParameterValues).forEach(item => delete runtimeParameterValues[item]); scope.value = 'FACTORS_AND_INDICATOR'; category.value = ''; trialPeriod.value = []; initializationStatus.value = ''; selectedFactorVersionId.value = ''; runtimeQueryResult.value = null; operationError.value = null; timeFieldDialogVisible.value = false; activeTimeFieldFactor.value = null; physicalTimeFields.value = []; Object.assign(indicator, { code: '', name: '', description: '', formula: null, drillPaths: [], dimensionGrain: [] }) }
+function startNewImport() { if (importBusy.value) return; resetImportState(); sql.value = ''; const query = { ...route.query }; delete query.importId; router.replace({ path: '/indicator/import/sql', query }) }
 function hasFormula(formula) { return Boolean(formula && typeof formula === 'object' && (formula.root || formula.nodeType)) }
 function needsMappedReparse() { return (preview.value?.tables || []).some(row => { const selected = String(tableMappings[row.physicalTable] || ''); return selected && selected !== String(row.selectedViewMappingId || '') }) }
 function scheduleInitializationPoll(batchId) { clearTimeout(initializationTimer); initializationTimer = setTimeout(() => pollInitializationBatch(batchId), 500) }
