@@ -11,7 +11,7 @@ Object.defineProperty(globalThis, 'navigator', { configurable: true, value: dom.
 const vue = await import('vue')
 const { shallowMount, flushPromises } = await import('@vue/test-utils')
 const source = await readFile(new URL('../src/idmp/views/SqlIndicatorImport.vue', import.meta.url), 'utf8')
-const exposed = 'sql, importTask, factorMetadata, tableMappings, indicator, trialPeriod, runtimeParameterValues, runtimeQueryResult, createImport, sqlChanged, importBusy, operationError, refresh'
+const exposed = 'sql, importTask, factorMetadata, tableMappings, indicator, trialPeriod, runtimeParameterValues, runtimeQueryResult, createImport, sqlChanged, importBusy, operationError, refresh, metadataPayload'
 const { descriptor } = parse(source.replace('</script>', `defineExpose({ ${exposed} })\n</script>`))
 const compiled = compileScript(descriptor, { id: 'sql-reparse-test', inlineTemplate: true }).content
 const bindings = [...compiled.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]vue['"];?/g)]
@@ -124,5 +124,42 @@ test('试算或发布处理中不能重新解析', async () => {
   await wrapper.vm.createImport()
   assert.equal(calls.create.length, 0)
   assert.equal(wrapper.vm.importBusy, true)
+  wrapper.unmount()
+})
+
+test('动态参数只展示解析得到的名称，保留后台所需声明，重新解析后更新列表', async () => {
+  let count = 0
+  const declarations = [
+    { code: 'deptCode', type: 'STRING', parameterMode: 'TEMPORARY', required: false },
+    { code: 'minAge', type: 'INTEGER', parameterMode: 'TEMPORARY', required: true }
+  ]
+  const { wrapper } = create({ createSqlImport: async () => {
+    const result = task(String(++count))
+    result.preview.factors[0].parameters = count === 1 ? declarations : [declarations[1]]
+    return result
+  } })
+  wrapper.vm.sql = 'SELECT COUNT(*) AS 人数 FROM 病案 [[WHERE 科室 = {{deptCode}}]] AND 年龄 >= {{minAge}}'
+  await wrapper.vm.createImport()
+  await vue.nextTick()
+  const section = wrapper.get('.dynamic-parameters')
+  assert.deepEqual(section.findAll('li').map(row => row.text()), ['deptCode', 'minAge'])
+  assert.equal(section.findAll('input, select, button, el-input-stub, el-select-stub, el-checkbox-stub').length, 0)
+  assert.doesNotMatch(section.text(), /临时重算|结果维度|必填|文本|整数/)
+  assert.deepEqual(wrapper.vm.metadataPayload().factors[0].parameters, declarations)
+  wrapper.vm.sql = 'SELECT COUNT(*) AS 人数 FROM 病案 WHERE 年龄 >= {{minAge}}'
+  await wrapper.vm.createImport()
+  await vue.nextTick()
+  assert.deepEqual(wrapper.findAll('.dynamic-parameter-list li').map(row => row.text()), ['minAge'])
+  wrapper.unmount()
+})
+
+test('未解析出动态参数时展示空状态，不生成可编辑空参数行', async () => {
+  const { wrapper } = create()
+  wrapper.vm.sql = 'SELECT COUNT(*) AS 人数 FROM 病案'
+  await wrapper.vm.createImport()
+  await vue.nextTick()
+  assert.equal(wrapper.get('.dynamic-parameters-empty').text(), '无')
+  assert.equal(wrapper.find('.dynamic-parameter-list').exists(), false)
+  assert.equal(wrapper.find('[aria-label="添加运行参数"]').exists(), false)
   wrapper.unmount()
 })
