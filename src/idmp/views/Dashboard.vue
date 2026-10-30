@@ -465,7 +465,7 @@ import DashboardFilterBar from '@/idmp/features/dashboard/components/DashboardFi
 import DashboardContextBar from '@/idmp/features/dashboard/components/DashboardContextBar.vue'
 import GlobalFilterDesigner from '@/idmp/features/dashboard/components/GlobalFilterDesigner.vue'
 import { initialFilterValues } from '@/idmp/features/dashboard/filterEngine.js'
-import { dashboardFilterCatalog, deriveDependentFilterOptions, normalizeDependentFilterValues } from '@/idmp/features/dashboard/queryAdapter.js'
+import { deriveDependentFilterOptions, normalizeDependentFilterValues } from '@/idmp/features/dashboard/queryAdapter.js'
 import { provide } from 'vue'
 import { compareDashboardGridMembership } from '@/idmp/features/dashboard/gridMembership.js'
 import { createWidgetBindingDatasets, numericValue } from '@/idmp/features/dashboard/fieldCatalog.js'
@@ -479,7 +479,7 @@ import { createMedicalDashboardRuntime } from '@/idmp/features/dashboard/medical
 import { singleIndicatorTemplatePlan } from '@/idmp/features/dashboard/templateBinding.js'
 import { createDefaultBinding } from '@/idmp/features/dashboard/smartDefaultBinding.js'
 import { createMultiIndicatorDataset, multiIndicatorMeasureField, normalizeIndicatorBindings, singleIndicatorProjectionBinding } from '@/idmp/features/dashboard/multiIndicator.js'
-import { buildRemoteFilterOptionQuery, buildRemoteWidgetQuery, isDashboardIndicatorQueryWidget, resolveDashboardQueryState } from '@/idmp/features/dashboard/remoteQuery.js'
+import { buildRemoteFilterOptionQuery, buildRemoteWidgetQuery, canQueryBoundDashboardWidget, isDashboardIndicatorQueryWidget, resolveDashboardQueryState } from '@/idmp/features/dashboard/remoteQuery.js'
 import { buildIndicatorAnalysisPeriodContext, buildIndicatorAnalysisRouteQuery } from '@/idmp/features/dashboard/analysisNavigation.js'
 import { resultPeriodToClosedRange } from '@/idmp/utils/periodRange.js'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
@@ -522,6 +522,7 @@ import { createWarningWidgetConfig, normalizeWarningWidgetConfig, warningEventTo
 import { widgetLibraryReadiness } from '@/idmp/features/dashboard/widgetGuidance.js'
 import { applyGlobalFilterScope, removeGlobalFilter } from '@/idmp/features/dashboard/globalFilterDesignerModel.js'
 import { resolveCompatibleGlobalFilterWidgetIds } from '@/idmp/features/dashboard/globalFilterCompatibility.js'
+import { dashboardDimensionCatalog, dashboardFilterSourceWidgets, normalizeGlobalFilterDimensions } from '@/idmp/features/dashboard/filterDimensions.js'
 import {
   getDashboardSchemaStorageKey,
   normalizeDashboardSchema,
@@ -972,9 +973,9 @@ provide('dashboardResolveWidgetDrill', async (widget, params) => {
 provide('dashboardSearchDrill', (id, payload, options) => viewerRuntime.searchDrill(id, payload, options))
 provide('dashboardSurfaceTone', computed(() => resolveDashboardSurfaceTone(dashboardBackgroundConfig.value)))
 provide('dashboardAppearanceTheme', dashboardTheme)
-const globalFilterDefinitions = computed(() => ((isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.globalFilters || [])
+const globalFilterDefinitions = computed(() => normalizeGlobalFilterDimensions((isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.globalFilters || [], filterDatasets.value)
   .map(definition => ({ ...definition, label: dashboardFilterLabel(definition) })))
-const compatibleWidgetIdsByGlobalFilter = computed(() => Object.fromEntries(globalFilterDefinitions.value.map(definition => [definition.id, resolveCompatibleGlobalFilterWidgetIds(definition, designerWidgets.value, getBindingDatasets)])))
+const compatibleWidgetIdsByGlobalFilter = computed(() => Object.fromEntries(globalFilterDefinitions.value.map(definition => [definition.id, resolveCompatibleGlobalFilterWidgetIds(definition, designerWidgets.value, getGlobalFilterDatasets)])))
 const filterRuntimeValues = ref({})
 // Interaction filters are a viewer/preview concern. They never enter schema state
 // or persistence, unlike global filter definitions and widget interaction rules.
@@ -987,17 +988,15 @@ const activeInteractionFilters = computed(() => Object.values(interactionFilterS
 // in the schema/history/persistence chain.
 const drillRuntimeState = ref({})
 const currentDashboardWidgets = computed(() => (isEditing.value ? editingDashboardSchema.value : dashboardSchema.value)?.widgets || [])
-const filterDatasets = computed(() => [
-  ...[...bindingDatasets.value.entries()].flatMap(([sourceCode, datasets]) => datasets.map(dataset => ({ ...dataset, sourceCode }))),
-  ...Object.entries(remoteFieldCatalog.value).map(([sourceCode, fields]) => ({
-    sourceCode, fields: dashboardFieldsToFrontend(fields), rows: []
-  })),
-  ...[...new Map(currentDashboardWidgets.value.filter(widget => widget.config?.analysisIndicatorVersionId)
-    .map(widget => [`${widget.sourceCode}@${widget.config.analysisIndicatorVersionId}`, widget])).entries()]
-    .map(([key, widget]) => ({ sourceCode: widget.sourceCode,
-      fields: dashboardFieldsToFrontend(remoteVersionFieldCatalog.value[key] || []), rows: [] }))
-])
-const filterCatalog = computed(() => dashboardFilterCatalog(filterDatasets.value))
+const filterSourceWidgets = computed(() => dashboardFilterSourceWidgets(currentDashboardWidgets.value))
+const filterDatasets = computed(() => filterSourceWidgets.value.map(widget => {
+  const dataset = getBindingDatasets(widget).find(item => item.id === widget.config?.dataBinding?.dataset)
+  const fields = remoteWidgetFields(widget)
+  return { widgetId: widget.filterOwnerId, id: widget.config?.dataBinding?.dataset, sourceCode: widget.sourceCode,
+    fields: fields.length ? dashboardFieldsToFrontend(fields) : dataset?.fields || [], rows: dataset?.rows || [] }
+}))
+const filterCatalog = computed(() => dashboardDimensionCatalog(filterDatasets.value))
+function getGlobalFilterDatasets(widget) { return filterDatasets.value.filter(dataset => dataset.widgetId === String(widget.id)) }
 const globalFilterOptionSources = computed(() => availableIndicatorSources.value
   .filter(source => filterDatasets.value.some(dataset => dataset.sourceCode === source.code && dataset.fields.some(field => field.filterable)))
   .map(source => ({ code: source.code, name: source.name })))
@@ -1056,8 +1055,8 @@ function showDashboardSettings() {
 function updateGlobalFilterScope({ filterId, targetWidgetIds }) {
   if (!editingDashboardSchema.value || !filterId) return
   void runDashboardHistoryTransaction(() => {
-    const definition = editingDashboardSchema.value.globalFilters.find(item => item.id === filterId)
-    const compatibleWidgetIds = resolveCompatibleGlobalFilterWidgetIds(definition, editingDashboardSchema.value.widgets, getBindingDatasets)
+    const definition = globalFilterDefinitions.value.find(item => item.id === filterId)
+    const compatibleWidgetIds = resolveCompatibleGlobalFilterWidgetIds(definition, editingDashboardSchema.value.widgets, getGlobalFilterDatasets)
     editingDashboardSchema.value = { ...editingDashboardSchema.value, widgets: applyGlobalFilterScope(editingDashboardSchema.value.widgets, filterId, targetWidgetIds, compatibleWidgetIds) }
     markDashboardDirty()
   })
@@ -1151,7 +1150,7 @@ async function createDashboardFromMenu() {
     const { value } = await ElMessageBox.prompt('请输入新的看板名称', '重命名当前看板', { inputValue: currentDashboardName.value, inputPattern: /\S+/, inputErrorMessage: '名称不能为空', confirmButtonText: '保存', cancelButtonText: '取消' })
       if (isRemoteDashboard()) {
         const schema = normalizeDashboardSchema({ ...(editingDashboardSchema.value || dashboardSchema.value), name: value })
-        const payload = schemaToDashboardPayload(schema, { resourceVersion: remoteDashboardMeta.value?.resourceVersion, dataSources: availableIndicatorSources.value })
+        const payload = schemaToDashboardPayload(schema, { resourceVersion: remoteDashboardMeta.value?.resourceVersion, dataSources: availableIndicatorSources.value, filterDatasets: filterDatasets.value })
         const saved = await saveDashboard(currentDashboardId.value, payload)
         remoteDashboardMeta.value = dashboardDetailMeta(saved)
         dashboardSchema.value = saved?.version?.layout ? dashboardDetailToSchema(saved) : schema
@@ -2249,7 +2248,7 @@ async function startDashboardEdit() {
       const loaded = await loadPublishedIndicatorCatalog()
       if (targetDashboardId !== activeDashboardId.value || !isEditing.value) return
       if (!loaded) throw new Error(indicatorCatalogError.value || '指标目录暂不可用')
-      await mapWithConcurrency(designerWidgets.value.filter(widget => getWidgetSource(widget)?.origin === 'dashboard-data-source'),
+      await mapWithConcurrency(designerWidgets.value.filter(widget => canQueryBoundDashboardWidget(widget, getWidgetSource(widget))),
         3, widget => previewRemoteWidget(widget))
     }
   } catch (error) {
@@ -2450,7 +2449,7 @@ async function resolveDashboardSaveConflict(localSchema) {
   if (action !== 'cancel') return false
   const copied = await copyDashboard(activeDashboardId.value, {})
   const copiedMeta = dashboardDetailMeta(copied)
-  const payload = schemaToDashboardPayload(localSchema, { resourceVersion: copiedMeta.resourceVersion, dataSources: availableIndicatorSources.value })
+  const payload = schemaToDashboardPayload(localSchema, { resourceVersion: copiedMeta.resourceVersion, dataSources: availableIndicatorSources.value, filterDatasets: filterDatasets.value })
   const saved = await saveDashboard(copiedMeta.dashboardId, payload)
   activeDashboardId.value = copiedMeta.dashboardId
   requestedDashboardId.value = copiedMeta.dashboardId
@@ -2476,7 +2475,7 @@ async function saveDashboardSchema() {
     const validation = validateDashboardSchema(schema)
     if (!validation.valid) throw new Error(validation.errors.join('；'))
     if (isRemoteDashboard()) {
-      const payload = schemaToDashboardPayload(schema, { resourceVersion: remoteDashboardMeta.value?.resourceVersion, dataSources: availableIndicatorSources.value })
+      const payload = schemaToDashboardPayload(schema, { resourceVersion: remoteDashboardMeta.value?.resourceVersion, dataSources: availableIndicatorSources.value, filterDatasets: filterDatasets.value })
       const saved = await saveDashboard(activeDashboardId.value, payload)
       remoteDashboardMeta.value = dashboardDetailMeta(saved)
       remoteDashboardIsMock.value = false
@@ -2715,27 +2714,27 @@ async function loadRemoteFilterOptions() {
   const next = {}
   const errors = {}
   await Promise.all(definitions.map(async definition => {
-    const sourceWidget = widgets.find(widget => widget.sourceCode && (!definition.optionSourceCode || widget.sourceCode === definition.optionSourceCode)
+    const candidates = dashboardFilterSourceWidgets(widgets).filter(widget => widget.sourceCode && widget.config?.query?.inheritGlobalFilters !== false
+      && !widget.config?.query?.ignoredGlobalFilterIds?.includes(definition.id)
+      && (!definition.optionSourceCode || widget.sourceCode === definition.optionSourceCode)
       && resolveGlobalFilterField(definition, remoteWidgetFields(widget))?.filterable)
-    const sourceCode = definition.optionSourceCode || sourceWidget?.sourceCode
-    if (!sourceCode || !availableIndicatorSources.value.some(source => source.code === sourceCode && source.origin === 'dashboard-data-source')) return
+    const sources = [...new Map(candidates.map(widget => [medicalMode.value ? widget.id
+      : `${widget.sourceCode}@${widget.config?.analysisIndicatorVersionId || ''}`, widget])).values()]
+    if (!sources.length) return
     try {
-      const fields = sourceWidget ? remoteWidgetFields(sourceWidget) : await ensureRemoteDataSourceFields(sourceCode)
-      if (!resolveGlobalFilterField(definition, fields)?.filterable) return
       const range = remoteSelectedPeriod()
-      const query = buildRemoteFilterOptionQuery(definition, definitions, filterRuntimeValues.value, fields, {
-        periodStart: range.periodStart || null,
-        periodEnd: range.periodEnd ? new Date(new Date(`${range.periodEnd}T00:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10) : null
-      })
-      if (medicalMode.value) {
-        const widget = widgets.find(widget => widget.sourceCode === sourceCode)
-        const rows = await viewerRuntime.filterOptions(sourceCode, widget, query)
-        next[definition.id] = rows.map(item => ({ value: item.value, label: item.label || String(item.value) }))
-      } else if (isDepartmentFilterField(definition.field, fields)) {
-        next[definition.id] = await loadDepartmentCodeOptions({ fields, fetchDictionary: fetchDepartmentDictionary })
+      if (!medicalMode.value && definition.field === 'organization:department') {
+        next[definition.id] = await loadDepartmentCodeOptions({ fields: remoteWidgetFields(sources[0]), fetchDictionary: fetchDepartmentDictionary })
       } else {
-        const rows = await viewerRuntime.filterOptions(sourceCode, null, query)
-        next[definition.id] = (Array.isArray(rows) ? rows : []).map(item => ({ value: item.value, label: item.label || String(item.value) }))
+        const options = await mapWithConcurrency(sources, 3, async widget => {
+          const query = buildRemoteFilterOptionQuery(definition, definitions, filterRuntimeValues.value, remoteWidgetFields(widget), {
+            periodStart: range.periodStart || null,
+            periodEnd: range.periodEnd ? new Date(new Date(`${range.periodEnd}T00:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10) : null
+          })
+          const rows = await viewerRuntime.filterOptions(widget.sourceCode, widget, query)
+          return (Array.isArray(rows) ? rows : []).map(item => ({ value: item.value, label: item.label || String(item.value) }))
+        })
+        next[definition.id] = [...new Map(options.flat().map(option => [String(option.value), option])).values()]
       }
     } catch (error) {
       next[definition.id] = []
@@ -3082,7 +3081,7 @@ function remoteWidgetFields(widgetOrCode) {
 
 function remoteWidgetQueryContext(range, widgetOrCode, schema = isEditing.value ? editingDashboardSchema.value : dashboardSchema.value) {
   const fields = remoteWidgetFields(widgetOrCode)
-  const definitions = schema?.globalFilters || globalFilterDefinitions.value
+  const definitions = normalizeGlobalFilterDimensions(schema?.globalFilters || globalFilterDefinitions.value, filterDatasets.value)
   return {
     ...range, definitions, values: schema === dashboardSchema.value || schema === editingDashboardSchema.value ? filterRuntimeValues.value : initialFilterValues(definitions),
     fields, department: department.value, interactions: interactionFilterState.value
@@ -3417,7 +3416,7 @@ const goIndicatorAnalysis = (indicator, backendQuery = {}, drillContext = null, 
 }
 
 function refreshDesignerPeriodData() {
-  for (const widget of designerWidgets.value.filter(widget => getWidgetSource(widget)?.origin === 'dashboard-data-source')) void previewRemoteWidget(widget)
+  for (const widget of designerWidgets.value.filter(widget => canQueryBoundDashboardWidget(widget, getWidgetSource(widget)))) void previewRemoteWidget(widget)
   void refreshSchemaPublishedIndicatorSources()
 }
 
@@ -3459,7 +3458,7 @@ watch([filterRuntimeValues, interactionFilterState], () => {
   if (isEditing.value && !remoteDashboardIsMock.value) {
     globalThis.clearTimeout(remoteFilterReloadTimer)
     remoteFilterReloadTimer = globalThis.setTimeout(() => {
-      for (const widget of designerWidgets.value.filter(widget => getWidgetSource(widget)?.origin === 'dashboard-data-source')) void previewRemoteWidget(widget)
+      for (const widget of designerWidgets.value.filter(widget => canQueryBoundDashboardWidget(widget, getWidgetSource(widget)))) void previewRemoteWidget(widget)
     }, 180)
     return
   }

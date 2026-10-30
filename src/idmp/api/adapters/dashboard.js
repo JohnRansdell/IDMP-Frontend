@@ -4,6 +4,7 @@ import { singleIndicatorTemplatePlan } from '../../features/dashboard/templateBi
 import { dashboardWidgetResultShape, isPeriodField, normalizePeriodDataset, normalizePeriodBinding } from '../../features/dashboard/periodFields.js'
 import { immutableResultRows, transformResultRows } from '../../features/dashboard/resultRows.js'
 import { normalizeWarningWidgetConfig } from '../../features/dashboard/warningWidget.js'
+import { normalizeGlobalFilterDimensions } from '../../features/dashboard/filterDimensions.js'
 
 const FRONTEND_TYPE_BY_REMOTE = Object.freeze({
   KPI: { type: 'kpi', visualType: 'kpi' },
@@ -98,7 +99,8 @@ export function isMockDashboardDetail(detail = {}) {
     || (Array.isArray(version.widgets) && version.widgets.some(widget => Boolean(widget?.style?.[MOCK_WIDGET_KEY])))
 }
 
-export function schemaToDashboardPayload(schema, { resourceVersion, dataSources = [] } = {}) {
+export function schemaToDashboardPayload(schema, { resourceVersion, dataSources = [], filterDatasets = [] } = {}) {
+  schema = { ...schema, globalFilters: normalizeGlobalFilterDimensions(schema.globalFilters, filterDatasets) }
   const sources = new Map((Array.isArray(dataSources) ? dataSources : []).map(item => [item.code, item]))
   const sourceOf = widget => sources.get(widget.sourceCode) || object(widget.config?.dataSource)
   const toWidget = widget => {
@@ -225,6 +227,7 @@ export function dashboardFieldsToFrontend(fields = []) {
       filterTypes: filterTypes.length ? filterTypes : dataType === 'date' ? ['date-range'] : ['select', 'multi-select'],
       preferredFilterType: filterTypes[0] || (dataType === 'date' ? 'date-range' : 'multi-select'),
       dictionaryCode: field.dictionaryCode || null,
+      filterDimensions: field.filterDimensions || [],
       ...(field.departmentCodeField ? { departmentCodeField: field.departmentCodeField, departmentNameField: field.departmentNameField || '' } : {}),
       drillable: field.drillable === true, drillLevel: field.drillLevel || null
     }

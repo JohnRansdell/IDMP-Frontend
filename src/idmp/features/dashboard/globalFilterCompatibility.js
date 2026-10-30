@@ -7,9 +7,12 @@ import { resolveGlobalFilterField } from './departmentFilters.js'
 export function resolveCompatibleGlobalFilterWidgetIds(definition, widgets = [], getDatasets = () => []) {
   if (!definition?.field || !definition?.dataType) return []
   return widgets.flatMap(widget => {
-    if (!hasDataBinding(widget)) return []
-    const dataset = getDatasets(widget).find(item => item.id === widget.config?.dataBinding?.dataset)
-    const field = resolveGlobalFilterField(definition, dataset?.fields || [])
-    return field?.filterable && filterValueType(field) === definition.dataType ? [String(widget.id)] : []
+    const group = widget.type === 'metric-group' || widget.type === 'ranking' && widget.config?.ranking?.mode === 'indicators'
+    if (!group && !hasDataBinding(widget)) return []
+    const compatible = getDatasets(widget).filter(item => group || item.id === widget.config?.dataBinding?.dataset).some(dataset => {
+      const field = resolveGlobalFilterField(definition, dataset.fields || [])
+      return field?.filterable && filterValueType(field) === definition.dataType
+    })
+    return compatible ? [String(widget.id)] : []
   })
 }

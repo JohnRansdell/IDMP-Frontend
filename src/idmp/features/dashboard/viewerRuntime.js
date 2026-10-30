@@ -38,7 +38,9 @@ export function createPlatformDashboardRuntime(api) {
       ])
       return { fields, periods }
     },
-    filterOptions: (sourceCode, _widget, query) => api.fetchFilterOptions(sourceCode, query),
+    filterOptions: (sourceCode, widget, query) => api.fetchFilterOptions(sourceCode, {
+      ...query, ...(widget?.config?.analysisIndicatorVersionId ? { indicatorVersionId: widget.config.analysisIndicatorVersionId } : {})
+    }),
     searchDrill: (...args) => api.searchDrill(...args)
   }
 }

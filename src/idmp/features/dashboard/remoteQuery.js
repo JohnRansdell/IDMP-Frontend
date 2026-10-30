@@ -12,6 +12,11 @@ export function isDashboardIndicatorQueryWidget(widget) {
   return !['text', 'warnings'].includes(widget?.type)
 }
 
+export function canQueryBoundDashboardWidget(widget, source) {
+  return isDashboardIndicatorQueryWidget(widget) && Boolean(widget?.sourceCode)
+    && Boolean(widget.config?.analysisIndicatorVersionId || source?.origin === 'dashboard-data-source')
+}
+
 export function resolveDashboardQueryState(result, expectedWidgetCount = 0) {
   const widgets = Object.values(result?.widgets || {})
   if (widgets.some(widget => ['READY', 'ERROR'].includes(widget?.status))) return { status: 'ready', message: '' }

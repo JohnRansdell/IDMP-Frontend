@@ -11,7 +11,7 @@ export function createGlobalFilterDefinition(field, definitions = [], options = 
   const type = field.preferredFilterType
   return {
     id,
-    label: field.label,
+    label: field.id === 'organization:department' ? '科室' : field.id === 'organization:doctor' ? '医生' : field.label,
     field: field.id,
     dataType: filterValueType(field),
     type,
@@ -28,11 +28,12 @@ export function changeGlobalFilterField(definition, field) {
   const type = field.filterTypes?.includes(definition.type) ? definition.type : field.preferredFilterType
   return {
     ...definition,
-    label: field.label,
+    label: field.id === 'organization:department' ? '科室' : field.id === 'organization:doctor' ? '医生' : field.label,
     field: field.id,
     dataType: filterValueType(field),
     type,
-    defaultValue: emptyDefaultValue(type)
+    defaultValue: emptyDefaultValue(type),
+    optionSourceCode: undefined
   }
 }
 

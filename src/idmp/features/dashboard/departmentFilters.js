@@ -1,4 +1,5 @@
 import { DEPARTMENT_FIELD_PAIRS, isDepartmentLevel, unknownMemberName } from './dimensionNames.js'
+import { isLogicalFilterDimension, resolveFilterDimension } from './filterDimensions.js'
 
 export function dashboardFilterLabel(definition) {
   return /^(出院科室|出院科室名称|科室名称)$/.test(String(definition?.label || ''))
@@ -28,12 +29,15 @@ export function annotateDepartmentFilterFields(fields = [], paths = []) {
 }
 
 export function isDepartmentFilterField(name, fields = []) {
+  if (name === 'organization:department') return true
   const lower = String(name || '').toLowerCase()
   return DEPARTMENT_FIELD_PAIRS.some(pair => pair.some(value => value.toLowerCase() === lower))
     || Boolean(match(fields, name)?.departmentCodeField)
 }
 
 export function departmentFilterBinding(fields = []) {
+  const logical = resolveFilterDimension('organization:department', fields)
+  if (logical) return { codeField: logical.code || logical.id, nameField: logical.departmentNameField || '' }
   const annotated = fields.find(field => field.departmentCodeField && match(fields, field.departmentCodeField)?.filterable)
   if (annotated) return { codeField: annotated.departmentCodeField, nameField: annotated.departmentNameField || '' }
   const pair = DEPARTMENT_FIELD_PAIRS.find(([code]) => match(fields, code)?.filterable)
@@ -41,6 +45,10 @@ export function departmentFilterBinding(fields = []) {
 }
 
 export function resolveGlobalFilterField(definition, fields = []) {
+  if (isLogicalFilterDimension(definition?.field)) {
+    return fields.find(field => (field.code || field.id) === definition.field)
+      || resolveFilterDimension(definition.field, fields)
+  }
   if (isDepartmentFilterField(definition?.field, fields)) {
     const binding = departmentFilterBinding(fields)
     return binding ? match(fields, binding.codeField) : undefined
