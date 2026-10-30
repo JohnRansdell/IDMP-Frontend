@@ -3,11 +3,11 @@ import { createRequire } from 'node:module'
 import { mkdir } from 'node:fs/promises'
 const { chromium } = createRequire(import.meta.url)('playwright')
 const base = process.env.IDMP_SSO_TEST_URL || 'http://127.0.0.1:5176'
-const output = new URL('../.tmp/medical-sso-e2e/', import.meta.url)
+const output = new URL('../.tmp/signed-dashboard-e2e-20261030/', import.meta.url)
 await mkdir(output, { recursive: true })
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
 const signature = 'a'.repeat(64)
-const identity = { userId: '12', subject: 'doctor-1', doctorNo: '1001', deptCode: '4101', expiresAt: '2099-01-01T00:00:00Z' }
+const identity = { userId: null, subject: 'visit-1', doctorNo: '1001', deptCode: '4101', expiresAt: '2099-01-01T00:00:00Z' }
 const binding = dimensions => ({ dataset: 'published-source', dimensions: dimensions.map(field => ({ field })), measures: [{ field: 'value', aggregation: 'direct' }], series: [], sort: [] })
 const widget = (code, type, position, dimensions = []) => ({ code, type, title: { kpi: '科室入院人次', chart: '医师入院人次', table: '医师入院明细' }[code], dataSourceCode: 'SOURCE', indicatorVersionId: '10', position, fieldBindings: binding(dimensions), query: {}, chart: {}, style: type === 'BAR' ? { __idmpClickAction: 'drill' } : {} })
 const detail = { dashboard: { id: '2', code: 'QUALITY', name: '质量安全看板', status: 'PUBLISHED', currentPublishedVersionId: '3' }, version: { id: '3', layout: { columns: 24 }, widgets: [widget('kpi', 'KPI', { x: 0, y: 0, w: 24, h: 3 }), widget('chart', 'BAR', { x: 0, y: 3, w: 12, h: 8 }, ['DOCTOR_NAME']), widget('table', 'TABLE', { x: 12, y: 3, w: 12, h: 8 }, ['DOCTOR_NAME'])] } }
@@ -19,24 +19,24 @@ try {
     await context.addInitScript(() => localStorage.setItem('idmp_access_token', 'existing-admin'))
     const page = await context.newPage(), requests = [], errors = []
     let failQuery = false
+    let stage = 'signed entry'
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/v1/**', async route => {
       const request = route.request(), path = new URL(request.url()).pathname.replace('/api/v1', '')
       const body = request.postDataJSON()
       requests.push({ path, body, authorization: request.headers().authorization, cookie: request.headers().cookie })
       let data
-      if (path === '/auth/sso/exchange') {
-        if (body.token === 'temporary-medical-token') assert.equal(body.entry, 'DASHBOARD')
-        if (body.token !== 'temporary-medical-token') return route.fulfill({ status: 401, json: { code: 'COMMON-40100', message: '登录凭证无效或已过期' } })
-        data = { identity, session: { accessToken: 'medical-session', user: { id: '12', roles: ['MEDICAL_VIEWER'] }, expiresInSeconds: 600, permissions: [] } }
+      if (path === '/medical/dashboard-access/exchange') {
+        assert.equal(request.headers().authorization, undefined)
+        assert.equal(request.headers().cookie, undefined)
+        assert.deepEqual(body, { dashboardID: '0002', doctorNo: '1001', deptCode: '4101', sign: signature })
+        data = { identity, accessToken: 'medical-session', access: { dashboardId: '2' } }
       } else {
-        assert.equal(request.headers().authorization, 'Bearer medical-session', path)
-        if (path === '/auth/me') data = { user: { id: '12', roles: ['MEDICAL_VIEWER'] }, roles: ['MEDICAL_VIEWER'], permissions: [] }
-        else if (path === '/medical/session') data = identity
+        assert.equal(request.headers().authorization, 'Bearer medical-session', `${stage}: ${path}`)
+        if (path === '/medical/session') data = identity
         else if (path === '/medical/dashboards') data = [detail.dashboard]
         else if (path === '/medical/dashboards/2/open') data = { dashboardId: '2' }
         else if (path === '/medical/dashboards/2/metadata') data = { deptCode: '4101', deptName: '测试科室', widgets: Object.fromEntries(['kpi', 'chart', 'table'].map(code => [code, { fields, periods: [{ periodType: 'MONTHLY', periodStart: '2026-01-01', periodEnd: '2026-02-01' }] }])) }
-        else if (path === '/medical/dashboard-access/exchange') { assert.equal(body.sign, signature); data = { dashboardId: '2' } }
         else if (path === '/medical/dashboards/2') data = detail
         else if (path.endsWith('/periods')) data = [{ periodType: 'MONTHLY', periodStart: '2026-01-01T00:00:00', periodEnd: '2026-02-01T00:00:00' }]
         else if (path === '/medical/dashboards/2/query') {
@@ -50,7 +50,7 @@ try {
       }
       await route.fulfill({ json: { code: 'OK', data } })
     })
-    await page.goto(`${base}/auto-login?token=temporary-medical-token&dashboardID=0002&doctorNo=1001&deptCode=4101&sign=${signature}`)
+    await page.goto(`${base}/dashboard?dashboardID=0002&doctorNo=1001&deptCode=4101&sign=${signature}`)
     await page.waitForURL('**/dashboard?id=2&medical=1')
     await page.getByTestId('dashboard-canvas').waitFor()
     assert.equal(await page.locator('.medical-grid').count(), 0)
@@ -77,14 +77,17 @@ try {
     assert.equal(await page.getByText('下钻结果版本、快照或层级不一致').count(), 0)
     await page.getByRole('button', { name: '返回原图表', exact: true }).click()
     await page.reload()
+    stage = 'restored visitor'
     await page.getByTestId('binding-kpi-value').filter({ hasText: '128' }).waitFor()
     failQuery = true
+    stage = 'query error'
     const month = page.getByTestId('dashboard-period-month').locator('input')
     await month.fill('2026 年 02 月')
     await month.press('Enter')
     await page.getByTestId('dashboard-period-apply').click()
     await page.getByText('科室授权已失效', { exact: false }).first().waitFor()
     assert.equal(await page.getByTestId('binding-kpi-value').count(), 0, 'failed refresh clears stale values')
+    stage = 'logout'
     await page.getByRole('button', { name: '退出登录', exact: true }).click()
     await page.waitForURL('**/login')
     assert.equal(requests.findLast(r => r.path === '/medical/logout').cookie, undefined)

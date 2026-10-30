@@ -95,7 +95,7 @@
 
     <main class="idmp-main">
       <StatePanel v-if="platformPermissionsMissing" type="empty" title="账号尚未配置平台权限" description="已登录，请联系管理员为当前账号分配平台角色和访问权限。" />
-      <RouterView v-else v-slot="{ Component, route: currentRoute }">
+      <RouterView v-else-if="sessionState.status === 'authenticated'" v-slot="{ Component, route: currentRoute }">
         <KeepAlive :key="sessionState.revision" :include="['Dashboard', 'AlertCenter']" :max="2">
           <component :is="Component" :key="`${currentRoute.path}-${medicalViewer ? 'medical' : 'platform'}`" />
         </KeepAlive>
@@ -167,6 +167,7 @@ const dashboardMenuExpanded = ref(true)
 let dashboardOptionsRequestId = 0
 async function refreshRemoteDashboardOptions() {
   const requestId = ++dashboardOptionsRequestId
+  if (sessionState.status !== 'authenticated') { remoteDashboardOptions.value = []; return }
   if (!medicalViewer.value && (platformPermissionsMissing.value || !canNavigate('/dashboard'))) { remoteDashboardOptions.value = []; return }
   try {
     const catalog = medicalViewer.value ? await fetchMedicalCatalog() : await fetchDashboardCatalog({ cache: 'no-store' })
@@ -178,6 +179,7 @@ async function refreshRemoteDashboardOptions() {
 }
 let unreadRequestId = 0
 async function loadUnreadCount() {
+  if (sessionState.status !== 'authenticated') { unreadCount.value = 0; return }
   if (medicalViewer.value) { unreadCount.value = 0; return }
   if (platformPermissionsMissing.value || !canRequest('GET', '/me/notifications/unread-count')) { unreadCount.value = 0; return }
   const requestId = ++unreadRequestId

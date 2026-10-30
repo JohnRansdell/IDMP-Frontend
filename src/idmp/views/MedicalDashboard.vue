@@ -11,7 +11,8 @@ import { useRoute, useRouter } from 'vue-router'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import { getAccessToken, isMedicalSession } from '@/idmp/api/request'
 import { signedDashboardParameters, scalarParameter } from '@/idmp/auth/medicalSso.js'
-import { fetchMedicalSession, exchangeDashboardAccess, openMedicalDashboard } from '@/idmp/api/modules/medical'
+import { enterSignedDashboard } from '@/idmp/auth/session.js'
+import { fetchMedicalSession, openMedicalDashboard } from '@/idmp/api/modules/medical'
 const route = useRoute(), router = useRouter(), error = ref('')
 onMounted(async () => {
   const query = { ...route.query }
@@ -19,12 +20,14 @@ onMounted(async () => {
   for (const key of ['doctorNo', 'deptCode', 'sign']) clean.searchParams.delete(key)
   window.history.replaceState(window.history.state, '', `${clean.pathname}${clean.search}`)
   try {
-    if (!isMedicalSession() || !getAccessToken()) throw new Error('请先从医务管理系统完成单点登录')
-    await fetchMedicalSession()
     const signed = signedDashboardParameters(query)
     let id = scalarParameter(query, 'id')
-    if (signed) id = (await exchangeDashboardAccess(signed)).dashboardId
-    else if (id) id = (await openMedicalDashboard(id)).dashboardId
+    if (signed) id = (await enterSignedDashboard(signed)).dashboardId
+    else {
+      if (!isMedicalSession() || !getAccessToken()) throw new Error('请使用来源系统提供的签名看板链接进入')
+      await fetchMedicalSession()
+      if (id) id = (await openMedicalDashboard(id)).dashboardId
+    }
     await router.replace({ path: '/dashboard', query: { ...(id ? { id } : {}), medical: '1' } })
   } catch (cause) { error.value = cause?.message || '看板访问失败' }
 })

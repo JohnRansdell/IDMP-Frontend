@@ -6,7 +6,6 @@ const post = (path, body, options = {}) => requestJson(path, { ...read, ...optio
 const dashboardPath = id => `/medical/dashboards/${encodeURIComponent(id)}`
 export const exchangeSsoCredentials = (payload, entry) => post('/auth/sso/exchange', { ...payload, entry })
 export const fetchMedicalSession = () => requestJson('/medical/session', read)
-export const exchangeDashboardAccess = parameters => post('/medical/dashboard-access/exchange', parameters)
 export const openMedicalDashboard = id => post(`${dashboardPath(id)}/open`, {})
 export const fetchMedicalCatalog = () => requestJson('/medical/dashboards', read)
 export const fetchMedicalDashboard = (id, options = {}) => requestJson(dashboardPath(id), { ...read, ...options })

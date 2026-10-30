@@ -60,6 +60,7 @@ export async function loginWithPassword(payload) {
 }
 
 export async function loginWithSsoCredentials(payload, entry = 'PLATFORM') {
+  if (entry !== 'PLATFORM') throw new Error('请使用独立的签名看板链接进入')
   setMedicalAccessToken('', entry)
   clearSession()
   const revision = sessionRevision
@@ -84,9 +85,34 @@ export async function loginWithSsoCredentials(payload, entry = 'PLATFORM') {
 
 export async function hydrateCurrentUser() {
   const revision = sessionRevision
+  if (isMedicalDashboardSession()) {
+    const identity = await requestJson('/medical/session', { cache: 'no-store', credentials: 'omit', skipSessionRecovery: true })
+    if (revision === sessionRevision) applyDashboardIdentity(identity)
+    return identity
+  }
   const result = await requestJson('/auth/me', { skipSessionRecovery: true })
   if (revision === sessionRevision) applyCurrentUser(result)
   return result
+}
+
+export async function enterSignedDashboard(parameters) {
+  setMedicalAccessToken('', 'DASHBOARD')
+  clearSession()
+  const revision = sessionRevision
+  const result = await requestJson('/medical/dashboard-access/exchange', {
+    method: 'POST', cache: 'no-store', credentials: 'omit', skipSessionRecovery: true,
+    body: JSON.stringify(parameters)
+  })
+  if (revision !== sessionRevision) throw new Error('登录状态已变更，请重新进入看板')
+  setMedicalAccessToken(result.accessToken, 'DASHBOARD')
+  applyDashboardIdentity(result.identity)
+  return result.access
+}
+
+function applyDashboardIdentity(identity) {
+  // This tab-local identity is not a platform user and has no platform permissions.
+  applyCurrentUser({ user: { id: identity.subject, username: identity.doctorNo, displayName: identity.doctorNo }, roles: ['MEDICAL_VIEWER'] })
+  state.expiresInSeconds = Math.max(0, Math.floor((Date.parse(identity.expiresAt) - Date.now()) / 1000))
 }
 
 export function refreshSession() {
@@ -196,13 +222,13 @@ function applyCurrentUser(result = {}) {
 }
 
 function clearSession() {
+  state.status = 'anonymous'
   sessionRevision += 1
   state.revision += 1
   refreshPromise = null
   restorePromise = null
   clearAccessToken()
   setStorageUser(null)
-  state.status = 'anonymous'
   state.user = null
   state.roles = []
   state.permissions = []

@@ -12,12 +12,10 @@ test('平台免登只提交工号姓名及签名信息，不要求外部用户�
     assert.throws(() => resolveSsoEntry(bad))
 })
 
-test('看板免登入口保持原有凭证，不与平台签名混用', () => {
+test('看板签名入口独立于平台单点登录，不再接受外部令牌', () => {
   const signed = { dashboardID: '0002', doctorNo: '1001', deptCode: '4101', sign: 'a'.repeat(64) }
-  assert.deepEqual(resolveSsoEntry({ token: 'external', ...signed }), {
-    entry: 'DASHBOARD', payload: { token: 'external' }, target: { path: '/medical-dashboard', query: signed }
-  })
-  assert.equal(resolveSsoEntry({ token: 'external', redirect: '/medical-dashboard?id=2' }).entry, 'DASHBOARD')
+  assert.throws(() => resolveSsoEntry({ token: 'external', ...signed }), /独立/)
+  assert.throws(() => resolveSsoEntry({ token: 'external', redirect: '/medical-dashboard?id=2' }), /独立/)
   assert.throws(() => resolveSsoEntry({ token: 'external', ...signed, nonce: '0123456789abcdef' }))
 })
 

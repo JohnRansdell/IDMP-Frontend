@@ -38,12 +38,12 @@ test('platform SSO sessions enter normal platform pages instead of the medical c
   assert.deepEqual(await guard({ ...route('/dashboard'), query: { dashboardID: '2' } }), { path: '/medical-dashboard', query: { dashboardID: '2' } })
 })
 
-test('platform SSO can open a signed scoped viewer without gaining platform or editing permissions', async () => {
+test('platform SSO cannot bypass platform permissions using the medical viewer flag', async () => {
   let medical = true
   const guard = createAuthenticationGuard({ ensureSession: async () => true, isMedicalDashboard: () => false,
     isMedicalSession: () => medical, canNavigate: () => false, accessibleHome: () => '/forbidden' })
   const viewer = { ...route('/dashboard'), query: { id: '2', medical: '1' } }
-  assert.equal(await guard(viewer), true)
+  assert.deepEqual(await guard(viewer), { path: '/forbidden', replace: true })
   for (const target of [route('/dashboard'), route('/factor'), { ...viewer, query: { ...viewer.query, edit: '1' } }])
     assert.deepEqual(await guard(target), { path: '/forbidden', replace: true })
   medical = false

@@ -8,7 +8,7 @@ const source = (await readFile(new URL('../src/idmp/auth/session.js', import.met
   .replace("await import('@/idmp/api/modules/medical')", 'await Promise.resolve({ exchangeSsoCredentials: exchangeSso })')
 function createSession(respond, { token = '', cookie = '', medical = false } = {}) {
   const calls = [], events = []
-  let entry = ''
+  let entry = medical ? 'DASHBOARD' : ''
   const deps = {
     computed: vue.computed, reactive: vue.reactive, readonly: vue.readonly,
     requestJson: async (path, options) => { calls.push(path); return respond(path, options) },
@@ -19,7 +19,7 @@ function createSession(respond, { token = '', cookie = '', medical = false } = {
     setSessionRecoveryHandler: () => {}, document: { cookie }, window: { dispatchEvent: event => events.push(event.type) },
     setStorageUser: () => {}, invalidateRequestSession: () => {}
   }
-  const session = Function(...Object.keys(deps), `${source}; return { sessionState, isAuthenticated, loginWithPassword, loginWithSsoCredentials, logoutSession, refreshSession, restoreSession, ensureAuthenticatedSession, invalidateSession }`)(...Object.values(deps))
+  const session = Function(...Object.keys(deps), `${source}; return { sessionState, isAuthenticated, loginWithPassword, loginWithSsoCredentials, enterSignedDashboard, logoutSession, refreshSession, restoreSession, ensureAuthenticatedSession, invalidateSession }`)(...Object.values(deps))
   return { ...session, calls, events, token: () => token, entry: () => entry }
 }
 const login = { accessToken: 'valid', user: { username: 'tester', roles: ['SYSTEM_ADMIN'] }, csrfToken: 'csrf', expiresInSeconds: 1800 }
@@ -49,13 +49,40 @@ test('platform SSO hydrates assigned permissions and menus without password logi
 
 test('signed entry keeps dashboard-only mode and does not hydrate ordinary platform permissions', async () => {
   const session = createSession((path, options) => {
-    assert.equal(path, '/auth/sso/exchange')
-    assert.equal(JSON.parse(options.body).entry, 'DASHBOARD')
-    return { session: { accessToken: 'viewer', user: { roles: ['MEDICAL_VIEWER'] }, permissions: ['medical:dashboard:view'] } }
+    assert.equal(path, '/medical/dashboard-access/exchange')
+    assert.equal(options.credentials, 'omit')
+    assert.equal(JSON.parse(options.body).dashboardID, '2')
+    return { accessToken: 'viewer', identity: { subject: 'visit', doctorNo: '1001', expiresAt: new Date(Date.now() + 600000).toISOString() }, access: { dashboardId: '2' } }
   })
-  await session.loginWithSsoCredentials({ token: 'external' }, 'DASHBOARD')
+  assert.deepEqual(await session.enterSignedDashboard({ dashboardID: '2' }), { dashboardId: '2' })
   assert.equal(session.entry(), 'DASHBOARD')
-  assert.deepEqual(session.calls, ['/auth/sso/exchange'])
+  assert.equal(session.isAuthenticated.value, true)
+  assert.deepEqual(session.sessionState.roles, ['MEDICAL_VIEWER'])
+  assert.deepEqual(session.sessionState.permissions, [])
+  assert.deepEqual(session.calls, ['/medical/dashboard-access/exchange'])
+  await assert.rejects(session.loginWithSsoCredentials({ token: 'external' }, 'DASHBOARD'), /独立/)
+})
+
+test('dashboard refresh restores only the visitor identity without platform auth or refresh cookies', async () => {
+  const session = createSession(path => {
+    assert.equal(path, '/medical/session')
+    return { subject: 'visit', doctorNo: '1001', expiresAt: new Date(Date.now() + 600000).toISOString() }
+  }, { token: 'viewer', medical: true })
+  assert.equal(await session.restoreSession(), true)
+  assert.deepEqual(session.calls, ['/medical/session'])
+  assert.equal(session.sessionState.user.id, 'visit')
+})
+
+test('failed signature exchange cannot retain the previous privileged identity', async () => {
+  const session = createSession(path => {
+    if (path === '/medical/dashboard-access/exchange') throw Error('看板链接签名无效')
+    return path === '/auth/me' ? me : login
+  })
+  await session.loginWithPassword({})
+  await assert.rejects(session.enterSignedDashboard({}), /签名无效/)
+  assert.equal(session.token(), '')
+  assert.equal(session.isAuthenticated.value, false)
+  assert.deepEqual(session.sessionState.roles, [])
 })
 
 test('failed platform identity hydration clears the external credential', async () => {

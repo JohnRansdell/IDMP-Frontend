@@ -28,9 +28,6 @@ export function createAuthenticationGuard({ ensureSession, isMedicalDashboard, i
     }
     if (!authenticated) return { path: '/login', query: { redirect: safeLoginRedirect(to.fullPath, resolve) }, replace: true }
     if (isMedicalDashboard()) return true
-    // Platform SSO can also open a signed, department-scoped viewer. Its data APIs
-    // still require the backend dashboard grant; this does not grant management access.
-    if (isMedicalSession() && to.path === '/dashboard' && to.query.medical === '1' && !to.query.edit) return true
     return canNavigate(to) || { path: accessibleHome(), replace: true }
   }
 }

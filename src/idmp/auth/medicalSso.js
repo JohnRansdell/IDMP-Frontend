@@ -10,11 +10,7 @@ export function resolveSsoEntry(query) {
   const dashboardEntry = query.dashboardID !== undefined || query.deptCode !== undefined
     || target.startsWith('/medical-dashboard') || new URL(target, 'https://idmp.invalid').searchParams.has('dashboardID')
   if (dashboardEntry) {
-    if (['timestamp', 'nonce', 'displayName'].some(key => query[key] !== undefined)) throw new Error('登录凭证与入口不匹配')
-    const token = scalarParameter(query, 'token')
-    if (!token || token.length > 8192) throw new Error('缺少有效登录凭证，请从医务系统重新进入')
-    const signed = signedDashboardParameters(query)
-    return { entry: 'DASHBOARD', payload: { token }, target: signed ? { path: '/medical-dashboard', query: signed } : target }
+    throw new Error('请使用独立的签名看板链接进入，看板访问不需要平台单点登录')
   }
   if (query.token !== undefined) throw new Error('平台登录链接已失效，请从来源系统重新进入或使用工号密码登录')
   const values = Object.fromEntries(['doctorNo', 'displayName', 'timestamp', 'nonce', 'sign'].map(key => [key, scalarParameter(query, key)]))
