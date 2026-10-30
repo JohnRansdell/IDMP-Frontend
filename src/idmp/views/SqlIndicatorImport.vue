@@ -6,39 +6,6 @@
       <el-input v-model="sql" :disabled="importBusy" type="textarea" :rows="13" class="sql-editor" placeholder="请输入 MySQL 8 SELECT SQL" />
       <el-alert v-if="sqlChanged" type="info" :closable="false" title="SQL 已修改，请重新解析后确认元数据。" />
       <el-alert v-if="operationError && (sqlChanged || !importTask)" type="error" :closable="false" :title="operationError.message" />
-      <details class="sql-definition-hint">
-        <summary>因子与指标 SQL 定义规范</summary>
-        <h3>查询语句</h3>
-        <p>使用 MySQL 8 只读查询，以 <code>SELECT</code> 或 <code>WITH ... SELECT</code> 开头。建议用一条完整查询表达计算，不支持写入、修改、删除数据或建表等语句。</p>
-        <h3>统计查询</h3>
-        <p>因子的 SQL 可以是简单聚合，也可以包含多表关联、子查询或 <code>WITH</code> 公共表表达式（CTE）。CTE 只是组织查询的写法，不代表指标，也不与因子一一对应。查询最终应输出一个带别名的统计结果列，而不是患者明细列表；多表中的字段用表别名限定。</p>
-        <p>简单统计示例：使用 <code>COUNT(*)</code> 统计记录数。去重计数使用 <code>COUNT(DISTINCT 字段)</code>，其他聚合包括 <code>SUM</code>、<code>AVG</code>、<code>MIN</code>、<code>MAX</code>。</p>
-        <pre><code>SELECT COUNT(*) AS 住院手术记录数
-FROM vmq_surgeryinfo s
-WHERE s.out_inhosp = 2;</code></pre>
-        <p>复杂统计示例：先分别统计全部及四级手术患者，再计算占比。<code>WITH</code> 中的查询用于复用统计步骤，最终仍只输出一个统计结果。</p>
-        <pre><code>WITH total AS (
-  SELECT COUNT(DISTINCT s.patient_ID) AS patient_count
-  FROM vmq_surgeryinfo s
-  WHERE s.out_inhosp = 2
-), level4 AS (
-  SELECT COUNT(DISTINCT s.patient_ID) AS patient_count
-  FROM vmq_surgeryinfo s
-  WHERE s.out_inhosp = 2 AND s.surgery_level = 4
-)
-SELECT ROUND(l4.patient_count * 1.0 / NULLIF(t.patient_count, 0), 4)
-       AS 四级手术患者占比
-FROM level4 l4 CROSS JOIN total t;</code></pre>
-        <h3>导入结果与指标公式</h3>
-        <p>SQL 解析后会列出因子及指标公式，请核对统计口径。可选择仅创建因子，或同时创建引用这些因子的指标；是否创建指标，不由 SQL 是否使用 CTE 决定。可拆分的统计步骤会成为独立因子，明细查询不单独作为统计因子。单次最多创建 10 个因子。</p>
-        <p>指标通过公式引用因子结果，支持加、减、乘、除、括号和数值常量，以及 <code>ROUND</code>、<code>COALESCE</code>、<code>NULLIF</code>、<code>ABS</code>、<code>CASE WHEN</code>、比较和与或非条件。使用 <code>NULLIF(除数, 0)</code> 可让除数为零时返回空值。</p>
-        <h3>时间、分组与下钻</h3>
-        <p>时序因子在解析后选择统计时间字段，试算或查询时填写统计周期。系统按所选字段追加周期筛选，SQL 原有条件（包括日期条件）全部保留，两者同时生效；若范围没有交集，查询将没有数据。所选时间字段不必出现在原 SQL 的结果列或筛选条件中，但必须属于该查询使用的物理表。</p>
-        <p>需要自动拆分并按维度计算时，统计层保持单值聚合，不预先添加 <code>GROUP BY</code>、<code>HAVING</code> 或分页；组合粒度与下钻路径在元数据中配置，并为各因子绑定对应字段。复杂查询能否拆分和重新分组，以解析诊断及试算结果为准。</p>
-        <h3>可选业务参数</h3>
-        <p>需要查询时填写筛选值，可将完整条件写成 <code v-text="'[[AND s.surgery_level = {{surgeryLevel}}]]'" />。其中 <code v-text="'{{surgeryLevel}}'" /> 是参数值的位置，参数名称为 <code>surgeryLevel</code>，解析后会显示在动态传入参数列表中。</p>
-        <p>参数位置不加引号，每个参数只填写一个值，不能填写 SQL 语句。填写参数后，该条件参与筛选；未填写时，整段可选条件不参与筛选。一个可选条件包含多个参数时，须全部填写才生效；必填参数必须填写。同名参数在各因子中的类型、必填性和模式须一致。</p>
-      </details>
     </section>
 
     <template v-if="!sqlChanged && !createLoading">
@@ -122,6 +89,41 @@ FROM level4 l4 CROSS JOIN total t;</code></pre>
     <section v-if="isSucceeded" class="surface-card section"><el-result icon="success" title="SQL 导入及发布已完成" sub-title="因子和指标已经由导入流程完成编译与发布；可在上方修改条件并即时查询。"><template #extra><el-button @click="router.push('/indicator')">返回指标目录</el-button><el-button v-if="importTask.result?.indicatorId" type="primary" @click="router.push(`/indicator/edit/${importTask.result.indicatorId}`)">查看指标</el-button><el-button v-if="importTask.result?.initializationBatchId" @click="router.push({ path: '/calc', query: { batchId: importTask.result.initializationBatchId } })">跟踪静态初始化批次</el-button></template></el-result><el-alert v-if="importTask.result?.initializationBatchId" :type="initializationStatus === 'SUCCEEDED' ? 'success' : initializationStatus === 'FAILED' ? 'error' : 'info'" :closable="false" show-icon :title="`初始化批次 ${importTask.result.initializationBatchId}：${initializationStatus ? sqlImportStatusLabel(initializationStatus) : '正在查询'}`" /></section>
 
     </template>
+    <section class="surface-card section sql-definition-section">
+      <details class="sql-definition-hint">
+        <summary>因子与指标 SQL 定义规范</summary>
+        <h3>查询语句</h3>
+        <p>使用 MySQL 8 只读查询，以 <code>SELECT</code> 或 <code>WITH ... SELECT</code> 开头。建议用一条完整查询表达计算，不支持写入、修改、删除数据或建表等语句。</p>
+        <h3>统计查询</h3>
+        <p>因子的 SQL 可以是简单聚合，也可以包含多表关联、子查询或 <code>WITH</code> 公共表表达式（CTE）。CTE 只是组织查询的写法，不代表指标，也不与因子一一对应。查询最终应输出一个带别名的统计结果列，而不是患者明细列表；多表中的字段用表别名限定。</p>
+        <p>简单统计示例：使用 <code>COUNT(*)</code> 统计记录数。去重计数使用 <code>COUNT(DISTINCT 字段)</code>，其他聚合包括 <code>SUM</code>、<code>AVG</code>、<code>MIN</code>、<code>MAX</code>。</p>
+        <pre><code>SELECT COUNT(*) AS 住院手术记录数
+FROM vmq_surgeryinfo s
+WHERE s.out_inhosp = 2;</code></pre>
+        <p>复杂统计示例：先分别统计全部及四级手术患者，再计算占比。<code>WITH</code> 中的查询用于复用统计步骤，最终仍只输出一个统计结果。</p>
+        <pre><code>WITH total AS (
+  SELECT COUNT(DISTINCT s.patient_ID) AS patient_count
+  FROM vmq_surgeryinfo s
+  WHERE s.out_inhosp = 2
+), level4 AS (
+  SELECT COUNT(DISTINCT s.patient_ID) AS patient_count
+  FROM vmq_surgeryinfo s
+  WHERE s.out_inhosp = 2 AND s.surgery_level = 4
+)
+SELECT ROUND(l4.patient_count * 1.0 / NULLIF(t.patient_count, 0), 4)
+       AS 四级手术患者占比
+FROM level4 l4 CROSS JOIN total t;</code></pre>
+        <h3>导入结果与指标公式</h3>
+        <p>SQL 解析后会列出因子及指标公式，请核对统计口径。可选择仅创建因子，或同时创建引用这些因子的指标；是否创建指标，不由 SQL 是否使用 CTE 决定。可拆分的统计步骤会成为独立因子，明细查询不单独作为统计因子。单次最多创建 10 个因子。</p>
+        <p>指标通过公式引用因子结果，支持加、减、乘、除、括号和数值常量，以及 <code>ROUND</code>、<code>COALESCE</code>、<code>NULLIF</code>、<code>ABS</code>、<code>CASE WHEN</code>、比较和与或非条件。使用 <code>NULLIF(除数, 0)</code> 可让除数为零时返回空值。</p>
+        <h3>时间、分组与下钻</h3>
+        <p>时序因子在解析后选择统计时间字段，试算或查询时填写统计周期。系统按所选字段追加周期筛选，SQL 原有条件（包括日期条件）全部保留，两者同时生效；若范围没有交集，查询将没有数据。所选时间字段不必出现在原 SQL 的结果列或筛选条件中，但必须属于该查询使用的物理表。</p>
+        <p>需要自动拆分并按维度计算时，统计层保持单值聚合，不预先添加 <code>GROUP BY</code>、<code>HAVING</code> 或分页；组合粒度与下钻路径在元数据中配置，并为各因子绑定对应字段。复杂查询能否拆分和重新分组，以解析诊断及试算结果为准。</p>
+        <h3>可选业务参数</h3>
+        <p>需要查询时填写筛选值，可将完整条件写成 <code v-text="'[[AND s.surgery_level = {{surgeryLevel}}]]'" />。其中 <code v-text="'{{surgeryLevel}}'" /> 是参数值的位置，参数名称为 <code>surgeryLevel</code>，解析后会显示在动态传入参数列表中。</p>
+        <p>参数位置不加引号，每个参数只填写一个值，不能填写 SQL 语句。填写参数后，该条件参与筛选；未填写时，整段可选条件不参与筛选。一个可选条件包含多个参数时，须全部填写才生效；必填参数必须填写。同名参数在各因子中的类型、必填性和模式须一致。</p>
+      </details>
+    </section>
     <el-dialog v-model="timeFieldDialogVisible" title="选择物理时间字段" width="760px" destroy-on-close>
       <el-alert type="info" :closable="false" show-icon title="可选择 SQL 涉及物理表中的时间字段；文本字段须包含有效日期或时间。" />
       <el-input v-model="timeFieldSearch" class="time-field-search" clearable placeholder="搜索表名、字段名、类型或注释" />

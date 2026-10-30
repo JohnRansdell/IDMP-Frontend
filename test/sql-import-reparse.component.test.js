@@ -163,3 +163,22 @@ test('未解析出动态参数时展示空状态，不生成可编辑空参数�
   assert.equal(wrapper.find('[aria-label="添加运行参数"]').exists(), false)
   wrapper.unmount()
 })
+
+test('SQL 定义规范在解析前位于编辑区后，解析后位于全部流程内容末尾', async () => {
+  const { wrapper } = create()
+  const sections = () => wrapper.findAll('.sql-import-page > section')
+  assert.equal(sections().length, 2)
+  assert.equal(sections().at(-1).classes().includes('sql-definition-section'), true)
+  wrapper.vm.sql = 'SELECT COUNT(*) AS 人数 FROM 病案'
+  await wrapper.vm.createImport()
+  await vue.nextTick()
+  assert.ok(sections().length > 2)
+  assert.equal(sections().at(-1).classes().includes('sql-definition-section'), true)
+  assert.equal(sections()[0].find('.sql-definition-hint').exists(), false)
+  assert.equal(wrapper.findAll('.sql-definition-hint').length, 1)
+  wrapper.vm.importTask.status = 'TRIAL_SUCCEEDED'
+  await vue.nextTick()
+  assert.match(sections().at(-2).text(), /4. 试算成功/)
+  assert.equal(sections().at(-1).classes().includes('sql-definition-section'), true)
+  wrapper.unmount()
+})
