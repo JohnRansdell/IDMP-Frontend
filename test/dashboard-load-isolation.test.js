@@ -7,6 +7,7 @@ import { createPlatformDashboardRuntime } from '../src/idmp/features/dashboard/v
 import { normalizeIndicatorBindings } from '../src/idmp/features/dashboard/multiIndicator.js'
 import { isDashboardIndicatorQueryWidget, resolveDashboardQueryState } from '../src/idmp/features/dashboard/remoteQuery.js'
 import { widgetResultToDataset } from '../src/idmp/api/adapters/dashboard.js'
+import { boundDashboardSource } from '../src/idmp/features/dashboard/boundSource.js'
 
 const source = readFileSync(new URL('../src/idmp/views/Dashboard.vue', import.meta.url), 'utf8')
 const between = (start, end) => source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start)))
@@ -17,6 +18,7 @@ const reason = '下钻层级缺少字段编码，请完善路径配置'
 
 function metadataHarness(metadata, extra = {}) {
   const state = {
+    boundIndicatorSources: ref({}), boundDashboardSource,
     remoteWidgetMetadataErrors: ref({}), remoteFieldCatalog: ref({}), remoteVersionFieldCatalog: ref({}),
     viewerRuntime: { restricted: false, metadata }, dashboardIndicatorVersion: async () => null,
     annotateDepartmentFilterFields: value => value, metricGroupSourceCodes: () => [],

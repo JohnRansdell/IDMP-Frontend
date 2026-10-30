@@ -481,6 +481,7 @@ import { createDefaultBinding } from '@/idmp/features/dashboard/smartDefaultBind
 import { createMultiIndicatorDataset, multiIndicatorMeasureField, normalizeIndicatorBindings, singleIndicatorProjectionBinding } from '@/idmp/features/dashboard/multiIndicator.js'
 import { buildRemoteFilterOptionQuery, buildRemoteWidgetQuery, canQueryBoundDashboardWidget, isDashboardIndicatorQueryWidget, resolveDashboardQueryState } from '@/idmp/features/dashboard/remoteQuery.js'
 import { buildIndicatorAnalysisPeriodContext, buildIndicatorAnalysisRouteQuery } from '@/idmp/features/dashboard/analysisNavigation.js'
+import { boundDashboardSource, canNavigateDashboardSource } from '@/idmp/features/dashboard/boundSource.js'
 import { resultPeriodToClosedRange } from '@/idmp/utils/periodRange.js'
 import { IDMP_CHART_COLORS } from '@/idmp/charts/theme'
 import {
@@ -738,6 +739,7 @@ let selectedDataSourceManuallySelected = false
 const addWidgetType = ref('kpi')
 const indicatorDataSources = shallowRef([])
 const catalogIndicatorSources = shallowRef([])
+const boundIndicatorSources = shallowRef({})
 const remoteWidgetDatasets = shallowRef({})
 const remoteMultiIndicatorDatasets = shallowRef({})
 const remoteWidgetPreviewGenerations = new Map()
@@ -763,7 +765,8 @@ const remoteCatalogIsEmpty = computed(() => localDashboardCatalog.value.length =
 // The eager filter watcher evaluates bindingDatasets during setup, so this source catalog must exist first.
 const visibleDashboardIndicatorSources = computed(() => indicatorDataSources.value.filter(source => source.origin === 'backend'))
 const availableIndicatorSources = computed(() => {
-  const sources = [...visibleDashboardIndicatorSources.value, ...catalogIndicatorSources.value]
+  const sources = [...visibleDashboardIndicatorSources.value, ...Object.values(boundIndicatorSources.value),
+    ...(isEditing.value || !isFormalRemoteDashboard.value ? catalogIndicatorSources.value : [])]
   return [...new Map(sources.map(source => [source.code, source])).values()]
 })
  const selectableIndicatorSources = computed(() => catalogIndicatorSources.value)
@@ -1593,14 +1596,14 @@ function getDashboardIndicatorSource(code) {
 
 function getWidgetSource(widget) {
   if (typeof widget.kpiIndex === 'number') return visibleDashboardIndicatorSources.value[widget.kpiIndex]
-  return getDashboardIndicatorSource(widget.sourceCode)
+  return boundIndicatorSources.value[`${widget.sourceCode}@${widget.config?.analysisIndicatorVersionId}`]
+    || boundDashboardSource(widget) || getDashboardIndicatorSource(widget.sourceCode)
 }
 
 function canOpenWidgetAnalysis(widget) {
   if (!viewerRuntime.capabilities.analysisNavigation) return false
   const source = getWidgetSource(widget)
-  return Boolean(source?.analysisIndicatorId && ['indicator-catalog', 'dashboard-data-source', 'backend'].includes(source.origin)
-    && (source.origin !== 'backend' || dashboardStatus.value === 'ready'))
+  return canNavigateDashboardSource(source, dashboardStatus.value)
 }
 
 function goWidgetAnalysis(widget) {
@@ -2599,6 +2602,7 @@ async function loadLocalDashboard(targetDashboardId, isCurrentLoad = () => true)
   }
   remoteDashboardMeta.value = null
   remoteDashboardIsMock.value = false
+  boundIndicatorSources.value = {}
   dashboardDefinition.value = null
   dashboardSchema.value = recovered.schema
   loadedDashboardId.value = targetDashboardId
@@ -2983,18 +2987,9 @@ async function loadRemoteDashboard(targetDashboardId, isCurrentLoad = () => true
       dashboardLoadMessage.value = '该看板配置需更新，请编辑并重新绑定指标，保存发布后查看。'
       return
     }
-    const requiresSourceCatalog = rawSchema.widgets.some(widget => normalizeIndicatorBindings(widget.config?.indicatorBindings, widget).length > 1)
-    if (viewerRuntime.capabilities.sourceCatalog && (requiresSourceCatalog || rawSchema.widgets.some(widget => widget.chartKind === 'pie'))) {
-      await loadPublishedIndicatorCatalog()
-      if (!isCurrentLoad()) return
-    }
-    const sourceCodes = [...new Set(rawSchema.widgets.flatMap(widget => [widget.sourceCode, ...normalizeIndicatorBindings(widget.config?.indicatorBindings, widget).map(binding => binding.sourceCode), ...metricGroupSourceCodes(widget)]).filter(Boolean))]
+    boundIndicatorSources.value = {}
     const metadataEntries = await loadRemoteWidgetMetadata(rawSchema, signal, isCurrentLoad)
     if (!isCurrentLoad()) return
-    if (medicalMode.value) catalogIndicatorSources.value = sourceCodes.map(code => {
-      const widget = rawSchema.widgets.find(widget => widget.sourceCode === code)
-      return dashboardDataSourceToFrontend({ code, name: widget?.sourceName || widget?.title || '未命名指标', indicatorVersionId: widget?.config?.analysisIndicatorVersionId })
-    })
     remoteSourcePeriodOptions.value = Object.fromEntries(metadataEntries.map(item => [item.code, createPublishedDashboardPeriodOptions([item.periods])]))
     const availablePeriods = createPublishedDashboardPeriodOptions(metadataEntries.map(item => item.periods))
     periodOptions.value = availablePeriods
@@ -3056,7 +3051,7 @@ async function loadRemoteWidgetMetadata(schema, signal, isCurrentLoad = () => tr
         const sample = { ...widget, sourceCode: binding.sourceCode, config: { ...widget.config, analysisIndicatorVersionId: versionId } }
         const { fields, periods } = await viewerRuntime.metadata(binding.sourceCode, sample, { signal })
         const version = viewerRuntime.restricted ? null : await dashboardIndicatorVersion(null, sample)
-        return { code: binding.sourceCode, key, fields: annotateDepartmentFilterFields(fields, version?.drillConfig?.drillPaths || version?.drillPaths || []), periods }
+        return { code: binding.sourceCode, key, source: boundDashboardSource(sample, version), fields: annotateDepartmentFilterFields(fields, version?.drillConfig?.drillPaths || version?.drillPaths || []), periods }
       }, { signal }))
       return requests.get(requestKey)
     }))
@@ -3064,6 +3059,7 @@ async function loadRemoteWidgetMetadata(schema, signal, isCurrentLoad = () => tr
   }))
   const metadata = entries.flatMap(entry => entry.parts.flatMap(part => part.value ? [part.value] : []))
   if (!isCurrentLoad()) return metadata
+  boundIndicatorSources.value = Object.fromEntries(metadata.filter(item => item.source).map(item => [item.key, item.source]))
   remoteWidgetMetadataErrors.value = Object.fromEntries(entries.flatMap(entry => {
     const failure = entry.parts.find(part => part.error)
     return failure ? [[entry.id, failure.error]] : []
@@ -3398,7 +3394,7 @@ const goWarningEvent = (eventId) => {
 const goIndicatorAnalysis = (indicator, backendQuery = {}, drillContext = null, queryContext = null) => {
   if (isEditing.value || medicalMode.value) return
   const source = typeof indicator === 'object' && indicator ? indicator : getDashboardIndicatorSource(indicator)
-  if (!source?.analysisIndicatorId || !['indicator-catalog', 'dashboard-data-source', 'backend'].includes(source.origin) || (source.origin === 'backend' && dashboardStatus.value !== 'ready')) return
+  if (!viewerRuntime.capabilities.analysisNavigation || !canNavigateDashboardSource(source, dashboardStatus.value)) return
   const context = queryContext || (['FIXED', 'INDEPENDENT'].includes(backendQuery?.periodMode)
     ? buildIndicatorAnalysisPeriodContext(remotePeriodRange.value, backendQuery)
     : remoteSelectedPeriod())
@@ -3508,7 +3504,7 @@ onDeactivated(() => {
 })
 onActivated(() => {
   if (!dashboardDeactivatedAt) return
-  void loadPublishedIndicatorCatalog()
+  if (isEditing.value) void loadPublishedIndicatorCatalog()
   addDashboardListeners()
   designerImmersive.value = isEditing.value
   if (Date.now() - dashboardDeactivatedAt > 30_000 && isFormalRemoteDashboard.value) {
@@ -3539,7 +3535,6 @@ onMounted(async () => {
     if (managedDashboardId.value || activeDashboardId.value) {
       loadDashboardSchema()
       await loadDashboard()
-      if (isRemoteDashboard()) void loadPublishedIndicatorCatalog()
       if (route.query.edit === '1') await startDashboardEdit()
     } else {
       dashboardStatus.value = 'no-dashboards'
