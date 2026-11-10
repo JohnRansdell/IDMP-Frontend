@@ -20,22 +20,24 @@ export function createDashboard({ code: _code, ...payload }, options = {}) {
   })
 }
 
-async function completeVersions(versions, options) {
+async function completeVersions(versions, options, onBindingError) {
   return completeDashboardSourceBindings(versions, {
     fetchVersion: id => requestJson(`/indicator-versions/${encodeURIComponent(id)}`, options),
     fetchIndicator: id => requestJson(`/indicators/${encodeURIComponent(id)}`, options),
-    signal: options.signal
+    signal: options.signal,
+    onBindingError
   })
 }
 
-async function completeDefinition(detail, options) {
+async function completeDefinition(detail, options, onBindingError) {
   if (!detail?.version) return detail
-  const [version] = await completeVersions([detail.version], options)
+  const [version] = await completeVersions([detail.version], options, onBindingError)
   return { ...detail, version }
 }
 
 export async function fetchDashboardDefinition(code = DEFAULT_DASHBOARD_CODE, options = {}) {
-  return completeDefinition(await requestJson(`/analysis/dashboards/${encodeURIComponent(code)}`, options), options)
+  const { onBindingError, ...requestOptions } = options
+  return completeDefinition(await requestJson(`/analysis/dashboards/${encodeURIComponent(code)}`, requestOptions), requestOptions, onBindingError)
 }
 
 export function queryDashboard(code = DEFAULT_DASHBOARD_CODE, payload = {}, options = {}) {
@@ -76,7 +78,8 @@ export function publishDashboard(id, resourceVersion, options = {}) {
 }
 
 export async function fetchDashboardVersions(id, options = {}) {
-  return completeVersions(await requestJson(`/analysis/dashboards/${encodeURIComponent(id)}/versions`, options), options)
+  const { onBindingError, ...requestOptions } = options
+  return completeVersions(await requestJson(`/analysis/dashboards/${encodeURIComponent(id)}/versions`, requestOptions), requestOptions, onBindingError)
 }
 
 export async function restoreDashboardVersion(id, versionId, options = {}) {

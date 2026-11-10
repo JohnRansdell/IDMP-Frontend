@@ -2228,13 +2228,15 @@ async function startDashboardEdit() {
     return
   }
   dashboardEditLoading.value = true
+  const bindingErrors = []
+  const editOptions = { cache: 'no-store', onBindingError: (error, widget) => bindingErrors.push({ error, widget }) }
   try {
-    const detail = await fetchDashboardDefinition(targetDashboardId)
+    const detail = await fetchDashboardDefinition(targetDashboardId, editOptions)
     if (route.name !== 'Dashboard' || targetDashboardId !== activeDashboardId.value || isEditing.value || !canEditCurrentDashboard.value) return
     const meta = dashboardDetailMeta(detail)
     let versions = []
     if (meta.workingVersionId && String(detail?.version?.id || '') !== meta.workingVersionId) {
-      versions = await fetchDashboardVersions(meta.dashboardId || targetDashboardId)
+      versions = await fetchDashboardVersions(meta.dashboardId || targetDashboardId, editOptions)
       if (route.name !== 'Dashboard' || targetDashboardId !== activeDashboardId.value || isEditing.value || !canEditCurrentDashboard.value) return
     }
     const workingDetail = { ...detail, version: selectDashboardVersion(detail, versions, { editing: true }) }
@@ -2248,17 +2250,29 @@ async function startDashboardEdit() {
       ElMessage.info('旧版组件已清空，请重新配置指标组件，保存并发布后生效。')
     } else {
       beginDashboardEdit(applyDefaultDashboardBindings(schema, remoteFieldCatalog.value))
-      const loaded = await loadPublishedIndicatorCatalog()
-      if (targetDashboardId !== activeDashboardId.value || !isEditing.value) return
-      if (!loaded) throw new Error(indicatorCatalogError.value || '指标目录暂不可用')
-      await mapWithConcurrency(designerWidgets.value.filter(widget => canQueryBoundDashboardWidget(widget, getWidgetSource(widget))),
-        3, widget => previewRemoteWidget(widget))
     }
   } catch (error) {
     ElMessage.error(`读取看板草稿失败：${error.message || '未知错误'}`)
+    return
   } finally {
     dashboardEditLoading.value = false
   }
+  // The draft is already open. Metadata and preview failures must not masquerade
+  // as a failed draft read or replace the saved widget configuration.
+  if (bindingErrors.length) ElMessage.warning(`草稿已打开，部分组件的指标配置读取失败：${bindingErrors[0].error.message || '请检查组件绑定'}。原配置已保留，可调整组件后重试。`)
+  const loaded = await loadPublishedIndicatorCatalog()
+  if (targetDashboardId !== activeDashboardId.value || !isEditing.value) return
+  if (!loaded) {
+    ElMessage.warning(`草稿已打开，指标目录暂不可用：${indicatorCatalogError.value || '请稍后重试'}。原组件配置已保留。`)
+    return
+  }
+  await mapWithConcurrency(designerWidgets.value.filter(widget => canQueryBoundDashboardWidget(widget, getWidgetSource(widget))),
+    3, async widget => {
+      try { await previewRemoteWidget(widget) }
+      catch (error) {
+        if (targetDashboardId === activeDashboardId.value && isEditing.value) ElMessage.warning(`组件“${widget.title || '未命名组件'}”预览失败：${error.message || '请重试'}`)
+      }
+    })
 }
 
 function finishDashboardEdit() {

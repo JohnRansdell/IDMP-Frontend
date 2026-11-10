@@ -10,11 +10,11 @@ export function createCalcBatch(payload, idempotencyKey) {
 }
 
 export function fetchAsyncTask(taskId) {
-  return requestJson(`/async-tasks/${taskId}`)
+  return requestJson(`/async-tasks/${encodeURIComponent(taskId)}`)
 }
 
 export function fetchCalcBatch(batchId, options = {}) {
-  return requestJson(`/calc/batches/${batchId}`, options)
+  return requestJson(`/calc/batches/${encodeURIComponent(batchId)}`, options)
 }
 
 export function fetchCalcNodeResults(nodeId, pageNum = 1, pageSize = 20, options = {}) {

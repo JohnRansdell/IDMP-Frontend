@@ -2,7 +2,7 @@
   <div class="runtime-parameter-fields">
     <div v-for="parameter in declarations" :key="parameter.code" class="runtime-parameter-field">
       <label>
-        <span>{{ parameter.code }}<em v-if="parameter.required">*</em></span>
+        <span>{{ runtimeParameterLabel(parameter) }}<em v-if="parameter.required">*</em></span>
         <small v-if="showMetadata">{{ typeLabel(parameter.type) }} · {{ parameter.parameterMode === 'TEMPORARY' ? '临时重算' : '结果维度' }}</small>
       </label>
       <el-select v-if="parameter.type === 'BOOLEAN'" :model-value="modelValue[parameter.code]" clearable placeholder="请选择" @update:model-value="value => updateValue(parameter.code, value)"><el-option label="是" :value="true" /><el-option label="否" :value="false" /></el-select>
@@ -16,6 +16,7 @@
 </template>
 
 <script setup>
+import { runtimeParameterLabel } from '@/idmp/utils/runtimeParameterLabel.js'
 const props = defineProps({
   declarations: { type: Array, default: () => [] },
   modelValue: { type: Object, default: () => ({}) },

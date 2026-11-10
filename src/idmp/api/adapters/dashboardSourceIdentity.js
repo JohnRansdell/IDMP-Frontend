@@ -1,6 +1,6 @@
 // A component may legally bind only a fixed indicator version. The editor also
 // needs its owning indicator code, but must never replace that fixed version.
-export async function completeDashboardSourceBindings(versions, { fetchVersion, fetchIndicator, signal }) {
+export async function completeDashboardSourceBindings(versions, { fetchVersion, fetchIndicator, signal, onBindingError }) {
   const versionRequests = new Map(), indicatorRequests = new Map()
   const once = (cache, id, read) => {
     if (!cache.has(id)) cache.set(id, read(id))
@@ -11,13 +11,22 @@ export async function completeDashboardSourceBindings(versions, { fetchVersion, 
     widgets: await Promise.all((version.widgets || []).map(async widget => {
       if (widget.dataSourceCode || !widget.indicatorVersionId || ['TEXT', 'WARNING', 'WARNINGS'].includes(widget.type)) return widget
       signal?.throwIfAborted()
-      const definition = await once(versionRequests, String(widget.indicatorVersionId), fetchVersion)
-      signal?.throwIfAborted()
-      if (!definition?.indicatorId) throw new Error('组件绑定的指标版本缺少所属指标，请检查指标配置。')
-      const indicator = await once(indicatorRequests, String(definition.indicatorId), fetchIndicator)
-      signal?.throwIfAborted()
-      if (!indicator?.code) throw new Error('组件绑定的指标信息不完整，请检查指标配置。')
-      return { ...widget, dataSourceCode: indicator.code, dataSourceName: indicator.name || widget.dataSourceName || '' }
+      try {
+        const definition = await once(versionRequests, String(widget.indicatorVersionId), fetchVersion)
+        signal?.throwIfAborted()
+        if (!definition?.indicatorId) throw new Error('组件绑定的指标版本缺少所属指标，请检查指标配置。')
+        const indicator = await once(indicatorRequests, String(definition.indicatorId), fetchIndicator)
+        signal?.throwIfAborted()
+        if (!indicator?.code) throw new Error('组件绑定的指标信息不完整，请检查指标配置。')
+        return { ...widget, dataSourceCode: indicator.code, dataSourceName: indicator.name || widget.dataSourceName || '' }
+      } catch (error) {
+        signal?.throwIfAborted()
+        // Only an editor explicitly opting in may preserve an unresolved binding.
+        // Authentication failures and cancelled reads must still propagate.
+        if (!onBindingError || error?.name === 'AbortError' || [401, 403].includes(Number(error?.status))) throw error
+        onBindingError(error, widget)
+        return widget
+      }
     }))
   })))
 }

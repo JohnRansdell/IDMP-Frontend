@@ -84,7 +84,7 @@ async function load() {
       })())
       return upstream.get(id)
     })
-    if (token === generation) declarations.value = loaded.map(item => ({ ...item, label: item.label || item.name || item.code }))
+    if (token === generation) declarations.value = loaded
   } catch (e) { if (token === generation) schemaError.value = e.message || '运行参数读取失败' }
   finally { if (token === generation) schemaLoading.value = false }
 }

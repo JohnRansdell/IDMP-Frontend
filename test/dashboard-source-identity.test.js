@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { completeDashboardSourceBindings } from '../src/idmp/api/adapters/dashboardSourceIdentity.js'
+import { dashboardDetailToSchema, schemaToDashboardPayload } from '../src/idmp/api/adapters/dashboard.js'
 
 test('version-only components receive identity without upgrading their fixed version', async () => {
   const input = [{ id: 'draft', widgets: [{ type: 'BAR', indicatorVersionId: 'old-version', title: '历史口径', fieldBindings: { dimensions: ['科室', '性别'] } }] }]
@@ -50,6 +51,43 @@ test('missing identity is explicit rather than guessing by title or another vers
   await assert.rejects(completeDashboardSourceBindings([{ widgets: [{ indicatorVersionId: 'v1', title: '同名指标' }] }], {
     fetchVersion: async () => ({}), fetchIndicator: () => assert.fail('missing owner')
   }), /缺少所属指标/)
+})
+
+test('editor opt-in preserves a broken binding and continues resolving healthy widgets', async () => {
+  const widgets = [{ code: 'broken', indicatorVersionId: 'bad', fieldBindings: { measure: 'value' } }, { code: 'healthy', indicatorVersionId: 'good' }]
+  const input = structuredClone(widgets), errors = []
+  const [result] = await completeDashboardSourceBindings([{ widgets }], {
+    fetchVersion: async id => { if (id === 'bad') throw new Error('下钻层级缺少字段编码，请完善路径配置'); return { indicatorId: 'owner' } },
+    fetchIndicator: async () => ({ code: 'REAL', name: '正常指标' }),
+    onBindingError: (error, widget) => errors.push({ error, widget })
+  })
+  assert.deepEqual(widgets, input)
+  assert.deepEqual(result.widgets[0], input[0])
+  assert.equal(result.widgets[1].dataSourceCode, 'REAL')
+  assert.equal(errors.length, 1)
+  assert.equal(errors[0].widget.code, 'broken')
+})
+
+test('editor tolerance never suppresses authentication failures or cancellation', async () => {
+  for (const failure of [{ status: 401 }, { status: 403 }, { name: 'AbortError' }]) {
+    await assert.rejects(completeDashboardSourceBindings([{ widgets: [{ indicatorVersionId: 'bad' }] }], {
+      fetchVersion: async () => { throw failure }, fetchIndicator: () => assert.fail(), onBindingError: () => assert.fail('must propagate')
+    }), error => error === failure)
+  }
+})
+
+test('unresolved widgets retain fixed version and field bindings through editor serialization', async () => {
+  const widget = { code: 'original', type: 'BAR', title: '原组件', indicatorVersionId: '102027642461312818', position: { x: 0, y: 0, w: 8, h: 4 },
+    fieldBindings: { dataset: 'backend', dimensions: [{ field: 'department' }], measures: [{ field: 'value', aggregation: 'NONE' }], series: [], sort: [] }, query: { resultShape: 'RANKING' } }
+  const [version] = await completeDashboardSourceBindings([{ id: 'draft', widgets: [widget] }], {
+    fetchVersion: async () => { throw new Error('下钻层级缺少字段编码') }, fetchIndicator: assert.fail, onBindingError: () => {}
+  })
+  const schema = dashboardDetailToSchema({ dashboard: { id: '1', name: '原看板' }, version })
+  const payload = schemaToDashboardPayload(schema)
+  assert.equal(payload.widgets.length, 1)
+  assert.equal(payload.widgets[0].code, widget.code)
+  assert.equal(String(payload.widgets[0].indicatorVersionId), widget.indicatorVersionId)
+  assert.deepEqual(payload.widgets[0].fieldBindings, widget.fieldBindings)
 })
 
 test('designer fallback and preview both retain fixed-version field metadata', async () => {

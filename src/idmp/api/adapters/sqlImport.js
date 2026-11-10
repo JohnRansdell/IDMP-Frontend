@@ -18,6 +18,7 @@ export function normalizeSqlRuntimeParameter(parameter = {}) {
   const parameterMode = String(parameter.parameterMode || 'TEMPORARY').toUpperCase()
   return {
     code: String(parameter.code || '').trim(),
+    ...Object.fromEntries(['displayName', 'label', 'name'].filter(key => typeof parameter[key] === 'string' && parameter[key].trim()).map(key => [key, parameter[key].trim()])),
     type: SQL_RUNTIME_PARAMETER_TYPES.includes(type) ? type : 'STRING',
     required: parameter.required === true,
     parameterMode: SQL_RUNTIME_PARAMETER_MODES.includes(parameterMode) ? parameterMode : 'TEMPORARY'
@@ -250,7 +251,11 @@ export function buildSqlImportMetadataPayload({ scope, category, indicator, fact
         key: String(item.key || '').trim(), name: String(item.name || '').trim(),
         ...(String(item.description || '').trim() ? { description: String(item.description).trim() } : {}),
         ...(item.missingRowPolicy ? { missingRowPolicy: item.missingRowPolicy } : {}), calculationMode,
-        ...((item.parameters || []).length ? { parameters: item.parameters.map(normalizeSqlRuntimeParameter) } : {}),
+        ...((item.parameters || []).length ? { parameters: item.parameters.map(parameter => {
+          // Display metadata is retained locally; keep the existing write contract.
+          const { displayName, label, name, ...definition } = normalizeSqlRuntimeParameter(parameter)
+          return definition
+        }) } : {}),
         ...(calculationMode === 'TEMPORAL' && String(item.timeField || '').trim() ? { timeField: String(item.timeField).trim() } : {}),
         ...(normalizedScope === 'FACTORS_AND_INDICATOR' && Object.keys(item.dimensionBindings || {}).length ? { dimensionBindings: { ...item.dimensionBindings } } : {})
       }

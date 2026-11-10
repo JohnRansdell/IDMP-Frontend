@@ -319,6 +319,7 @@
 
 <script setup>
 import { toOpaqueId } from '@/idmp/utils/resourceId.js'
+import { calculationQueryIds, validateCalculationQueryId, calculationQueryError } from '@/idmp/utils/calculationQuery.js'
 
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -344,10 +345,7 @@ import { canRetryCalculationNode } from '@/idmp/utils/calculationGraph'
 const route = useRoute()
 const router = useRouter()
 const batchOverview = ref(null)
-const queryForm = reactive({
-  taskId: '101996817981379215',
-  batchId: String(route.query.batchId || '101996817981379215')
-})
+const queryForm = reactive(calculationQueryIds(route.query))
 
 const createForm = reactive({
   ownerType: String(route.query.ownerType || 'INDICATOR'),
@@ -644,21 +642,23 @@ watch(() => createForm.batchType, () => {
 })
 
 async function loadTask() {
-  if (!queryForm.taskId) {
-    ElMessage.warning('请输入任务 ID')
+  const taskId = queryForm.taskId.trim()
+  const validation = validateCalculationQueryId(taskId, '任务')
+  if (validation) {
+    ElMessage.warning(validation)
     return
   }
   taskLoading.value = true
   taskError.value = ''
   try {
-    taskDetail.value = await fetchAsyncTask(queryForm.taskId)
+    taskDetail.value = await fetchAsyncTask(taskId)
     if (taskDetail.value?.batchId !== undefined && taskDetail.value?.batchId !== null) {
       queryForm.batchId = toOpaqueId(taskDetail.value.batchId)
     }
     ElMessage.success('异步任务状态已更新')
   } catch (error) {
     taskDetail.value = null
-    taskError.value = error?.message || '异步任务查询失败'
+    taskError.value = calculationQueryError(error, '异步任务')
     ElMessage.error(taskError.value)
   } finally {
     taskLoading.value = false
@@ -666,21 +666,23 @@ async function loadTask() {
 }
 
 async function loadBatch() {
-  if (!queryForm.batchId) {
-    ElMessage.warning('请输入批次 ID')
+  const batchId = queryForm.batchId.trim()
+  const validation = validateCalculationQueryId(batchId, '批次')
+  if (validation) {
+    ElMessage.warning(validation)
     return
   }
   batchLoading.value = true
   batchError.value = ''
   try {
-    batchDetail.value = await fetchCalcBatch(queryForm.batchId)
+    batchDetail.value = await fetchCalcBatch(batchId)
     if (batchDetail.value?.taskId !== undefined && batchDetail.value?.taskId !== null) {
       queryForm.taskId = toOpaqueId(batchDetail.value.taskId)
     }
     ElMessage.success('计算批次详情已更新')
   } catch (error) {
     batchDetail.value = null
-    batchError.value = error?.message || '计算批次查询失败'
+    batchError.value = calculationQueryError(error, '计算批次')
     ElMessage.error(batchError.value)
   } finally {
     batchLoading.value = false
@@ -925,7 +927,7 @@ function enumLabel(value, labels) {
 }
 
 onMounted(async () => {
-  const batchQuery = route.query.batchId ? loadBatch() : Promise.resolve()
+  const batchQuery = queryForm.batchId ? loadBatch() : queryForm.taskId ? loadTask() : Promise.resolve()
   const ownerInitialization = initializeOwnerSelection()
   if (route.hash !== '#batch-overview') return
   await Promise.all([batchQuery, ownerInitialization])
