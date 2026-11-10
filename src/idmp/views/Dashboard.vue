@@ -2203,12 +2203,15 @@ async function handleWidgetBindingAction(widget, action) {
 }
 
 function beginDashboardEdit(schema = dashboardSchema.value) {
-  void loadPublishedIndicatorCatalog()
+  let snapshot
   try {
-    editingDashboardSchema.value = createDashboardEditingSnapshot(schema, loadDesignerSchema)
-  } catch {
-    editingDashboardSchema.value = createEditingDashboardSchema()
+    snapshot = createDashboardEditingSnapshot(schema, loadDesignerSchema)
+  } catch (error) {
+    ElMessage.error(`无法进入看板编辑：${error?.message || '组件配置无法读取'}。原看板配置已保留，请检查配置后重试。`)
+    return false
   }
+  editingDashboardSchema.value = snapshot
+  void loadPublishedIndicatorCatalog()
   activeWidgetId.value = ''
   designerDrawerOpen.value = false
   dashboardDirty.value = false
@@ -2217,6 +2220,7 @@ function beginDashboardEdit(schema = dashboardSchema.value) {
   isEditing.value = true
   designerImmersive.value = true
   resetDashboardHistory(editingDashboardSchema.value)
+  return true
 }
 
 async function startDashboardEdit() {
@@ -2246,10 +2250,10 @@ async function startDashboardEdit() {
     const schema = dashboardDetailToSchema(workingDetail)
     if (remoteDashboardIsMock.value) {
       // Keep server identity and appearance; never carry fixture bindings into real queries.
-      beginDashboardEdit(dashboardDetailToEditableSchema(workingDetail))
+      if (!beginDashboardEdit(dashboardDetailToEditableSchema(workingDetail))) return
       ElMessage.info('旧版组件已清空，请重新配置指标组件，保存并发布后生效。')
     } else {
-      beginDashboardEdit(applyDefaultDashboardBindings(schema, remoteFieldCatalog.value))
+      if (!beginDashboardEdit(applyDefaultDashboardBindings(schema, remoteFieldCatalog.value))) return
     }
   } catch (error) {
     ElMessage.error(`读取看板草稿失败：${error.message || '未知错误'}`)

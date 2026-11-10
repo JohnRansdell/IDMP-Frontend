@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { createDashboardEditingSnapshot } from '../src/idmp/features/dashboard/editSession.js'
 
 const source = await readFile(new URL('../src/idmp/views/Dashboard.vue', import.meta.url), 'utf8')
 const start = source.slice(source.indexOf('async function startDashboardEdit()'), source.indexOf('function finishDashboardEdit()'))
@@ -21,7 +22,7 @@ function editor(overrides = {}) {
     mapWithConcurrency: async (items, limit, work) => Promise.all(items.map(work)),
     ElMessage: Object.fromEntries(['warning', 'error', 'info'].map(key => [key, value => messages.push([key, value])])), ...overrides
   }
-  deps.beginDashboardEdit = value => { deps.isEditing.value = true; deps.opened = value }
+  deps.beginDashboardEdit ||= value => { deps.isEditing.value = true; deps.opened = value; return true }
   return { deps, schema, messages, previews, run: Function('deps', `const { ${Object.keys(deps).join(',')} } = deps; ${start}; return startDashboardEdit`)(deps) }
 }
 
@@ -52,4 +53,53 @@ test('draft read failures remain errors and do not open or overwrite the editor'
   assert.equal(state.deps.opened, undefined)
   assert.deepEqual(state.previews, [])
   assert.deepEqual(state.messages, [['error', '读取看板草稿失败：读取失败']])
+})
+
+function snapshotEditor(fail) {
+  const ref = value => ({ value }), calls = [], errors = []
+  const schema = { widgets: [{ id: 'original' }] }
+  if (fail) { schema.widgets[0].config = {}; schema.widgets[0].config.self = schema.widgets[0].config }
+  const deps = {
+    dashboardSchema: ref(schema), editingDashboardSchema: ref({ widgets: [{ id: 'previous' }] }),
+    activeWidgetId: ref('original'), designerDrawerOpen: ref(true), dashboardDirty: ref(true), saveState: ref('unsaved'), lastSavedAt: ref('before'), isEditing: ref(false), designerImmersive: ref(false),
+    loadDesignerSchema: value => value,
+    createDashboardEditingSnapshot,
+    loadPublishedIndicatorCatalog: () => { calls.push('catalog') }, resetDashboardHistory: value => calls.push(value),
+    ElMessage: { error: message => errors.push(message) }
+  }
+  const body = source.slice(source.indexOf('function beginDashboardEdit('), source.indexOf('async function startDashboardEdit()'))
+  const run = Function('deps', `const { ${Object.keys(deps).join(',')} } = deps; ${body}; return beginDashboardEdit`)(deps)
+  return { deps, run, calls, errors }
+}
+
+test('snapshot failures preserve the complete editor state and cannot create a blank replacement', () => {
+  const state = snapshotEditor(true)
+  const keys = ['dashboardSchema', 'editingDashboardSchema', 'activeWidgetId', 'designerDrawerOpen', 'dashboardDirty', 'saveState', 'lastSavedAt', 'isEditing', 'designerImmersive']
+  const before = structuredClone(Object.fromEntries(keys.map(key => [key, state.deps[key].value])))
+  assert.equal(state.run(), false)
+  assert.deepEqual(Object.fromEntries(keys.map(key => [key, state.deps[key].value])), before)
+  assert.deepEqual(state.calls, [])
+  assert.match(state.errors[0], /无法进入看板编辑.*原看板配置已保留/)
+})
+
+test('valid snapshots enter editing with an independent copy and reset history', () => {
+  const state = snapshotEditor(false)
+  assert.equal(state.run(), true)
+  assert.equal(state.deps.isEditing.value, true)
+  assert.notEqual(state.deps.editingDashboardSchema.value, state.deps.dashboardSchema.value)
+  assert.deepEqual(state.deps.editingDashboardSchema.value, state.deps.dashboardSchema.value)
+  assert.equal(state.calls[1], state.deps.editingDashboardSchema.value)
+})
+
+test('failed entry stops remote metadata loading and preview for ordinary and historical drafts', async () => {
+  for (const mock of [false, true]) {
+    let catalogReads = 0
+    const state = editor({ beginDashboardEdit: () => false, isMockDashboardDetail: () => mock,
+      loadPublishedIndicatorCatalog: async () => { catalogReads++; return true } })
+    await state.run()
+    assert.equal(state.deps.isEditing.value, false)
+    assert.equal(catalogReads, 0)
+    assert.deepEqual(state.previews, [])
+    assert.deepEqual(state.messages, [])
+  }
 })

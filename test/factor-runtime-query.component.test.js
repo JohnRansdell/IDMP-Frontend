@@ -81,6 +81,23 @@ test('composite runtime parameters are inherited and required values are validat
   assert.deepEqual(calls[0].payload.parameters, { deptCode: 'A' })
   wrapper.unmount()
 })
+
+test('query errors keep inherited business names and block invalid typed values before sending', async () => {
+  const { wrapper, calls } = create({ fetchCompileArtifact: async id => ({ id, parameterSchema: { parameters: [{ code: 'minimumCount', displayName: '最低人数', type: 'INTEGER', required: true }] } }) })
+  await flushPromises()
+  await wrapper.vm.runQuery()
+  assert.equal(wrapper.vm.queryError, '请填写必填参数：最低人数')
+  wrapper.vm.values = { minimumCount: '3.5' }
+  await vue.nextTick()
+  await wrapper.vm.runQuery()
+  assert.match(wrapper.vm.queryError, /最低人数.*整数/)
+  assert.equal(calls.length, 0)
+  wrapper.vm.values = { minimumCount: '0' }
+  await vue.nextTick()
+  await wrapper.vm.runQuery()
+  assert.deepEqual(calls[0].payload.parameters, { minimumCount: 0 })
+  wrapper.unmount()
+})
 test('failed parameter schema blocks queries and retry can recover', async () => {
   let fail = true
   const { wrapper, calls } = create({ fetchCompileArtifact: async id => { if (fail) throw new Error('产物读取失败'); return { id } } })

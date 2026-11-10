@@ -641,51 +641,79 @@ watch(() => createForm.batchType, () => {
   if (!selectedVersion.value || !isVersionEligible(selectedVersion.value)) chooseDefaultVersion()
 })
 
+let taskQueryRevision = 0, batchQueryRevision = 0, queryDisposed = false
+
 async function loadTask() {
+  const revision = ++taskQueryRevision
   const taskId = queryForm.taskId.trim()
+  const batchId = queryForm.batchId.trim(), batchRevision = batchQueryRevision
+  const current = () => !queryDisposed && revision === taskQueryRevision && batchRevision === batchQueryRevision
+    && queryForm.taskId.trim() === taskId && queryForm.batchId.trim() === batchId
   const validation = validateCalculationQueryId(taskId, '任务')
   if (validation) {
+    taskLoading.value = false
+    taskDetail.value = null
+    taskError.value = ''
     ElMessage.warning(validation)
-    return
+    return false
   }
   taskLoading.value = true
   taskError.value = ''
+  if (String(taskDetail.value?.taskId || '') !== taskId) taskDetail.value = null
   try {
-    taskDetail.value = await fetchAsyncTask(taskId)
-    if (taskDetail.value?.batchId !== undefined && taskDetail.value?.batchId !== null) {
-      queryForm.batchId = toOpaqueId(taskDetail.value.batchId)
-    }
+    const detail = await fetchAsyncTask(taskId)
+    if (!current()) return false
+    taskDetail.value = detail
+    const linkedId = toOpaqueId(detail?.batchId)
+    if (linkedId !== queryForm.batchId.trim()) { batchDetail.value = null; batchError.value = '' }
+    queryForm.batchId = linkedId
     ElMessage.success('异步任务状态已更新')
+    return true
   } catch (error) {
+    if (!current()) return false
     taskDetail.value = null
     taskError.value = calculationQueryError(error, '异步任务')
     ElMessage.error(taskError.value)
+    return false
   } finally {
-    taskLoading.value = false
+    if (!queryDisposed && revision === taskQueryRevision) taskLoading.value = false
   }
 }
 
 async function loadBatch() {
+  const revision = ++batchQueryRevision
   const batchId = queryForm.batchId.trim()
+  const taskId = queryForm.taskId.trim(), taskRevision = taskQueryRevision
+  const current = () => !queryDisposed && revision === batchQueryRevision && taskRevision === taskQueryRevision
+    && queryForm.batchId.trim() === batchId && queryForm.taskId.trim() === taskId
   const validation = validateCalculationQueryId(batchId, '批次')
   if (validation) {
+    batchLoading.value = false
+    batchDetail.value = null
+    batchError.value = ''
     ElMessage.warning(validation)
-    return
+    return false
   }
   batchLoading.value = true
   batchError.value = ''
+  if (String(batchDetail.value?.batchId || '') !== batchId) batchDetail.value = null
   try {
-    batchDetail.value = await fetchCalcBatch(batchId)
-    if (batchDetail.value?.taskId !== undefined && batchDetail.value?.taskId !== null) {
-      queryForm.taskId = toOpaqueId(batchDetail.value.taskId)
-    }
+    const detail = await fetchCalcBatch(batchId)
+    if (!current()) return false
+    batchDetail.value = detail
+    const linkedId = toOpaqueId(detail?.taskId)
+    if (linkedId !== queryForm.taskId.trim()) { taskDetail.value = null; taskError.value = '' }
+    queryForm.taskId = linkedId
     ElMessage.success('计算批次详情已更新')
+    return true
   } catch (error) {
+    if (!current()) return false
     batchDetail.value = null
     batchError.value = calculationQueryError(error, '计算批次')
     ElMessage.error(batchError.value)
+    return false
   } finally {
-    batchLoading.value = false
+    if (!queryDisposed && revision === batchQueryRevision) batchLoading.value = false
   }
 }
 
@@ -911,10 +939,23 @@ async function retryNode(row) {
 }
 
 async function refreshCurrent() {
-  const jobs = []
-  if (queryForm.taskId) jobs.push(loadTask())
-  if (queryForm.batchId) jobs.push(loadBatch())
-  await Promise.allSettled(jobs)
+  // Resolve the association first so task and batch refresh cannot overwrite
+  // each other's IDs with responses from two unrelated selections.
+  if (queryForm.batchId) {
+    const revision = batchQueryRevision + 1
+    const taskRevision = taskQueryRevision
+    const loaded = await loadBatch()
+    if (!loaded || queryDisposed || revision !== batchQueryRevision || taskRevision !== taskQueryRevision || !batchDetail.value
+      || String(batchDetail.value.batchId) !== queryForm.batchId.trim()) return
+    if (queryForm.taskId) await loadTask()
+  } else if (queryForm.taskId) {
+    const revision = taskQueryRevision + 1
+    const batchRevision = batchQueryRevision
+    const loaded = await loadTask()
+    if (!loaded || queryDisposed || revision !== taskQueryRevision || batchRevision !== batchQueryRevision || !taskDetail.value
+      || String(taskDetail.value.taskId) !== queryForm.taskId.trim()) return
+    if (queryForm.batchId) await loadBatch()
+  }
 }
 
 
@@ -936,6 +977,9 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  queryDisposed = true
+  ++taskQueryRevision
+  ++batchQueryRevision
   clearTimeout(ownerSearchTimer)
   ++ownerRequest
   ++versionRequest

@@ -16,7 +16,7 @@
   </div>
 </template>
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from '@/idmp/utils/message'
 import { useRouter } from 'vue-router'
 import PageHeader from '@/idmp/components/PageHeader.vue'
@@ -26,17 +26,23 @@ import { computed } from 'vue'
 import { canRequest } from '@/idmp/auth/session.js'
 const router = useRouter(); const loading = ref(false); const rows = ref([]); const filters = reactive({ name: '', publicationStatus: '' })
 const canManageTemplates = computed(() => canRequest('PATCH', '/factor-template-versions/1'))
+let listRequest = 0
+let disposed = false
 async function load() {
+  const request = ++listRequest
+  const query = { ...filters, publicationStatus: canManageTemplates.value ? filters.publicationStatus : 'PUBLISHED', page: 1, size: 100 }
+  const current = () => !disposed && request === listRequest
+    && filters.name === query.name && (canManageTemplates.value ? filters.publicationStatus : 'PUBLISHED') === query.publicationStatus
   loading.value = true
   try {
-    const result = await fetchFactorTemplates({
-      ...filters, publicationStatus: canManageTemplates.value ? filters.publicationStatus : 'PUBLISHED', page: 1, size: 100
-    })
+    const result = await fetchFactorTemplates(query)
+    if (!current()) return
     rows.value = list(result).filter(row => canManageTemplates.value || row.currentPublishedVersionId)
   } catch (error) {
+    if (!current()) return
     rows.value = []
     ElMessage.error(error?.message || '模板目录读取失败')
-  } finally { loading.value = false }
+  } finally { if (!disposed && request === listRequest) loading.value = false }
 }
 async function open(row) {
   if (!canManageTemplates.value) return
@@ -54,6 +60,7 @@ async function open(row) {
 function instantiate(row) { const templateId = row.id || row.templateId; const versionId = row.currentPublishedVersionId; if (!templateId || !versionId) return ElMessage.error('已发布模板版本读取失败，请刷新后重试'); router.push(`/factor/templates/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(versionId)}/instantiate`) }
 function list(value) { return Array.isArray(value) ? value : value?.records || value?.items || value?.list || [] }
 onMounted(load)
+onBeforeUnmount(() => { disposed = true; ++listRequest })
 </script>
 <style scoped lang="scss">
 .template-filter {

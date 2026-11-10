@@ -1,3 +1,5 @@
+import { runtimeParameterDisplayName, runtimeParameterLabel } from './runtimeParameterLabel.js'
+
 export async function inheritedFactorParameters(root, loadArtifact) {
   const parameters = new Map(), visited = new Set(), stack = new Set()
   async function visit(artifact, expectedHash) {
@@ -11,8 +13,12 @@ export async function inheritedFactorParameters(root, loadArtifact) {
         || (declaration.code === 'period' && declaration.type === 'DATETIME_RANGE')
         || ['periodStart','periodEnd'].includes(declaration.code)) continue
       const current = parameters.get(declaration.code)
-      if (current && current.type !== declaration.type) throw new Error(`运行参数“${declaration.code}”在上游因子中的类型不一致`)
+      if (current && current.type !== declaration.type) throw new Error(`运行参数“${runtimeParameterLabel(current)}”在上游因子中的类型不一致`)
+      // Visit the current factor before dependencies. The first explicit business
+      // name wins; unnamed or code-only declarations cannot erase that name.
+      const displayName = runtimeParameterDisplayName(current) || runtimeParameterDisplayName(declaration)
       parameters.set(declaration.code, { ...declaration, required: Boolean(current?.required || declaration.required),
+        ...(displayName ? { displayName } : {}),
         parameterMode: current && current.parameterMode !== declaration.parameterMode ? 'TEMPORARY' : declaration.parameterMode })
     }
     for (const edge of artifact.logicalPlan?.factorDependencies || []) await visit(await loadArtifact(String(edge.factorVersionId)), edge.artifactHash)

@@ -23,7 +23,7 @@ async function compile(path, exposed = '') {
   return deps => Function('vue', 'deps', `const { ${Object.keys(deps).join(',')} } = deps; ${bindings}\n${script.replace(/^import .*$/gm, '').replace('export default', 'return')}`)(vue, deps)
 }
 const Fields = (await compile('components/RuntimeParameterFields.vue'))({ runtimeParameterLabel })
-const TemplatePage = await compile('views/FactorTemplateManagement.vue', 'defineExpose({ rows, filters, canManageTemplates, load, open })')
+const TemplatePage = await compile('views/FactorTemplateManagement.vue', 'defineExpose({ rows, filters, loading, canManageTemplates, load, open })')
 const Pass = vue.defineComponent({ setup: (_, { slots }) => () => vue.h('div', slots.default?.()) })
 const Input = vue.defineComponent({ props: ['modelValue'], emits: ['update:modelValue'], setup: (props, { emit }) => () => vue.h('input', { value: props.modelValue, onInput: event => emit('update:modelValue', event.target.value) }) })
 const Table = vue.defineComponent({ props: ['data'], setup: () => () => vue.h('div') })
@@ -102,4 +102,73 @@ test('template managers open a draft ahead of the current published version', as
   await state.wrapper.vm.open({ id: 'published', currentPublishedVersionId: 'v2' })
   assert.equal(state.routes[0], '/factor/templates/published/versions/draft')
   state.wrapper.unmount()
+})
+
+function deferred() {
+  let resolve, reject
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no })
+  return { promise, resolve, reject }
+}
+
+test('template searches keep the newest result when the previous request finishes last', async () => {
+  for (const oldFails of [false, true]) {
+    const old = deferred(), latest = deferred(), messages = [], queries = []
+    const state = templates(true, { fetchFactorTemplates: query => { queries.push(query); return queries.length === 1 ? old.promise : latest.promise }, ElMessage: { error: value => messages.push(value) } })
+    state.wrapper.vm.filters.name = '新筛选'
+    const query = state.wrapper.vm.load()
+    latest.resolve([{ id: 'latest', name: '新筛选' }])
+    await query
+    if (oldFails) old.reject(new Error('过期请求失败')); else old.resolve([{ id: 'old', name: '旧筛选' }])
+    await flushPromises()
+    assert.deepEqual(state.wrapper.vm.rows.map(row => row.id), ['latest'])
+    assert.equal(queries[0].name, '')
+    assert.equal(queries[1].name, '新筛选')
+    assert.deepEqual(messages, [])
+    state.wrapper.unmount()
+  }
+})
+
+test('an older template request cannot clear the newest loading state', async () => {
+  const old = deferred(), latest = deferred()
+  let count = 0
+  const state = templates(true, { fetchFactorTemplates: () => ++count === 1 ? old.promise : latest.promise })
+  const query = state.wrapper.vm.load()
+  old.resolve([{ id: 'old' }])
+  await flushPromises()
+  assert.equal(state.wrapper.vm.loading, true)
+  assert.deepEqual(state.wrapper.vm.rows, [])
+  latest.resolve([{ id: 'latest' }])
+  await query
+  assert.equal(state.wrapper.vm.loading, false)
+  assert.deepEqual(state.wrapper.vm.rows.map(row => row.id), ['latest'])
+  state.wrapper.unmount()
+})
+
+test('current template failures clear stale rows and support retry', async () => {
+  const errors = []
+  let fail = false
+  const state = templates(true, { fetchFactorTemplates: async () => { if (fail) throw new Error('当前查询失败'); return [{ id: 'valid' }] }, ElMessage: { error: value => errors.push(value) } })
+  await flushPromises()
+  fail = true
+  await state.wrapper.vm.load()
+  assert.deepEqual(state.wrapper.vm.rows, [])
+  assert.equal(state.wrapper.vm.loading, false)
+  assert.deepEqual(errors, ['当前查询失败'])
+  fail = false
+  await state.wrapper.vm.load()
+  assert.deepEqual(state.wrapper.vm.rows.map(row => row.id), ['valid'])
+  state.wrapper.unmount()
+})
+
+test('template responses after unmount cannot update rows or show errors', async () => {
+  for (const fail of [false, true]) {
+    const pending = deferred(), errors = []
+    const state = templates(true, { fetchFactorTemplates: () => pending.promise, ElMessage: { error: value => errors.push(value) } })
+    const vm = state.wrapper.vm
+    state.wrapper.unmount()
+    if (fail) pending.reject(new Error('卸载后的错误')); else pending.resolve([{ id: 'late' }])
+    await flushPromises()
+    assert.deepEqual(vm.rows, [])
+    assert.deepEqual(errors, [])
+  }
 })

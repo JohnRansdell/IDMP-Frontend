@@ -4,11 +4,16 @@ const labels = {
   startdate: '开始日期', enddate: '结束日期', starttime: '开始时间', endtime: '结束时间'
 }
 
-export function runtimeParameterLabel(parameter = {}) {
+export function runtimeParameterDisplayName(parameter = {}) {
   const code = String(parameter.code || '').trim()
   for (const value of [parameter.displayName, parameter.label, parameter.name]) {
     const text = typeof value === 'string' ? value.trim() : ''
     if (text && text !== code) return text
   }
-  return labels[code.replace(/_/g, '').toLowerCase()] || code || '运行参数'
+  return ''
+}
+
+export function runtimeParameterLabel(parameter = {}) {
+  const code = String(parameter.code || '').trim()
+  return runtimeParameterDisplayName(parameter) || labels[code.replace(/_/g, '').toLowerCase()] || code || '运行参数'
 }

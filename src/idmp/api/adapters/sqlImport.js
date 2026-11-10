@@ -2,6 +2,7 @@ import { toOpaqueId } from '../../utils/resourceId.js'
 import { normalizeDimensionGrain, serializeDrillPaths } from '../../features/indicator/grouping.js'
 import { toUserMessage } from '../../utils/userMessage.js'
 import { formatApiError } from '../../utils/apiError.js'
+import { runtimeParameterDisplayName, runtimeParameterLabel } from '../../utils/runtimeParameterLabel.js'
 
 
 function cleanMappings(tableMappings = {}) {
@@ -33,6 +34,8 @@ export function collectSqlRuntimeParameters(factors = []) {
       const current = declarations.get(item.code)
       if (!current) declarations.set(item.code, { ...item, factorKeys: [String(factor.key || '')], conflict: false, identities: [identity] })
       else {
+        const displayName = runtimeParameterDisplayName(current) || runtimeParameterDisplayName(item)
+        if (displayName) current.displayName = displayName
         current.factorKeys.push(String(factor.key || ''))
         if (!current.identities.includes(identity)) current.identities.push(identity)
         current.conflict = current.identities.length > 1
@@ -280,10 +283,28 @@ export function buildSqlImportTrialPayload(factors = [], period = [], parameterV
 }
 
 export function validateSqlRuntimeParameterValues(declarations = [], values = {}) {
-  const conflicts = declarations.filter(item => item.conflict).map(item => item.code)
+  const conflicts = declarations.filter(item => item.conflict).map(runtimeParameterLabel)
   if (conflicts.length) return `同名参数声明不一致：${conflicts.join('、')}`
-  const missing = declarations.filter(item => item.required && (values[item.code] === undefined || values[item.code] === null || values[item.code] === '')).map(item => item.code)
-  return missing.length ? `请填写必填参数：${missing.join('、')}` : ''
+  const empty = value => value === undefined || value === null || value === ''
+  const missing = declarations.filter(item => item.required && (empty(values[item.code]) || (typeof values[item.code] === 'string' && !values[item.code].trim()))).map(runtimeParameterLabel)
+  if (missing.length) return `请填写必填参数：${missing.join('、')}`
+  for (const declaration of declarations) {
+    const value = values[declaration.code]
+    if (empty(value)) continue
+    const label = runtimeParameterLabel(declaration), type = String(declaration.type || 'STRING').toUpperCase()
+    const text = typeof value === 'string' || typeof value === 'number' ? String(value).trim() : ''
+    if (type === 'INTEGER' && (!/^[+-]?\d+$/.test(text) || !Number.isSafeInteger(Number(text)))) return `参数“${label}”请填写有效整数（不超过安全整数范围）`
+    if (type === 'DECIMAL' && (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(text) || !Number.isFinite(Number(text)))) return `参数“${label}”请填写有效数值`
+    if (type === 'BOOLEAN' && ![true, false, 'true', 'false'].includes(value)) return `参数“${label}”请选择是或否`
+    if (type === 'STRING' && typeof value !== 'string') return `参数“${label}”请填写文本`
+    if (['DATE', 'DATETIME'].includes(type)) {
+      const date = text.slice(0, 10), parsed = new Date(`${date}T00:00:00Z`)
+      const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === date
+      const time = text.match(/^\d{4}-\d{2}-\d{2}[T ](\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?$/)
+      if (!validDate || (type === 'DATE' ? text !== date : !time || Number(time[1]) > 23 || Number(time[2]) > 59 || Number(time[3]) > 59)) return `参数“${label}”请填写有效${type === 'DATE' ? '日期' : '日期时间'}`
+    }
+  }
+  return ''
 }
 
 export const buildSqlRuntimeQueryPayload = buildSqlImportTrialPayload

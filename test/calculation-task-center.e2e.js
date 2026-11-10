@@ -266,8 +266,28 @@ try {
     for (const box of layout) assert.ok(box.left >= 0 && box.right <= box.width, JSON.stringify(box))
     await writeFile('.tmp/calculation-task-center-browser/' + (viewport.mobile ? 'mobile' : 'desktop') + '.png', Buffer.from((await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true })).data, 'base64'))
   }
+  await evaluate(`(() => {
+    const previousFetch = window.fetch;
+    const reply = data => new Response(JSON.stringify({code:'OK',data}),{status:200,headers:{'Content-Type':'application/json'}});
+    window.fetch = (input, init) => {
+      const path = new URL(String(input), location.origin).pathname;
+      if(path.endsWith('/calc/batches/700000000000000001')) return new Promise(resolve => {
+        window.__releaseOldBatch = () => resolve(reply({...window.__calcBatch,batchId:'700000000000000001',taskId:'700000000000000011'}));
+      });
+      if(path.endsWith('/calc/batches/700000000000000002')) return Promise.resolve(reply({...window.__calcBatch,batchId:'700000000000000002',taskId:'700000000000000012'}));
+      return previousFetch(input, init);
+    };
+    const state=window.__calcState();state.queryForm.batchId='700000000000000001';
+    window.__oldBatchQuery=state.loadBatch();
+  })()`)
+  await until(() => evaluate(`typeof window.__releaseOldBatch==='function'`), 'delayed old batch request')
+  await evaluate(`window.__calcState().queryForm.batchId='700000000000000002';window.__calcState().loadBatch()`)
+  await evaluate(`window.__releaseOldBatch();window.__oldBatchQuery`)
+  assert.equal(await evaluate(`window.__calcState().batchDetail.batchId`), '700000000000000002')
+  assert.equal(await evaluate(`window.__calcState().queryForm.taskId`), '700000000000000012')
+  assert.equal(await evaluate(`window.__calcState().batchLoading`), false)
   assert.deepEqual(errors, [])
-  console.log('PASS: lazy target DAG, node details, failed/cancelled retry, cancellation-in-progress guard, preserved successful nodes, refresh persistence; batch creation; desktop/mobile. APIs mocked; no server writes.')
+  console.log('PASS: lazy target DAG, node details, retry/cancellation, refresh persistence, batch creation, out-of-order batch responses, desktop/mobile. APIs mocked; no server writes.')
 } finally {
   socket?.close()
   chrome.kill()

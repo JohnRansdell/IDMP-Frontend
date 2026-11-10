@@ -242,7 +242,7 @@ test('SQL import reports incompatible declarations sharing one request parameter
   assert.equal(declarations.length, 1)
   assert.equal(declarations[0].conflict, true)
   assert.deepEqual(declarations[0].factorKeys, ['numerator', 'denominator'])
-  assert.equal(validateSqlRuntimeParameterValues(declarations, { deptCode: '4' }), '同名参数声明不一致：deptCode')
+  assert.equal(validateSqlRuntimeParameterValues(declarations, { deptCode: '4' }), '同名参数声明不一致：科室编码')
 })
 
 test('SQL runtime parameter values preserve declared types and validate required values', () => {
@@ -252,7 +252,7 @@ test('SQL runtime parameter values preserve declared types and validate required
     { code: 'ratio', type: 'DECIMAL', required: false, parameterMode: 'TEMPORARY' },
     { code: 'enabled', type: 'BOOLEAN', required: false, parameterMode: 'TEMPORARY' }
   ]
-  assert.equal(validateSqlRuntimeParameterValues(declarations, {}), '请填写必填参数：deptCode')
+  assert.equal(validateSqlRuntimeParameterValues(declarations, {}), '请填写必填参数：科室编码')
   assert.equal(validateSqlRuntimeParameterValues(declarations, { deptCode: '4' }), '')
   assert.deepEqual(buildSqlRuntimeParameterValues(declarations, {
     deptCode: '4', minimumHours: '48', ratio: '1.25', enabled: 'false', ignored: 'x'
