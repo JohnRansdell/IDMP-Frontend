@@ -39,8 +39,39 @@ function queries(overrides = {}) {
   }
   const functions = source.slice(source.indexOf('let taskQueryRevision'), source.indexOf('async function createBatch()'))
   const refresh = source.slice(source.indexOf('async function refreshCurrent()'), source.indexOf('function displayId('))
-  return { ...deps, calls, messages, ...Function('deps', `const { ${Object.keys(deps).join(',')} } = deps; ${functions}; ${refresh}; return { loadTask, loadBatch, refreshCurrent, dispose: () => { queryDisposed = true; ++taskQueryRevision; ++batchQueryRevision } }`)(deps) }
+  return { ...deps, calls, messages, ...Function('deps', `const { ${Object.keys(deps).join(',')} } = deps; ${functions}; ${refresh}; return { loadTask, loadBatch, queryTask, queryBatch, refreshCurrent, dispose: () => { queryDisposed = true; ++taskQueryRevision; ++batchQueryRevision } }`)(deps) }
 }
+
+test('batch query loads its associated task even when another task ID was entered', async () => {
+  const state = queries()
+  state.queryForm.batchId = '102027642461312818'; state.queryForm.taskId = '99'
+  await state.queryBatch()
+  assert.deepEqual(state.calls, ['102027642461312818', '102027642461312817'])
+  assert.equal(state.taskDetail.value.taskId, '102027642461312817')
+  assert.equal(state.batchDetail.value.batchId, '102027642461312818')
+})
+
+test('task query takes precedence over a previously entered unrelated batch', async () => {
+  const state = queries()
+  state.queryForm.taskId = '102027642461312817'; state.queryForm.batchId = '99'
+  await state.queryTask()
+  assert.deepEqual(state.calls, ['102027642461312817', '102027642461312818'])
+  assert.equal(state.taskDetail.value.taskId, '102027642461312817')
+  assert.equal(state.batchDetail.value.batchId, '102027642461312818')
+})
+
+test('obsolete linked lookups never start after another query takes precedence', async () => {
+  const old = deferred()
+  const state = queries({ fetchCalcBatch: id => id === '1' ? old.promise : Promise.resolve({ batchId: id, taskId: '102027642461312817' }) })
+  state.queryForm.batchId = '1'
+  const request = state.queryBatch()
+  state.queryForm.taskId = '102027642461312817'
+  await state.queryTask()
+  old.resolve({ batchId: '1', taskId: 'old' }); await request
+  assert.equal(state.taskDetail.value.taskId, '102027642461312817')
+  assert.equal(state.batchDetail.value.batchId, '102027642461312818')
+  assert.ok(!state.calls.includes('old'))
+})
 
 test('empty and malformed task/batch IDs do not trigger requests', async () => {
   const state = queries()

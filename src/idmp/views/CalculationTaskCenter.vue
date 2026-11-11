@@ -23,13 +23,13 @@
           </div>
         </div>
         <div class="query-controls">
-          <el-form v-query-enter label-position="top" @submit.prevent="loadTask">
+          <el-form v-query-enter label-position="top" @submit.prevent="queryTask">
             <el-form-item label="异步任务 ID">
               <el-input v-model.trim="queryForm.taskId" class="mono-input" placeholder="输入完整任务 ID" />
             </el-form-item>
             <el-button :loading="taskLoading" native-type="submit">查询任务</el-button>
           </el-form>
-          <el-form v-query-enter label-position="top" @submit.prevent="loadBatch">
+          <el-form v-query-enter label-position="top" @submit.prevent="queryBatch">
             <el-form-item label="计算批次 ID">
               <el-input v-model.trim="queryForm.batchId" class="mono-input" placeholder="输入完整批次 ID" />
             </el-form-item>
@@ -183,7 +183,7 @@
           :description="taskError"
         >
           <template #actions>
-            <el-button :disabled="!queryForm.taskId" @click="loadTask">重试查询</el-button>
+            <el-button :disabled="!queryForm.taskId" @click="queryTask">重试查询</el-button>
           </template>
         </StatePanel>
         <StatePanel
@@ -193,7 +193,7 @@
           description="请输入任务 ID。"
         >
           <template #actions>
-            <el-button :disabled="!queryForm.taskId" @click="loadTask">查询任务</el-button>
+            <el-button :disabled="!queryForm.taskId" @click="queryTask">查询任务</el-button>
           </template>
         </StatePanel>
         <dl v-else class="detail-list">
@@ -227,7 +227,7 @@
           :description="batchError"
         >
           <template #actions>
-            <el-button :disabled="!queryForm.batchId" @click="loadBatch">重试查询</el-button>
+            <el-button :disabled="!queryForm.batchId" @click="queryBatch">重试查询</el-button>
           </template>
         </StatePanel>
         <StatePanel
@@ -237,7 +237,7 @@
           description="请输入批次 ID。"
         >
           <template #actions>
-            <el-button :disabled="!queryForm.batchId" @click="loadBatch">查询批次</el-button>
+            <el-button :disabled="!queryForm.batchId" @click="queryBatch">查询批次</el-button>
           </template>
         </StatePanel>
         <dl v-else class="detail-list">
@@ -293,7 +293,7 @@
         :description="batchError"
       >
         <template #actions>
-          <el-button :disabled="!queryForm.batchId" @click="loadBatch">重试查询批次</el-button>
+          <el-button :disabled="!queryForm.batchId" @click="queryBatch">重试查询批次</el-button>
         </template>
       </StatePanel>
       <StatePanel
@@ -911,23 +911,28 @@ async function retryNode(row) {
 }
 
 async function refreshCurrent() {
+  if (queryForm.batchId) await queryBatch()
+  else if (queryForm.taskId) await queryTask()
+}
+
+async function queryBatch() {
   // Resolve the association first so task and batch refresh cannot overwrite
   // each other's IDs with responses from two unrelated selections.
-  if (queryForm.batchId) {
-    const revision = batchQueryRevision + 1
-    const taskRevision = taskQueryRevision
-    const loaded = await loadBatch()
-    if (!loaded || queryDisposed || revision !== batchQueryRevision || taskRevision !== taskQueryRevision || !batchDetail.value
-      || String(batchDetail.value.batchId) !== queryForm.batchId.trim()) return
-    if (queryForm.taskId) await loadTask()
-  } else if (queryForm.taskId) {
-    const revision = taskQueryRevision + 1
-    const batchRevision = batchQueryRevision
-    const loaded = await loadTask()
-    if (!loaded || queryDisposed || revision !== taskQueryRevision || batchRevision !== batchQueryRevision || !taskDetail.value
-      || String(taskDetail.value.taskId) !== queryForm.taskId.trim()) return
-    if (queryForm.batchId) await loadBatch()
-  }
+  const revision = batchQueryRevision + 1
+  const taskRevision = taskQueryRevision
+  const loaded = await loadBatch()
+  if (!loaded || queryDisposed || revision !== batchQueryRevision || taskRevision !== taskQueryRevision || !batchDetail.value
+    || String(batchDetail.value.batchId) !== queryForm.batchId.trim()) return
+  if (queryForm.taskId) await loadTask()
+}
+
+async function queryTask() {
+  const revision = taskQueryRevision + 1
+  const batchRevision = batchQueryRevision
+  const loaded = await loadTask()
+  if (!loaded || queryDisposed || revision !== taskQueryRevision || batchRevision !== batchQueryRevision || !taskDetail.value
+    || String(taskDetail.value.taskId) !== queryForm.taskId.trim()) return
+  if (queryForm.batchId) await loadBatch()
 }
 
 
@@ -940,7 +945,7 @@ function enumLabel(value, labels) {
 }
 
 onMounted(async () => {
-  const batchQuery = queryForm.batchId ? loadBatch() : queryForm.taskId ? loadTask() : Promise.resolve()
+  const batchQuery = refreshCurrent()
   const ownerInitialization = initializeOwnerSelection()
   if (route.hash !== '#batch-overview') return
   await Promise.all([batchQuery, ownerInitialization])
