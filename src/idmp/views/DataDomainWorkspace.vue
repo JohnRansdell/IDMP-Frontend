@@ -28,6 +28,9 @@
           <div><h2>物理表</h2><p class="section-title__description">选择一张源表或视图，查看并维护字段映射</p></div>
           <div class="toolbar-actions"><el-button v-access="'domain.physicalTables.create'" type="primary" :icon="Plus" @click="openAddDialog">接入物理表</el-button></div>
         </div>
+        <el-alert v-if="removalError" class="removal-error" title="物理表未移除" type="error" show-icon @close="removalError = ''">
+          <p>{{ removalError.replaceAll('；', '；\n') }}</p>
+        </el-alert>
         <div v-if="!physicalTables.length" class="workspace-section__body"><StatePanel type="empty" title="尚未接入物理表">
           <template #actions><el-button v-access="'domain.physicalTables.create'" type="primary" @click="openAddDialog">接入物理表</el-button></template>
         </StatePanel></div>
@@ -100,6 +103,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
+import { toUserMessage } from '@/idmp/utils/userMessage'
 import { ArrowLeft, Plus, Refresh } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
@@ -127,6 +131,7 @@ const fieldLoading = ref(false)
 const sourceLoading = ref(false)
 const adding = ref(false)
 const removingId = ref('')
+const removalError = ref('')
 const mappingSaving = ref(false)
 const error = ref(null)
 const fieldError = ref(null)
@@ -190,6 +195,7 @@ watch(domainId, () => { fieldSearch.value = ''; loadWorkspace() })
 async function loadWorkspace() {
   loading.value = true
   error.value = null
+  removalError.value = ''
   try {
     const [domains, tables] = await Promise.all([fetchDataDomains(), fetchPhysicalTables(domainId.value)])
     domain.value = adaptDataDomainList(domains).find(item => item.id === domainId.value) || null
@@ -244,6 +250,7 @@ async function confirmRemoveTable(row) {
       })
     } catch { return }
     if (currentDomainId !== domainId.value) return
+    removalError.value = ''
     await removePhysicalTable(currentDomainId, row.id)
     if (currentDomainId !== domainId.value) return
     physicalTables.value = physicalTables.value.filter(table => table.id !== row.id)
@@ -253,7 +260,9 @@ async function confirmRemoveTable(row) {
       const tables = await fetchPhysicalTables(currentDomainId)
       if (currentDomainId === domainId.value) physicalTables.value = adaptPhysicalTableList(tables)
     } catch { ElMessage.warning('物理表已移除，列表刷新失败，请稍后刷新') }
-  } catch (cause) { ElMessage.error(cause?.message || '物理表移除失败') }
+  } catch (cause) {
+    if (currentDomainId === domainId.value) removalError.value = toUserMessage(cause, '物理表移除失败，请稍后重试')
+  }
   finally { removingId.value = '' }
 }
 
@@ -470,6 +479,8 @@ function roleLabel(value) {
 </script>
 
 <style scoped lang="scss">
+.removal-error { margin-bottom: 16px; }
+.removal-error p { margin: 4px 0; white-space: pre-line; overflow-wrap: anywhere; line-height: 1.7; }
 .data-domain-workspace { min-width: 0; }
 .domain-overview { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 16px; padding: 18px 20px; }
 .domain-overview__main { min-width: 0; }

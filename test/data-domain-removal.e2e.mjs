@@ -6,7 +6,7 @@ import { join } from 'node:path'
 
 const profile = await mkdtemp(join(tmpdir(), 'idmp-domain-removal-'))
 const debugPort = 41842
-const output = '.tmp/data-domain-removal'
+const output = '.tmp/user-facing-audit-20261111'
 await mkdir(output, { recursive: true })
 const chrome = spawn(process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe',
   ['--headless=new', `--remote-debugging-port=${debugPort}`, `--user-data-dir=${profile}`, '--no-first-run', 'about:blank'],
@@ -51,7 +51,7 @@ function mockBackend() {
     else if (path === '/meta/data-domains/9/physical-tables') data = window.__tables
     else if (path === '/meta/data-domains/9/physical-tables/10' && method === 'DELETE') {
       window.__deletes.push(path)
-      if (window.__blocked) return new Response(JSON.stringify({ code: 'CONFLICT', message: '无法移除物理表，请先调整以下引用：因子：出院人次（V2）' }), { status: 409, headers: { 'Content-Type': 'application/json' } })
+      if (window.__blocked) return new Response(JSON.stringify({ code: 'CONFLICT', message: '无法移除物理表，请先调整以下引用：物理表关联：老年住院费用分析验收域 / vmq_basicinformationba（出院科室） 与 老年住院费用分析验收域 / vmq_departments（科室编码）；物理表关联：老年住院费用分析验收域 / vmq_basicinformationba（主治医生） 与 老年住院费用分析验收域 / vmq_doctors（医生编码）；物理表关联：老年住院费用分析验收域 / vmq_basicinformationba（住院号） 与 老年住院费用分析验收域 / vmq_surgeryinfo（患者编号）。调整后可重新移除。' }), { status: 409, headers: { 'Content-Type': 'application/json' } })
       window.__tables = window.__tables.filter(table => table.id !== '10')
       data = null
     } else if (path.endsWith('/semantic-fields')) data = [{ id: '101', sourceFieldMappingId: '1001', code: 'DEPT_CODE', name: '科室', sourceFieldName: 'dept_code', dataType: 'STRING', semanticKind: 'DIMENSION' }]
@@ -92,15 +92,22 @@ try {
   await evaluate(clickRemove)
   await waitFor(() => evaluate(`!!document.querySelector('.el-message-box')`))
   await evaluate(confirm)
-  await waitFor(() => evaluate(`document.body.textContent.includes('因子：出院人次（V2）')`))
+  await waitFor(() => evaluate(`document.querySelector('.removal-error')?.textContent.includes('vmq_departments（科室编码）') || false`))
+  assert.equal(await evaluate(`document.querySelector('.removal-error').textContent.includes('RELATION_')`), false)
   assert.equal(await evaluate(`document.querySelector('[aria-label="物理表"]').textContent.includes('vmq_visits')`), true)
   await waitFor(() => evaluate(`!document.querySelector('.el-message-box')`))
   await writeFile(join(output, 'desktop.png'), Buffer.from((await cdp('Page.captureScreenshot', { format: 'png' })).data, 'base64'))
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true })
+  await evaluate(`document.querySelector('.removal-error').scrollIntoView({ block: 'center' })`)
+  assert.equal(await evaluate(`(() => { const el = document.querySelector('.removal-error'); return el.scrollWidth <= el.clientWidth + 1 })()`), true)
+  await writeFile(join(output, 'mobile-error.png'), Buffer.from((await cdp('Page.captureScreenshot', { format: 'png' })).data, 'base64'))
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false })
   await evaluate('window.__blocked = false')
   await evaluate(clickRemove)
   await waitFor(() => evaluate(`!!document.querySelector('.el-message-box')`))
   await evaluate(confirm)
   await waitFor(() => evaluate(`!document.querySelector('[aria-label="物理表"]').textContent.includes('vmq_visits')`))
+  assert.equal(await evaluate(`!!document.querySelector('.removal-error')`), false)
   assert.equal(await evaluate(`document.querySelector('[aria-label="字段映射"]').textContent.includes('请选择物理表')`), true)
   assert.equal(await evaluate('window.__deletes.length'), 2)
   await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true })

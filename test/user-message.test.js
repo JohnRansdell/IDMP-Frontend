@@ -4,6 +4,23 @@ import { fieldLabel, toUserMessage, sanitizeResponseMessages } from '../src/idmp
 import { formatApiError } from '../src/idmp/utils/apiError.js'
 import { normalizeMessageOptions } from '../src/idmp/utils/message.js'
 
+test('自动生成的资源编码不出现在提示中，保留业务名称和字段编码', () => {
+  for (const prefix of ['INDICATOR', 'FACTOR', 'TEMPLATE', 'SCENARIO', 'MAPPING', 'GROUP', 'POLICY', 'VALUESET', 'WARNING', 'DASHBOARD', 'WIDGET', 'DOMAIN', 'RELATION']) {
+    const message = toUserMessage(`引用配置 ${prefix}_AB9397B70C4643528E0166625755A7F4 不可用，请重新选择`)
+    assert.doesNotMatch(message, /AB9397|_[A-F0-9]{32}/)
+    assert.match(message, /不可用，请重新选择/)
+  }
+  const raw = '无法移除物理表，请先调整以下引用：物理表关联：RELATION_AB9397B70C4643528E0166625755A7F4'
+  assert.equal(toUserMessage(raw), '无法移除物理表，请先调整以下引用：物理表关联：关联配置')
+  assert.equal(toUserMessage('医疗质量 / vmq_visits（出院科室） 与 科室字典（科室编码）'), '医疗质量 / vmq_visits（出院科室） 与 科室字典（科室编码）')
+  assert.equal(toUserMessage('科室字段 OUT_DEPT_CODE 未配置，年龄必须小于120'), '科室字段 OUT_DEPT_CODE 未配置，年龄必须小于120')
+  const response = { message: raw, rows: [{ name: 'RELATION_AB9397B70C4643528E0166625755A7F4' }], parameters: [{ code: 'deptCode' }] }
+  sanitizeResponseMessages(response)
+  assert.doesNotMatch(response.message, /RELATION_/)
+  assert.equal(response.rows[0].name, 'RELATION_AB9397B70C4643528E0166625755A7F4')
+  assert.equal(response.parameters[0].code, 'deptCode')
+})
+
 test('missing implementation contracts remain errors without exposing integration status', () => {
   for (const message of ['后端未返回指标版本 ID', '接口尚未提供参数类型', '后端列表暂不可用']) {
     assert.equal(toUserMessage(message, '查询失败，请重试。'), '查询失败，请重试。')

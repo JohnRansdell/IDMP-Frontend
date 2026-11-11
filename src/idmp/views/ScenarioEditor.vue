@@ -8,7 +8,7 @@
     </section>
     <template v-else>
     <PageHeader :title="form.name || '场景编辑'" :status="form.publicationStatus" :status-label="publicationStatusLabel(form.publicationStatus)">
-      <template #meta><span>当前版本：V{{ form.versionNo }}</span><span>资源版本：{{ form.resourceVersion }}</span></template>
+      <template #meta><span>当前版本：V{{ form.versionNo }}</span></template>
       <template #actions>
         <el-button @click="router.push({ name: 'ScenarioList' })">返回目录</el-button>
         <el-button v-if="capabilities.canStartEdit" type="primary" :loading="startingEdit" @click="startEditing">编辑场景</el-button>

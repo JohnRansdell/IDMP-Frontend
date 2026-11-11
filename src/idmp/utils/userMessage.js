@@ -13,6 +13,8 @@ const modes = { NON_MERGEABLE: '不可精确合并', DAILY: '日', WEEKLY: '周'
 export const DEFAULT_ERROR_MESSAGE = '操作未能完成，请检查填写的信息后重试；若持续失败，请联系管理员。'
 const hasChinese = text => /[\u3400-\u9fff]/.test(text)
 const tokenPattern = token => new RegExp(`(?<![A-Za-z0-9_])${token}(?![A-Za-z0-9_])`, 'g')
+const resourceLabels = { INDICATOR: '指标', FACTOR: '因子', TEMPLATE: '因子模板', SCENARIO: '场景', MAPPING: '指标映射', GROUP: '指标语义组', POLICY: '政策文件', VALUESET: '值集', WARNING: '预警规则', DASHBOARD: '看板', WIDGET: '看板组件', DOMAIN: '数据域', RELATION: '关联配置' }
+const generatedResourceCode = /(?<![A-Za-z0-9_])(INDICATOR|FACTOR|TEMPLATE|SCENARIO|MAPPING|GROUP|POLICY|VALUESET|WARNING|DASHBOARD|WIDGET|DOMAIN|RELATION)_[A-Fa-f0-9]{32}(?![A-Za-z0-9_])/g
 
 export function fieldLabel(path = '') {
   const names = String(path).replace(/\[\d+\]/g, '').split(/[./]/).map(name => labels[name]).filter(Boolean)
@@ -42,6 +44,7 @@ export function toUserMessage(value, fallback = DEFAULT_ERROR_MESSAGE) {
   if (!hasChinese(text)) return fallback
   if (/JSON\s*序列化失败/.test(text)) return '配置信息暂时无法保存，请稍后重试。'
   if (/(?:后端|接口)(?:未|尚未)(?:返回|提供|接入)|(?:后端|接口).*暂不可用/.test(text)) return fallback
+  text = text.replace(generatedResourceCode, (_, prefix, offset, original) => original.slice(0, offset).trimEnd().endsWith(resourceLabels[prefix]) ? '' : resourceLabels[prefix]).replace(/[ \t]{2,}/g, ' ')
   for (const [token, label] of Object.entries({ ...labels, ...modes })) text = text.replace(tokenPattern(token), label)
   return text.replace(/请求超时[（(]\d+ms[）)]/, '请求超时，请稍后重试。')
 }

@@ -33,7 +33,7 @@ async function create(view, mode) {
   const code = compiled.replace(/^import .*$/gm, '').replace('export default', 'return')
   const row = { code: 'SENIOR', label: '老年患者', value: '1', valueStart: '65', valueEnd: '80', sortOrder: 1 }
   const version = { id: '12', versionNo: 1, publicationStatus: 'DRAFT', resourceVersion: 3, matchMode: mode, items: [row] }
-  const detail = { valueSet: { id: '11', name: '住院费用年龄分层', matchMode: mode }, version }
+  const detail = { valueSet: { id: '11', name: '住院费用年龄分层', matchMode: mode, currentPublishedVersionId: '12' }, version }
   const writes = []
   const deps = {
     useRoute: () => ({ params: { versionId: '12', valueSetId: '11' }, query: {} }), useRouter: () => ({ push() {} }),
@@ -54,11 +54,15 @@ test('range details display the actual boundaries with inclusive/exclusive label
   assert.match(wrapper.text(), /开始值（含）65/)
   assert.match(wrapper.text(), /结束值（不含）80/)
   assert.doesNotMatch(wrapper.text(), /标准值/)
+  assert.match(wrapper.text(), /当前发布版本V1/)
+  assert.doesNotMatch(wrapper.text(), /版本 ID|资源版本/)
   wrapper.unmount()
 })
 
 test('range editor persists both boundary inputs without replacing the item identity', async () => {
   const { wrapper, writes } = await create('ValueSetVersionEditor', 'RANGE')
+  assert.match(wrapper.text(), /版本V1/)
+  assert.doesNotMatch(wrapper.text(), /资源版本/)
   await wrapper.get('input[aria-label="开始值（含）"]').setValue('60')
   await wrapper.get('input[aria-label="结束值（不含）"]').setValue('81')
   await wrapper.vm.saveItems()

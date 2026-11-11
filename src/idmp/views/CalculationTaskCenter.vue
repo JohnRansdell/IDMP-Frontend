@@ -622,7 +622,7 @@ async function loadSceneOptions() {
   } catch (error) {
     if (revision !== sceneRequest) return
     sceneOptions.value = []
-    ElMessage.warning(error?.message || '关联场景加载失败；仍可手工输入场景版本 ID')
+    ElMessage.warning(error?.message || '关联场景加载失败，请刷新后重新选择场景')
   } finally {
     if (revision === sceneRequest) sceneOptionsLoading.value = false
   }

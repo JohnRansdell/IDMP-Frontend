@@ -93,7 +93,6 @@
                   <div><dt>审核状态</dt><dd>{{ mappingStatusLabel(mapping.reviewStatus) }}</dd></div>
                   <div><dt>审核意见</dt><dd>{{ version?.reviewComment || '暂无审核意见' }}</dd></div>
                   <div v-if="invalidateReason"><dt>失效原因</dt><dd>{{ invalidateReason }}</dd></div>
-                  <div><dt>资源版本</dt><dd>{{ mapping.resourceVersion }}</dd></div>
                 </dl>
               </section>
             </div>

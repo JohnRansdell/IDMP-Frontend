@@ -7,7 +7,7 @@
     <StatePanel v-if="error" type="error" title="值集详情加载失败" :description="error" />
     <template v-else>
       <section class="surface-card value-set-summary">
-        <div><span>匹配模式</span><strong class="summary-ellipsis">{{ matchModeLabel(version?.matchMode || valueSet?.matchMode) || '—' }}</strong></div><div><span>状态</span><StatusBadge :status="valueSet?.status" /></div><div><span>当前发布版本</span><el-tooltip :content="String(valueSet?.currentPublishedVersionId || '—')" placement="top" :show-after="300"><strong class="summary-ellipsis summary-ellipsis--code">{{ valueSet?.currentPublishedVersionId || '—' }}</strong></el-tooltip></div>
+        <div><span>匹配模式</span><strong class="summary-ellipsis">{{ matchModeLabel(version?.matchMode || valueSet?.matchMode) || '—' }}</strong></div><div><span>状态</span><StatusBadge :status="valueSet?.status" /></div><div><span>当前发布版本</span><strong class="summary-ellipsis">{{ publishedVersionLabel }}</strong></div>
       </section>
       <section v-if="isContinuous" class="surface-card table-card continuous-spec-card">
         <div class="section-title"><div><h2>连续值规范</h2><p class="section-title__description">连续值集不维护枚举值项；范围筛选使用左闭右开区间 [开始值, 结束值)。</p></div></div>
@@ -15,7 +15,7 @@
       </section>
       <section class="surface-card table-card">
         <div class="section-title section-title--toolbar"><div><h2>版本历史</h2><p class="section-title__description">连续值集复制当前版本的规范；枚举值集同时复制值项。</p></div><div class="version-history-actions"><el-select v-model="selectedVersionId" placeholder="选择版本" @change="loadVersion"><el-option v-for="item in versions" :key="item.id" :label="`V${item.versionNo} · ${item.publicationStatus ? getStatusLabel(item.publicationStatus) : '—'}`" :value="String(item.id)" /></el-select><el-button v-access="'valueSetVersion.edit'" v-if="selectedVersionId" type="primary" @click="editVersion">编辑版本</el-button><el-button v-access="'valueSet.versions.create'" type="primary" plain :loading="creating" @click="createVersion">复制为新版本</el-button></div></div>
-        <el-table v-if="versions.length" :data="versions" row-key="id" highlight-current-row @row-click="selectVersion"><el-table-column prop="versionNo" label="版本" width="100" /><el-table-column label="状态" width="150"><template #default="{ row }"><StatusBadge :status="row.publicationStatus" /></template></el-table-column><el-table-column prop="resourceVersion" label="资源版本" width="120" /><el-table-column prop="id" label="版本 ID" min-width="220" /></el-table>
+        <el-table v-if="versions.length" :data="versions" row-key="id" highlight-current-row @row-click="selectVersion"><el-table-column prop="versionNo" label="版本" width="100" /><el-table-column label="状态" min-width="150"><template #default="{ row }"><StatusBadge :status="row.publicationStatus" /></template></el-table-column></el-table>
         <StatePanel v-else type="empty" title="暂无版本" description="该值集没有可查看的版本。" />
       </section>
       <section v-if="!isContinuous" class="surface-card table-card">
@@ -50,6 +50,12 @@ const valueSet = ref(null); const versions = ref([]); const version = ref(null);
 const isContinuous = computed(() => String(version.value?.matchMode || valueSet.value?.matchMode || '').toUpperCase() === 'CONTINUOUS')
 const isRange = computed(() => String(version.value?.matchMode || valueSet.value?.matchMode || '').toUpperCase() === 'RANGE')
 const continuousSpec = computed(() => version.value?.continuousSpec || {})
+const publishedVersionLabel = computed(() => {
+  const id = valueSet.value?.currentPublishedVersionId
+  if (!id) return '未发布'
+  const published = versions.value.find(item => String(item.id) === String(id))
+  return published?.versionNo == null ? '版本信息暂不可用' : `V${published.versionNo}`
+})
 const precisionText = computed(() => { const spec = continuousSpec.value; if (spec.precision == null) return '—'; return spec.scale == null ? String(spec.precision) : `${spec.precision}, ${spec.scale}` })
 
 async function loadAll() {
@@ -80,7 +86,7 @@ onMounted(loadAll)
 </script>
 
 <style scoped>
-.value-set-summary { display: grid; grid-template-columns: minmax(180px, 1.45fr) minmax(130px, .9fr) minmax(100px, .65fr) minmax(160px, 1fr); gap: 16px; margin-bottom: 16px; padding: 18px; }
+.value-set-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; padding: 18px; }
 .value-set-summary > div { display: flex; min-width: 0; flex-direction: column; gap: 6px; }.value-set-summary span { color: var(--idmp-text-secondary); font-size: 12px; }.value-set-summary strong { font-size: 16px; }.summary-ellipsis { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.summary-ellipsis--code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .table-card { margin-bottom: 16px; }.section-title--toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; }.version-history-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; }.version-history-actions .el-select { width: 180px; }
 @media (max-width: 900px) { .value-set-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

@@ -14,17 +14,17 @@
         <section v-if="impact.blockers?.length" class="impact-group is-danger">
           <h4>删除阻断项</h4>
           <div v-for="item in impact.blockers" :key="item.code" class="impact-item">
-            <strong>{{ item.message || item.code }}</strong><span>共 {{ item.count }} 项</span>
+            <strong>{{ item.message || '存在依赖引用，请先解除关联' }}</strong><span>共 {{ item.count }} 项</span>
             <ul v-if="item.samples?.length"><li v-for="sample in item.samples" :key="`${item.code}-${sample.resourceId}-${sample.versionId}`">{{ sample.resourceName || '关联资源' }}</li></ul>
           </div>
         </section>
         <section v-if="impact.automaticActions?.length" class="impact-group is-warning">
           <h4>删除后自动动作</h4>
-          <div v-for="item in impact.automaticActions" :key="item.code" class="impact-item">{{ item.message || item.code }}（{{ item.count }} 项）</div>
+          <div v-for="item in impact.automaticActions" :key="item.code" class="impact-item">{{ item.message || '相关配置将同步清理' }}（{{ item.count }} 项）</div>
         </section>
         <section v-if="impact.warnings?.length" class="impact-group is-info">
           <h4>提示</h4>
-          <div v-for="item in impact.warnings" :key="item.code" class="impact-item">{{ item.message || item.code }}（{{ item.count }} 项）</div>
+          <div v-for="item in impact.warnings" :key="item.code" class="impact-item">{{ item.message || '删除会影响关联资源，请确认' }}（{{ item.count }} 项）</div>
         </section>
       </div>
       <el-form label-position="top">
@@ -59,7 +59,7 @@ const loadingImpact = ref(false)
 const submitting = ref(false)
 const reason = ref('')
 const reasonError = ref('')
-const blockersSummary = computed(() => (impact.value?.blockers || []).map(item => `${item.message || item.code}（${item.count}项）`).join('；'))
+const blockersSummary = computed(() => (impact.value?.blockers || []).map(item => `${item.message || '存在依赖引用，请先解除关联'}（${item.count}项）`).join('；'))
 
 watch(() => props.modelValue, async opened => {
   if (!opened) return

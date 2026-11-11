@@ -542,7 +542,7 @@ async function saveFactor() {
     resetWorkflowAfterDefinitionChange()
     await refreshSavedVersion()
     if (wasCreate && workflow.factorId) await router.replace({ path: `/factor/edit/${encodeURIComponent(workflow.factorId)}`, hash: '#factor-workflow' })
-    workflow.message = `因子草稿已保存，版本 ID：${workflow.versionId}。请继续执行编译校验。`; workflow.messageType = 'success'
+    workflow.message = '因子草稿已保存，请继续执行编译校验。'; workflow.messageType = 'success'
     await focusWorkflow()
     ElMessage.success(wasCreate ? '因子草稿已保存，请继续编译校验' : '因子修改已保存，请重新编译校验')
   } catch (e) { await handleFactorSaveError(e) } finally { loading.save = false }
@@ -664,7 +664,7 @@ async function trialCurrentVersion(){if(runtimeSchemaLoading.value||runtimeSchem
 async function pollTrialTask() { return factorVersionWorkflow.pollTrialTask() }
 async function refreshTrialStatus() { return factorVersionWorkflow.refreshTrialStatus() }
 async function loadTrialResults(page=1) { return factorVersionWorkflow.loadTrialResults(page) }
-async function publishCurrentVersion() { if (!canPublish.value) return; return factorVersionWorkflow.publish(versionId => ElMessageBox.confirm(`确认发布因子版本 ${versionId}？发布后该版本可供指标正式引用。`, '发布因子版本', { confirmButtonText: '确认发布', cancelButtonText: '返回检查', type: 'warning' })) }
+async function publishCurrentVersion() { if (!canPublish.value) return; return factorVersionWorkflow.publish(() => ElMessageBox.confirm('确认发布当前因子版本？发布后该版本可供指标正式引用。', '发布因子版本', { confirmButtonText: '确认发布', cancelButtonText: '返回检查', type: 'warning' })) }
 function formatDimensions(row){const dimensions=row?.dimensions??row?.dimensionValues??row?.dimension??{};if(!dimensions||!Object.keys(dimensions).length)return '总体';return Object.entries(dimensions).map(([key,value])=>`${key}=${value}`).join('，')}
 function resultValue(row){return row?.displayValue??row?.valueDecimal??row?.resultValue??row?.value??row?.factor_value??'-'}
 function openIndicatorEditor(){const query={};if(Array.isArray(trialPeriod.value)&&trialPeriod.value.length===2){query.periodStart=trialPeriod.value[0];query.periodEnd=trialPeriod.value[1]}router.push({path:'/indicator/edit/new',query})}

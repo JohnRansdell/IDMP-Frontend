@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import { JSDOM } from 'jsdom'
 import * as adapter from '../src/idmp/api/adapters/meta.js'
+import { toUserMessage } from '../src/idmp/utils/userMessage.js'
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>')
 for (const key of ['window', 'document', 'HTMLElement', 'SVGElement', 'Element', 'Node', 'Document', 'Text', 'Comment']) globalThis[key] = dom.window[key]
@@ -11,7 +12,7 @@ Object.defineProperty(globalThis, 'navigator', { configurable: true, value: dom.
 const vue = await import('vue')
 const { shallowMount, flushPromises } = await import('@vue/test-utils')
 const source = await readFile(new URL('../src/idmp/views/DataDomainWorkspace.vue', import.meta.url), 'utf8')
-const exposed = 'confirmRemoveTable, selectTable, selectedTableName, sourceFields, mappedFields, physicalTables, fieldError, fieldLoading, removingId, mappingDialogVisible, valueSetDialogVisible, profileDialogVisible, availableSourceTables, loadSourceTables'
+const exposed = 'confirmRemoveTable, selectTable, selectedTableName, sourceFields, mappedFields, physicalTables, fieldError, fieldLoading, removingId, removalError, mappingDialogVisible, valueSetDialogVisible, profileDialogVisible, availableSourceTables, loadSourceTables'
 const { descriptor } = parse(source.replace('</script>', `defineExpose({ ${exposed} })\n</script>`))
 const compiled = compileScript(descriptor, { id: 'domain-removal', inlineTemplate: true }).content
 const bindings = [...compiled.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]vue['"];?/g)]
@@ -23,7 +24,7 @@ const tables = [{ id: '10', tableName: 'vmq_visits', status: 'PUBLISHED' }, { id
 async function create(overrides = {}) {
   const calls = { remove: [], error: [], success: [] }
   const deps = Object.fromEntries([...source.matchAll(/^import (?:\{([^}]+)\}|(\w+)) from /gm)].flatMap(([, names, name]) => (names ? names.split(',').map(x => x.trim()) : [name]).map(name => [name, () => []])))
-  Object.assign(deps, adapter, {
+  Object.assign(deps, adapter, { toUserMessage,
     useRoute: () => ({ params: { id: '1' } }), useRouter: () => ({ push() {} }),
     ElMessageBox: { confirm: async () => {} }, ElMessage: { error: msg => calls.error.push(msg), success: msg => calls.success.push(msg), warning() {} },
     fetchDataDomains: async () => [{ id: '1', name: '医疗质量' }], fetchPhysicalTables: async () => tables,
@@ -43,14 +44,28 @@ test('取消确认不会移除，失败时保留选中表并显示后端引用�
   assert.deepEqual(cancelled.calls.remove, [])
   assert.equal(cancelled.wrapper.vm.removingId, '')
   cancelled.wrapper.unmount()
-  const reason = '无法移除物理表，请先调整以下引用：因子：出院人次（V2）'
+  const reason = '无法移除物理表，请先调整以下引用：物理表关联：医疗质量 / vmq_visits（出院科室） 与 医疗质量 / vmq_departments（科室编码）。调整后可重新移除。'
   const { wrapper, calls } = await create({ removePhysicalTable: async () => { throw new Error(reason) } })
   wrapper.vm.selectTable(tables[0])
   await flushPromises()
   await wrapper.vm.confirmRemoveTable(tables[0])
   assert.equal(wrapper.vm.selectedTableName, 'vmq_visits')
   assert.equal(wrapper.vm.physicalTables.length, 2)
-  assert.deepEqual(calls.error, [reason])
+  assert.equal(wrapper.vm.removalError, reason)
+  assert.deepEqual(calls.error, [])
+  wrapper.unmount()
+})
+
+test('旧服务返回自动编码时不泄露编码，下一次成功移除后清空引用提示', async () => {
+  let attempt = 0
+  const { wrapper } = await create({ removePhysicalTable: async () => {
+    if (++attempt === 1) throw new Error('物理表仍被引用：RELATION_AB9397B70C4643528E0166625755A7F4，请调整关联后重试')
+  } })
+  await wrapper.vm.confirmRemoveTable(tables[0])
+  assert.doesNotMatch(wrapper.vm.removalError, /RELATION_|AB9397/)
+  assert.match(wrapper.vm.removalError, /仍被引用.*调整关联后重试/)
+  await wrapper.vm.confirmRemoveTable(tables[0])
+  assert.equal(wrapper.vm.removalError, '')
   wrapper.unmount()
 })
 
