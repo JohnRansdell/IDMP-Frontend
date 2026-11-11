@@ -255,9 +255,9 @@ export function buildSqlImportMetadataPayload({ scope, category, indicator, fact
         ...(String(item.description || '').trim() ? { description: String(item.description).trim() } : {}),
         ...(item.missingRowPolicy ? { missingRowPolicy: item.missingRowPolicy } : {}), calculationMode,
         ...((item.parameters || []).length ? { parameters: item.parameters.map(parameter => {
-          // Display metadata is retained locally; keep the existing write contract.
           const { displayName, label, name, ...definition } = normalizeSqlRuntimeParameter(parameter)
-          return definition
+          const parameterName = runtimeParameterDisplayName({ code: definition.code, displayName, label, name })
+          return { ...definition, ...(parameterName ? { displayName: parameterName } : {}) }
         }) } : {}),
         ...(calculationMode === 'TEMPORAL' && String(item.timeField || '').trim() ? { timeField: String(item.timeField).trim() } : {}),
         ...(normalizedScope === 'FACTORS_AND_INDICATOR' && Object.keys(item.dimensionBindings || {}).length ? { dimensionBindings: { ...item.dimensionBindings } } : {})

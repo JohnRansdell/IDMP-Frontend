@@ -22,6 +22,12 @@ export function addPhysicalTable(domainId, tableName) {
   })
 }
 
+export function removePhysicalTable(domainId, bindingId) {
+  return requestJson(`/meta/data-domains/${encodeURIComponent(domainId)}/physical-tables/${encodeURIComponent(bindingId)}`, {
+    method: 'DELETE'
+  })
+}
+
 export function fetchPhysicalTableFields(domainId, tableName) {
   return requestJson(`/meta/data-domains/${encodeURIComponent(domainId)}/physical-tables/${encodeURIComponent(tableName)}/semantic-fields`)
 }
@@ -77,6 +83,10 @@ export function updatePhysicalTableDefaultTimeField(domainId, tableName, semanti
 
 export function fetchSourceTables(params = {}) {
   return requestJson(withQuery('/meta/source-tables', params))
+}
+
+export function fetchSourceDatabase() {
+  return requestJson('/meta/source-database', { cache: 'no-store' })
 }
 
 export function fetchSourceTableFields(tableName) {

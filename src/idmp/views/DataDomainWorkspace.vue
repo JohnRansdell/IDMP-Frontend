@@ -35,7 +35,7 @@
           <el-table-column prop="tableName" label="表名" min-width="220" show-overflow-tooltip />
           <el-table-column prop="tableComment" label="说明" min-width="180" show-overflow-tooltip><template #default="{ row }">{{ row.tableComment || '—' }}</template></el-table-column>
           <el-table-column label="状态" width="120"><template #default="{ row }"><StatusBadge :status="row.status" /></template></el-table-column>
-          <el-table-column label="操作" width="90" fixed="right"><template #default="{ row }"><el-button link type="primary" @click.stop="selectTable(row)">查看</el-button></template></el-table-column>
+          <el-table-column label="操作" width="150" fixed="right"><template #default="{ row }"><el-button link type="primary" @click.stop="selectTable(row)">查看</el-button><el-button v-access="'domain.physicalTables.remove'" link type="danger" :loading="removingId === row.id" :disabled="Boolean(removingId) || mappingSaving || valueSetSaving || adding" @click.stop="confirmRemoveTable(row)">移除</el-button></template></el-table-column>
         </el-table></div>
       </section>
 
@@ -104,7 +104,7 @@ import { ArrowLeft, Plus, Refresh } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
-import { addPhysicalTable, bindPhysicalTableField, fetchDataDomains, fetchPhysicalTableFields, fetchPhysicalTables, fetchSemanticField, fetchSourceTableFields, fetchSourceTables, updateSemanticField } from '@/idmp/api/modules/meta'
+import { addPhysicalTable, removePhysicalTable, bindPhysicalTableField, fetchDataDomains, fetchPhysicalTableFields, fetchPhysicalTables, fetchSemanticField, fetchSourceTableFields, fetchSourceTables, updateSemanticField } from '@/idmp/api/modules/meta'
 import { adaptDataDomainList, adaptPhysicalTableList, adaptSemanticFieldList, adaptSourceFieldList, adaptSourceTableList } from '@/idmp/api/adapters/meta'
 import { dataTypeLabel } from '@/idmp/features/meta/model'
 import { buildSemanticFieldUpdate } from '@/idmp/features/meta/fieldUpdate'
@@ -126,6 +126,7 @@ const loading = ref(false)
 const fieldLoading = ref(false)
 const sourceLoading = ref(false)
 const adding = ref(false)
+const removingId = ref('')
 const mappingSaving = ref(false)
 const error = ref(null)
 const fieldError = ref(null)
@@ -193,7 +194,7 @@ async function loadWorkspace() {
     const [domains, tables] = await Promise.all([fetchDataDomains(), fetchPhysicalTables(domainId.value)])
     domain.value = adaptDataDomainList(domains).find(item => item.id === domainId.value) || null
     physicalTables.value = adaptPhysicalTableList(tables)
-    if (!physicalTables.value.some(table => table.tableName === selectedTableName.value)) { selectedTableName.value = ''; fieldSearch.value = '' }
+    if (!physicalTables.value.some(table => table.tableName === selectedTableName.value)) clearTableSelection()
     if (selectedTableName.value) await loadFields()
     else { sourceFields.value = []; mappedFields.value = [] }
   } catch (cause) {
@@ -215,6 +216,47 @@ function selectTable(row) {
 }
 
 let fieldRequest = 0
+function clearTableSelection() {
+  ++fieldRequest
+  ++mappingDialogRequest
+  selectedTableName.value = ''
+  fieldSearch.value = ''
+  sourceFields.value = []
+  mappedFields.value = []
+  fieldError.value = null
+  fieldLoading.value = false
+  mappingDialogVisible.value = false
+  valueSetDialogVisible.value = false
+  profileDialogVisible.value = false
+  selectedValueSetField.value = null
+  profileField.value = null
+  profileItems.value = []
+}
+
+async function confirmRemoveTable(row) {
+  if (!row?.id || removingId.value || mappingSaving.value || valueSetSaving.value || adding.value) return
+  const currentDomainId = domainId.value
+  removingId.value = row.id
+  try {
+    try {
+      await ElMessageBox.confirm(`确认从当前数据域移除 ${row.tableName}？源表及业务数据不受影响。`, '移除物理表', {
+        type: 'warning', confirmButtonText: '移除', cancelButtonText: '取消'
+      })
+    } catch { return }
+    if (currentDomainId !== domainId.value) return
+    await removePhysicalTable(currentDomainId, row.id)
+    if (currentDomainId !== domainId.value) return
+    physicalTables.value = physicalTables.value.filter(table => table.id !== row.id)
+    if (selectedTableName.value === row.tableName) clearTableSelection()
+    ElMessage.success('物理表已移除')
+    try {
+      const tables = await fetchPhysicalTables(currentDomainId)
+      if (currentDomainId === domainId.value) physicalTables.value = adaptPhysicalTableList(tables)
+    } catch { ElMessage.warning('物理表已移除，列表刷新失败，请稍后刷新') }
+  } catch (cause) { ElMessage.error(cause?.message || '物理表移除失败') }
+  finally { removingId.value = '' }
+}
+
 async function loadFields() {
   const tableName = selectedTableName.value
   if (!tableName) return

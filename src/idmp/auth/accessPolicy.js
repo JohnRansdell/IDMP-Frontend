@@ -11,6 +11,7 @@ export const ACTION_GRANTS = Object.freeze(Object.fromEntries([
   ['dashboard.create', 'POST', '/analysis/dashboards'],
   ['domain.create', 'POST', '/meta/data-domains'],
   ['domain.physicalTables.create', 'POST', '/meta/data-domains/1/physical-tables'],
+  ['domain.physicalTables.remove', 'DELETE', '/meta/data-domains/1/physical-tables/1'],
   ['field.valueSet.update', 'PUT', '/meta/semantic-fields/1/value-set'],
   ['transformVersion.preview', 'POST', '/transform-rule-versions/1/preview'],
   ['sourceField.valueProfile.read', 'GET', '/meta/source-field-mappings/1/value-profile'],

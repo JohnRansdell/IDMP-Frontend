@@ -9,11 +9,23 @@
         <el-button v-access="'sourceMapping.sync'" :icon="Refresh" :loading="syncLoading" @click="handleSync">
           同步数据结构
         </el-button>
-        <el-button type="primary" :icon="Refresh" :loading="tableLoading" @click="loadSourceTables">
+        <el-button type="primary" :icon="Refresh" :loading="tableLoading || databaseLoading" @click="refreshSource">
           刷新目录
         </el-button>
       </template>
     </PageHeader>
+
+    <section class="source-database" aria-label="源数据库信息" :aria-busy="databaseLoading">
+      <dl class="source-database__details">
+        <div><dt>数据库 IP / 主机</dt><dd>{{ databaseLoading ? '加载中' : sourceDatabase?.host || '未提供' }}</dd></div>
+        <div><dt>数据库类型</dt><dd>{{ databaseLoading ? '加载中' : sourceDatabase?.databaseType || '未提供' }}</dd></div>
+        <div><dt>数据库名称</dt><dd>{{ databaseLoading ? '加载中' : sourceDatabase?.databaseName || '未提供' }}</dd></div>
+      </dl>
+      <div v-if="databaseError" class="source-database__error" role="alert">
+        <span>{{ formatErrorMessage(databaseError, '源数据库信息加载失败') }}</span>
+        <el-button link type="primary" @click="loadSourceDatabase">重新加载</el-button>
+      </div>
+    </section>
 
     <section class="source-overview-grid">
       <article class="surface-card overview-card"><span>已发现数据对象</span><strong>{{ sourceTables.length }}</strong><small>表和视图</small></article>
@@ -196,11 +208,14 @@ import { Refresh } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
-import { fetchSourceTableFields, fetchSourceTables, syncSourceMappings } from '@/idmp/api/modules/meta'
+import { fetchSourceDatabase, fetchSourceTableFields, fetchSourceTables, syncSourceMappings } from '@/idmp/api/modules/meta'
 import { adaptSourceFieldList, adaptSourceTableList } from '@/idmp/api/adapters/meta'
 import { sourceObjectTypeLabel } from '@/idmp/features/meta'
 
 const sourceTables = ref([])
+const sourceDatabase = ref(null)
+const databaseLoading = ref(false)
+const databaseError = ref(null)
 const sourceFields = ref([])
 const fieldSearch = ref('')
 const selectedTable = ref(null)
@@ -242,7 +257,25 @@ const tableErrorMessage = computed(() => formatErrorMessage(tableError.value, '�
 const fieldErrorMessage = computed(() => formatErrorMessage(fieldError.value, '物理字段加载失败'))
 const syncErrorMessage = computed(() => formatErrorMessage(syncError.value, '数据结构同步失败'))
 
-onMounted(loadSourceTables)
+onMounted(refreshSource)
+
+async function refreshSource() {
+  await Promise.allSettled([loadSourceDatabase(), loadSourceTables()])
+}
+
+async function loadSourceDatabase() {
+  if (databaseLoading.value) return
+  databaseLoading.value = true
+  databaseError.value = null
+  try {
+    sourceDatabase.value = await fetchSourceDatabase()
+  } catch (error) {
+    sourceDatabase.value = null
+    databaseError.value = error
+  } finally {
+    databaseLoading.value = false
+  }
+}
 
 async function loadSourceTables() {
   tableLoading.value = true
@@ -382,6 +415,11 @@ function formatErrorMessage(error, fallback) {
 
 <style scoped lang="scss">
 .source-metadata-page { display: flex; flex-direction: column; gap: 16px; }
+.source-database { padding: 16px 0; border-block: 1px solid var(--idmp-border-subtle); }
+.source-database__details { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 0; }
+.source-database__details dt { color: var(--idmp-text-secondary); font-size: 13px; }
+.source-database__details dd { margin: 6px 0 0; color: var(--idmp-text-primary); font-size: 15px; overflow-wrap: anywhere; }
+.source-database__error { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; color: var(--el-color-danger); font-size: 13px; }
 .source-overview-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .overview-card { display: flex; flex-direction: column; gap: 5px; padding: 18px; }
 .overview-card > span { color: var(--idmp-text-secondary); font-size: 13px; }
@@ -425,6 +463,7 @@ function formatErrorMessage(error, fallback) {
   .filter-bar { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 560px) {
+  .source-database__details { grid-template-columns: 1fr; }
   .field-search-bar { align-items: stretch; flex-direction: column; gap: 6px; }
 }
 </style>

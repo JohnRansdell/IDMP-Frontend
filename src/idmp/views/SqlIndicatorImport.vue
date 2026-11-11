@@ -31,7 +31,12 @@
             <div class="factor-fields"><el-input v-model.trim="factor.name" placeholder="因子名称（已按解析建议预填）" /><el-input v-model.trim="factor.description" placeholder="因子说明" /><el-select v-model="factor.missingRowPolicy" placeholder="缺行策略"><el-option label="保留空值" value="KEEP_NULL" /><el-option label="按零处理" value="ZERO" /></el-select><el-select v-model="factor.calculationMode" @change="onFactorModeChange(factor)"><el-option label="静态（全量一次计算）" value="STATIC" /><el-option label="时序（按周期计算）" value="TEMPORAL" /></el-select><div v-if="factor.calculationMode === 'TEMPORAL'" class="time-field-control"><el-select default-first-option v-if="timeFieldOptions(factor).length" v-model="factor.timeField" filterable placeholder="确认时间字段"><el-option v-for="field in timeFieldOptions(factor)" :key="field.fieldReference" :label="timeFieldOptionLabel(field, factor)" :value="field.fieldReference"><span>{{ timeFieldOptionLabel(field, factor) }}</span></el-option></el-select><el-input v-else v-model.trim="factor.timeField" placeholder="请选择物理时间字段" readonly /><el-button @click="openTimeFieldSelector(factor)">浏览全部字段</el-button></div><small v-if="factor.calculationMode === 'TEMPORAL' && selectedTimeFieldOption(factor)" class="time-field-hint">{{ timeFieldOptionDescription(selectedTimeFieldOption(factor)) }}</small><small v-else-if="factor.calculationMode === 'TEMPORAL'" class="time-field-hint">可从 SQL 涉及的物理表中选择时间字段，文本字段须包含有效日期或时间。</small></div>
             <div class="dynamic-parameters">
               <b>动态传入参数</b>
-              <ul v-if="factor.parameters?.length" class="dynamic-parameter-list"><li v-for="parameter in factor.parameters" :key="parameter.code">{{ parameter.code }}</li></ul>
+              <ul v-if="factor.parameters?.length" class="dynamic-parameter-list">
+                <li v-for="parameter in factor.parameters" :key="parameter.code">
+                  <code>{{ parameter.code }}</code>
+                  <el-input :model-value="parameter.displayName || ''" :aria-label="`${parameter.code} 参数名称`" placeholder="参数显示名称" maxlength="128" clearable @update:model-value="renameRuntimeParameter(parameter.code, $event)" />
+                </li>
+              </ul>
               <span v-else class="dynamic-parameters-empty">无</span>
             </div>
           </div>
@@ -59,7 +64,7 @@
           <div class="runtime-parameter-heading"><strong>SQL 运行参数</strong><small>SQL 自定义条件，与上方统计周期分别生效</small></div>
           <div class="runtime-parameter-grid">
             <div v-for="parameter in runtimeParameters" :key="parameter.code" class="runtime-field">
-              <label><span>{{ parameter.code }}<em v-if="parameter.required">*</em></span></label>
+              <label><span>{{ parameter.displayName || parameter.code }}<em v-if="parameter.required">*</em></span></label>
               <el-select v-if="parameter.type === 'BOOLEAN'" v-model="runtimeParameterValues[parameter.code]" clearable placeholder="请选择"><el-option label="是" :value="true" /><el-option label="否" :value="false" /></el-select>
               <el-input-number v-else-if="parameter.type === 'INTEGER'" v-model="runtimeParameterValues[parameter.code]" :precision="0" :controls="false" placeholder="请输入整数" />
               <el-input-number v-else-if="parameter.type === 'DECIMAL'" v-model="runtimeParameterValues[parameter.code]" :controls="false" placeholder="请输入数值" />
@@ -221,8 +226,15 @@ function selectedTimeFieldOption(factor) { return timeFieldOptions(factor).find(
 function timeFieldOptionLabel(option, factor) { return `${option.recommended ? '推荐 · ' : ''}${sqlPhysicalFieldLabel(option, timeFieldOptions(factor))}` }
 function timeFieldOptionDescription(option) { return sqlTimeFieldDescription(option) }
 function parameterTypeLabel(type) { return ({ STRING: '文本', INTEGER: '整数', DECIMAL: '小数', BOOLEAN: '布尔', DATE: '日期', DATETIME: '日期时间' })[type] || type }
+function renameRuntimeParameter(code, displayName) {
+  for (const factor of factorMetadata.value) {
+    for (const parameter of factor.parameters || []) {
+      if (parameter.code === code) parameter.displayName = displayName
+    }
+  }
+}
 function validateRuntimeDeclarations() { for (const factor of factorMetadata.value) { const codes = new Set(); for (const parameter of factor.parameters || []) { if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(parameter.code || '')) return `因子 ${factor.key} 的参数编码必须以字母开头，且只能包含字母、数字和下划线`; if (codes.has(parameter.code)) return `因子 ${factor.key} 存在重复参数 ${parameter.code}`; codes.add(parameter.code) } } if (parameterConflicts.value.length) return `同名参数声明不一致：${parameterConflicts.value.map(item => item.code).join('、')}`; return '' }
-function validateRuntimeValues() { const missing = runtimeParameters.value.filter(item => item.required && (runtimeParameterValues[item.code] === undefined || runtimeParameterValues[item.code] === null || runtimeParameterValues[item.code] === '')).map(item => item.code); return missing.length ? `请填写必填参数：${missing.join('、')}` : '' }
+function validateRuntimeValues() { const missing = runtimeParameters.value.filter(item => item.required && (runtimeParameterValues[item.code] === undefined || runtimeParameterValues[item.code] === null || runtimeParameterValues[item.code] === '')).map(item => item.displayName || item.code); return missing.length ? `请填写必填参数：${missing.join('、')}` : '' }
 function formatRuntimeCell(value) { return value && typeof value === 'object' ? JSON.stringify(value) : (value ?? '—') }
 async function openTimeFieldSelector(factor) { activeTimeFieldFactor.value = factor; timeFieldSearch.value = ''; timeFieldDialogVisible.value = true; timeFieldLoading.value = true; physicalTimeFields.value = []; const candidateTables = timeFieldOptions(factor).map(item => item.physicalTable); const tables = [...new Set([...candidateTables, ...(preview.value?.tables || []).map(item => item.physicalTable)].filter(Boolean))]; if (!tables.length) { timeFieldLoading.value = false; return ElMessage.warning('解析结果未返回可查询的物理表') } const results = await Promise.allSettled(tables.map(async physicalTable => ({ physicalTable, fields: await fetchSourceTableFields(physicalTable) }))); physicalTimeFields.value = results.flatMap(result => result.status === 'fulfilled' ? (Array.isArray(result.value.fields) ? result.value.fields : []).map(field => ({ physicalTable: result.value.physicalTable, columnName: String(field.columnName || ''), columnType: String(field.columnType || ''), comment: String(field.comment || ''), fieldReference: `${result.value.physicalTable}.${field.columnName}` })) : []).filter(item => item.columnName); timeFieldLoading.value = false; if (!physicalTimeFields.value.length) ElMessage.warning('未能读取物理表字段，请检查数据源权限后重试') }
 function choosePhysicalTimeField(field) { if (!activeTimeFieldFactor.value) return; activeTimeFieldFactor.value.timeField = field.fieldReference; timeFieldDialogVisible.value = false; ElMessage.success(`已选择 ${sqlPhysicalFieldName(field)}`) }
@@ -292,6 +304,13 @@ function scheduleInitializationPoll(batchId) { clearTimeout(initializationTimer)
 async function pollInitializationBatch(batchId) { try { const batch = await fetchCalcBatch(batchId); initializationStatus.value = String(batch?.status || batch?.batchStatus || 'RUNNING').toUpperCase(); if (!['SUCCEEDED', 'SUCCESS', 'FAILED', 'CANCELLED', 'CANCELED', 'PARTIAL_SUCCEEDED'].includes(initializationStatus.value)) initializationTimer = setTimeout(() => pollInitializationBatch(batchId), 2000) } catch { initializationStatus.value = '暂未查询到批次状态'; initializationTimer = setTimeout(() => pollInitializationBatch(batchId), 3000) } }
 onMounted(() => { void loadDomainNames(); void loadDrillPathCatalog(); if (route.query.importId) { importTask.value = { importId: String(route.query.importId), status: 'RUNNING', preview: null, resources: [] }; refresh() } }); onBeforeUnmount(() => { clearTimeout(timer); clearTimeout(initializationTimer) })
 </script>
+
+<style scoped>
+.dynamic-parameters .dynamic-parameter-list { display: grid; gap: 8px; padding: 0; list-style: none; }
+.dynamic-parameter-list li { display: grid; grid-template-columns: minmax(100px, 180px) minmax(0, 320px); align-items: center; gap: 12px; }
+.dynamic-parameter-list code { overflow-wrap: anywhere; }
+@media (max-width: 600px) { .dynamic-parameter-list li { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
+</style>
 
 <style scoped>
 .sql-definition-hint{margin-top:12px;line-height:1.7;overflow-wrap:anywhere}

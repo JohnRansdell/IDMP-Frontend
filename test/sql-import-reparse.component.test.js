@@ -19,6 +19,7 @@ const bindings = [...compiled.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]vue['"
 const body = compiled.replace(/^import .*$/gm, '').replace('export default', 'return')
 const Pass = vue.defineComponent({ setup: (_, { slots }) => () => vue.h('div', slots.default?.()) })
 const Button = vue.defineComponent({ props: ['disabled', 'loading'], setup: (props, { slots }) => () => vue.h('button', { disabled: props.disabled || props.loading }, slots.default?.()) })
+const Input = vue.defineComponent({ props: ['modelValue', 'type'], emits: ['update:modelValue'], setup: (props, { emit }) => () => vue.h(props.type === 'textarea' ? 'textarea' : 'input', { value: props.modelValue, onInput: event => emit('update:modelValue', event.target.value) }) })
 const elementStubs = Object.fromEntries([...source.matchAll(/<(el-[a-z-]+)/g)].map(([, name]) => [name, true]))
 const task = (id, status = 'AWAITING_METADATA') => ({ importId: id, status, preview: { normalizedSql: 'SELECT COUNT(*) AS 人数 FROM 病案', factors: [{ key: '人数', suggestedName: `人数${id}`, dsl: {} }], tables: [] } })
 function create(overrides = {}, query = {}) {
@@ -35,7 +36,7 @@ function create(overrides = {}, query = {}) {
     fetchSqlImport: async id => task(id), ...overrides
   })
   const component = Function('vue', 'deps', `const { ${Object.keys(deps).filter(name => !['computed', 'onBeforeUnmount', 'onMounted', 'reactive', 'ref'].includes(name)).join(',')} } = deps;\n${bindings}\n${body}`)(vue, deps)
-  const wrapper = shallowMount(component, { global: { mocks: { $can: () => false }, directives: { queryEnter: {}, loading: {} }, stubs: { ...elementStubs, 'el-button': Button } } })
+  const wrapper = shallowMount(component, { global: { mocks: { $can: () => false }, directives: { queryEnter: {}, loading: {} }, stubs: { ...elementStubs, 'el-button': Button, 'el-input': Input } } })
   return { wrapper, calls }
 }
 
@@ -127,7 +128,7 @@ test('试算或发布处理中不能重新解析', async () => {
   wrapper.unmount()
 })
 
-test('动态参数只展示解析得到的名称，保留后台所需声明，重新解析后更新列表', async () => {
+test('动态参数可修改中文名称，保留参数编码和解析声明，重新解析后更新列表', async () => {
   let count = 0
   const declarations = [
     { code: 'deptCode', type: 'STRING', parameterMode: 'TEMPORARY', required: false },
@@ -142,14 +143,50 @@ test('动态参数只展示解析得到的名称，保留后台所需声明，�
   await wrapper.vm.createImport()
   await vue.nextTick()
   const section = wrapper.get('.dynamic-parameters')
-  assert.deepEqual(section.findAll('li').map(row => row.text()), ['deptCode', 'minAge'])
-  assert.equal(section.findAll('input, select, button, el-input-stub, el-select-stub, el-checkbox-stub').length, 0)
+  assert.deepEqual(section.findAll('code').map(row => row.text()), ['deptCode', 'minAge'])
+  assert.equal(section.findAll('input').length, 2)
+  assert.equal(section.findAll('select, button, el-select-stub, el-checkbox-stub').length, 0)
   assert.doesNotMatch(section.text(), /临时重算|结果维度|必填|文本|整数/)
   assert.deepEqual(wrapper.vm.metadataPayload().factors[0].parameters, declarations)
+  await section.get('input[aria-label="deptCode 参数名称"]').setValue('统计科室')
+  assert.deepEqual(wrapper.vm.metadataPayload().factors[0].parameters[0], { ...declarations[0], displayName: '统计科室' })
+  assert.match(wrapper.vm.sql, /\{\{deptCode\}\}/)
   wrapper.vm.sql = 'SELECT COUNT(*) AS 人数 FROM 病案 WHERE 年龄 >= {{minAge}}'
   await wrapper.vm.createImport()
   await vue.nextTick()
   assert.deepEqual(wrapper.findAll('.dynamic-parameter-list li').map(row => row.text()), ['minAge'])
+  wrapper.unmount()
+})
+
+test('同编码的动态参数名称同步到所有因子，清空后回退为编码', async () => {
+  const { wrapper } = create({ createSqlImport: async () => {
+    const result = task('同名参数')
+    result.preview.factors = ['入院人次', '出院人次'].map(key => ({ key, suggestedName: key, dsl: {}, parameters: [
+      { code: 'dept', type: 'STRING', required: false, parameterMode: 'TEMPORARY' }
+    ] }))
+    return result
+  } })
+  wrapper.vm.sql = 'SELECT COUNT(*) AS 人数 FROM 病案 [[AND 科室={{dept}}]]'
+  await wrapper.vm.createImport()
+  await vue.nextTick()
+  await wrapper.findAll('.dynamic-parameter-list input')[0].setValue('出院科室')
+  assert.deepEqual(wrapper.vm.metadataPayload().factors.map(item => item.parameters[0].displayName), ['出院科室', '出院科室'])
+  assert.equal(wrapper.findAll('.dynamic-parameter-list input')[1].element.value, '出院科室')
+  await wrapper.findAll('.dynamic-parameter-list input')[1].setValue('')
+  assert.ok(wrapper.vm.metadataPayload().factors.every(item => !Object.hasOwn(item.parameters[0], 'displayName')))
+  wrapper.unmount()
+})
+
+test('恢复导入会话保留已提交的中文参数名称', async () => {
+  const saved = task('已保存', 'READY_FOR_TRIAL')
+  saved.preview.factors[0].parameters = [{ code: 'dept', type: 'STRING' }]
+  saved.metadata = { scope: 'FACTORS_ONLY', factors: [{ key: '人数', name: '出院人次', parameters: [
+    { code: 'dept', displayName: '统计科室', type: 'STRING', required: false, parameterMode: 'TEMPORARY' }
+  ] }] }
+  const { wrapper } = create({ fetchSqlImport: async () => saved }, { importId: '已保存' })
+  await flushPromises()
+  assert.equal(wrapper.vm.factorMetadata[0].parameters[0].displayName, '统计科室')
+  assert.match(wrapper.get('.runtime-field label').text(), /统计科室/)
   wrapper.unmount()
 })
 

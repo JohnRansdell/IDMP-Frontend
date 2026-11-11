@@ -8,6 +8,10 @@ const api = await import(`data:text/javascript;base64,${Buffer.from(source.repla
   'const requestJson = (path, options) => ({ path, options })'
 )).toString('base64')}`)
 
+test('源库摘要刷新绕过请求缓存', () => {
+  assert.deepEqual(api.fetchSourceDatabase(), { path: '/meta/source-database', options: { cache: 'no-store' } })
+})
+
 test('metadata API no longer exposes unused shortcut or flattened fields', () => {
   assert.equal('bindSourceTableDomain' in api, false)
   assert.equal('fetchSemanticFields' in api, false)
@@ -32,5 +36,12 @@ test('physical table binding preserves the explicit field payload', () => {
   assert.deepEqual(api.bindPhysicalTableField('10', 'visits', payload), {
     path: '/meta/data-domains/10/physical-tables/visits/semantic-fields',
     options: { method: 'POST', body: JSON.stringify(payload) }
+  })
+})
+
+test('移除使用当前数据域与绑定 ID，不发送源表删除请求', () => {
+  assert.deepEqual(api.removePhysicalTable('10', '102027642460301739'), {
+    path: '/meta/data-domains/10/physical-tables/102027642460301739',
+    options: { method: 'DELETE' }
   })
 })

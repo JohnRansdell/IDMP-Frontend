@@ -328,6 +328,19 @@ test('SQL import carries inferred parameter types from preview through metadata 
   })
 })
 
+test('Chinese runtime names survive metadata writes and reloads while trial values use SQL keys', () => {
+  const preview = normalizeSqlImportPreview({ factors: [{ key: '手术人次', dsl: { parameters: [
+    { code: 'surgeryLevel', displayName: ' 手术级别 ', type: 'INTEGER', required: false, parameterMode: 'TEMPORARY' }
+  ] } }] })
+  const factors = mergeSqlFactorMetadata([], preview.factors)
+  const payload = buildSqlImportMetadataPayload({ scope: 'FACTORS_ONLY', factors })
+  assert.equal(payload.factors[0].parameters[0].displayName, '手术级别')
+  assert.equal(payload.factors[0].parameters[0].code, 'surgeryLevel')
+  const restored = mergeSqlFactorMetadata(payload.factors, preview.factors)
+  assert.equal(collectSqlRuntimeParameters(restored)[0].displayName, '手术级别')
+  assert.deepEqual(buildSqlImportTrialPayload(restored, [], { surgeryLevel: '3' }).parameters, { surgeryLevel: 3 })
+})
+
 test('optional temporary declarations only require runtime query when a value is submitted', () => {
   const declarations = [
     { code: 'startDate', type: 'DATETIME', required: false, parameterMode: 'TEMPORARY' },
