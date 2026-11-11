@@ -58,12 +58,14 @@
           </el-table>
           <div class="section-toolbar"><h3>政策文件关系</h3></div>
           <el-select v-model="relationVersionId" placeholder="选择本文件版本" @change="loadRelations"><el-option v-for="v in detail.versions" :key="v.id" :value="String(v.id)" :label="`版本 ${v.versionNo}`" /></el-select>
-          <el-table :data="relations" empty-text="暂无文件关系"><el-table-column label="源版本" min-width="140"><template #default="{ row }">{{ row.sourceName || row.sourceVersionId }}</template></el-table-column><el-table-column label="目标版本" min-width="140"><template #default="{ row }">{{ row.targetName || row.targetVersionId }}</template></el-table-column><el-table-column label="关系" width="90"><template #default="{ row }">{{ relationLabels[row.relationType] || row.relationType }}</template></el-table-column><el-table-column prop="description" label="说明" min-width="140" /></el-table>
+          <el-table :data="relations" empty-text="暂无文件关系"><el-table-column label="源版本" min-width="140"><template #default="{ row }">{{ row.sourceName || row.sourceVersionId }}</template></el-table-column><el-table-column label="目标版本" min-width="140"><template #default="{ row }">{{ row.targetName || row.targetVersionId }}</template></el-table-column><el-table-column label="关系" width="90"><template #default="{ row }">{{ relationLabels[row.relationType] || row.relationType }}</template></el-table-column><el-table-column prop="description" label="说明" min-width="140" />
+            <el-table-column label="操作" width="110" fixed="right"><template #default="{ row }"><el-button v-access="{ action: 'policyRelation.remove', resourceId: row.id }" link type="danger" :disabled="saving || !!removingRelationId" :loading="removingRelationId === String(row.id)" @click="removeRelation(row)">解除关联</el-button></template></el-table-column>
+          </el-table>
           <form v-if="relationVersionId" class="relation-form" @submit.prevent="saveRelation">
             <PolicyVersionPicker v-model="relation.targetVersionId" />
             <el-select v-model="relation.relationType"><el-option v-for="(label, key) in relationLabels" :key="key" :value="key" :label="label" /></el-select>
             <el-input v-model.trim="relation.description" placeholder="关系说明" maxlength="10000" />
-            <el-button type="primary" native-type="submit" :loading="saving">关联</el-button>
+            <el-button type="primary" native-type="submit" :loading="saving" :disabled="!!removingRelationId">关联</el-button>
           </form>
         </template>
       </div>
@@ -107,7 +109,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, reactive } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, reactive } from 'vue'
 import { useRoute } from 'vue-router'
 import { CircleCheckFilled, Document, Search, Refresh, Upload, UploadFilled, WarningFilled } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
@@ -127,6 +129,7 @@ const fileInput = ref(null), selectedFile = ref(null), uploadError = ref(''), dr
 const uploadFormatLabel = computed(() => (uploadLimits.value?.extensions || ['pdf', 'docx', 'txt']).map(ext => ext.toUpperCase()).join(' / '))
 const viewerId = ref(''), accept = ref('.pdf,.docx,.txt'), relationVersionId = ref(''), relations = ref([])
 const relation = reactive({ targetVersionId: '', relationType: 'REFERENCES', description: '' })
+const removingRelationId = ref('')
 const relationLabels = { REFERENCES: '引用', REPLACES: '替代', SUPPLEMENTS: '补充', REVISES: '修订' }
 let listRevision = 0, detailRevision = 0, relationRevision = 0, versionRevision = 0
 async function load() {
@@ -232,12 +235,29 @@ async function loadRelations() {
   } catch (e) { if (current === relationRevision) ElMessage.error(e.message) }
 }
 async function saveRelation() {
-  if (saving.value) return
+  if (saving.value || removingRelationId.value) return
   if (!relation.targetVersionId) return ElMessage.warning('请选择目标政策版本')
   saving.value = true
   try { await api.createPolicyRelation(relationVersionId.value, relation); relation.targetVersionId = ''; relation.description = ''; await loadRelations(); ElMessage.success('政策文件已关联') }
   catch (e) { ElMessage.error(e.message) } finally { saving.value = false }
 }
+async function removeRelation(row) {
+  if (saving.value || removingRelationId.value) return
+  const context = detailRevision, versionId = relationVersionId.value
+  const isCurrent = () => context === detailRevision && versionId === relationVersionId.value && detailVisible.value
+  removingRelationId.value = String(row.id)
+  try {
+    await ElMessageBox.confirm(`确认解除“${row.sourceName || '源政策版本'}”对“${row.targetName || '目标政策版本'}”的${relationLabels[row.relationType] || '关联'}关系？政策文件、版本及附件将保留。`, '解除政策文件关联', { type: 'warning' })
+    if (!isCurrent()) return
+    await api.removePolicyRelation(row.id, row.resourceVersion)
+    if (!isCurrent()) return
+    ElMessage.success('政策文件关系已解除')
+    await loadRelations()
+  } catch (e) {
+    if (isCurrent() && e !== 'cancel' && e !== 'close') ElMessage.error(e.message || '解除政策文件关系失败')
+  } finally { removingRelationId.value = '' }
+}
+onBeforeUnmount(() => { listRevision++; detailRevision++; relationRevision++; versionRevision++ })
 onMounted(async () => {
   load()
   try { const options = await api.fetchPolicyUploadOptions(); uploadLimits.value = options; accept.value = options.extensions.map(ext => `.${ext}`).join(',') } catch (e) { ElMessage.error(e.message) }

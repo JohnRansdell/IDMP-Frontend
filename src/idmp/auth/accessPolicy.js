@@ -53,6 +53,7 @@ export const ACTION_GRANTS = Object.freeze(Object.fromEntries([
   ['policyVersion.edit', 'PATCH', '/meta/policy-file-versions/1'],
   ['policy.versions.publish', 'POST', '/meta/policy-files/1/versions/1/publish'],
   ['policyVersion.archive', 'POST', '/meta/policy-file-versions/1/archive'],
+  ['policyRelation.remove', 'DELETE', '/meta/policy-file-relations/1'],
   ['sourceMapping.sync', 'POST', '/meta/source-mappings/sync'],
   ['valueSetVersion.edit', 'PATCH', '/meta/value-set-versions/1'],
   ['valueSet.versions.create', 'POST', '/meta/value-sets/1/versions'],

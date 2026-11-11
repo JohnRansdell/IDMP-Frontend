@@ -20,6 +20,7 @@ export const publishPolicyVersion = (id, version) => write(`/meta/policy-files/$
 export const archivePolicyVersion = version => write(`/meta/policy-file-versions/${encodeURIComponent(version.id)}/archive`, { resourceVersion: version.resourceVersion })
 export const fetchPolicyRelations = id => requestJson(`/meta/policy-file-versions/${encodeURIComponent(id)}/relations`, { cache: 'no-store' })
 export const createPolicyRelation = (id, body) => write(`/meta/policy-file-versions/${encodeURIComponent(id)}/relations`, body)
+export const removePolicyRelation = (id, resourceVersion) => requestJson(query(`/meta/policy-file-relations/${encodeURIComponent(id)}`, { resourceVersion }), { method: 'DELETE' })
 export const fetchPolicyUploadOptions = () => requestJson('/meta/file-objects/upload-options')
 export const fetchPolicyFile = id => requestJson(`/meta/file-objects/${encodeURIComponent(id)}`)
 export const fetchPolicyContent = (id, options) => requestFile(`/meta/file-objects/${encodeURIComponent(id)}/content`, options)
