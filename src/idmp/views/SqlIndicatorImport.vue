@@ -157,7 +157,7 @@ import { normalizeDimensionGrain, serializeDrillPaths, sqlImportGroupingFields, 
 import { sqlPhysicalFieldLabel, sqlPhysicalFieldName, sqlTimeFieldDescription } from '@/idmp/features/indicator/sqlImportFields'
 import { buildSqlImportCreatePayload, buildSqlImportMetadataPayload, buildSqlImportTrialPayload, buildSqlRuntimeQueryPayload, canFinalizeSqlImport, canSubmitSqlImportMetadata, canTrialSqlImport, collectSqlRuntimeParameters, mergeSqlFactorMetadata, normalizeSqlImportOperationError, normalizeSqlImportTask, shouldPollSqlImport, sqlImportResourceTypeLabel, sqlImportStatusLabel, sqlImportStepLabel, validateSqlRuntimeParameterSyntax } from '@/idmp/api/adapters/sqlImport'
 import { abandonSqlImport, createSqlImport, fetchSqlImport, finalizeSqlImport, retrySqlImport, trialSqlImport, updateSqlImportMetadata } from '@/idmp/api/modules/sqlImports'
-import { fetchCalcBatch } from '@/idmp/api/modules/calculation'
+import { fetchCalcBatchOverview as fetchCalcBatch } from '@/idmp/api/modules/calculation'
 import { fetchDataDomains, fetchSourceTableFields, fetchDrillPaths, fetchDrillPathVersion } from '@/idmp/api/modules/meta'
 import { fetchAllPages } from '@/idmp/api/pagination.js'
 import { queryFactorVersion } from '@/idmp/api/modules/factors'

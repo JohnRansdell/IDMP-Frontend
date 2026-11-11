@@ -27,6 +27,7 @@ test('latest failed and running execution hides even an old available summary', 
   const resultSummary = { status: 'AVAILABLE', rowCount: '1', singleResult: { value: 15 } }
   assert.equal(nodeResultLabel({ status: 'FAILED', resultSummary }), '本次执行无结果')
   assert.equal(nodeResultLabel({ status: 'RUNNING', resultSummary }), '尚未生成结果')
-  assert.equal(nodeResultLabel({ status: 'SUCCEEDED' }), '暂未返回结果')
+  assert.equal(nodeResultLabel({ status: 'SUCCEEDED' }), '查看结果')
+  assert.equal(nodeResultLabel({ status: 'SUCCEEDED', nodeType: 'QUALITY_CHECK' }), '查看校验结论')
   assert.equal(nodeResultLabel({ status: 'SUCCEEDED', resultSummary: { status: 'QUALITY' } }), '校验已完成')
 })

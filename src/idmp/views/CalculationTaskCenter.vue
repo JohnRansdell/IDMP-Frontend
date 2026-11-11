@@ -275,7 +275,7 @@
         <div>
           <h2>计算目标与节点</h2>
         </div>
-        <span class="endpoint-note">{{ flatNodes.length }} 个节点</span>
+        <span v-if="batchDetail" class="endpoint-note">{{ batchDetail.targetCount }} 个目标</span>
       </div>
       <div v-if="nodeActionFeedback" class="operation-feedback node-feedback">
         <StatusBadge
@@ -302,17 +302,7 @@
         title="尚无批次上下文"
         description="先查询一个计算批次，再查看其计算目标和节点。"
       />
-      <StatePanel
-        v-else-if="!flatNodes.length"
-        type="empty"
-        title="当前批次没有节点数据"
-        description="当前批次暂无目标节点，请稍后刷新。"
-      >
-        <template #actions>
-          <el-button @click="loadBatch">重新读取批次</el-button>
-        </template>
-      </StatePanel>
-      <CalculationTargetsPanel v-else :key="displayId(batchDetail.batchId)" :targets="batchDetail.targets || []" :batch-status="batchDetail.status" :retrying-node-id="retryingNodeId" @retry="retryNode" />
+      <CalculationBatchTargets v-else :key="displayId(batchDetail.batchId)" :overview="batchDetail" :retrying-node-id="retryingNodeId" @retry="retryNode" />
     </section>
   </div>
 </template>
@@ -329,12 +319,12 @@ import { Refresh } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
-import CalculationTargetsPanel from '@/idmp/components/CalculationTargetsPanel.vue'
+import CalculationBatchTargets from '@/idmp/components/CalculationBatchTargets.vue'
 import {
   cancelCalcBatch,
   createCalcBatch,
   fetchAsyncTask,
-  fetchCalcBatch,
+  fetchCalcBatchOverview as fetchCalcBatch,
   retryCalcNode
 } from '@/idmp/api/modules/calculation'
 import { fetchIndicator, fetchIndicators, fetchIndicatorScenarios, fetchIndicatorVersion, fetchIndicatorVersions } from '@/idmp/api/modules/indicators'
@@ -573,24 +563,6 @@ const canCancelBatch = computed(() => {
     'CANCELLED',
     'CANCELED'
   ].includes(batchStatus.value)
-})
-
-const flatNodes = computed(() => {
-  const targets = Array.isArray(batchDetail.value?.targets) ? batchDetail.value.targets : []
-  return targets.flatMap((target) =>
-    (Array.isArray(target.nodes) ? target.nodes : []).map((node) => ({
-      ...node,
-      targetId: toOpaqueId(target.targetId),
-       targetKey: target.targetKey,
-       ownerType: node.ownerType || target.ownerType,
-       ownerVersionId: toOpaqueId(node.ownerVersionId || target.ownerVersionId),
-       resultOutcomeStatus: target.resultOutcomeStatus || target.outcomeStatus || '',
-       sourceDataStatus: node.sourceDataStatus || '',
-       sourceRecordCount: node.sourceRecordCount ?? '-',
-       errorMessage: node.errorMessage || target.errorMessage || '',
-       nodeId: toOpaqueId(node.nodeId)
-    }))
-  )
 })
 
 function normalizeScenarioOptions(payload) {

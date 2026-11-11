@@ -36,7 +36,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { fetchIndicatorAnalysis } from '@/idmp/api/modules/indicators'
 import { fetchResultFactors } from '@/idmp/api/modules/drill'
-import { fetchCalcBatch } from '@/idmp/api/modules/calculation'
+import { fetchCalcBatchOverview as fetchCalcBatch } from '@/idmp/api/modules/calculation'
 import FactorTraceTree from '@/idmp/components/FactorTraceTree.vue'
 import { getStatusLabel } from '@/idmp/design/status'
 import { formatResultPeriod } from '@/idmp/utils/periodRange.js'

@@ -94,7 +94,15 @@ try {
         const parsed = new URL(url, location.origin), path = parsed.pathname;
         let data;
         if (url.endsWith('/async-tasks/' + taskId)) data = window.__calcTask;
-        else if (url.endsWith('/calc/batches/' + batchId)) data = window.__calcBatch;
+        else if (url.endsWith('/calc/batches/' + batchId + '/overview')) { const { targets, ...overview } = window.__calcBatch; data = overview; }
+        else if (path === '/api/v1/calc/batches/' + batchId + '/targets') {
+          const page = Number(parsed.searchParams.get('pageNum'));
+          data = window.__largeTargets ? { records: Array.from({length: Math.min(20,10001-(page-1)*20)}, (_,index) => ({ targetId: String(100000+(page-1)*20+index), targetCode: 'BASE', status: 'SUCCEEDED', periodType:'MONTHLY', periodStart:'2026-01-01',periodEnd:'2026-01-31',grain:['科室','医生'], nodes: [] })), total:'10001', pageNum:page,pageSize:20,pages:501 } : { records: window.__calcBatch.targets.map(({ nodes, ...target }) => ({ ...target, nodes: [] })), total: '2', pageNum: 1, pageSize: 20 };
+        }
+        else if (path.startsWith('/api/v1/calc/batches/' + batchId + '/targets/') && path.endsWith('/nodes')) {
+          if(window.__failTargetNodes) return new Response(JSON.stringify({code:'ERROR',message:'节点状态暂不可读取，请重试'}),{status:503});
+          data = window.__largeTargets ? window.__calcBatch.targets[0].nodes : window.__calcBatch.targets.find(target => target.targetId === path.split('/').at(-2)).nodes;
+        }
         else if (path === '/api/v1/calc/nodes/4/retry' && init.method === 'POST') {
           window.__calcBatch.targets[1].nodes[0].status = 'QUEUED';
           window.__calcBatch.targets[1].nodes[0].attemptNo = 3;
@@ -249,8 +257,8 @@ try {
   await until(() => evaluate(`Array.from(document.querySelectorAll('.el-message-box')).some(box => /所有取消节点.*已成功节点保留/.test(box.innerText))`), 'cancelled batch confirmation')
   await evaluate(`Array.from(document.querySelectorAll('.el-message-box button')).find(b => b.textContent.trim() === '确认重试').click()`)
   await until(() => evaluate(`window.__calcCalls.some(call => call.url.endsWith('/calc/nodes/6/retry') && call.method === 'POST') && !window.__calcState().retryingNodeId`), 'cancelled batch retry submitted')
-  assert.equal(await evaluate(`window.__calcState().batchDetail.targets[1].nodes[1].attemptNo`), 4)
-  assert.equal(await evaluate(`window.__calcState().batchDetail.targets[0].nodes[0].status`), 'SUCCEEDED')
+  await until(() => evaluate(`document.querySelector('.node-details')?.textContent.includes('4') && document.querySelector('.node-heading')?.textContent.includes('待处理')`), 'retried execution refreshed')
+  assert.equal(await evaluate(`window.__calcBatch.targets[0].nodes[0].status`), 'SUCCEEDED')
   assert.equal(await evaluate(`Array.from(document.querySelectorAll('.el-drawer button')).some(b => b.textContent.includes('重试'))`), false)
   await evaluate(`window.__calcBatch.status = 'CANCELLING'; window.__calcBatch.targets[1].nodes[1].status = 'CANCELLED'; window.__calcState().loadBatch()`)
   await until(() => evaluate(`window.__calcState().batchDetail.status === 'CANCELLING' && !window.__calcState().batchLoading`), 'cancelling batch loaded')
@@ -266,15 +274,30 @@ try {
     for (const box of layout) assert.ok(box.left >= 0 && box.right <= box.width, JSON.stringify(box))
     await writeFile('.tmp/calculation-task-center-browser/' + (viewport.mobile ? 'mobile' : 'desktop') + '.png', Buffer.from((await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true })).data, 'base64'))
   }
+  await evaluate(`window.__largeTargets=true;window.__calcBatch.targetCount=10001;window.__calcState().loadBatch()`)
+  await until(() => evaluate(`document.querySelectorAll('.calculation-targets .el-collapse-item').length===20 && document.querySelector('.target-pagination')?.textContent.includes('10001')`), 'large batch bounded first page')
+  assert.equal(await evaluate(`document.querySelectorAll('.dag-node').length`), 0)
+  await evaluate(`document.querySelector('.target-pagination .btn-next').click()`)
+  await until(() => evaluate(`window.__calcCalls.some(call=>call.url.includes('pageNum=2')) && !document.querySelector('.target-pagination .btn-next').disabled`), 'large batch second page')
+  await evaluate(`window.__failTargetNodes=true;document.querySelector('.calculation-targets .el-collapse-item__header').click()`)
+  await until(() => evaluate(`document.querySelector('.calculation-targets').textContent.includes('节点状态暂不可读取，请重试')`), 'target failure isolated')
+  assert.equal(await evaluate(`document.querySelectorAll('.calculation-targets .el-collapse-item').length`), 20)
+  await evaluate(`window.__failTargetNodes=false;Array.from(document.querySelectorAll('.calculation-targets button')).find(button=>button.textContent.trim()==='重试').click()`)
+  await until(() => evaluate(`document.querySelectorAll('.dag-node').length===1`), 'target retry restored')
+  for (const viewport of [{width:1440,height:1000,mobile:false},{width:390,height:844,mobile:true}]) {
+    await send('Emulation.setDeviceMetricsOverride',{...viewport,deviceScaleFactor:1});await pause(150);
+    assert.equal(await evaluate(`document.querySelector('.node-card').scrollWidth<=document.querySelector('.node-card').clientWidth+1`),true);
+    await writeFile('.tmp/calculation-task-center-browser/paged-'+(viewport.mobile?'mobile':'desktop')+'.png',Buffer.from((await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true})).data,'base64'));
+  }
   await evaluate(`(() => {
     const previousFetch = window.fetch;
     const reply = data => new Response(JSON.stringify({code:'OK',data}),{status:200,headers:{'Content-Type':'application/json'}});
     window.fetch = (input, init) => {
       const path = new URL(String(input), location.origin).pathname;
-      if(path.endsWith('/calc/batches/700000000000000001')) return new Promise(resolve => {
+      if(path.endsWith('/calc/batches/700000000000000001/overview')) return new Promise(resolve => {
         window.__releaseOldBatch = () => resolve(reply({...window.__calcBatch,batchId:'700000000000000001',taskId:'700000000000000011'}));
       });
-      if(path.endsWith('/calc/batches/700000000000000002')) return Promise.resolve(reply({...window.__calcBatch,batchId:'700000000000000002',taskId:'700000000000000012'}));
+      if(path.endsWith('/calc/batches/700000000000000002/overview')) return Promise.resolve(reply({...window.__calcBatch,batchId:'700000000000000002',taskId:'700000000000000012'}));
       return previousFetch(input, init);
     };
     const state=window.__calcState();state.queryForm.batchId='700000000000000001';
@@ -287,7 +310,7 @@ try {
   assert.equal(await evaluate(`window.__calcState().queryForm.taskId`), '700000000000000012')
   assert.equal(await evaluate(`window.__calcState().batchLoading`), false)
   assert.deepEqual(errors, [])
-  console.log('PASS: lazy target DAG, node details, retry/cancellation, refresh persistence, batch creation, out-of-order batch responses, desktop/mobile. APIs mocked; no server writes.')
+  console.log('PASS: paged 10001-target batch, lazy target nodes, isolated failure/retry, node details, retry/cancellation, refresh persistence, batch creation, out-of-order batch responses, desktop/mobile. APIs mocked; no server writes.')
 } finally {
   socket?.close()
   chrome.kill()

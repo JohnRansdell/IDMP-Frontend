@@ -19,6 +19,15 @@ test('invalid IDs are rejected before a backend request, including rounded/expon
 })
 
 const source = await readFile(new URL('../src/idmp/views/CalculationTaskCenter.vue', import.meta.url), 'utf8')
+test('query timeout describes a read failure and preserves the ability to retry', async () => {
+  const state = queries({ fetchCalcBatch: async () => { throw { status: 408, code: 'REQUEST_TIMEOUT' } } })
+  state.queryForm.batchId = '102027642461312818'
+  await state.loadBatch()
+  assert.match(state.batchError.value, /计算批次查询未及时返回/)
+  assert.match(state.batchError.value, /不代表计算失败或已停止/)
+  assert.equal(state.queryForm.batchId, '102027642461312818')
+  assert.equal(state.batchLoading.value, false)
+})
 function queries(overrides = {}) {
   const calls = [], messages = [], ref = () => ({ value: '' })
   const deps = {

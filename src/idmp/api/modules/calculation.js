@@ -17,6 +17,19 @@ export function fetchCalcBatch(batchId, options = {}) {
   return requestJson(`/calc/batches/${encodeURIComponent(batchId)}`, options)
 }
 
+export function fetchCalcBatchOverview(batchId, options = {}) {
+  return requestJson(`/calc/batches/${encodeURIComponent(batchId)}/overview`, options)
+}
+
+export function fetchCalcTargets(batchId, pageNum = 1, pageSize = 20, options = {}) {
+  const query = new URLSearchParams({ pageNum: String(pageNum), pageSize: String(pageSize) })
+  return requestJson(`/calc/batches/${encodeURIComponent(batchId)}/targets?${query}`, options)
+}
+
+export function fetchCalcTargetNodes(batchId, targetId, options = {}) {
+  return requestJson(`/calc/batches/${encodeURIComponent(batchId)}/targets/${encodeURIComponent(targetId)}/nodes`, options)
+}
+
 export function fetchCalcNodeResults(nodeId, pageNum = 1, pageSize = 20, options = {}) {
   const query = new URLSearchParams({ pageNum: String(pageNum), pageSize: String(pageSize) })
   return requestJson(`/calc/nodes/${encodeURIComponent(nodeId)}/results?${query}`, { signal: options.signal })

@@ -71,6 +71,7 @@ try {
       const many = id === '2';
       const records = many ? Array.from({ length: page === 1 ? 20 : 1 }, (_, index) => ({ resultId: String(100 + (page-1)*20+index), dimensions: { '科室': '科室' + ((page-1)*20+index+1), '病种': '病种A' }, value: (page-1)*20+index+1, outcomeStatus: 'CALCULATED' })) : [{ resultId: '102027642463173862', dimensions: {}, value: id === '3' ? 0.15 : 0, displayValue: id === '3' ? '15%' : null, numeratorValue: 15, denominatorValue: 100, outcomeStatus: 'CALCULATED' }];
       const data = { nodeId: id, targetId: window.__nodeFixture.value[0].targetId, attemptNo: 1, dimensionFields: many ? ['科室','病种'] : [], summary: { status: 'AVAILABLE', rowCount: many ? '21' : '1', singleResult: many ? null : records[0] }, results: { records, total: many ? '21' : '1', pageNum: page, pageSize: 20, pages: many ? 2 : 1 } };
+      if (id === '4') { data.summary = { status: 'QUALITY', conclusion: 'PASS', message: '质量校验已完成' }; data.results.records = []; data.results.total = '0'; }
       const response = () => new Response(JSON.stringify({ code: 'OK', data }), { status: 200 });
       if (window.__delayNode === id) return new Promise(resolve => { window.__releaseNode = () => resolve(response()); });
       return response();
@@ -96,13 +97,14 @@ try {
   await closeDrawer()
   const requests = await evaluate(`window.__nodeCalls.length`)
   await selectNode('4')
+  await until(() => evaluate(`window.__nodeCalls.length > ${requests} && !document.querySelector('.node-results').textContent.includes('正在读取')`), 'quality conclusion loaded')
   assert.ok(await evaluate(`document.querySelector('.node-results').textContent.includes('已通过')`))
-  assert.equal(await evaluate(`window.__nodeCalls.length`), requests)
+  assert.equal(await evaluate(`window.__nodeCalls.length`), requests + 1)
   await closeDrawer()
   await selectNode('5')
   assert.ok(await evaluate(`document.querySelector('.node-results').textContent.includes('本次执行无结果')`))
   assert.equal(await evaluate(`document.querySelector('.node-results').textContent.includes('999')`), false)
-  assert.equal(await evaluate(`window.__nodeCalls.length`), requests)
+  assert.equal(await evaluate(`window.__nodeCalls.length`), requests + 1)
   await closeDrawer()
 
   await evaluate(`window.__delayNode = '1'`)

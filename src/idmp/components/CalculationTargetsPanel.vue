@@ -4,19 +4,22 @@
       <template #title>
         <div class="target-header">
           <div class="target-header__text"><strong>{{ targetTitle(target, index) }}</strong><span>{{ targetPeriod(target) }}</span></div>
-          <div class="target-header__status"><span>{{ target.nodes?.length || 0 }} 个节点</span><StatusBadge :status="target.status" /></div>
+          <div class="target-header__status"><span v-if="Array.isArray(target.nodes)">{{ target.nodes.length }} 个节点</span><StatusBadge :status="target.status" /></div>
         </div>
       </template>
       <template v-if="expanded === String(target.targetId)">
         <div class="target-grain"><span>分组字段</span><span>{{ target.grain?.length ? target.grain.join(' × ') : '整体汇总' }}</span><StatusBadge v-if="target.resultOutcomeStatus" :status="target.resultOutcomeStatus" /></div>
         <el-alert v-if="target.errorMessage" :title="target.errorMessage" type="error" :closable="false" />
-        <CalculationTargetDag v-if="target.nodes?.length" :nodes="target.nodes" :selected-id="selection.nodeId" @select="node => selectNode(target, node)" />
+        <StatePanel v-if="target.nodesLoading" type="loading" title="正在读取计算节点" />
+        <StatePanel v-else-if="target.nodesError" type="error" title="计算节点读取失败" :description="target.nodesError"><template #actions><el-button @click="$emit('expand', String(target.targetId))">重试</el-button></template></StatePanel>
+        <CalculationTargetDag v-else-if="target.nodes?.length" :nodes="target.nodes" :selected-id="selection.nodeId" @select="node => selectNode(target, node)" />
         <el-empty v-else description="此目标暂无计算节点" :image-size="50" />
       </template>
     </el-collapse-item>
   </el-collapse>
   <el-drawer v-model="drawerOpen" title="计算节点详情" :size="drawerSize" append-to-body destroy-on-close>
-    <template v-if="selectedNode">
+    <StatePanel v-if="selectedTarget?.nodesLoading" type="loading" title="正在刷新节点状态" />
+    <template v-else-if="selectedNode">
       <div class="node-heading"><h3>{{ selectedNode.nodeName || NODE_LABELS[selectedNode.nodeType] || '计算节点' }}</h3><StatusBadge :status="selectedNode.status" :label="specialStatus(selectedNode.status)" /></div>
       <section class="node-results" aria-label="节点计算结果">
         <div class="node-results__heading"><h4>计算结果</h4><el-button v-if="canLoadResults" text size="small" :loading="resultsLoading" @click="loadResults">刷新结果</el-button></div>
@@ -68,7 +71,7 @@
       <section v-if="selectedNode.errorMessage" class="node-section"><h4>错误信息</h4><p class="node-error">{{ selectedNode.errorMessage }}</p></section>
     </template>
     <template #footer>
-      <el-button v-if="canRetryCalculationNode(selectedNode, batchStatus)" type="danger" :disabled="Boolean(retryingNodeId)" :loading="String(retryingNodeId) === String(selectedNode.nodeId)" @click="$emit('retry', selectedNode)">{{ batchStatus === 'CANCELLED' ? '重试已取消批次' : selectedNode.status === 'FAILED' ? '重试失败节点' : '重试节点' }}</el-button>
+      <el-button v-if="!selectedTarget?.nodesLoading && canRetryCalculationNode(selectedNode, batchStatus)" type="danger" :disabled="Boolean(retryingNodeId)" :loading="String(retryingNodeId) === String(selectedNode.nodeId)" @click="$emit('retry', selectedNode)">{{ batchStatus === 'CANCELLED' ? '重试已取消批次' : selectedNode.status === 'FAILED' ? '重试失败节点' : '重试节点' }}</el-button>
       <el-button @click="drawerOpen = false">关闭</el-button>
     </template>
   </el-drawer>
@@ -84,8 +87,9 @@ import { calculationDimensionValue, calculationResultFields, calculationResultVa
 import { canRetryCalculationNode, NODE_LABELS, targetPeriod, targetTitle } from '@/idmp/utils/calculationGraph'
 import { operandValue, resultOperandColumns } from '@/idmp/features/shared/formulaPresentation.js'
 const props = defineProps({ targets: { type: Array, default: () => [] }, batchStatus: { type: String, default: '' }, retryingNodeId: { type: String, default: '' } })
-defineEmits(['retry'])
+const emit = defineEmits(['retry', 'expand'])
 const expanded = ref(''), drawerOpen = ref(false), selection = reactive({ targetId: '', nodeId: '' })
+watch(expanded, value => emit('expand', value))
 const drawerSize = 'min(520px, 100vw)'
 const selectedTarget = computed(() => props.targets.find(t => String(t.targetId) === selection.targetId))
 const selectedNode = computed(() => selectedTarget.value?.nodes?.find(n => String(n.nodeId) === selection.nodeId))
@@ -94,7 +98,7 @@ const resultPageSize = 20
 let resultRequest = 0, resultAbort
 const isIndicatorNode = computed(() => ['FORMULA', 'INDICATOR'].includes(selectedNode.value?.nodeType))
 const operandColumns = computed(() => isIndicatorNode.value ? resultOperandColumns(nodeResults.value?.results?.records) : [])
-const canLoadResults = computed(() => selectedNode.value?.status === 'SUCCEEDED' && ['FACTOR', 'DERIVED_FACTOR', 'FORMULA', 'INDICATOR'].includes(selectedNode.value?.nodeType))
+const canLoadResults = computed(() => !selectedTarget.value?.nodesLoading && selectedNode.value?.status === 'SUCCEEDED' && ['FACTOR', 'DERIVED_FACTOR', 'FORMULA', 'INDICATOR', 'QUALITY_CHECK'].includes(selectedNode.value?.nodeType))
 const resultSummary = computed(() => selectedNode.value?.status === 'SUCCEEDED' ? nodeResults.value?.summary || selectedNode.value?.resultSummary : null)
 const resultFields = computed(() => calculationResultFields(nodeResults.value?.dimensionFields, nodeResults.value?.results?.records))
 watch(() => props.targets, () => {
@@ -106,7 +110,7 @@ function selectNode(target, node) {
   selection.nodeId = String(node.nodeId)
   drawerOpen.value = true
 }
-watch(() => [drawerOpen.value, selection.targetId, selection.nodeId, selectedNode.value?.attemptNo, selectedNode.value?.status, selectedNode.value?.fencingToken], () => {
+watch(() => [drawerOpen.value, selection.targetId, selection.nodeId, selectedTarget.value?.nodesLoading, selectedNode.value?.attemptNo, selectedNode.value?.status, selectedNode.value?.fencingToken], () => {
   resultAbort?.abort()
   resultRequest += 1
   nodeResults.value = null

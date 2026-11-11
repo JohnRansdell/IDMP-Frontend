@@ -598,7 +598,7 @@ import {
   selectDefaultIndicatorTrialTarget,
   validateDrillSelection
 } from '@/idmp/api/adapters/indicator'
-import { createCalcBatch, fetchAsyncTask, fetchCalcBatch } from '@/idmp/api/modules/calculation'
+import { createCalcBatch, fetchAsyncTask, fetchCalcBatchOverview as fetchCalcBatch } from '@/idmp/api/modules/calculation'
 import IndicatorPolicySources from '@/idmp/components/IndicatorPolicySources.vue'
 import { useIndicatorPolicySources } from '@/idmp/features/indicator/useIndicatorPolicySources'
 import { restorePolicyDrafts } from '@/idmp/features/indicator/editorWorkflow'

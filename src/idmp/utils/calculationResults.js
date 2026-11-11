@@ -25,7 +25,7 @@ export function calculationResultValue(row) {
 export function nodeResultLabel(node) {
   if (node?.status !== 'SUCCEEDED') return node?.status === 'FAILED' ? '本次执行无结果' : '尚未生成结果'
   const summary = node.resultSummary
-  if (!summary) return '暂未返回结果'
+  if (!summary) return node.nodeType === 'QUALITY_CHECK' ? '查看校验结论' : '查看结果'
   if (summary.status === 'QUALITY') return summary.conclusion ? getStatusLabel(summary.conclusion) : '校验已完成'
   if (summary.status === 'EMPTY') return '暂无结果行'
   if (summary.status !== 'AVAILABLE') return '本次执行无可用结果'
