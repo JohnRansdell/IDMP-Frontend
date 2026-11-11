@@ -25,7 +25,13 @@ const task = (id, status = 'AWAITING_METADATA') => ({ importId: id, status, prev
 function create(overrides = {}, query = {}) {
   const calls = { create: [], abandon: [], route: [] }
   let count = 0
-  const deps = Object.fromEntries([...source.matchAll(/^import (?:\{([^}]+)\}|(\w+)) from /gm)].flatMap(([, names, name]) => (names ? names.split(',').map(x => x.trim()) : [name]).map(name => [name, () => []])))
+  // The compiled component refers to local bindings, including import aliases.
+  const deps = Object.fromEntries([...source.matchAll(/^import (?:\{([^}]+)\}|(\w+)) from /gm)]
+    .flatMap(([, names, name]) => (names ? names.split(',').map(binding => binding.trim()) : [name]))
+    .map(binding => {
+      const [imported, local = imported] = binding.split(/\s+as\s+/)
+      return [local, () => []]
+    }))
   Object.assign(deps, adapter, {
     PageHeader: Pass, JsonCodePreview: Pass, SqlImportGroupingFields: Pass,
     ElMessage: { success() {}, warning() {}, error() {} }, ElMessageBox: { confirm: async () => {} },

@@ -48,12 +48,12 @@ test('rendered query fields show Chinese while updates retain the original reque
   wrapper.unmount()
 })
 
-test('SQL preview retains parameter names without adding unsupported write fields', () => {
-  const parameter = { code: 'deptCode', type: 'STRING', required: false, parameterMode: 'TEMPORARY', displayName: '出院科室' }
+test('SQL preview submits supported displayName without leaking local label aliases', () => {
+  const parameter = { code: 'deptCode', type: 'STRING', required: false, parameterMode: 'TEMPORARY', displayName: '出院科室', label: '科室', name: '其他名称' }
   assert.equal(normalizeSqlRuntimeParameter(parameter).displayName, '出院科室')
   assert.equal(collectSqlRuntimeParameters([{ parameters: [parameter] }])[0].displayName, '出院科室')
   const result = buildSqlImportMetadataPayload({ scope: 'FACTORS_ONLY', factors: [{ key: 'count', name: '人数', calculationMode: 'STATIC', parameters: [parameter] }] })
-  assert.deepEqual(result.factors[0].parameters, [{ code: 'deptCode', type: 'STRING', required: false, parameterMode: 'TEMPORARY' }])
+  assert.deepEqual(result.factors[0].parameters, [{ code: 'deptCode', type: 'STRING', required: false, parameterMode: 'TEMPORARY', displayName: '出院科室' }])
 })
 
 function templates(manage, overrides = {}) {
