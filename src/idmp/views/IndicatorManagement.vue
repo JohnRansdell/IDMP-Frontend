@@ -323,7 +323,7 @@ const toIndicatorRow = (item) => ({
   name: item.name,
   category: item.category || '—',
   attribute: item.attribute || '—',
-  version: item.versionNo ? `V${item.versionNo}` : item.version || '—',
+  version: '未发布',
   direction: item.direction || '—',
   source: item.source || '—',
   status: item.status || '未知',
@@ -332,7 +332,7 @@ const toIndicatorRow = (item) => ({
   description: item.description,
   id: item.id,
   indicatorId: item.id,
-  versionId: item.currentVersionId || item.latestVersionId || item.publishedVersionId || ''
+  versionId: ''
 })
 
 const toPublishedIndicatorVersionRow = (item) => ({
@@ -341,6 +341,7 @@ const toPublishedIndicatorVersionRow = (item) => ({
   category: item.category || '—',
   attribute: item.attribute || '—',
   version: item.versionNo ? `V${item.versionNo}` : `版本 ${item.id || item.versionId || '-'}`,
+  versionNo: Number(item.versionNo),
   direction: item.direction || '—',
   source: item.source || '—',
   status: item.status || item.publicationStatus || 'PUBLISHED',
@@ -353,22 +354,19 @@ const toPublishedIndicatorVersionRow = (item) => ({
 })
 
 function mergePublishedIndicatorVersions(indicatorRows, publishedRows) {
-  const rowsByCode = new Map(indicatorRows.map(row => [row.code, { ...row }]))
-  publishedRows.forEach((versionRow) => {
-    if (!versionRow.code) return
-    const existing = rowsByCode.get(versionRow.code)
-    rowsByCode.set(versionRow.code, {
-      ...(existing || {}),
-      ...versionRow,
-      // 目录接口是关联场景数的权威来源；版本接口只补充版本信息。
-      scenes: existing?.scenes ?? versionRow.scenes ?? null,
-      id: versionRow.indicatorId || existing?.id || versionRow.id,
-      indicatorId: versionRow.indicatorId || existing?.indicatorId || existing?.id || '',
-      status: 'PUBLISHED',
-      source: existing?.source || versionRow.source
-    })
+  const latestByIndicatorId = new Map()
+  for (const row of publishedRows) {
+    if (!row.indicatorId || !row.versionId || row.status !== 'PUBLISHED'
+      || !Number.isInteger(row.versionNo) || row.versionNo < 1) continue
+    const id = String(row.indicatorId)
+    const latest = latestByIndicatorId.get(id)
+    if (!latest || row.versionNo > latest.versionNo) latestByIndicatorId.set(id, row)
+  }
+  // 指标主列表提供目录信息；发布版本仅补充显示版本及同一版本的分析入口。
+  return indicatorRows.map(row => {
+    const latest = latestByIndicatorId.get(String(row.indicatorId))
+    return latest ? { ...row, version: latest.version, versionId: latest.versionId } : row
   })
-  return Array.from(rowsByCode.values())
 }
 
 function toScenarioCount(value) {

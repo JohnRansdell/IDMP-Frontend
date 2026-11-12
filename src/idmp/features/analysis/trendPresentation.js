@@ -37,18 +37,40 @@ function createTrendFromBackendAnalysis(payload, { unit, display, granularity, r
     responseGranularity !== granularity
   ) return null
 
+  const periods = alignTrendPeriods(payload.trend, responseGranularity, sourceDefaultRange ? [] : range)
   return {
     range: sourceDefaultRange
       ? `源数据可用范围：${formatPeriodLabel(range[0], range[1])}`
       : isCompleteDateRange(range)
       ? `展示所选范围：${formatPeriodLabel(range[0], range[1])}`
       : responseGranularity === 'YEARLY' ? '展示全部可用年度结果' : '展示全部可用周期结果',
-    labels: payload.trend.map((item) => formatTrendPeriodLabel(item, responseGranularity)),
-    actual: payload.trend.map((item) => resultChartNumber(item?.value, { unit, display })),
-    display: payload.trend.map((item) => item.displayValue),
-    outcomes: payload.trend.map((item) => item.outcomeStatus),
-    peer: payload.trend.map(() => null)
+    labels: periods.map((item) => formatTrendPeriodLabel(item, responseGranularity)),
+    actual: periods.map((item) => resultChartNumber(item?.value, { unit, display })),
+    display: periods.map((item) => item.displayValue),
+    outcomes: periods.map((item) => item.outcomeStatus),
+    peer: periods.map(() => null)
   }
+}
+
+function alignTrendPeriods(periods, granularity, range) {
+  const step = { MONTHLY: 1, QUARTERLY: 3, YEARLY: 12 }[granularity]
+  if (!step) return periods
+  const monthIndex = value => {
+    const match = /^(\d{4})-(0[1-9]|1[0-2])/.exec(String(value || ''))
+    return match ? Number(match[1]) * 12 + Number(match[2]) - 1 : NaN
+  }
+  const bucket = value => Math.floor(monthIndex(value) / step) * step
+  const saved = new Map(periods.map(item => [bucket(item.periodStart), item]))
+  if ([...saved.keys()].some(key => !Number.isFinite(key))) return periods
+  const start = isCompleteDateRange(range) ? bucket(range[0]) : Math.min(...saved.keys())
+  const end = isCompleteDateRange(range) ? bucket(range[1]) : Math.max(...saved.keys())
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start || (end - start) / step > 10000) return periods
+  const aligned = []
+  for (let month = start; month <= end; month += step) {
+    const periodStart = `${String(Math.floor(month / 12)).padStart(4, '0')}-${String(month % 12 + 1).padStart(2, '0')}-01`
+    aligned.push(saved.get(month) || { periodStart, value: null, outcomeStatus: 'NO_RESULT' })
+  }
+  return aligned
 }
 
 // Generate chart coordinates, labels and PDF rows once from the same result.
@@ -61,7 +83,8 @@ export function createAnalysisTrendPresentation({ analysis, profile, display, gr
     label,
     actual: trend.actual[index] ?? '-',
     peer: trend.peer[index] ?? '-',
-    actualDisplay: trend.outcomes?.[index] === 'NOT_CALCULABLE' ? '无法计算'
+    actualDisplay: trend.outcomes?.[index] === 'NO_RESULT' ? '暂无正式结果'
+      : trend.outcomes?.[index] === 'NOT_CALCULABLE' ? '无法计算'
       : hasResultDisplay(trend.display?.[index]) ? trend.display[index] : formatValue(trend.actual[index]),
     peerDisplay: formatValue(trend.peer[index])
   }))
@@ -69,6 +92,7 @@ export function createAnalysisTrendPresentation({ analysis, profile, display, gr
   const actualSeries = {
     name: '本院实际值',
     type: 'line',
+    connectNulls: false,
     // A single point needs no reveal animation, including after a table-triggered resize.
     animation: actualValues.length > 1,
     smooth: actualValues.length > 1,
