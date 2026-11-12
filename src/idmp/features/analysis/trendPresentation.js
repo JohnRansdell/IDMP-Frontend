@@ -28,7 +28,18 @@ export function formatTrendPeriodLabel(item, granularity) {
   return formatResultPeriod(item?.periodStart, item?.periodEnd)
 }
 
-function createTrendFromBackendAnalysis(payload, { unit, display, granularity, range, sourceDefaultRange }) {
+export function trendResultMonthRange(payload, granularity) {
+  if (!payload?.dataAvailable || !Array.isArray(payload.trend)
+    || String(payload.granularity || granularity).toUpperCase() !== String(granularity).toUpperCase()) return []
+  const step = { QUARTERLY: 3, YEARLY: 12 }[granularity] || 1
+  const buckets = payload.trend.map(item => /^(\d{4})-(0[1-9]|1[0-2])/.exec(String(item?.periodStart || '')))
+    .filter(Boolean).map(match => Math.floor((Number(match[1]) * 12 + Number(match[2]) - 1) / step) * step)
+  if (!buckets.length) return []
+  const month = index => `${String(Math.floor(index / 12)).padStart(4, '0')}-${String(index % 12 + 1).padStart(2, '0')}`
+  return [month(Math.min(...buckets)), month(Math.max(...buckets) + step - 1)]
+}
+
+function createTrendFromBackendAnalysis(payload, { unit, display, granularity, range }) {
   const responseGranularity = String(payload?.granularity || granularity).toUpperCase()
   if (
     !payload?.dataAvailable ||
@@ -37,11 +48,9 @@ function createTrendFromBackendAnalysis(payload, { unit, display, granularity, r
     responseGranularity !== granularity
   ) return null
 
-  const periods = alignTrendPeriods(payload.trend, responseGranularity, sourceDefaultRange ? [] : range)
+  const periods = alignTrendPeriods(payload.trend, responseGranularity, range)
   return {
-    range: sourceDefaultRange
-      ? `源数据可用范围：${formatPeriodLabel(range[0], range[1])}`
-      : isCompleteDateRange(range)
+    range: isCompleteDateRange(range)
       ? `展示所选范围：${formatPeriodLabel(range[0], range[1])}`
       : responseGranularity === 'YEARLY' ? '展示全部可用年度结果' : '展示全部可用周期结果',
     labels: periods.map((item) => formatTrendPeriodLabel(item, responseGranularity)),
@@ -74,8 +83,8 @@ function alignTrendPeriods(periods, granularity, range) {
 }
 
 // Generate chart coordinates, labels and PDF rows once from the same result.
-export function createAnalysisTrendPresentation({ analysis, profile, display, granularity, range = [], sourceDefaultRange = false }) {
-  const trend = createTrendFromBackendAnalysis(analysis, { unit: profile.unit, display, granularity, range, sourceDefaultRange })
+export function createAnalysisTrendPresentation({ analysis, profile, display, granularity, range = [] }) {
+  const trend = createTrendFromBackendAnalysis(analysis, { unit: profile.unit, display, granularity, range })
     || { labels: [], actual: [], peer: [] }
   const hasPeer = Boolean(trend.peer?.some(isChartNumber))
   const formatValue = value => formatTrendDisplay(value, { unit: profile.unit, display })

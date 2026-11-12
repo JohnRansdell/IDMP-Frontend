@@ -76,7 +76,7 @@
         <ReportDimensionFilters :model-value="reportFilterDraft" :fields="reportDimensionMetadata"
           :indicator-id="selectedBackendIndicator.id || selectedBackendIndicator.indicatorId" :version-id="currentIndicatorVersionId"
           @update:model-value="updateReportFilters" />
-        <RuntimeParameterFields v-if="indicatorRuntimeParameters.length" v-model="indicatorRuntimeParameterValues" :declarations="indicatorRuntimeParameters" :show-metadata="false" @change="invalidateReportSummary()" />
+        <RuntimeParameterFields v-if="indicatorRuntimeParameters.length" v-model="indicatorRuntimeParameterValues" :declarations="indicatorRuntimeParameters" :department-parameter-codes="['deptCode', 'departCode', 'department']" :show-metadata="false" @change="invalidateReportSummary()" />
         <div class="instant-query-panel__actions">
           <el-button data-query-submit type="primary" :loading="reportSubmitting || rangeSummaryLoading" :disabled="indicatorRuntimeParameterConflicts.length > 0" @click="applyReportPeriod">查询</el-button>
         </div>
@@ -114,8 +114,8 @@
             :grain-fields="trendGrainControls"
             :has-applied-grain="Boolean(Object.keys(trendGrainApplied).length)"
             :has-range="isCompleteDateRange(analysisPeriodRange)"
-            :can-clear-range="trendPeriodDraft.some(Boolean) || analysisPeriodRange.some(Boolean)"
-            :is-source-default-trend-range="isSourceDefaultTrendRange"
+            :can-clear-range="trendDraftEdited || analysisPeriodRange.some(Boolean)"
+            :is-all-trend-range="!trendDraftEdited && !analysisPeriodRange.some(Boolean)"
             @apply="applyTrendConditions"
             @clear-range="clearTrendPeriod"
             @change-period="applyTrendGranularity"
@@ -279,7 +279,7 @@ import AnalysisOverview from '@/idmp/features/analysis/AnalysisOverview.vue'
 import AnalysisTrend from '@/idmp/features/analysis/AnalysisTrend.vue'
 import AnalysisDepartmentRanking from '@/idmp/features/analysis/AnalysisDepartmentRanking.vue'
 import { createAnalysisProfile, createOverviewPresentation, resolveAnalysisPerformanceTarget } from '@/idmp/features/analysis/overviewPresentation.js'
-import { createAnalysisTrendPresentation } from '@/idmp/features/analysis/trendPresentation.js'
+import { createAnalysisTrendPresentation, trendResultMonthRange } from '@/idmp/features/analysis/trendPresentation.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -327,13 +327,17 @@ const drillStartLevel = ref(String(route.query.drillStartLevel || 'HOSPITAL').to
 const drillParentKeys = ref(parseDrillParentKeys(route.query.drillParentKeys))
 const drillEntryContext = ref(initialDrillEntryContext())
 const analysisPeriodRange = ref(initialAnalysisPeriodRange())
-const isSourceDefaultTrendRange = ref(false)
-let sourceTrendRangePending = !isCompleteDateRange(analysisPeriodRange.value)
 const reportPeriodRange = ref(initialReportPeriodRange())
 const trendPeriodDraft = ref([...analysisPeriodRange.value])
+const trendDraftEdited = ref(false)
 const trendMonthRange = computed({
-  get: () => trendPeriodDraft.value.map(value => String(value).slice(0, 7)),
-  set: range => { trendPeriodDraft.value = normalizeTrendMonthRange(range) }
+  get: () => (trendDraftEdited.value || isCompleteDateRange(trendPeriodDraft.value)
+    ? trendPeriodDraft.value.map(value => String(value).slice(0, 7))
+    : trendResultMonthRange(trendBackendAnalysis.value, trendAnalysisGranularity.value)),
+  set: range => {
+    trendPeriodDraft.value = normalizeTrendMonthRange(range)
+    trendDraftEdited.value = true
+  }
 })
 const trendGrainDraft = ref({})
 const trendAdvancedExpanded = ref([])
@@ -426,7 +430,7 @@ async function loadTrendGrainOptions(code, search = '') {
   const index = trendGrainFields.value.indexOf(code)
   if (!indicator || !versionId || index < 0) return
   const params = { indicatorVersionId: versionId, fieldCode: code, search, limit: 100 }
-  if (isCompleteDateRange(trendPeriodDraft.value) && !isSourceDefaultTrendRange.value) {
+  if (isCompleteDateRange(trendPeriodDraft.value)) {
     params.periodStart = trendPeriodDraft.value[0]
     params.periodEnd = trendPeriodDraft.value[1]
   }
@@ -545,8 +549,7 @@ const primaryMetric = computed(() => overviewPresentation.value.primary)
 const summaryMetrics = computed(() => overviewPresentation.value.summaries)
 const trendPresentation = computed(() => createAnalysisTrendPresentation({
   analysis: trendBackendAnalysis.value, profile: currentProfile.value, display: metricDisplay.value,
-  granularity: trendAnalysisGranularity.value, range: analysisPeriodRange.value,
-  sourceDefaultRange: isSourceDefaultTrendRange.value
+  granularity: trendAnalysisGranularity.value, range: analysisPeriodRange.value
 }))
 const trendTableRows = computed(() => trendPresentation.value.rows)
 const hasPeerTrend = computed(() => trendPresentation.value.hasPeer)
@@ -801,7 +804,8 @@ function invalidateReportSummary(dirty = true) {
 }
 
 function applyTrendConditions() {
-  if (!validateOptionalDateRange(trendPeriodDraft.value, '趋势时间')) return
+  const selectedRange = trendDraftEdited.value ? trendPeriodDraft.value : analysisPeriodRange.value
+  if (!validateOptionalDateRange(selectedRange, '趋势时间')) return
   const selectedGrain = Object.fromEntries(trendGrainFields.value
     .map(code => [code, String(trendGrainDraft.value[code] || '').trim()])
     .filter(([, value]) => value))
@@ -810,21 +814,18 @@ function applyTrendConditions() {
     return
   }
   trendGrainApplied.value = selectedGrain
-  const wasSourceDefault = isSourceDefaultTrendRange.value
-  const keepSourceDefault = wasSourceDefault && JSON.stringify(trendPeriodDraft.value)
-    === JSON.stringify(sourceAvailableTrendRange(availablePeriod.value))
-  isSourceDefaultTrendRange.value = keepSourceDefault
-  sourceTrendRangePending = false
-  analysisPeriodRange.value = isCompleteDateRange(trendPeriodDraft.value) ? [...trendPeriodDraft.value] : []
+  analysisPeriodRange.value = isCompleteDateRange(selectedRange) ? [...selectedRange] : []
+  trendPeriodDraft.value = [...analysisPeriodRange.value]
+  trendDraftEdited.value = false
   const query = { ...route.query }
-  if (isCompleteDateRange(analysisPeriodRange.value) && !keepSourceDefault) {
+  if (isCompleteDateRange(analysisPeriodRange.value)) {
     query.trendStart = analysisPeriodRange.value[0]
     query.trendEnd = analysisPeriodRange.value[1]
     rememberAnalysisPeriod(indicatorCode.value, currentIndicatorVersionId.value, analysisPeriodRange.value)
   } else {
     delete query.trendStart
     delete query.trendEnd
-    if (!keepSourceDefault) forgetAnalysisPeriod(indicatorCode.value, currentIndicatorVersionId.value)
+    forgetAnalysisPeriod(indicatorCode.value, currentIndicatorVersionId.value)
   }
   if (String(route.query.trendStart || '') !== String(query.trendStart || '')
     || String(route.query.trendEnd || '') !== String(query.trendEnd || '')) {
@@ -850,6 +851,7 @@ async function refreshTrendAnalysis() {
 
 function clearTrendPeriod() {
   trendPeriodDraft.value = []
+  trendDraftEdited.value = true
   applyTrendConditions()
 }
 
@@ -974,8 +976,7 @@ function getBackendIndicatorKey(indicator) {
 function buildAnalysisParams(range = [], versionId = currentIndicatorVersionId.value, granularity = backendAnalysisGranularity.value) {
   const params = { granularity }
   if (versionId) params.indicatorVersionId = versionId
-  if (granularity !== 'STATIC' && isCompleteDateRange(range)
-    && !(isSourceDefaultTrendRange.value && range === analysisPeriodRange.value)) {
+  if (granularity !== 'STATIC' && isCompleteDateRange(range)) {
     params.periodStart = range[0]
     params.periodEnd = range[1]
   }
@@ -1030,8 +1031,7 @@ async function refreshIndicatorAnalysis() {
       reportPeriodRange.value = []
       analysisPeriodRange.value = []
       trendPeriodDraft.value = []
-      isSourceDefaultTrendRange.value = false
-      sourceTrendRangePending = false
+      trendDraftEdited.value = false
     } else if (reportGranularity.value === 'STATIC') {
       reportGranularity.value = normalizeAnalysisGranularity(route.query.granularity) === 'STATIC'
         ? 'MONTHLY' : normalizeAnalysisGranularity(route.query.granularity)
@@ -1106,16 +1106,6 @@ async function loadAvailablePeriod(versionId, request) {
     const value = await fetchIndicatorAvailablePeriod(versionId, { signal: request.signal })
     if (!request.isCurrent()) return null
     availablePeriod.value = value
-    if (sourceTrendRangePending && !isCompleteDateRange(analysisPeriodRange.value)
-      && !trendPeriodDraft.value.some(Boolean)) {
-      const sourceRange = sourceAvailableTrendRange(value)
-      if (isCompleteDateRange(sourceRange)) {
-        analysisPeriodRange.value = sourceRange
-        trendPeriodDraft.value = [...sourceRange]
-        isSourceDefaultTrendRange.value = true
-        sourceTrendRangePending = false
-      }
-    }
     return value
   } catch {
     if (request.isCurrent()) availablePeriod.value = null
@@ -1166,8 +1156,7 @@ watch(() => analysisRouteKey(route.query), key => {
   drillEntryContext.value = initialDrillEntryContext()
   analysisPeriodRange.value = initialAnalysisPeriodRange()
   trendPeriodDraft.value = [...analysisPeriodRange.value]
-  isSourceDefaultTrendRange.value = false
-  sourceTrendRangePending = !isCompleteDateRange(analysisPeriodRange.value)
+  trendDraftEdited.value = false
   trendGrainDraft.value = {}
   trendGrainApplied.value = {}
   trendAdvancedExpanded.value = []
@@ -1213,12 +1202,6 @@ function initialReportPeriodRange() {
 
 function normalizeDateValue(value) {
   return String(value || '').slice(0, 10)
-}
-
-function sourceAvailableTrendRange(availability) {
-  const start = normalizeDateValue(availability?.earliestDataDate)
-  const end = normalizeDateValue(availability?.latestDataDate)
-  return start && end && start <= end ? normalizeTrendMonthRange([start, end]) : []
 }
 
 function isCompleteDateRange(range) {
@@ -1532,6 +1515,7 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
   .instant-query-panel__context { justify-content: flex-start; }
   .instant-query-panel__controls { align-items: stretch; }
   .instant-query-panel__period, .instant-query-panel__controls :deep(.runtime-parameter-fields) { flex: 1 1 100%; }
+  .instant-query-panel__controls :deep(.runtime-parameter-field) { flex-basis: 100%; max-width: 100%; }
   .report-period-picker { flex: 0 0 auto; width: 100%; min-width: 0; }
   .instant-query-panel__actions { width: 100%; margin-left: 0; }
   .instant-query-panel__actions .el-button { width: 100%; }

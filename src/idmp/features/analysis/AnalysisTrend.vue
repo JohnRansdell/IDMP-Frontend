@@ -6,7 +6,7 @@
     </div>
     <div v-if="!staticMode" class="trend-controls">
       <div class="date-range-fields trend-period-picker" aria-label="趋势时间范围"><el-date-picker v-model="trendMonthRange" type="monthrange" unlink-panels format="YYYY-MM" value-format="YYYY-MM" range-separator="至" start-placeholder="开始月份" end-placeholder="结束月份" size="small" /></div>
-      <el-tag v-if="isSourceDefaultTrendRange" size="small" type="info" effect="plain">源数据可用范围</el-tag>
+      <el-tag v-if="isAllTrendRange" size="small" type="info" effect="plain">全部正式结果</el-tag>
       <el-button size="small" type="primary" @click="emit('apply')">应用</el-button>
       <el-button size="small" :disabled="!canClearRange" @click="emit('clear-range')">全部时间</el-button>
       <el-radio-group v-model="period" size="small" aria-label="趋势统计粒度" @change="emit('change-period')">
@@ -105,7 +105,7 @@ const props = defineProps({
   hasAppliedGrain: Boolean,
   hasRange: Boolean,
   canClearRange: Boolean,
-  isSourceDefaultTrendRange: Boolean
+  isAllTrendRange: Boolean
 })
 const emit = defineEmits(['apply', 'clear-range', 'change-period', 'clear-grain', 'search-grain', 'retry'])
 const trendMonthRange = defineModel('months', { type: Array, required: true })

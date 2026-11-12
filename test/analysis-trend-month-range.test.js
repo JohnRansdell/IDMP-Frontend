@@ -2,12 +2,13 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { compileScript, parse } from '@vue/compiler-sfc'
+import { trendResultMonthRange } from '../src/idmp/features/analysis/trendPresentation.js'
 
 const source = await readFile(new URL('../src/idmp/views/IndicatorAnalysis.vue', import.meta.url), 'utf8')
 const trendSource = await readFile(new URL('../src/idmp/features/analysis/AnalysisTrend.vue', import.meta.url), 'utf8')
 const { descriptor } = parse(source)
 const { scriptSetupAst } = compileScript(descriptor, { id: 'analysis-trend-month-range' })
-const names = ['normalizeTrendMonthRange', 'initialAnalysisPeriodRange', 'normalizeDateValue', 'sourceAvailableTrendRange']
+const names = ['normalizeTrendMonthRange', 'initialAnalysisPeriodRange', 'normalizeDateValue']
 const functions = names.map(name => {
   const node = scriptSetupAst.find(node => node.type === 'FunctionDeclaration' && node.id.name === name)
   assert.ok(node, `Missing page function: ${name}`)
@@ -44,13 +45,25 @@ test('clearing or invalid month ranges never produce malformed API dates', () =>
   }
 })
 
-test('old URLs, remembered ranges and source defaults normalize to complete months', () => {
+test('old URLs and remembered ranges normalize to complete months', () => {
   assert.deepEqual(page({ trendStart: '2026-03-15', trendEnd: '2026-04-02' }).initialAnalysisPeriodRange(),
     ['2026-03-01', '2026-04-30'])
   assert.deepEqual(page({}, ['2026-03-15', '2026-04-02']).initialAnalysisPeriodRange(),
     ['2026-03-01', '2026-04-30'])
-  assert.deepEqual(page().sourceAvailableTrendRange({ earliestDataDate: '2024-02-15T00:00:00', latestDataDate: '2024-02-20T00:00:00' }),
-    ['2024-02-01', '2024-02-29'])
+})
+
+test('default picker bounds come from formal trend periods rather than source availability', () => {
+  const payload = { dataAvailable: true, granularity: 'MONTHLY', trend: [
+    { periodStart: '2026-04-01' }, { periodStart: '2026-02-01' }
+  ] }
+  assert.deepEqual(trendResultMonthRange(payload, 'MONTHLY'), ['2026-02', '2026-04'])
+  assert.deepEqual(trendResultMonthRange({ ...payload, granularity: 'QUARTERLY', trend: [
+    { periodStart: '2026-02-01' }, { periodStart: '2026-08-01' }
+  ] }, 'QUARTERLY'), ['2026-01', '2026-09'])
+  assert.deepEqual(trendResultMonthRange({ ...payload, granularity: 'YEARLY', trend: [
+    { periodStart: '2025-01-01' }, { periodStart: '2026-01-01' }
+  ] }, 'YEARLY'), ['2025-01', '2026-12'])
+  assert.deepEqual(trendResultMonthRange({ ...payload, trend: [] }, 'MONTHLY'), [])
 })
 
 test('custom report ranges do not seed the independent trend period', () => {
