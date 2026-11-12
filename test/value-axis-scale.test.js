@@ -5,8 +5,9 @@ import { createAnalysisTrendPresentation } from '../src/idmp/features/analysis/t
 
 test('长小数最大值使用规整刻度，不改变原始序列和目标线', () => {
   const values = [0.1, 0.1169590643, 0.094]
+  const periods = ['2026-01-01', '2026-02-01', '2026-03-01']
   const { option } = createAnalysisTrendPresentation({
-    analysis: { dataAvailable: true, granularity: 'MONTHLY', trend: values.map(value => ({ value, periodStart: '2026-01-01' })) },
+    analysis: { dataAvailable: true, granularity: 'MONTHLY', trend: values.map((value, index) => ({ value, periodStart: periods[index] })) },
     profile: { unit: '%', markLineValue: 10 }, granularity: 'MONTHLY'
   })
   assert.deepEqual(option.series[0].data, [10, 11.69590643, 9.4])
