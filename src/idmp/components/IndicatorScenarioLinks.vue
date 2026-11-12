@@ -7,7 +7,7 @@
     <el-table :aria-busy="loading" :empty-text="loading ? '正在查询…' : '当前指标版本暂无关联场景'" v-loading="loading" :data="links" >
       <el-table-column label="场景" min-width="200"><template #default="{ row }">{{ row.name || row.scenarioName || '未命名场景' }}</template></el-table-column>
       <el-table-column prop="publicationStatus" label="状态" width="120" />
-      <el-table-column label="操作" width="150"><template #default="{ row }"><el-button link type="primary" @click="open(row.id || row.scenarioId, row.scenarioVersionId)">查看或配置覆盖</el-button></template></el-table-column>
+      <el-table-column label="操作" width="150"><template #default="{ row }"><el-button link type="primary" @click="open(row.id || row.scenarioId, row.scenarioVersionId)">查看关联指标</el-button></template></el-table-column>
     </el-table>
     <div v-if="published" class="scenario-controls">
       <el-select default-first-option v-model="scenarioId" filterable remote :remote-method="search" :loading="searching" placeholder="搜索可关联的场景" :disabled="saving" @visible-change="visible => visible && search('')" @change="loadVersions"><el-option v-for="row in options" :key="row.id" :value="String(row.id)" :label="row.name || '未命名场景'" /></el-select>
@@ -30,7 +30,7 @@ const links = ref([]), options = ref([]), drafts = ref([]), scenarioId = ref('')
 const loading = ref(false), searching = ref(false), versionsLoading = ref(false), saving = ref(false), error = ref('')
 let context = 0, searchRevision = 0, versionRevision = 0, linksRevision = 0
 const rows = result => Array.isArray(result) ? result : result.records || result.items || []
-function open(id, versionId) { router.push({ name: 'ScenarioEditor', params: { scenarioId: String(id) }, query: versionId ? { versionId: String(versionId) } : {} }) }
+function open(id, versionId) { router.push({ name: 'ScenarioEditor', params: { scenarioId: String(id) }, query: { ...(versionId ? { versionId: String(versionId) } : {}), tab: 'indicators' } }) }
 async function loadLinks() {
   const revision = ++linksRevision
   links.value = []; loading.value = !!props.indicatorId; error.value = ''

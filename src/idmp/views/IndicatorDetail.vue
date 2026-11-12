@@ -54,7 +54,8 @@
         </template>
       </article>
       <article class="surface-card related-scenarios" aria-label="关联场景">
-        <div class="content-heading"><h2>关联场景</h2></div>
+        <div class="content-heading"><h2>关联场景</h2><el-button v-access="'scenario.read'" link type="primary" @click="router.push({ name: 'ScenarioList' })">场景管理</el-button></div>
+        <p class="section-title__description scene-entry-description">场景关联可直接进入查看和维护，无需重新配置指标。</p>
         <StatePanel v-if="scenarioLoading" type="loading" title="正在加载关联场景" />
         <StatePanel v-else-if="scenarioError" type="error" title="关联场景加载失败" :description="scenarioError"><template #actions><el-button @click="loadRelatedScenarios">重试</el-button></template></StatePanel>
         <div v-else-if="!scenarioRows.length" class="content-empty">
@@ -65,7 +66,7 @@
           <el-table-column label="场景名称" min-width="240"><template #default="{ row }"><span class="scene-name">{{ row.name || row.scenarioName || '-' }}</span><p v-if="row.description" class="scene-description">{{ row.description }}</p></template></el-table-column>
 
           <el-table-column label="统计周期" width="110"><template #default="{ row }">{{ periodLabel(row.configuredPeriodType || row.defaultPeriodType) }}</template></el-table-column>
-          <el-table-column label="操作" width="80"><template #default="{ row }"><el-button v-access="'scenario.create'" link type="primary" @click="openScenario(row)">查看</el-button></template></el-table-column>
+          <el-table-column label="操作" width="140"><template #default="{ row }"><el-button v-access="'scenario.read'" link type="primary" @click="openScenario(row)">查看关联指标</el-button></template></el-table-column>
         </el-table>
       </article>
     </section>
@@ -255,7 +256,7 @@ function openIndicatorEditor() {
     loadError.value = '指标信息不完整，请刷新详情后重试。'
     return
   }
-  router.push({ name: 'IndicatorEditor', params: { id: indicatorId } })
+  router.push({ name: 'IndicatorEditor', params: { id: indicatorId }, query: { indicatorVersionId: selectedVersionId.value } })
 }
 
 function hydrateDetail(item) {
@@ -335,7 +336,7 @@ function selectVersionById(id) {
 function openScenario(row) {
   const scenarioId = row.id || row.scenarioId
   if (!scenarioId) return
-  router.push({ name: 'ScenarioEditor', params: { scenarioId }, query: { versionId: row.scenarioVersionId } })
+  router.push({ name: 'ScenarioEditor', params: { scenarioId }, query: { ...(row.scenarioVersionId ? { versionId: String(row.scenarioVersionId) } : {}), tab: 'indicators' } })
 }
 
 async function loadVersions(indicatorId) {
@@ -479,6 +480,7 @@ onMounted(loadIndicatorDetail)
 .detail-description:focus-visible { outline: 2px solid var(--idmp-interactive); outline-offset: 3px; }
 .content-empty { display: flex; align-items: center; gap: 12px; min-height: 56px; color: var(--idmp-text-helper); font-size: 13px; }
 .formula-definition .formula-expression { min-height: 86px; padding: 14px 18px; border-radius: var(--idmp-radius-sm); background: var(--idmp-layer-02); }
+.scene-entry-description { margin: -4px 0 14px; }
 .scene-name { font-weight: 500; }
 .scene-description { margin: 3px 0 0; overflow: hidden; color: var(--idmp-text-helper); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .formula-expression { display: flex; align-items: center; gap: 16px; max-width: 100%; margin: 0; font-size: 15px; font-weight: 500; line-height: 1.7; color: var(--idmp-text-primary); overflow-wrap: anywhere; }

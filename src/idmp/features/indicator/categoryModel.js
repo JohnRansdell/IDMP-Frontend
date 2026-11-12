@@ -114,3 +114,16 @@ export function resolveCategoryPath(source, fallback = defaultCategoryPath) {
   const path = normalizeCategoryPath(source)
   return path.length ? path : [...fallback]
 }
+
+// Saved categories can predate the current catalog; keep their exact path selectable.
+export function categoryOptionsWithSavedPath(path = []) {
+  const options = JSON.parse(JSON.stringify(indicatorCategoryOptions))
+  let siblings = options
+  for (const value of normalizeCategoryPath(path)) {
+    let option = siblings.find(item => item.value === value)
+    if (!option) { option = { value, label: value }; siblings.push(option) }
+    if (!option.children) option.children = []
+    siblings = option.children
+  }
+  return options
+}

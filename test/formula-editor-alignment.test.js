@@ -209,3 +209,16 @@ test('versionless indicators do not restore stale presentation defaults over bac
   restore()
   assert.equal(form.unit, '元')
 })
+
+
+test('existing definition, meaning and statistical period use their saved fields before summary fallbacks', () => {
+  const editor = metadataEditor()
+  editor.hydrateIndicatorSummary({ id: '100', name: '旧指标', resourceVersion: 3,
+    description: '目录摘要', definition: '已保存的完整定义', significance: '旧别名', meaning: '已保存意义',
+    statisticalPeriod: 'MONTHLY', period: 'YEARLY' })
+  assert.equal(editor.form.definition, '已保存的完整定义')
+  assert.equal(editor.form.significance, '已保存意义')
+  assert.equal(editor.form.period, 'MONTHLY')
+  editor.hydrateIndicatorSummary({ id: '100', name: '旧指标', resourceVersion: 3 })
+  assert.equal(editor.form.period, '')
+})

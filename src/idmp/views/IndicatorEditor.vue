@@ -11,6 +11,8 @@
         <span>{{ indicatorWorkflow.versionId ? '版本已创建' : '尚未创建版本' }}</span>
       </template>
       <template #actions>
+        <el-button v-if="!isNew && indicatorWorkflow.indicatorId" @click="router.push({ name: 'IndicatorDetail', params: { id: indicatorWorkflow.indicatorId }, query: { indicatorVersionId: indicatorWorkflow.versionId } })">查看指标</el-button>
+        <el-button v-if="!isNew && editLoadState.detailReady" @click="activeTab = 'scene'">管理场景关联</el-button>
         <el-button @click="router.push('/indicator')">返回指标目录</el-button>
       </template>
     </PageHeader>
@@ -33,7 +35,7 @@
     <el-tabs v-model="activeTab" class="idmp-tabs editor-tabs">
       <el-tab-pane label="1 基础与政策" name="basic">
         <section ref="basicSectionRef" tabindex="-1" class="surface-card form-card publication-navigation-target">
-          <el-form ref="formRef" :model="form" :rules="rules" label-width="108px" status-icon>
+          <el-form ref="formRef" :model="form" :rules="rules" :disabled="!isNew && (editLoadState.loading || !editLoadState.loadedFromList)" label-width="108px" status-icon>
             <div class="form-grid">
 
               <el-form-item label="指标名称" prop="name">
@@ -46,7 +48,7 @@
                 <SearchableCascader
                   v-model="form.categoryPath"
                   class="category-cascader"
-                  :options="indicatorCategoryOptions"
+                  :options="editorCategoryOptions"
                   :props="indicatorCategoryProps"
                   clearable
                   filterable
@@ -60,6 +62,7 @@
                 <el-radio-group v-model="form.attribute">
                   <el-radio value="定量">定量</el-radio>
                   <el-radio value="定性">定性</el-radio>
+                  <el-radio v-if="form.attribute && !['定量', '定性'].includes(form.attribute)" :value="form.attribute">{{ form.attribute }}</el-radio>
                 </el-radio-group>
               </el-form-item>
               <el-form-item label="计量单位" prop="unit">
@@ -69,6 +72,7 @@
                   <el-option label="人次" value="人次" />
                   <el-option label="元" value="元" />
                   <el-option label="天数" value="天数" />
+                  <el-option v-if="form.unit && !['百分比（%）', '比值', '人次', '元', '天数'].includes(form.unit)" :label="form.unit" :value="form.unit" />
                 </el-select>
               </el-form-item>
               <el-form-item label="指标导向" prop="direction">
@@ -77,6 +81,7 @@
                   <el-option label="逐步提高 ↑" value="逐步提高 ↑" />
                   <el-option label="监测比较" value="监测比较" />
                   <el-option label="无导向" value="无导向" />
+                  <el-option v-if="form.direction && !['逐步降低 ↓', '逐步提高 ↑', '监测比较', '无导向'].includes(form.direction)" :label="form.direction" :value="form.direction" />
                 </el-select>
               </el-form-item>
               <el-form-item label="统计周期" prop="period">
@@ -540,7 +545,7 @@ import { formatResultPeriod } from '@/idmp/utils/periodRange.js'
 import IndicatorWorkflowOverview from '@/idmp/features/indicator/components/IndicatorWorkflowOverview.vue'
 import IndicatorPublishPanel from '@/idmp/features/indicator/components/IndicatorPublishPanel.vue'
 import { useIndicatorPublicationState } from '@/idmp/features/indicator/useIndicatorPublicationState.js'
-import { defaultCategoryPath, indicatorCategoryOptions, indicatorCategoryProps, normalizeCategoryPath, resolveCategoryPath } from '@/idmp/features/indicator/categoryModel.js'
+import { defaultCategoryPath, indicatorCategoryProps, normalizeCategoryPath, resolveCategoryPath, categoryOptionsWithSavedPath } from '@/idmp/features/indicator/categoryModel.js'
 import { resolveIndicatorVersionId, extractFormula, pickLatestVersion } from '@/idmp/features/indicator/versionModel.js'
 import { toOpaqueId } from '@/idmp/utils/resourceId.js'
 
@@ -774,6 +779,7 @@ async function navigatePublishCheck({ tab, section }) {
 const { canPublishIndicatorVersion, publishPanelDescription, workflowSteps, publishGates } = useIndicatorPublicationState({
   indicatorWorkflow, policySourceState, hasIndicatorTrialResults
 })
+const editorCategoryOptions = computed(() => categoryOptionsWithSavedPath(form.categoryPath))
 const savedDataSources = ref([])
 const sourceOptions = computed(() => {
   const options = ['HIS', '手术麻醉', 'EMR', 'LIS', 'PACS', '病案', '药事', '财务'].map(value => ({ value, label: value }))
@@ -1334,11 +1340,11 @@ function hydrateIndicatorSummary(item) {
   form.attribute = item.attribute ?? ''
   form.unit = item.unit ?? ''
   form.direction = item.direction ?? ''
-  form.definition = item.description || item.definition || ''
-  form.significance = item.significance || item.meaning || ''
+  form.definition = item.definition ?? item.description ?? ''
+  form.significance = item.meaning ?? item.significance ?? ''
   savedDataSources.value = normalizeIndicatorDataSources(item.dataSources || item.sources || (item.source ? [item.source] : []))
   form.sources = savedDataSources.value.map(indicatorDataSourceKey)
-  form.period = fromApiStatisticalPeriod(item.period || item.statisticalPeriod) || form.period || '年度'
+  form.period = fromApiStatisticalPeriod(item.statisticalPeriod || item.period) || ''
   Object.assign(indicatorWorkflow, {
     indicatorId: toOpaqueId(item.id ?? item.indicatorId ?? routeIndicatorKey.value),
     versionId: toOpaqueId(item.currentVersionId ?? item.latestVersionId ?? item.versionId ?? indicatorWorkflow.versionId),
@@ -1391,7 +1397,7 @@ function hydrateIndicatorVersion(version) {
   const formula = extractFormula(version)
   resetDrillCapability()
   hydrateFormulaFactors(formula)
-  selectedDrillPaths.value = indicatorWorkflow.published ? normalizeDrillPaths(version) : codeOnlyOrganizationPaths(normalizeDrillPaths(version))
+  selectedDrillPaths.value = normalizeDrillPaths(version)
   dataOwnership.value = version.dataOwnership ? { ...version.dataOwnership } : null
   factorDimensionBindings.value = version.factorDimensionBindings || version.drillConfig?.factorDimensionBindings || {}
   indicatorRuntimeParameterGroups.value = Array.isArray(version.factorRuntimeParameters) ? version.factorRuntimeParameters : []
@@ -1466,7 +1472,7 @@ async function loadIndicatorForEdit() {
       editLoadState.loadedFromList = true
       editLoadState.detailReady = Boolean(indicatorWorkflow.versionId)
       editLoadState.message = indicatorWorkflow.versionId
-        ? '指标配置已加载。'
+        ? '已有指标配置已回填；仅查看或管理场景关联，无需重新选择基础信息、公式和政策来源。'
         : '基础信息已加载，当前暂无版本定义。'
     } else {
       editLoadState.loadedFromList = false
@@ -1500,11 +1506,16 @@ async function loadEditableIndicatorVersion(indicatorId) {
   if (!indicatorId) return
 
   const versions = normalizeList(await fetchIndicatorVersions(indicatorId))
-  const latest = pickLatestVersion(versions)
-  const latestVersionId = resolveIndicatorVersionId(latest) || toOpaqueId(latest?.id)
-  if (!latestVersionId) return
+  const requestedId = toOpaqueId(route.query.indicatorVersionId || route.query.versionId)
+  const selected = requestedId
+    ? versions.find(version => resolveIndicatorVersionId(version) === requestedId)
+    : pickLatestVersion(versions)
+  if (requestedId && !selected) throw new Error('指定指标版本不存在或不属于当前指标，请返回详情重新选择')
+  const selectedVersionId = resolveIndicatorVersionId(selected)
+  if (!selectedVersionId) return
 
-  const detail = await fetchIndicatorVersion(latestVersionId)
+  const detail = await fetchIndicatorVersion(selectedVersionId)
+  if (detail.indicatorId != null && toOpaqueId(detail.indicatorId) !== toOpaqueId(indicatorId)) throw new Error('指标版本与当前指标不匹配，请刷新后重试')
   const formula = extractFormula(detail)
   hydrateIndicatorVersion({
     ...detail,

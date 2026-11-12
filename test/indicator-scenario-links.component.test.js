@@ -75,7 +75,7 @@ test('published indicators join a selected scenario draft while preserving every
   assert.equal(wrapper.vm.savedVersionId, '802')
   await button(wrapper, '进入场景编辑').trigger('click')
   assert.deepEqual(navigations[0], { name: 'ScenarioEditor', params: { scenarioId: '801' },
-    query: { versionId: '802' } })
+    query: { versionId: '802', tab: 'indicators' } })
   wrapper.unmount()
 })
 
@@ -105,9 +105,9 @@ test('association navigation uses the actual scenario version', async () => {
   const { wrapper, navigations } = create({ rows: [{ id: '801', scenarioVersionId: '802', name: '质量安全',
     references: [{ indicatorVersionId: '102027642463173253', indicatorVersionNo: '1' }] }] })
   await flushPromises()
-  await button(wrapper, '查看或配置覆盖').trigger('click')
+  await button(wrapper, '查看关联指标').trigger('click')
   assert.deepEqual(navigations[0], { name: 'ScenarioEditor', params: { scenarioId: '801' },
-    query: { versionId: '802' } })
+    query: { versionId: '802', tab: 'indicators' } })
   wrapper.unmount()
 })
 
