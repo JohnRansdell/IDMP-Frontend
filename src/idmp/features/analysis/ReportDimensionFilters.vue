@@ -1,7 +1,7 @@
 <template>
   <div class="report-dimension-filters">
     <div v-for="field in controls" :key="field.code" class="report-dimension-field">
-      <label :for="`report-dimension-${field.code}`">{{ field.label }}</label>
+      <label :for="`report-dimension-${field.code}`" :title="field.label">{{ field.label }}</label>
       <el-select :id="`report-dimension-${field.code}`" :model-value="selected[field.code] || []"
         :aria-label="`筛选${field.label}`" multiple filterable allow-create default-first-option clearable
         collapse-tags collapse-tags-tooltip :max-collapse-tags="1" :multiple-limit="500"
@@ -67,13 +67,12 @@ watch(() => [props.versionId, props.fields, props.modelValue], () => {
 </script>
 <style scoped>
 .report-dimension-filters { display:contents; }
-.report-dimension-field { flex:1 1 190px; max-width:300px; min-width:0; display:grid; grid-template-columns:minmax(0,1fr); gap:6px; }
-label { color:var(--idmp-text-helper); font-size:13px; }
+.report-dimension-field { min-width:0; display:grid; grid-template-columns:minmax(0,1fr); align-content:start; gap:6px; }
+label { min-height:20px; line-height:20px; color:var(--idmp-text-helper); font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .el-select { width:100%; min-width:0; }
 .el-select :deep(.el-select__selection) { flex-wrap:nowrap; }
 .el-select :deep(.el-select__selected-item) { min-width:0; }
 .el-select :deep(.el-tag) { min-width:0; }
 .el-select :deep(.el-select__input-wrapper) { min-width:12px; }
 .dimension-error { color:var(--idmp-support-error); font-size:12px; overflow-wrap:anywhere; }
-@media(max-width:700px) { .report-dimension-field { flex-basis:100%; max-width:100%; } }
 </style>

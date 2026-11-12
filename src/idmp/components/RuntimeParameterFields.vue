@@ -2,7 +2,7 @@
   <div class="runtime-parameter-fields">
     <div v-for="parameter in declarations" :key="parameter.code" class="runtime-parameter-field">
       <label>
-        <span>{{ runtimeParameterLabel(parameter) }}<em v-if="parameter.required">*</em></span>
+        <span :title="runtimeParameterLabel(parameter)">{{ runtimeParameterLabel(parameter) }}<em v-if="parameter.required">*</em></span>
         <small v-if="showMetadata">{{ typeLabel(parameter.type) }} · {{ parameter.parameterMode === 'TEMPORARY' ? '临时重算' : '结果维度' }}</small>
       </label>
       <template v-if="isDepartmentParameter(parameter)">
@@ -90,7 +90,7 @@ function typeLabel(type) { return ({ STRING: '文本', INTEGER: '整数', DECIMA
 <style scoped lang="scss">
 .runtime-parameter-fields {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
   gap: var(--idmp-space-4) var(--idmp-space-5);
 }
 
@@ -107,6 +107,9 @@ function typeLabel(type) { return ({ STRING: '文本', INTEGER: '整数', DECIMA
   justify-content: space-between;
   gap: var(--idmp-space-2);
   min-height: 20px;
+  min-width: 0;
+  flex-wrap: wrap;
+  line-height: 20px;
 }
 
 .runtime-parameter-field label span {
@@ -126,26 +129,16 @@ function typeLabel(type) { return ({ STRING: '文本', INTEGER: '整数', DECIMA
   font-style: normal;
 }
 
-.runtime-parameter-field > .el-select,
-.runtime-parameter-field > .el-input,
-.runtime-parameter-field > .el-input-number,
-.runtime-parameter-field > .el-date-editor {
+.runtime-parameter-field :deep(.el-select),
+.runtime-parameter-field :deep(.el-input),
+.runtime-parameter-field :deep(.el-input-number),
+.runtime-parameter-field :deep(.el-date-editor) {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .department-option-code { margin-left: 12px; color: var(--idmp-text-helper); }
 .department-error { color: var(--idmp-support-error); font-size: 12px; overflow-wrap: anywhere; }
-
-@media (max-width: 1180px) {
-  .runtime-parameter-fields {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 720px) {
-  .runtime-parameter-fields {
-    grid-template-columns: 1fr;
-    row-gap: var(--idmp-space-3);
-  }
-}
 </style>

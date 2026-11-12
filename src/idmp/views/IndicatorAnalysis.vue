@@ -6,6 +6,22 @@
       status-tone="info"
     >
       <template #meta>
+        <label class="analysis-version-control">
+          <span>指标版本</span>
+          <el-select
+            :model-value="analysisVersionOptions.some(version => version.id === currentIndicatorVersionId) ? currentIndicatorVersionId : ''"
+            class="analysis-version-select"
+            size="small"
+            aria-label="选择指标版本"
+            :placeholder="currentIndicatorVersionLabel"
+            :loading="indicatorOptionsLoading"
+            :disabled="indicatorOptionsLoading || !analysisVersionOptions.length"
+            @change="switchIndicatorVersion"
+          >
+            <el-option v-for="version in analysisVersionOptions" :key="version.id"
+              :value="version.id" :label="`V${version.versionNo}`" />
+          </el-select>
+        </label>
         <span>报告期 <strong>{{ reportPeriodLabel }}</strong></span>
         <span v-if="rangeSummary">查询方式 <strong>{{ reportResultModeLabel }}</strong></span>
         <span v-else>统计粒度 <strong>{{ backendAnalysisGranularity === 'STATIC' ? '静态' : period }}</strong></span>
@@ -274,6 +290,7 @@ import { createRequestScope, useLatestResult } from '@/idmp/features/analysis/us
 import { useReportSummary } from '@/idmp/features/analysis/useReportSummary.js'
 import { reportOverview, reportProvenance } from '@/idmp/features/analysis/reportResult.js'
 import { formatResultNumber } from '@/idmp/features/shared/resultPresentation.js'
+import { analysisVersionQuery, publishedAnalysisVersions } from '@/idmp/features/analysis/indicatorVersions.js'
 
 import AnalysisOverview from '@/idmp/features/analysis/AnalysisOverview.vue'
 import AnalysisTrend from '@/idmp/features/analysis/AnalysisTrend.vue'
@@ -322,6 +339,7 @@ const availablePeriod = ref(null)
 const analysisLoading = ref(false)
 const selectedIndicatorCode = ref(String(route.query.indicator || ''))
 const backendIndicators = ref([])
+const publishedIndicatorVersions = ref([])
 const indicatorOptionsLoading = ref(false)
 const drillStartLevel = ref(String(route.query.drillStartLevel || 'HOSPITAL').toUpperCase())
 const drillParentKeys = ref(parseDrillParentKeys(route.query.drillParentKeys))
@@ -623,6 +641,13 @@ const currentIndicatorVersionId = computed(() => String(
   selectedBackendIndicator.value?.currentPublishedVersionId || selectedBackendIndicator.value?.publishedVersionId ||
   selectedBackendIndicator.value?.currentVersionId || ''
 ))
+const currentIndicatorVersionLabel = computed(() => {
+  const version = backendIndicatorVersion.value
+  return String(version?.id || '') === currentIndicatorVersionId.value && version?.versionNo != null
+    ? `V${version.versionNo}` : '-'
+})
+const analysisVersionOptions = computed(() => publishedAnalysisVersions(publishedIndicatorVersions.value,
+  selectedBackendIndicator.value?.id || selectedBackendIndicator.value?.indicatorId))
 const rankPeriodProps = computed(() => ({
   indicatorId: selectedBackendIndicator.value?.id || selectedBackendIndicator.value?.indicatorId || '',
   indicatorVersionId: currentIndicatorVersionId.value,
@@ -727,6 +752,12 @@ function compactId(value) {
 
 function firstPresent(...values) {
   return values.find((value) => value !== undefined && value !== null && value !== '') || '-'
+}
+
+function switchIndicatorVersion(versionId) {
+  if (String(versionId) === currentIndicatorVersionId.value
+    || !analysisVersionOptions.value.some(version => version.id === String(versionId))) return
+  return router.push({ path: '/analysis', query: analysisVersionQuery(route.query, versionId) })
 }
 
 function switchIndicatorAnalysis() {
@@ -868,6 +899,7 @@ async function loadBackendAnalysisIndicators() {
       fetchAllIndicatorVersions({ publicationStatus: 'PUBLISHED' }, { signal: request.signal })
     ])
     if (!request.isCurrent()) return
+    publishedIndicatorVersions.value = normalizeList(publishedVersions)
     backendIndicators.value = mergePublishedAnalysisIndicators(
       normalizeList(indicators),
       normalizeList(publishedVersions)
@@ -893,6 +925,7 @@ async function loadBackendAnalysisIndicators() {
   } catch {
     if (!request.isCurrent()) return
     backendIndicators.value = []
+    publishedIndicatorVersions.value = []
     ElMessage.warning('指标列表加载失败，请重试')
   } finally {
     if (request.isCurrent()) indicatorOptionsLoading.value = false
@@ -919,7 +952,7 @@ function mergePublishedAnalysisIndicators(indicators, publishedVersions) {
   const indicatorsById = new Map(indicators.map((item) => [String(item.id || item.indicatorId || ''), item]))
   const indicatorsByCode = new Map(indicators.map((item) => [String(item.code || ''), item]))
   const directoryOrder = new Map(indicators.map((item, index) => [getIndicatorDirectoryKey(item), index]))
-  const orderedVersions = [...publishedVersions].sort((left, right) => {
+  const orderedVersions = publishedVersions.filter(version => (version.publicationStatus || version.status) === 'PUBLISHED' && version.status !== 'ARCHIVED').sort((left, right) => {
     const leftIndicator = left.indicator || {}
     const rightIndicator = right.indicator || {}
     const leftBase = indicatorsById.get(String(left.indicatorId || leftIndicator.id || '')) || indicatorsByCode.get(String(left.indicatorCode || left.code || leftIndicator.code || '')) || left
@@ -929,6 +962,7 @@ function mergePublishedAnalysisIndicators(indicators, publishedVersions) {
     if (leftCreated && rightCreated && leftCreated !== rightCreated) return rightCreated.localeCompare(leftCreated)
     return (directoryOrder.get(getIndicatorDirectoryKey(leftBase)) ?? Number.MAX_SAFE_INTEGER) -
       (directoryOrder.get(getIndicatorDirectoryKey(rightBase)) ?? Number.MAX_SAFE_INTEGER)
+      || Number(right.versionNo || 0) - Number(left.versionNo || 0)
   })
   const seenIndicators = new Set()
   return orderedVersions.map((version) => {
@@ -1151,6 +1185,7 @@ watch(() => analysisRouteKey(route.query), key => {
     return
   }
   selectedIndicatorCode.value = indicatorCode.value
+  showDataDiagnostics.value = false
   drillStartLevel.value = String(route.query.drillStartLevel || 'HOSPITAL').toUpperCase()
   drillParentKeys.value = parseDrillParentKeys(route.query.drillParentKeys)
   drillEntryContext.value = initialDrillEntryContext()
@@ -1274,6 +1309,7 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
 }
 
 .instant-query-panel {
+  container-type: inline-size;
   display: grid;
   gap: 14px;
   margin-bottom: var(--idmp-space-4);
@@ -1285,24 +1321,29 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
 .instant-query-panel__header h2 { flex: 0 0 auto; margin: 0; font-size: 16px; }
 .instant-query-panel__context { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 4px 12px; color: var(--idmp-text-helper); font-size: 12px; }
 .instant-query-panel__context strong { color: var(--idmp-text-secondary); font-weight: 500; }
-.instant-query-panel__controls { display: flex; align-items: flex-end; gap: 12px 16px; min-width: 0; }
+.instant-query-panel__controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: start; gap: 16px; min-width: 0; }
 .runtime-query-result__summary span { margin: 0; color: var(--idmp-text-helper); font-size: 12px; }
-.instant-query-panel__period { display: flex; flex: 0 0 auto; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0; }
-.instant-query-panel__period label { flex: 0 0 auto; min-height: 19px; color: var(--idmp-text-primary); font-size: 13px; font-weight: 600; }
-.instant-query-panel__controls :deep(.runtime-parameter-fields) { display: flex; flex: 1 1 auto; align-items: flex-end; flex-wrap: wrap; gap: 12px; min-width: 0; }
-.instant-query-panel__controls :deep(.runtime-parameter-field) { flex: 1 1 170px; max-width: 280px; gap: 6px; }
-.instant-query-panel__controls :deep(.runtime-parameter-field label) { min-height: 19px; font-size: 13px; }
+.instant-query-panel__period { display: grid; grid-column: span 2; align-content: start; gap: 6px; min-width: 0; }
+.instant-query-panel__period label { min-height: 20px; line-height: 20px; color: var(--idmp-text-primary); font-size: 13px; font-weight: 600; }
+.instant-query-panel__controls :deep(.runtime-parameter-fields) { display: contents; }
+.instant-query-panel__controls :deep(.runtime-parameter-field) { gap: 6px; }
+.instant-query-panel__controls :deep(.runtime-parameter-field label) { min-height: 20px; font-size: 13px; }
+.instant-query-panel__controls :deep(.runtime-parameter-field label span) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .instant-query-panel__actions {
   display: flex;
   align-items: center;
-  margin-left: auto;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  padding-top: 12px;
+  border-top: 1px solid var(--idmp-border-subtle);
 }
 .runtime-query-result { display: grid; gap: 12px; }
 .runtime-query-result__summary { justify-content: flex-start; flex-wrap: wrap; }
 .runtime-query-result__summary span { overflow-wrap: anywhere; }
 
 .report-period-picker {
-  width: 310px;
+  width: 100%;
+  min-width: 0;
 }
 
 .date-range-fields {
@@ -1318,7 +1359,10 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
 }
 
 .date-range-fields :deep(.el-date-editor) {
-  width: 310px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .analysis-state-notice {
@@ -1418,6 +1462,16 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
   gap: 10px;
 }
 
+.analysis-version-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.analysis-version-select {
+  width: 100px;
+}
+
 .header-indicator-select {
   width: 300px;
 }
@@ -1477,9 +1531,16 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
 @media (max-width: 1450px) {
   .header-indicator-select { width: 260px; }
 }
-@media (max-width: 1180px) {
-  .instant-query-panel__controls { flex-wrap: wrap; }
-  .instant-query-panel__controls :deep(.runtime-parameter-fields) { flex: 1 1 240px; }
+@container (max-width: 1100px) {
+  .instant-query-panel__controls { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container (max-width: 820px) {
+  .instant-query-panel__controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container (max-width: 540px) {
+  .instant-query-panel__controls { grid-template-columns: minmax(0, 1fr); }
+  .instant-query-panel__period { grid-column: auto; }
+  .instant-query-panel__actions .el-button { width: 100%; }
 }
 @media (max-width: 720px) {
   :deep(.page-heading) {
@@ -1513,13 +1574,5 @@ function forgetAnalysisPeriod(indicatorId, versionId) {
 
   .instant-query-panel__header { align-items: flex-start; flex-direction: column; }
   .instant-query-panel__context { justify-content: flex-start; }
-  .instant-query-panel__controls { align-items: stretch; }
-  .instant-query-panel__period, .instant-query-panel__controls :deep(.runtime-parameter-fields) { flex: 1 1 100%; }
-  .instant-query-panel__controls :deep(.runtime-parameter-field) { flex-basis: 100%; max-width: 100%; }
-  .report-period-picker { flex: 0 0 auto; width: 100%; min-width: 0; }
-  .instant-query-panel__actions { width: 100%; margin-left: 0; }
-  .instant-query-panel__actions .el-button { width: 100%; }
-  .date-range-fields { width: 100%; flex-wrap: wrap; }
-  .date-range-fields :deep(.el-date-editor) { width: 100%; flex: 1 1 100%; }
 }
 </style>
