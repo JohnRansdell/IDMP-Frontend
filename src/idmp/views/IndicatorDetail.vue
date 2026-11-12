@@ -69,21 +69,45 @@
         </el-table>
       </article>
     </section>
-    <el-drawer v-model="relatedDrawerOpen" title="更多关联" size="min(680px, 100vw)" destroy-on-close>
-        <article v-if="selectedVersion" class="surface-card policy-card">
-          <div class="section-title compact"><div><h2>政策依据</h2><p class="section-title__description">仅能绑定已发布的指标版本和政策文件版本。</p></div></div>
+    <el-drawer v-model="relatedDrawerOpen" class="indicator-related-drawer" title="更多关联" size="min(760px, 100vw)" destroy-on-close>
+      <div v-if="selectedVersion" class="related-drawer-content">
+        <article class="surface-card related-card policy-card" aria-labelledby="indicator-policy-heading">
+          <div class="section-title compact"><div><h2 id="indicator-policy-heading">政策依据</h2><p class="section-title__description">仅能绑定已发布的指标版本和政策文件版本。</p></div></div>
           <StatePanel v-if="policyReferenceLoading" type="loading" title="正在读取政策引用" />
           <StatePanel v-else-if="policyReferenceError" type="error" title="政策引用读取失败" :description="policyReferenceError"><template #actions><el-button @click="loadPolicyReferences(selectedVersionId)">重试</el-button></template></StatePanel>
-          <el-table v-else :data="policyReferences" size="small" table-layout="fixed" empty-text="暂无有效政策引用">
-            <el-table-column label="政策文件" min-width="170"><template #default="{ row }">{{ row.policyFileName || '未命名政策文件' }}</template></el-table-column>
-            <el-table-column prop="relationRole" label="角色" width="100" />
-            <el-table-column label="操作" width="120"><template #default="{ row }"><el-button link type="primary" @click="policyViewerId = String(row.policyFileVersionId)">查看</el-button><el-button v-access="'mapping.policyReferences.invalidate'" link type="danger" @click="invalidatePolicy(row)">失效</el-button></template></el-table-column>
-          </el-table>
-          <div v-if="isPublishedVersion && $can('POST', '/mappings/indicator-versions/1/policy-references')" class="policy-reference-form"><PolicyVersionPicker v-model="policyReferenceForm.policyFileVersionId" /><el-select v-model="policyReferenceForm.relationRole"><el-option v-for="item in POLICY_REFERENCE_ROLES" :key="item.value" :label="item.label" :value="item.value" /></el-select><el-button v-access="'mapping.indicatorVersions.policyReferences.create'" type="primary" :loading="policyReferenceSaving" @click="addPolicyReference">添加</el-button></div>
-          <el-input v-if="isPublishedVersion && $can('POST', '/mappings/indicator-versions/1/policy-references')" v-model="policyReferenceForm.citationLocation" class="policy-reference-input" placeholder="政策出处（可选）" />
-          <el-input v-if="isPublishedVersion && $can('POST', '/mappings/indicator-versions/1/policy-references')" v-model="policyReferenceForm.citationText" class="policy-reference-input" type="textarea" :rows="2" placeholder="政策原文（可选）" />
-          <div v-if="$can('GET', '/mappings/by-indicator-version/1')" class="version-mapping-links"><div class="section-title compact"><div><h3>有效指标映射</h3><p class="section-title__description">反查当前指标版本作为源侧或目标侧的已发布有效映射。</p></div></div><StatePanel v-if="mappingReferenceLoading" type="loading" title="正在读取有效映射" /><StatePanel v-else-if="mappingReferenceError" type="error" title="有效映射读取失败" :description="mappingReferenceError"><template #actions><el-button @click="loadMappingReferences(selectedVersionId)">重试</el-button></template></StatePanel><el-table v-else :data="mappingReferences" size="small" empty-text="暂无有效映射"><el-table-column prop="name" label="映射名称" min-width="180" /><el-table-column prop="mappingType" label="关系" width="110" /><el-table-column prop="comparability" label="可比性" width="120" /><el-table-column label="操作" width="68"><template #default="{ row }"><el-button v-access="'mapping.read'" link type="primary" @click="openMapping(row)">查看</el-button></template></el-table-column></el-table></div>
+          <div v-else class="related-table-scroll">
+            <el-table :data="policyReferences" class="related-table" size="small" table-layout="fixed" empty-text="暂无有效政策引用">
+              <el-table-column label="政策文件" min-width="200" show-overflow-tooltip><template #default="{ row }">{{ row.policyFileName || '未命名政策文件' }}</template></el-table-column>
+              <el-table-column prop="relationRole" label="角色" width="100" />
+              <el-table-column label="操作" width="128"><template #default="{ row }"><div class="related-table-actions"><el-button link type="primary" @click="policyViewerId = String(row.policyFileVersionId)">查看</el-button><el-button v-access="'mapping.policyReferences.invalidate'" link type="danger" @click="invalidatePolicy(row)">失效</el-button></div></template></el-table-column>
+            </el-table>
+          </div>
+          <div v-if="isPublishedVersion && $can('POST', '/mappings/indicator-versions/1/policy-references')" class="policy-reference-editor">
+            <el-form label-position="top" @submit.prevent="addPolicyReference">
+              <div class="policy-reference-form">
+                <el-form-item label="政策文件版本"><PolicyVersionPicker v-model="policyReferenceForm.policyFileVersionId" aria-label="政策文件版本" /></el-form-item>
+                <el-form-item label="引用角色"><el-select v-model="policyReferenceForm.relationRole" aria-label="引用角色"><el-option v-for="item in POLICY_REFERENCE_ROLES" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
+              </div>
+              <el-form-item label="政策出处"><el-input v-model="policyReferenceForm.citationLocation" placeholder="政策出处（可选）" /></el-form-item>
+              <el-form-item label="政策原文"><el-input v-model="policyReferenceForm.citationText" type="textarea" :rows="3" resize="vertical" placeholder="政策原文（可选）" /></el-form-item>
+              <div class="related-form-actions"><el-button v-access="'mapping.indicatorVersions.policyReferences.create'" type="primary" native-type="submit" :loading="policyReferenceSaving">添加</el-button></div>
+            </el-form>
+          </div>
         </article>
+        <article v-if="$can('GET', '/mappings/by-indicator-version/1')" class="surface-card related-card version-mapping-links" aria-labelledby="indicator-mapping-heading">
+          <div class="section-title compact"><div><h2 id="indicator-mapping-heading">有效指标映射</h2><p class="section-title__description">反查当前指标版本作为源侧或目标侧的已发布有效映射。</p></div></div>
+          <StatePanel v-if="mappingReferenceLoading" type="loading" title="正在读取有效映射" />
+          <StatePanel v-else-if="mappingReferenceError" type="error" title="有效映射读取失败" :description="mappingReferenceError"><template #actions><el-button @click="loadMappingReferences(selectedVersionId)">重试</el-button></template></StatePanel>
+          <div v-else class="related-table-scroll">
+            <el-table :data="mappingReferences" class="related-table" size="small" table-layout="fixed" empty-text="暂无有效映射">
+              <el-table-column prop="name" label="映射名称" min-width="200" show-overflow-tooltip />
+              <el-table-column prop="mappingType" label="关系" width="110" />
+              <el-table-column prop="comparability" label="可比性" width="120" />
+              <el-table-column label="操作" width="72"><template #default="{ row }"><el-button v-access="'mapping.read'" link type="primary" @click="openMapping(row)">查看</el-button></template></el-table-column>
+            </el-table>
+          </div>
+        </article>
+      </div>
     </el-drawer>
     <PolicyFileViewer :version-id="policyViewerId" @close="policyViewerId = ''" />
   </div>
@@ -472,19 +496,29 @@ onMounted(loadIndicatorDetail)
 .formula-definition .el-alert { margin-top: 8px; }
 
 
-.policy-card { min-width: 0; }
-.section-title.compact { margin-bottom: 12px; }
-.section-title h2, .section-title h3 { margin: 0; font-size: 16px; }
-.section-title__description { color: var(--idmp-text-helper); font-size: 12px; line-height: 1.6; }
-.policy-reference-form { display: grid; grid-template-columns: minmax(0, 1fr) 128px auto; gap: 8px; margin: 12px 0 8px; }
-.policy-reference-input { margin-bottom: 8px; }
-.version-mapping-links { margin-top: 24px; }
+.related-drawer-content { display: grid; gap: 20px; min-width: 0; }
+.related-card { min-width: 0; padding: 20px; }
+.section-title.compact { margin-bottom: 16px; }
+.section-title h2 { margin: 0; font-size: 16px; line-height: 24px; }
+.section-title__description { margin: 6px 0 0; color: var(--idmp-text-helper); font-size: 12px; line-height: 1.6; }
+.related-table-scroll { min-width: 0; max-width: 100%; overflow-x: auto; }
+.related-table :deep(.cell) { padding-right: 12px; padding-left: 12px; line-height: 22px; }
+.related-table :deep(.el-table__cell) { padding-top: 10px; padding-bottom: 10px; }
+.related-table-actions { display: flex; align-items: center; gap: 12px; }
+.related-table-actions :deep(.el-button + .el-button) { margin-left: 0; }
+.policy-reference-editor { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--idmp-border-subtle); }
+.policy-reference-form { display: grid; grid-template-columns: minmax(0, 1fr) 160px; gap: 16px; }
+.policy-reference-editor :deep(.el-form-item) { min-width: 0; margin-bottom: 16px; }
+.policy-reference-editor :deep(.el-form-item__label) { margin-bottom: 8px; line-height: 20px; }
+.policy-reference-editor :deep(.el-select) { width: 100%; }
+.related-form-actions { display: flex; justify-content: flex-end; }
 @media (max-width: 640px) {
   .identity-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .formula-definition, .related-scenarios { padding: 14px; }
   .formula-expression { flex-wrap: wrap; gap: 10px; font-size: 14px; }
   .formula-suffix { flex-shrink: 1; }
-  .policy-reference-form { grid-template-columns: 1fr; }
+  .related-card { padding: 16px; }
+  .policy-reference-form { grid-template-columns: minmax(0, 1fr); gap: 0; }
 }
 </style>
 
