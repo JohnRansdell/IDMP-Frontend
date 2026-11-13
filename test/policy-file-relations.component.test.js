@@ -10,6 +10,7 @@ for (const name of ['window', 'document', 'HTMLElement', 'SVGElement', 'Element'
 Object.defineProperty(globalThis, 'navigator', { configurable: true, value: dom.window.navigator })
 const vue = await import('vue')
 const { mount, flushPromises } = await import('@vue/test-utils')
+const { useCatalogQuery } = await import('../src/idmp/features/catalog/useCatalogQuery.js')
 const source = await readFile(new URL('../src/idmp/views/PolicyFileManagement.vue', import.meta.url), 'utf8')
 const { descriptor } = parse(source.replace('</script>', 'defineExpose({ openDetail, removeRelation, relationVersionId, relations, removingRelationId })\n</script>'))
 const compiled = compileScript(descriptor, { id: 'policy-file-relations-test', inlineTemplate: true }).content
@@ -39,7 +40,7 @@ async function create(overrides = {}, confirm = async () => {}, allowed = true) 
     ...overrides,
   }
   const dependencies = {
-    api, useRoute: () => ({ query: {} }),
+    api, useCatalogQuery, useRoute: () => ({ query: {} }),
     ElMessage: Object.fromEntries(['success', 'error', 'warning'].map(type => [type, text => messages.push([type, text])])),
     ElMessageBox: { confirm: async (...args) => { confirmations.push(args); return confirm(...args) } },
     PageHeader: Pass, StatusBadge: Pass, PolicyFileViewer: Pass, PolicyVersionPicker: Pass,

@@ -73,6 +73,8 @@
         v-else
         :data="domains"
         v-loading="listLoading"
+        :aria-busy="listLoading"
+        :empty-text="listLoading ? '正在查询…' : '暂无数据域'"
         :current-row-key="newlyCreatedId"
         row-key="id"
         highlight-current-row

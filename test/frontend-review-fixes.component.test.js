@@ -11,6 +11,7 @@ for (const key of ['window', 'document', 'HTMLElement', 'SVGElement', 'Element',
 Object.defineProperty(globalThis, 'navigator', { configurable: true, value: dom.window.navigator })
 const vue = await import('vue')
 const { mount, flushPromises } = await import('@vue/test-utils')
+const { useCatalogQuery } = await import('../src/idmp/features/catalog/useCatalogQuery.js')
 async function compile(path, exposed = '') {
   const source = await readFile(new URL(`../src/idmp/${path}`, import.meta.url), 'utf8')
   const { descriptor } = parse(source.replace('</script>', `${exposed}\n</script>`))
@@ -23,9 +24,10 @@ async function compile(path, exposed = '') {
   return deps => Function('vue', 'deps', `const { ${Object.keys(deps).join(',')} } = deps; ${bindings}\n${script.replace(/^import .*$/gm, '').replace('export default', 'return')}`)(vue, deps)
 }
 const Fields = (await compile('components/RuntimeParameterFields.vue'))({ runtimeParameterLabel })
-const TemplatePage = await compile('views/FactorTemplateManagement.vue', 'defineExpose({ rows, filters, loading, canManageTemplates, load, open })')
+const TemplatePage = await compile('views/FactorTemplateManagement.vue', 'defineExpose({ rows, filters, loading, loadError, canManageTemplates, load, search, open })')
 const Pass = vue.defineComponent({ setup: (_, { slots }) => () => vue.h('div', slots.default?.()) })
 const Input = vue.defineComponent({ props: ['modelValue'], emits: ['update:modelValue'], setup: (props, { emit }) => () => vue.h('input', { value: props.modelValue, onInput: event => emit('update:modelValue', event.target.value) }) })
+const Alert = vue.defineComponent({ props: ['title'], setup: props => () => vue.h('div', { role: 'alert' }, props.title) })
 const Table = vue.defineComponent({ props: ['data'], setup: () => () => vue.h('div') })
 
 test('runtime parameter labels honor business names and known Chinese fallbacks', () => {
@@ -59,17 +61,24 @@ test('SQL preview submits supported displayName without leaking local label alia
 function templates(manage, overrides = {}) {
   const requests = [], routes = []
   const deps = {
-    useRouter: () => ({ push: value => routes.push(value) }),
+    useCatalogQuery, useRouter: () => ({ push: value => routes.push(value) }),
     canRequest: (method, path) => manage && method === 'PATCH' && path === '/factor-template-versions/1',
     fetchFactorTemplates: async params => {
       requests.push(params)
       return [{ id: 'draft', name: '合法草稿', publicationStatus: 'DRAFT' }, { id: 'published', name: '正式模板', currentPublishedVersionId: 'v2', publicationStatus: 'PUBLISHED' }]
+        .filter(row => !params.publicationStatus || row.publicationStatus === params.publicationStatus)
     },
     fetchFactorTemplateVersions: async () => [{ id: 'archived', publicationStatus: 'ARCHIVED' }, { id: 'v2', publicationStatus: 'PUBLISHED' }],
     ElMessage: { error: assert.fail, info: () => {} }, PageHeader: Pass, StatusBadge: Pass, ...overrides
   }
+  // Model the paged transport contract while retaining concise deferred fixtures.
+  const fetchPage = deps.fetchFactorTemplates
+  deps.fetchFactorTemplates = async (params, options) => {
+    const result = await fetchPage(params, options)
+    return Array.isArray(result) ? { records: result, total: result.length } : result
+  }
   const wrapper = mount(TemplatePage(deps), { global: {
-    components: { ElForm: Pass, ElFormItem: Pass, ElInput: Input, ElButton: Pass, ElTable: Table, ElTableColumn: Pass, ElSelect: Pass, ElOption: Pass },
+    components: { ElForm: Pass, ElFormItem: Pass, ElInput: Input, ElButton: Pass, ElTable: Table, ElTableColumn: Pass, ElSelect: Pass, ElOption: Pass, ElPagination: Pass, ElAlert: Alert },
     directives: { access: {}, loading: {}, 'query-enter': {} }
   } })
   return { wrapper, requests, routes }
@@ -114,15 +123,15 @@ test('template searches keep the newest result when the previous request finishe
   for (const oldFails of [false, true]) {
     const old = deferred(), latest = deferred(), messages = [], queries = []
     const state = templates(true, { fetchFactorTemplates: query => { queries.push(query); return queries.length === 1 ? old.promise : latest.promise }, ElMessage: { error: value => messages.push(value) } })
-    state.wrapper.vm.filters.name = '新筛选'
-    const query = state.wrapper.vm.load()
+    state.wrapper.vm.filters.keyword = '新筛选'
+    const query = state.wrapper.vm.search()
     latest.resolve([{ id: 'latest', name: '新筛选' }])
     await query
     if (oldFails) old.reject(new Error('过期请求失败')); else old.resolve([{ id: 'old', name: '旧筛选' }])
     await flushPromises()
     assert.deepEqual(state.wrapper.vm.rows.map(row => row.id), ['latest'])
-    assert.equal(queries[0].name, '')
-    assert.equal(queries[1].name, '新筛选')
+    assert.equal(queries[0].keyword, '')
+    assert.equal(queries[1].keyword, '新筛选')
     assert.deepEqual(messages, [])
     state.wrapper.unmount()
   }
@@ -144,19 +153,22 @@ test('an older template request cannot clear the newest loading state', async ()
   state.wrapper.unmount()
 })
 
-test('current template failures clear stale rows and support retry', async () => {
+test('current template failures preserve the table, show the current error and support retry', async () => {
   const errors = []
   let fail = false
   const state = templates(true, { fetchFactorTemplates: async () => { if (fail) throw new Error('当前查询失败'); return [{ id: 'valid' }] }, ElMessage: { error: value => errors.push(value) } })
   await flushPromises()
   fail = true
   await state.wrapper.vm.load()
-  assert.deepEqual(state.wrapper.vm.rows, [])
+  assert.deepEqual(state.wrapper.vm.rows.map(row => row.id), ['valid'])
   assert.equal(state.wrapper.vm.loading, false)
-  assert.deepEqual(errors, ['当前查询失败'])
+  assert.equal(state.wrapper.vm.loadError, '当前查询失败')
+  assert.match(state.wrapper.get('[role="alert"]').text(), /当前查询失败/)
+  assert.deepEqual(errors, [])
   fail = false
   await state.wrapper.vm.load()
   assert.deepEqual(state.wrapper.vm.rows.map(row => row.id), ['valid'])
+  assert.equal(state.wrapper.vm.loadError, '')
   state.wrapper.unmount()
 })
 

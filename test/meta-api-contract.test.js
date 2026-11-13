@@ -6,7 +6,7 @@ const source = await readFile(new URL('../src/idmp/api/modules/meta.js', import.
 const api = await import(`data:text/javascript;base64,${Buffer.from(source.replace(
   "import { requestJson } from '@/idmp/api/request'",
   'const requestJson = (path, options) => ({ path, options })'
-)).toString('base64')}`)
+).replace("from '../pagination.js'", `from '${new URL('../src/idmp/api/pagination.js', import.meta.url).href}'`)).toString('base64')}`)
 
 test('源库摘要刷新绕过请求缓存', () => {
   assert.deepEqual(api.fetchSourceDatabase(), { path: '/meta/source-database', options: { cache: 'no-store' } })
