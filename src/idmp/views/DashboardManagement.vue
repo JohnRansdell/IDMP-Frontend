@@ -5,18 +5,22 @@
       <template #actions><el-button type="primary" @click="openCreate">+ 新建看板</el-button></template>
     </PageHeader>
 
-    <section class="dashboard-toolbar" aria-label="看板列表工具栏">
-      <el-input v-model="search" class="dashboard-search" placeholder="搜索看板名称" clearable />
+    <form v-query-enter class="dashboard-toolbar" aria-label="看板列表工具栏" @submit.prevent="searchDashboards">
+      <el-input v-model="filters.keyword" class="dashboard-search" placeholder="看板名称或编码" clearable />
+      <el-button type="primary" native-type="submit" :icon="Search">查询</el-button>
+      <el-button :icon="Refresh" @click="reset">重置</el-button>
       <div class="dashboard-toolbar__summary">
-        <span class="dashboard-count">{{ search.trim() ? `找到 ${filtered.length} 个` : `共 ${catalog.length} 个看板` }}</span>
+        <span class="dashboard-count">共 {{ total }} 个看板</span>
       </div>
-    </section>
+    </form>
 
     <p class="dashboard-publication-hint">草稿仅在看板管理中维护，发布后才会出现在看板总览。已发布看板的草稿修改需重新发布后才会生效。</p>
-    <StatePanel v-if="loading" type="loading" title="正在读取看板" />
+    <StatePanel v-if="loading && !hasLoaded" type="loading" title="正在读取看板" />
     <el-alert v-if="loadError" :title="loadError" type="error" :closable="false"><el-button link @click="refresh">重试</el-button></el-alert>
-    <section v-if="filtered.length" class="dashboard-cards">
-      <article v-for="item in filtered" :key="item.id" class="dashboard-card">
+    <template v-for="group in catalogGroups" :key="group.key">
+    <h2 v-if="group.key === 'local' && group.items.length" class="draft-heading">本地草稿（尚未保存）</h2>
+    <section v-if="group.items.length" v-loading="group.key === 'remote' && loading" class="dashboard-cards">
+      <article v-for="item in group.items" :key="item.id" class="dashboard-card">
         <header class="dashboard-card__header">
           <h2 :title="item.name">{{ item.name }}</h2>
           <el-tag size="small" effect="plain">{{ typeLabel(item.dashboardType) }}</el-tag>
@@ -38,8 +42,10 @@
         </footer>
       </article>
     </section>
-    <StatePanel v-else-if="!loading && !loadError" type="empty" :title="search.trim() ? '未找到匹配看板' : '还没有看板'" :description="search.trim() ? '请尝试其他名称，或清除搜索条件。' : '创建一个看板，自由组合指标与图表。'">
-      <template #actions><el-button v-if="search.trim()" @click="search = ''">清除搜索</el-button><el-button v-else type="primary" @click="openCreate">新建看板</el-button></template>
+    </template>
+    <el-pagination v-if="total" v-model:current-page="page" v-model:page-size="size" :total="total" :page-sizes="[9, 18, 36]" layout="total, prev, pager, next, sizes" @current-change="refresh" @size-change="resize" />
+    <StatePanel v-if="!rows.length && !loading && !loadError" type="empty" title="未找到匹配看板">
+      <template #actions><el-button @click="reset">清除搜索</el-button><el-button type="primary" @click="openCreate">新建看板</el-button></template>
     </StatePanel>
     <el-dialog v-model="creating" title="新建看板" width="min(900px, 92vw)" destroy-on-close>
       <el-form label-position="top" class="create-form">
@@ -98,18 +104,23 @@ import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import { BUILT_IN_LAYOUT_TEMPLATES, readLocalLayoutTemplates } from '@/idmp/features/dashboard/layoutTemplates.js'
 import { BUILT_IN_DASHBOARD_IDS, createLocalDashboard, duplicateLocalDashboard, readDashboardCatalog, removeLocalDashboard, renameLocalDashboard } from '@/idmp/features/dashboard/catalog.js'
-import { fetchDashboardCatalog, fetchDashboardDefinition, copyDashboard, deleteDashboard, saveDashboard } from '@/idmp/api/modules/analysisDashboard'
+import { fetchDashboardCatalogPage, fetchDashboardDefinition, copyDashboard, deleteDashboard, saveDashboard } from '@/idmp/api/modules/analysisDashboard'
+import { Search, Refresh } from '@element-plus/icons-vue'
+import { useCatalogQuery } from '@/idmp/features/catalog/useCatalogQuery.js'
 import { dashboardSummaryToCatalogEntry, dashboardDetailToSchema, dashboardDetailMeta, schemaToDashboardPayload } from '@/idmp/api/adapters/dashboard'
 import { notifyDashboardCatalogChanged } from '@/idmp/layout/shellState.js'
 import { dashboardIntegrationUrl } from '@/idmp/auth/medicalSso.js'
 import { dashboardPublicationState, isPublishedDashboard } from '@/idmp/features/dashboard/publication.js'
-const router = useRouter(), search = ref(''), creating = ref(false), catalog = ref([]), protectedIds = BUILT_IN_DASHBOARD_IDS
-const loading = ref(false), loadError = ref('')
-let refreshRevision = 0
+const router = useRouter(), creating = ref(false), localDrafts = ref([]), protectedIds = BUILT_IN_DASHBOARD_IDS
+const { filters, rows, total, page, size, loading, error, hasLoaded, load, search: searchDashboards, reset, resize } = useCatalogQuery(fetchDashboardCatalogPage, { keyword: '' }, 9)
+const loadError = computed(() => error.value?.message || '')
 const typeOptions = [{ value: 'hospital-overview', label: '全院概览' }, { value: 'topic', label: '专题' }, { value: 'scene', label: '场景' }, { value: 'department', label: '科室' }, { value: 'custom', label: '自定义' }]
 const form = ref({ name: '', description: '', dashboardType: 'custom', category: '', scope: 'personal', mode: 'blank', templateId: 'builtin-hospital-overview' })
 const templates = computed(() => [...BUILT_IN_LAYOUT_TEMPLATES, ...readLocalLayoutTemplates(localStorage)])
-const filtered = computed(() => catalog.value.filter(item => item.name.includes(search.value.trim())))
+const catalogGroups = computed(() => [
+  { key: 'remote', items: rows.value.map(dashboardSummaryToCatalogEntry) },
+  { key: 'local', items: localDrafts.value }
+])
 function templateCanvasStyle(template) {
   const rows = Math.max(1, ...(template.widgets || []).map(widget => Number(widget.layout?.y || 0) + Number(widget.layout?.h || 1)))
   return { gridTemplateRows: `repeat(${rows}, minmax(1px, 1fr))` }
@@ -124,20 +135,8 @@ function templateWidgetStyle(widget, template) {
   }
 }
 async function refresh() {
-  const revision = ++refreshRevision
-  loading.value = true
-  loadError.value = ''
-  const local = readDashboardCatalog(localStorage).map(item => ({ ...item, origin: 'local' }))
-  try {
-    const result = await fetchDashboardCatalog({ cache: 'no-store' })
-    if (revision !== refreshRevision) return
-    const remote = (Array.isArray(result) ? result : []).map(dashboardSummaryToCatalogEntry)
-    catalog.value = [...local, ...remote.filter(item => !local.some(entry => entry.id === item.id))].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-  } catch (error) {
-    if (revision !== refreshRevision) return
-    catalog.value = local
-    loadError.value = error?.message || '看板目录加载失败'
-  } finally { if (revision === refreshRevision) loading.value = false }
+  localDrafts.value = readDashboardCatalog(localStorage).map(item => ({ ...item, origin: 'local' }))
+  return load()
 }
 function openCreate() { form.value = { name: '', description: '', dashboardType: 'custom', category: '', scope: 'personal', mode: 'blank', templateId: templates.value[0]?.id || '' }; creating.value = true }
 function open(id) { router.push({ name: 'Dashboard', query: { id } }) }
@@ -186,6 +185,7 @@ function formatDate(value) { return value ? new Intl.DateTimeFormat('zh-CN', { d
 refresh()
 </script>
 <style scoped>
+.draft-heading{margin:24px 0 12px;font-size:16px}.el-pagination{margin-top:18px}.dashboard-toolbar .el-button+.el-button{margin-left:0}
 .dashboard-publication-hint{margin:-8px 0 18px;color:#667085;font-size:12px;line-height:1.6}.dashboard-card__publication{margin-top:10px}
 .dashboard-management{max-width:1440px;margin:0 auto}.page-description{color:#667085;font-size:13px}.dashboard-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:4px 0 20px;padding:12px 14px;border:1px solid #e6ebef;border-radius:8px;background:#fff}.dashboard-search{width:min(360px,100%)}.dashboard-toolbar__summary{display:flex;align-items:center;gap:14px;white-space:nowrap}.dashboard-count{color:#7b8794;font-size:12px}.dashboard-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.dashboard-card{display:flex;min-width:0;min-height:260px;flex-direction:column;box-sizing:border-box;padding:20px;border:1px solid #e1e7ec;border-radius:10px;background:#fff;box-shadow:0 1px 3px rgba(16,24,40,.04);transition:border-color .18s ease,box-shadow .18s ease}.dashboard-card:hover{border-color:#b8cfdf;box-shadow:0 5px 16px rgba(30,80,112,.09)}.dashboard-card__header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.dashboard-card__header h2{min-width:0;overflow:hidden;margin:0;color:#1f2d38;font-size:16px;font-weight:650;line-height:1.5;text-overflow:ellipsis;white-space:nowrap}.dashboard-card__header .el-tag{flex:none;margin-top:1px}.dashboard-card__description{display:-webkit-box;min-height:42px;overflow:hidden;margin:14px 0 18px;color:#667085;font-size:13px;line-height:1.65;-webkit-box-orient:vertical;-webkit-line-clamp:2}.dashboard-card__metadata{display:flex;align-items:center;gap:8px;color:#465665;font-size:12px}.dashboard-card__metadata i{width:3px;height:3px;border-radius:50%;background:#a9b4bd}.dashboard-card__updated{margin-top:9px;color:#98a2ad;font-size:11px}.dashboard-card__actions{display:flex;align-items:center;gap:8px;margin-top:auto;padding-top:18px;border-top:1px solid #edf0f2}.dashboard-card__actions .el-dropdown{margin-left:auto}.dashboard-card__actions :deep(.el-button){min-width:64px}.dashboard-card__actions .el-dropdown :deep(.el-button){min-width:38px;padding-inline:10px}
 .create-form__metadata{display:grid;grid-template-columns:2fr 1fr 1fr;gap:0 16px}.create-form__metadata .el-form-item:nth-child(1),.create-form__metadata .el-form-item:nth-child(2){grid-column:span 2}.creation-modes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;width:100%}.creation-mode{display:grid;grid-template-columns:76px 1fr;grid-template-rows:auto auto;gap:4px 14px;align-items:center;padding:14px;border:1px solid #d9e0e6;border-radius:8px;background:#fff;color:#344054;text-align:left;cursor:pointer}.creation-mode:hover{border-color:#86b7df;background:#f8fbff}.creation-mode.is-selected{border-color:#1261a6;background:#f2f8fd;box-shadow:0 0 0 1px #1261a6}.creation-mode>span{grid-row:1 / span 2;width:76px;height:48px}.creation-mode strong{align-self:end;font-size:14px}.creation-mode small{align-self:start;color:#667085;line-height:1.45}.blank-preview,.template-preview-icon{display:grid;gap:4px;box-sizing:border-box;padding:5px;border:1px solid #c9d6df;border-radius:5px;background:#f8fafc}.blank-preview{grid-template-columns:repeat(3,1fr)}.blank-preview i{border:1px dashed #9db1bf;border-radius:2px;background:#fff}.template-preview-icon{grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(2,1fr)}.template-preview-icon i{border-radius:2px;background:#8bb8db}.template-preview-icon i:first-child{grid-row:span 2;background:#397fad}.template-gallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;width:100%;max-height:390px;overflow-y:auto;padding:2px}.template-card{position:relative;display:grid;gap:9px;min-width:0;padding:10px;border:1px solid #d9e0e6;border-radius:8px;background:#fff;text-align:left;cursor:pointer}.template-card:hover{border-color:#86b7df}.template-card.is-selected{border-color:#1261a6;box-shadow:0 0 0 1px #1261a6}.template-card__canvas{display:grid;grid-template-columns:repeat(24,1fr);gap:2px;height:98px;padding:6px;border-radius:5px;background:#edf3f7}.template-card__canvas i{min-width:0;min-height:0;border-radius:2px;opacity:.9}.template-card__copy{display:grid;gap:3px;min-width:0}.template-card__copy strong{font-size:13px}.template-card__copy small{display:-webkit-box;overflow:hidden;color:#667085;font-size:11px;line-height:1.45;-webkit-box-orient:vertical;-webkit-line-clamp:2}.template-card__selected{position:absolute;top:16px;right:16px;padding:2px 6px;border-radius:999px;background:#1261a6;color:#fff;font-size:10px}

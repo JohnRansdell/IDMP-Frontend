@@ -12,7 +12,7 @@
     </PageHeader>
 
     <section class="model-summary-grid">
-      <article class="surface-card model-summary-card"><span>全部数据域</span><strong>{{ domains.length }}</strong><small>按业务主题组织</small></article>
+      <article class="surface-card model-summary-card"><span>全部数据域</span><strong>{{ domainCount }}</strong><small>按业务主题组织</small></article>
       <article class="surface-card model-summary-card"><span>已发布</span><strong>{{ publishedCount }}</strong><small>可被下游配置引用</small></article>
       <article class="surface-card model-summary-card"><span>待完善</span><strong>{{ draftCount }}</strong><small>草稿或尚未发布</small></article>
     </section>
@@ -23,21 +23,22 @@
           <h2>数据域目录</h2>
           <p class="section-title__description">按主题查找数据域，进入工作台维护物理表和字段映射</p>
         </div>
-        <span class="table-count">共 {{ filteredDomains.length }} / {{ domains.length }} 个</span>
+        <span class="table-count">共 {{ total }} 个</span>
       </div>
 
-      <div class="filter-bar">
+      <form v-query-enter class="filter-bar" @submit.prevent="search">
 
-        <el-input v-model="filters.name" clearable placeholder="按域名称筛选" />
+        <el-input v-model="filters.keyword" clearable placeholder="数据域名称或编码" />
         <el-select v-model="filters.status" clearable placeholder="按状态筛选">
           <el-option label="草稿" value="DRAFT" />
           <el-option label="已发布" value="PUBLISHED" />
           <el-option label="已停用" value="DISABLED" />
         </el-select>
+        <el-button type="primary" native-type="submit" :icon="Search">查询</el-button>
         <el-button @click="resetFilters">清空筛选</el-button>
-      </div>
+      </form>
 
-      <StatePanel v-if="listLoading" type="loading" title="正在加载数据域" />
+      <StatePanel v-if="listLoading && !hasLoaded" type="loading" title="正在加载数据域" />
       <StatePanel
         v-else-if="listError"
         :type="stateTypeForError(listError)"
@@ -49,7 +50,7 @@
         </template>
       </StatePanel>
       <StatePanel
-        v-else-if="!domains.length"
+        v-else-if="!total && !filters.keyword && !filters.status && !listLoading"
         type="empty"
         title="暂无数据域"
         description="暂无数据域。"
@@ -59,7 +60,7 @@
         </template>
       </StatePanel>
       <StatePanel
-        v-else-if="!filteredDomains.length"
+        v-else-if="!domains.length && !listLoading"
         type="empty"
         title="没有匹配的数据域"
         description="请调整名称或状态筛选条件。"
@@ -70,7 +71,8 @@
       </StatePanel>
       <el-table
         v-else
-        :data="pagedDomains"
+        :data="domains"
+        v-loading="listLoading"
         :current-row-key="newlyCreatedId"
         row-key="id"
         highlight-current-row
@@ -93,14 +95,15 @@
           </template>
         </el-table-column>
       </el-table>
-      <div v-if="filteredDomains.length" class="pagination-bar">
-        <span class="pagination-summary">当前显示 {{ pageStart }}-{{ pageEnd }} / {{ filteredDomains.length }}</span>
+      <div v-if="total" class="pagination-bar">
+        <span class="pagination-summary">当前显示 {{ pageStart }}-{{ pageEnd }} / {{ total }}</span>
         <el-pagination
           v-model:current-page="page"
           :page-size="pageSize"
-          :total="filteredDomains.length"
+          :total="total"
           background
           layout="prev, pager, next"
+          @current-change="loadDomains"
         />
       </div>
     </section>
@@ -127,85 +130,54 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/idmp/utils/message'
 import { formatApiError } from '@/idmp/utils/apiError'
-import { Plus, Refresh } from '@element-plus/icons-vue'
+import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
-import { createDataDomain, fetchDataDomains } from '@/idmp/api/modules/meta'
+import { createDataDomain, fetchDataDomainPage, fetchDataDomainCounts } from '@/idmp/api/modules/meta'
+import { useCatalogQuery } from '@/idmp/features/catalog/useCatalogQuery.js'
 import { adaptDataDomainList, normalizeDataDomain } from '@/idmp/api/adapters/meta'
 import { getStatusLabel } from '@/idmp/design/status'
 
 const router = useRouter()
-const domains = ref([])
-const listLoading = ref(false)
+const { filters, rows: rawDomains, total, page, size: pageSize, loading: listLoading, error: listError,
+  hasLoaded, load: loadPage, search, reset: resetFilters } = useCatalogQuery(fetchDataDomainPage, { keyword: '', status: '' }, 15)
+const domains = computed(() => adaptDataDomainList(rawDomains.value))
 const createLoading = ref(false)
-const listError = ref(null)
 const createError = ref(null)
 const createDialogVisible = ref(false)
 const newlyCreatedId = ref('')
 const createFormRef = ref(null)
-const page = ref(1)
-const pageSize = 15
-const filters = reactive({ code: '', name: '', status: '' })
 const createForm = reactive({ code: '', name: '', description: '' })
-const publishedCount = computed(() => domains.value.filter((item) => item.status?.toUpperCase() === 'PUBLISHED').length)
-const draftCount = computed(() => domains.value.filter((item) => item.status?.toUpperCase() !== 'PUBLISHED').length)
+const counts = ref({})
+const domainCount = computed(() => Object.values(counts.value).reduce((sum, count) => sum + Number(count), 0))
+const publishedCount = computed(() => Number(counts.value.PUBLISHED || 0))
+const draftCount = computed(() => domainCount.value - publishedCount.value)
 
 const createRules = {
   name: [{ required: true, message: '请输入数据域名称', trigger: 'blur' }]
 }
 
-const filteredDomains = computed(() => {
-  const code = filters.code.trim().toLowerCase()
-  const name = filters.name.trim().toLowerCase()
-  const status = filters.status.toUpperCase()
-  return domains.value.filter((item) => {
-    return (!code || item.code.toLowerCase().includes(code))
-      && (!name || item.name.toLowerCase().includes(name))
-      && (!status || item.status.toUpperCase() === status)
-  })
-})
-
-const pagedDomains = computed(() => {
-  const start = (page.value - 1) * pageSize
-  return filteredDomains.value.slice(start, start + pageSize)
-})
-
-const pageStart = computed(() => filteredDomains.value.length ? (page.value - 1) * pageSize + 1 : 0)
-const pageEnd = computed(() => Math.min(page.value * pageSize, filteredDomains.value.length))
+const pageStart = computed(() => domains.value.length ? (page.value - 1) * pageSize.value + 1 : 0)
+const pageEnd = computed(() => domains.value.length ? Math.min(pageStart.value + domains.value.length - 1, total.value) : 0)
 
 const listErrorMessage = computed(() => formatErrorMessage(listError.value, '数据域列表加载失败'))
 const createErrorMessage = computed(() => formatErrorMessage(createError.value, '数据域创建失败'))
 
-watch(filters, () => {
-  page.value = 1
-}, { deep: true })
+onMounted(() => { loadDomains(); loadCounts() })
 
-onMounted(loadDomains)
+async function loadCounts() {
+  try { counts.value = await fetchDataDomainCounts() }
+  catch (error) { ElMessage.error(error?.message || '数据域统计加载失败') }
+}
 
 async function loadDomains() {
-  listLoading.value = true
-  listError.value = null
-  try {
-    domains.value = adaptDataDomainList(await fetchDataDomains())
-    if (newlyCreatedId.value && !domains.value.some((item) => item.id === newlyCreatedId.value)) {
-      newlyCreatedId.value = ''
-    }
-    const createdIndex = domains.value.findIndex((item) => item.id === newlyCreatedId.value)
-    if (createdIndex >= 0) page.value = Math.floor(createdIndex / pageSize) + 1
-    if (page.value > Math.max(1, Math.ceil(filteredDomains.value.length / pageSize))) page.value = 1
-  } catch (error) {
-    domains.value = []
-    listError.value = error
-    ElMessage.error(listErrorMessage.value)
-  } finally {
-    listLoading.value = false
-  }
+  return loadPage()
 }
 
 function openCreateDialog() {
@@ -240,7 +212,8 @@ async function submitCreate() {
     }))
     newlyCreatedId.value = created.id
     createDialogVisible.value = false
-    await loadDomains()
+    await resetFilters()
+    await loadCounts()
     const createdRow = domains.value.find((item) => item.id === created.id || item.code === created.code)
     if (createdRow) newlyCreatedId.value = createdRow.id
     ElMessage.success(`数据域 ${created.name || createForm.name} 创建成功，当前状态为${getStatusLabel(created.status || 'DRAFT')}`)
@@ -255,12 +228,6 @@ async function submitCreate() {
 function openWorkspace(row) {
   if (!row?.id) return
   router.push({ name: 'DataDomainWorkspace', params: { id: row.id } })
-}
-
-function resetFilters() {
-  filters.code = ''
-  filters.name = ''
-  filters.status = ''
 }
 
 function formatDateTime(value) {
@@ -288,7 +255,7 @@ function formatErrorMessage(error, fallback) {
 .model-summary-card small { color: var(--idmp-text-helper); font-size: 12px; }
 .table-card { padding: 18px; }
 .section-title--toolbar { align-items: center; }
-.filter-bar { display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr)) auto; gap: 10px; margin-bottom: 14px; }
+.filter-bar { display: grid; grid-template-columns: minmax(180px, 2fr) minmax(130px, 1fr) auto auto; gap: 10px; margin-bottom: 14px; }
 .pagination-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; }
 .pagination-summary { color: var(--idmp-text-helper); font-size: 12px; }
 .field-help { margin-top: 5px; color: var(--idmp-text-helper); font-size: 12px; line-height: 18px; }

@@ -8,7 +8,7 @@
         <span class="data-source-badge" :class="{ 'is-live': sourceMode === 'live' }">
           {{ tableLoading ? '正在加载' : loadError ? '加载失败' : '已加载' }}
         </span>
-        <span>共 {{ filteredRows.length }} 条</span>
+        <span>共 {{ total }} 条</span>
       </template>
       <template #actions>
         <div class="page-toolbar">
@@ -31,8 +31,8 @@
             v-model.trim="form.name"
             class="filter-name"
             clearable
-            placeholder="因子名称"
-            aria-label="按因子名称筛选"
+            placeholder="因子名称或编码"
+            aria-label="按因子名称或编码搜索"
           />
         </el-form-item>
         <el-form-item>
@@ -66,12 +66,12 @@
     </section>
 
     <section class="surface-card table-card factor-table-card" aria-label="因子目录">
-      <StatePanel v-if="tableLoading" type="loading" title="正在加载因子目录" />
+      <StatePanel v-if="tableLoading && !hasLoaded" type="loading" title="正在加载因子目录" />
       <StatePanel v-else-if="loadError" type="error" title="因子目录加载失败" :description="loadError">
         <template #actions><el-button type="primary" @click="loadBackendFactors">重试</el-button></template>
       </StatePanel>
       <StatePanel
-        v-else-if="!filteredRows.length"
+        v-else-if="!pagedRows.length && !tableLoading"
         type="empty"
         title="没有符合条件的因子"
         description="调整筛选条件或新建因子后再查看。"
@@ -127,14 +127,16 @@
         </el-table>
       </div>
 
-      <div v-if="!tableLoading && !loadError" class="pagination-row">
-        <span>共 {{ filteredRows.length }} 条<span v-if="selectedRows.length">，已选 {{ selectedRows.length }} 条</span></span>
+      <div v-if="!loadError" class="pagination-row">
+        <span>共 {{ total }} 条<span v-if="selectedRows.length">，已选 {{ selectedRows.length }} 条</span></span>
         <el-pagination
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
           layout="prev, pager, next, sizes"
           :page-sizes="[6, 9, 12]"
-          :total="filteredRows.length"
+          :total="total"
+          @current-change="loadBackendFactors"
+          @size-change="resize"
         />
       </div>
     </section>
@@ -150,14 +152,15 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
-  import StatusBadge from '@/idmp/components/StatusBadge.vue'
- import ResourceDeleteDialog from '@/idmp/components/ResourceDeleteDialog.vue'
- import { deleteFactor, fetchFactorDeletionImpact, fetchAllFactors } from '@/idmp/api/modules/factors'
+import StatusBadge from '@/idmp/components/StatusBadge.vue'
+import ResourceDeleteDialog from '@/idmp/components/ResourceDeleteDialog.vue'
+import { deleteFactor, fetchFactorDeletionImpact, fetchFactors, fetchFactorCategories } from '@/idmp/api/modules/factors'
+import { useCatalogQuery } from '@/idmp/features/catalog/useCatalogQuery.js'
 import { getStatusLabel } from '@/idmp/design/status'
 import { getAggregationLabel } from '@/idmp/utils/dslBuilder'
 import { getFactorTypeLabel } from '@/idmp/utils/factorType'
@@ -175,57 +178,20 @@ const emptyFilters = () => ({
   status: ''
 })
 
-const form = reactive(emptyFilters())
-const filters = reactive(emptyFilters())
-const backendFactorRows = ref([])
+const { filters: form, rows: backendFactorRows, total, page: currentPage, size: pageSize,
+  loading: tableLoading, error: queryError, hasLoaded, load: loadPage,
+  search: applyFilters, reset: resetFilters, resize } = useCatalogQuery((params, options) => {
+  const { name, type, status, ...rest } = params
+  return fetchFactors({ ...rest, keyword: name, definitionKind: { 原子因子: 'SOURCE', 复合因子: 'DERIVED' }[type] || '', status: factorStatusCode(status) }, options)
+}, emptyFilters(), 9)
 const domainNames = ref({})
-const sourceMode = ref('loading')
-const loadError = ref('')
-const tableLoading = ref(false)
-const currentPage = ref(1)
-const pageSize = ref(9)
+const sourceMode = computed(() => queryError.value ? 'error' : 'live')
+const loadError = computed(() => queryError.value?.message || '')
 const selectedRows = ref([])
 const deleteTarget = ref(null)
 
-const sourceRows = computed(() => backendFactorRows.value)
-const categoryOptions = computed(() => [...new Set(sourceRows.value.map((item) => item.category).filter(Boolean))])
-
-const filteredRows = computed(() => {
-  const code = filters.code.toLowerCase()
-  const name = filters.name.toLowerCase()
-
-  return sourceRows.value.filter((row) => {
-    return (
-      (!code || row.code.toLowerCase().includes(code)) &&
-      (!name || row.name.toLowerCase().includes(name)) &&
-      (!filters.type || row.type === filters.type) &&
-      (!filters.category || row.category === filters.category) &&
-      (!filters.status || getStatusLabel(row.status) === filters.status)
-    )
-  })
-})
-
-const pagedRows = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  return filteredRows.value.slice(start, start + pageSize.value)
-})
-
-const applyFilters = () => {
-  Object.assign(filters, form)
-  currentPage.value = 1
-}
-
-const resetFilters = () => {
-  Object.assign(form, emptyFilters())
-  Object.assign(filters, emptyFilters())
-  currentPage.value = 1
-}
-
-watch(filteredRows, () => {
-  if ((currentPage.value - 1) * pageSize.value >= filteredRows.value.length) {
-    currentPage.value = 1
-  }
-})
+const categoryOptions = ref([])
+const pagedRows = computed(() => backendFactorRows.value.map(toFactorRow))
 
 const openFactorDetail = row => router.push({ name: 'FactorDetail', params: { id: String(row.id || row.code) } })
 
@@ -238,25 +204,8 @@ const closeDelete = () => { deleteTarget.value = null }
 const reloadAfterDelete = async () => { closeDelete(); await loadBackendFactors() }
 
 async function loadBackendFactors() {
-  tableLoading.value = true
-  loadError.value = ''
   selectedRows.value = []
-  try {
-    if (canRequest('GET', '/meta/data-domains')) {
-      try { domainNames.value = Object.fromEntries(adaptDataDomainList(await fetchDataDomains()).map(item => [item.code, item.name])) }
-      catch { domainNames.value = {} }
-    }
-    const payload = await fetchAllFactors()
-    const rows = normalizeList(payload).map(toFactorRow)
-    backendFactorRows.value = rows
-    sourceMode.value = 'live'
-  } catch (error) {
-    backendFactorRows.value = []
-    sourceMode.value = 'error'
-    loadError.value = error?.message || '因子列表加载失败，请重试'
-  } finally {
-    tableLoading.value = false
-  }
+  return loadPage()
 }
 
 function toFactorRow(item) {
@@ -278,15 +227,13 @@ function factorStatusCode(status) {
   return { 已发布: 'PUBLISHED', 草稿: 'DRAFT', 已校验: 'VALIDATED' }[status] || status
 }
 
-function normalizeList(payload) {
-  if (Array.isArray(payload)) return payload
-  if (Array.isArray(payload?.records)) return payload.records
-  if (Array.isArray(payload?.list)) return payload.list
-  if (Array.isArray(payload?.items)) return payload.items
-  return []
-}
-
-onMounted(loadBackendFactors)
+onMounted(() => {
+  loadBackendFactors()
+  fetchFactorCategories().then(items => { categoryOptions.value = items }).catch(() => {})
+  if (canRequest('GET', '/meta/data-domains')) {
+    fetchDataDomains().then(items => { domainNames.value = Object.fromEntries(adaptDataDomainList(items).map(item => [item.code, item.name])) }).catch(() => {})
+  }
+})
 </script>
 
 <style scoped lang="scss">

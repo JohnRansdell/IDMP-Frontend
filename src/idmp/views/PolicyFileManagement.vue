@@ -6,7 +6,7 @@
     </PageHeader>
     <section class="surface-card policy-filter-card" aria-label="政策文件筛选">
       <form v-query-enter class="policy-filters" @submit.prevent="search">
-        <el-input v-model.trim="filters.name" clearable placeholder="政策文件名称" aria-label="政策文件名称" />
+        <el-input v-model.trim="filters.keyword" clearable placeholder="政策文件名称或编码" aria-label="政策文件名称或编码" />
         <el-select v-model="filters.status" clearable placeholder="全部状态" aria-label="发布状态"><el-option label="草稿" value="DRAFT" /><el-option label="已发布" value="PUBLISHED" /></el-select>
         <div class="policy-filter-actions"><el-button type="primary" native-type="submit" :icon="Search">查询</el-button><el-button :icon="Refresh" @click="reset">重置</el-button></div>
       </form>
@@ -119,9 +119,10 @@ import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import PolicyFileViewer from '@/idmp/components/PolicyFileViewer.vue'
 import PolicyVersionPicker from '@/idmp/components/PolicyVersionPicker.vue'
 import * as api from '@/idmp/api/modules/policies'
+import { useCatalogQuery } from '@/idmp/features/catalog/useCatalogQuery.js'
 const route = useRoute()
-const rows = ref([]), total = ref(0), page = ref(1), loading = ref(false), listError = ref('')
-const filters = reactive({ name: '', status: '' })
+const { filters, rows, total, page, loading, error: queryError, load, search, reset } = useCatalogQuery(api.fetchPolicies, { keyword: '', status: '' })
+const listError = computed(() => queryError.value?.message || '')
 const metadataVisible = ref(false), saving = ref(false), metadata = reactive({})
 const detailVisible = ref(false), detailLoading = ref(false), detailError = ref(''), detail = ref(null)
 const versionVisible = ref(false), versionForm = reactive({}), uploaded = ref(null), uploading = ref(false), uploadState = ref('')
@@ -131,15 +132,7 @@ const viewerId = ref(''), accept = ref('.pdf,.docx,.txt'), relationVersionId = r
 const relation = reactive({ targetVersionId: '', relationType: 'REFERENCES', description: '' })
 const removingRelationId = ref('')
 const relationLabels = { REFERENCES: '引用', REPLACES: '替代', SUPPLEMENTS: '补充', REVISES: '修订' }
-let listRevision = 0, detailRevision = 0, relationRevision = 0, versionRevision = 0
-async function load() {
-  const revision = ++listRevision; loading.value = true; listError.value = ''
-  try { const result = await api.fetchPolicies({ ...filters, page: page.value, size: 20 }); if (revision === listRevision) { rows.value = result.records || []; total.value = result.total || 0 } }
-  catch (e) { if (revision === listRevision) listError.value = e.message }
-  finally { if (revision === listRevision) loading.value = false }
-}
-function search() { page.value = 1; load() }
-function reset() { Object.assign(filters, { name: '', status: '' }); search() }
+let detailRevision = 0, relationRevision = 0, versionRevision = 0
 function newPolicy() { Object.assign(metadata, { id: '', code: '', name: '', category: 'QUALITY', issuingOrganization: '', documentNumber: '', description: '' }); metadataVisible.value = true }
 function editPolicy(row) { Object.assign(metadata, row); metadataVisible.value = true }
 async function saveMetadata() {
@@ -257,7 +250,7 @@ async function removeRelation(row) {
     if (isCurrent() && e !== 'cancel' && e !== 'close') ElMessage.error(e.message || '解除政策文件关系失败')
   } finally { removingRelationId.value = '' }
 }
-onBeforeUnmount(() => { listRevision++; detailRevision++; relationRevision++; versionRevision++ })
+onBeforeUnmount(() => { detailRevision++; relationRevision++; versionRevision++ })
 onMounted(async () => {
   load()
   try { const options = await api.fetchPolicyUploadOptions(); uploadLimits.value = options; accept.value = options.extensions.map(ext => `.${ext}`).join(',') } catch (e) { ElMessage.error(e.message) }

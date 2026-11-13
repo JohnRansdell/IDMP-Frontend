@@ -3,8 +3,8 @@ import { fetchAllPages } from '../pagination.js'
 
 export const fetchAllScenarios = (params = {}) => fetchAllPages(fetchScenarios, params)
 
-export function fetchScenarios(params = {}) {
-  return requestJson(withQuery('/scenarios', params))
+export function fetchScenarios(params = {}, options = {}) {
+  return requestJson(withQuery('/scenarios', params), options)
 }
 
 export function createScenario({ code: _code, ...payload }, idempotencyKey) {

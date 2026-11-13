@@ -1,4 +1,5 @@
 import { requestJson } from '@/idmp/api/request'
+import { fetchAllPages } from '../pagination.js'
 import { expandDashboardResponse } from '../../features/dashboard/compactResponse.js'
 import { completeDashboardSourceBindings } from '../adapters/dashboardSourceIdentity.js'
 
@@ -9,7 +10,13 @@ export function fetchIndicatorGroupingTargets(versionId, options = {}) {
 }
 
 export function fetchDashboardCatalog(options = {}) {
-  return requestJson('/analysis/dashboards', options)
+  return fetchAllPages(params => fetchDashboardCatalogPage(params, options))
+}
+
+export function fetchDashboardCatalogPage(params = {}, options = {}) {
+  const query = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => { if (value != null && value !== '') query.set(key, value) })
+  return requestJson(`/analysis/dashboards?${query}`, options)
 }
 
 export function createDashboard({ code: _code, ...payload }, options = {}) {

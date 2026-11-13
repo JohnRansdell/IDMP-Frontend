@@ -8,7 +8,7 @@ function query(path, params) {
   return `${path}?${values}`
 }
 const write = (path, body, method = 'POST') => requestJson(path, { method, body: JSON.stringify(body) })
-export const fetchPolicies = (params = {}) => requestJson(query('/meta/policy-files', params), { cache: 'no-store' })
+export const fetchPolicies = (params = {}, options = {}) => requestJson(query('/meta/policy-files', params), { cache: 'no-store', ...options })
 export const fetchPolicy = id => requestJson(`/meta/policy-files/${encodeURIComponent(id)}`, { cache: 'no-store' })
 export const fetchPolicyVersion = id => requestJson(`/meta/policy-file-versions/${encodeURIComponent(id)}`, { cache: 'no-store' })
 export const fetchPublishedPolicyVersions = (params = {}) => requestJson(query('/meta/policy-file-versions/published', params), { cache: 'no-store' })

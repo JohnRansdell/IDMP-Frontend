@@ -7,9 +7,9 @@
     </PageHeader>
 
     <section class="surface-card filter-card scenario-filter" aria-label="场景筛选">
-      <el-form v-query-enter :inline="true" @submit.prevent="load">
+      <el-form v-query-enter :inline="true" @submit.prevent="search">
 
-        <el-form-item><el-input v-model.trim="filters.name" class="filter-name" clearable placeholder="场景名称" /></el-form-item>
+        <el-form-item><el-input v-model.trim="filters.keyword" class="filter-name" clearable placeholder="场景名称或编码" /></el-form-item>
         <el-form-item><el-select v-model="filters.type" class="filter-select" clearable placeholder="场景类型">
           <el-option v-for="item in SCENARIO_TYPES" :key="item.value" :label="item.label" :value="item.value" />
         </el-select></el-form-item>
@@ -21,7 +21,7 @@
     </section>
 
     <section class="surface-card table-card">
-      <StatePanel v-if="loading" type="loading" title="正在加载场景目录" />
+      <StatePanel v-if="loading && !hasLoaded" type="loading" title="正在加载场景目录" />
       <StatePanel v-else-if="loadError" type="error" title="场景目录加载失败" :description="loadError"><template #actions><el-button type="primary" @click="load">重试</el-button></template></StatePanel>
       <template v-else>
       <el-table :aria-busy="loading" :empty-text="loading ? '正在查询…' : '暂无场景'" v-loading="loading" :data="rows" >
@@ -33,7 +33,7 @@
         <el-table-column prop="updatedAt" label="更新时间" width="180" />
         <el-table-column label="操作" width="110" fixed="right"><template #default="{ row }"><button v-access="'scenario.create'" class="action-link" type="button" @click="open(row)">查看/编辑</button></template></el-table-column>
       </el-table>
-      <div class="table-footer"><span>共 {{ total }} 条</span><el-pagination v-model:current-page="page" v-model:page-size="size" layout="prev, pager, next, sizes" :page-sizes="[10, 20, 50]" :total="total" @current-change="load" @size-change="load" /></div>
+      <div class="table-footer"><span>共 {{ total }} 条</span><el-pagination v-model:current-page="page" v-model:page-size="size" layout="prev, pager, next, sizes" :page-sizes="[10, 20, 50]" :total="total" @current-change="load" @size-change="resize" /></div>
       </template>
     </section>
 
@@ -52,7 +52,8 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useCatalogQuery } from '@/idmp/features/catalog/useCatalogQuery.js'
 import { ElMessage } from '@/idmp/utils/message'
 import { useRouter } from 'vue-router'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
@@ -60,37 +61,18 @@ import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
 import { createScenario, fetchScenarios, fetchScenarioVersions } from '@/idmp/api/modules/scenarios'
-import { normalizePage, PERIOD_TYPES, SCENARIO_TYPES, publicationStatusLabel, scenarioTypeLabel, selectScenarioVersion } from '@/idmp/api/adapters/scenario'
+import { PERIOD_TYPES, SCENARIO_TYPES, publicationStatusLabel, scenarioTypeLabel, selectScenarioVersion } from '@/idmp/api/adapters/scenario'
 
 const router = useRouter()
-const rows = ref([])
-const total = ref(0)
-const page = ref(1)
-const size = ref(20)
-const loading = ref(false)
-const loadError = ref('')
+const { filters, rows, total, page, size, loading, error, hasLoaded, load, search, reset, resize } = useCatalogQuery(fetchScenarios,
+  { keyword: '', type: '', publicationStatus: '' })
+const loadError = computed(() => error.value?.message || '')
 const saving = ref(false)
 const createOpen = ref(false)
 const formRef = ref()
-const filters = reactive({ name: '', type: '', publicationStatus: '' })
 const form = reactive({ name: '', type: 'CUSTOM', defaultPeriodType: 'MONTHLY', governingOrgName: '', description: '' })
 const rules = { name: [{ required: true, message: '请输入场景名称' }], type: [{ required: true, message: '请选择场景类型' }], defaultPeriodType: [{ required: true, message: '请选择默认周期' }] }
 
-async function load() {
-  loading.value = true
-  loadError.value = ''
-  try {
-    const result = normalizePage(await fetchScenarios({ ...filters, page: page.value, size: size.value }))
-    rows.value = result.items
-    total.value = result.total
-  } catch (error) {
-    rows.value = []
-    total.value = 0
-    loadError.value = error?.message || '场景列表加载失败'
-  } finally { loading.value = false }
-}
-
-function reset() { Object.assign(filters, { name: '', type: '', publicationStatus: '' }); page.value = 1; load() }
 async function open(row) {
   try {
     let versions = []

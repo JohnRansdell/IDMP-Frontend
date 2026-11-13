@@ -6,9 +6,11 @@ export const fetchAllFactors = (params = {}) => fetchAllPages(fetchFactors, para
 export const fetchAllFactorTemplates = (params = {}) => fetchAllPages(fetchFactorTemplates, params)
 export const fetchAllFactorTemplateInstances = (versionId, params = {}) => fetchAllPages(page => fetchFactorTemplateInstances(versionId, page), params)
 
-export function fetchFactors(params = {}) {
-  return requestJson(withQuery('/factors', params))
+export function fetchFactors(params = {}, options = {}) {
+  return requestJson(withQuery('/factors', params), options)
 }
+
+export const fetchFactorCategories = () => requestJson('/factors/categories')
 
 export function fetchFactor(factorId) {
   return requestJson(`/factors/${factorId}`)
@@ -141,8 +143,8 @@ export function fetchFactorTemplateParameterSchema(templateId) {
   return requestJson(`/factor-templates/${templateId}/parameter-schema`)
 }
 
-export function fetchFactorTemplates(params = {}) {
-  return requestJson(withQuery('/factor-templates', params))
+export function fetchFactorTemplates(params = {}, options = {}) {
+  return requestJson(withQuery('/factor-templates', params), options)
 }
 
 export function createFactorTemplate({ code: _code, ...payload }) {

@@ -1,8 +1,15 @@
 import { requestJson } from '@/idmp/api/request'
+import { fetchAllPages } from '../pagination.js'
 
 export function fetchDataDomains() {
-  return requestJson('/meta/data-domains')
+  return fetchAllPages(fetchDataDomainPage)
 }
+
+export function fetchDataDomainPage(params = {}, options = {}) {
+  return requestJson(withQuery('/meta/data-domains', params), options)
+}
+
+export const fetchDataDomainCounts = () => requestJson('/meta/data-domains/counts')
 
 export function createDataDomain({ code: _code, ...payload }) {
   return requestJson('/meta/data-domains', {
