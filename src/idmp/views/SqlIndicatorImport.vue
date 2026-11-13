@@ -311,7 +311,14 @@ onMounted(() => { void loadDomainNames(); void loadDrillPathCatalog(); if (route
 <style scoped>
 .dynamic-parameters .dynamic-parameter-list { display: grid; gap: 8px; padding: 0; list-style: none; }
 .dynamic-parameter-list li { display: grid; grid-template-columns: minmax(100px, 180px) minmax(0, 320px); align-items: center; gap: 12px; }
-.dynamic-parameter-list code { overflow-wrap: anywhere; }
+.dynamic-parameter-list code {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--idmp-text-primary);
+  overflow-wrap: anywhere;
+}
 @media (max-width: 600px) { .dynamic-parameter-list li { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
 </style>
 
