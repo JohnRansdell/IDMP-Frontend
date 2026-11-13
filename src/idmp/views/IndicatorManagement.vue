@@ -7,7 +7,7 @@
         <span class="data-source-badge" :class="{ 'is-live': sourceMode === 'live' }">
           {{ tableLoading ? '正在加载' : loadError ? '加载失败' : '已加载' }}
         </span>
-        <span>共 {{ filteredRows.length }} 条</span>
+        <span>共 {{ total }} 条</span>
       </template>
       <template #actions>
         <el-button v-access="'indicator.create'" type="primary" :icon="Plus" @click="openEditor('new')">新增指标</el-button>
@@ -32,7 +32,7 @@
       </template>
     </PageHeader>
 
-    <StatePanel v-if="tableLoading" type="loading" title="正在加载指标目录" />
+    <StatePanel v-if="tableLoading && !hasLoaded" type="loading" title="正在加载指标目录" />
     <StatePanel v-else-if="loadError" type="error" title="指标目录加载失败" :description="loadError">
       <template #actions><el-button type="primary" @click="loadBackendIndicators">重试</el-button></template>
     </StatePanel>
@@ -43,10 +43,10 @@
           <el-form-item>
             <el-input
               v-model="filters.name"
-              placeholder="指标名称（模糊搜索）"
+              placeholder="指标名称或编码"
               clearable
               class="filter-name"
-              aria-label="按指标名称筛选"
+              aria-label="按指标名称或编码搜索"
             />
           </el-form-item>
           <el-form-item>
@@ -103,9 +103,9 @@
       </el-form>
     </section>
 
-    <section v-if="!tableLoading && !loadError && viewMode === 'table'" class="surface-card table-card">
+    <section v-if="!loadError && (hasLoaded || !tableLoading) && viewMode === 'table'" class="surface-card table-card">
       <StatePanel
-        v-if="!tableLoading && !filteredRows.length"
+        v-if="!tableLoading && !backendIndicatorRows.length"
         type="empty"
         title="没有符合条件的指标"
         description="调整筛选条件或新建指标后再查看。"
@@ -117,7 +117,7 @@
       </StatePanel>
       <div v-else class="table-scroll">
         <el-table :aria-busy="tableLoading" :empty-text="tableLoading ? '正在查询…' : '暂无数据'"
-          :data="pagedRows"
+          :data="backendIndicatorRows"
           v-loading="tableLoading"
           row-key="code"
           @selection-change="selectedRows = $event"
@@ -158,20 +158,20 @@
         </el-table>
       </div>
       <div ref="paginationRowRef" class="pagination-row">
-        <span>共 {{ filteredRows.length }} 条<span v-if="selectedRows.length">，已选 {{ selectedRows.length }} 条</span></span>
+        <span>共 {{ total }} 条<span v-if="selectedRows.length">，已选 {{ selectedRows.length }} 条</span></span>
         <el-pagination
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
           layout="prev, pager, next, sizes"
           :page-sizes="[6, 9, 12]"
-          :total="filteredRows.length"
+          :total="total"
         />
       </div>
     </section>
 
-    <section v-else-if="!tableLoading && !loadError" class="indicator-card-wrap">
-      <div v-if="pagedRows.length" class="indicator-card-grid">
-        <article v-for="row in pagedRows" :key="row.code" class="surface-card indicator-card">
+    <section v-else-if="!loadError && (hasLoaded || !tableLoading)" v-loading="tableLoading" :aria-busy="tableLoading" class="indicator-card-wrap">
+      <div v-if="backendIndicatorRows.length" class="indicator-card-grid">
+        <article v-for="row in backendIndicatorRows" :key="row.code" class="surface-card indicator-card">
           <div class="indicator-card__head">
             <button type="button" class="indicator-code" @click="openDetail(row)">{{ row.name }}</button>
             <StatusBadge :status="row.status" :label="row.status" :tone="statusTone(row.status)" />
@@ -197,13 +197,13 @@
         description="调整筛选条件或新建指标后再查看。"
       />
       <div ref="paginationRowRef" class="pagination-row card-pagination">
-        <span>共 {{ filteredRows.length }} 条</span>
+        <span>共 {{ total }} 条</span>
         <el-pagination
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
           layout="prev, pager, next, sizes"
           :page-sizes="[6, 9, 12]"
-          :total="filteredRows.length"
+          :total="total"
         />
       </div>
     </section>
@@ -219,15 +219,16 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Grid, Menu, Plus, RefreshLeft, Search, Upload } from '@element-plus/icons-vue'
 import PageHeader from '@/idmp/components/PageHeader.vue'
 import StatePanel from '@/idmp/components/StatePanel.vue'
 import StatusBadge from '@/idmp/components/StatusBadge.vue'
  import ResourceDeleteDialog from '@/idmp/components/ResourceDeleteDialog.vue'
-import { deleteIndicator, fetchIndicatorDeletionImpact, fetchAllIndicators, fetchAllIndicatorVersions } from '@/idmp/api/modules/indicators'
+import { deleteIndicator, fetchIndicatorDeletionImpact, fetchIndicators, fetchIndicatorCategories } from '@/idmp/api/modules/indicators'
 import { getStatusLabel } from '@/idmp/design/status'
+import { createRequestScope } from '@/idmp/features/analysis/useLatestResult.js'
 
 const router = useRouter()
 const viewMode = ref('table')
@@ -235,14 +236,19 @@ const currentPage = ref(1)
 const pageSize = ref(9)
 const selectedRows = ref([])
 const tableLoading = ref(false)
+const hasLoaded = ref(false)
 const backendIndicatorRows = ref([])
+const total = ref(0)
+const categories = ref([])
+const statuses = ['DRAFT', 'PUBLISHED', 'DISABLED']
+const listScope = createRequestScope()
+const categoryScope = createRequestScope()
 const sourceMode = ref('loading')
 const loadError = ref('')
 const paginationRowRef = ref()
 const deleteTarget = ref(null)
 
 const emptyFilters = () => ({
-  code: '',
   name: '',
   category: '',
   attribute: '',
@@ -252,70 +258,60 @@ const emptyFilters = () => ({
 
 const filters = reactive(emptyFilters())
 const appliedFilters = ref(emptyFilters())
-const sourceRows = computed(() => backendIndicatorRows.value)
-const categories = computed(() => [...new Set(sourceRows.value.map(item => item.category).filter(Boolean))])
-const statuses = computed(() => [...new Set(sourceRows.value.map(item => item.status).filter(Boolean))])
-
-const filteredRows = computed(() => sourceRows.value.filter(row => {
-  const query = appliedFilters.value
-  return (!query.code || row.code.toLowerCase().includes(query.code.toLowerCase()))
-    && (!query.name || row.name.includes(query.name))
-    && (!query.category || row.category === query.category)
-    && (!query.attribute || row.attribute === query.attribute)
-    && (!query.status || row.status === query.status)
-    && (!query.direction || row.direction === query.direction)
-}))
-
-const pagedRows = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  return filteredRows.value.slice(start, start + pageSize.value)
-})
-
-watch([pageSize, viewMode], () => {
-  currentPage.value = 1
+watch([currentPage, pageSize], ([, size], [, previousSize]) => {
+  if (size !== previousSize && currentPage.value !== 1) { currentPage.value = 1; return }
+  loadBackendIndicators()
   labelPageSizeControl()
 })
+watch(viewMode, () => labelPageSizeControl())
 
 const applyFilters = () => {
   appliedFilters.value = { ...filters }
-  currentPage.value = 1
+  if (currentPage.value === 1) loadBackendIndicators()
+  else currentPage.value = 1
 }
 
 const resetFilters = () => {
   Object.assign(filters, emptyFilters())
-  appliedFilters.value = emptyFilters()
-  currentPage.value = 1
+  applyFilters()
 }
 
 const loadBackendIndicators = async () => {
+  const request = listScope.begin()
   tableLoading.value = true
   loadError.value = ''
   selectedRows.value = []
   try {
-    const [indicators, publishedVersions] = await Promise.all([
-      fetchAllIndicators(),
-      fetchAllIndicatorVersions({ publicationStatus: 'PUBLISHED' })
-    ])
-    backendIndicatorRows.value = mergePublishedIndicatorVersions(
-      normalizeList(indicators).map(toIndicatorRow),
-      normalizeList(publishedVersions).map(toPublishedIndicatorVersionRow)
-    )
+    const { name, ...otherFilters } = appliedFilters.value
+    const result = await fetchIndicators({ ...otherFilters, keyword: name, page: currentPage.value, size: pageSize.value }, { signal: request.signal })
+    if (!request.isCurrent()) return
+    total.value = Number(result.total)
+    if (currentPage.value > 1 && !result.records.length && total.value <= (currentPage.value - 1) * pageSize.value) {
+      currentPage.value = Math.max(1, Math.ceil(total.value / pageSize.value))
+      return
+    }
+    backendIndicatorRows.value = result.records.map(toIndicatorRow)
+    hasLoaded.value = true
     sourceMode.value = 'live'
   } catch (error) {
+    if (!request.isCurrent()) return
     backendIndicatorRows.value = []
+    total.value = 0
     sourceMode.value = 'error'
     loadError.value = error?.message || '指标目录加载失败，请重试。'
   } finally {
-    tableLoading.value = false
+    if (request.isCurrent()) tableLoading.value = false
   }
 }
 
-function normalizeList(payload) {
-  if (Array.isArray(payload)) return payload
-  if (Array.isArray(payload?.records)) return payload.records
-  if (Array.isArray(payload?.list)) return payload.list
-  if (Array.isArray(payload?.items)) return payload.items
-  return []
+async function loadCategories() {
+  const request = categoryScope.begin()
+  try {
+    const result = await fetchIndicatorCategories({ signal: request.signal })
+    if (request.isCurrent()) categories.value = result
+  } catch {
+    // Category options must not prevent searching the catalog.
+  }
 }
 
 const toIndicatorRow = (item) => ({
@@ -323,7 +319,7 @@ const toIndicatorRow = (item) => ({
   name: item.name,
   category: item.category || '—',
   attribute: item.attribute || '—',
-  version: '未发布',
+  version: item.latestPublishedVersionId && item.latestPublishedVersionNo ? `V${item.latestPublishedVersionNo}` : '未发布',
   direction: item.direction || '—',
   source: item.source || '—',
   status: item.status || '未知',
@@ -332,42 +328,8 @@ const toIndicatorRow = (item) => ({
   description: item.description,
   id: item.id,
   indicatorId: item.id,
-  versionId: ''
+  versionId: item.latestPublishedVersionId || ''
 })
-
-const toPublishedIndicatorVersionRow = (item) => ({
-  code: item.indicatorCode || item.code,
-  name: item.indicatorName || item.name || '未命名指标',
-  category: item.category || '—',
-  attribute: item.attribute || '—',
-  version: item.versionNo ? `V${item.versionNo}` : `版本 ${item.id || item.versionId || '-'}`,
-  versionNo: Number(item.versionNo),
-  direction: item.direction || '—',
-  source: item.source || '—',
-  status: item.status || item.publicationStatus || 'PUBLISHED',
-  // 指标版本列表并不保证返回 scenarioCount，不能以 0 覆盖指标目录的聚合结果。
-  scenes: toScenarioCount(item.scenarioCount ?? item.indicator?.scenarioCount),
-  description: item.description,
-  id: item.indicatorId || item.indicator?.id || item.id,
-  indicatorId: item.indicatorId || item.indicator?.id || '',
-  versionId: item.id || item.versionId || item.indicatorVersionId || ''
-})
-
-function mergePublishedIndicatorVersions(indicatorRows, publishedRows) {
-  const latestByIndicatorId = new Map()
-  for (const row of publishedRows) {
-    if (!row.indicatorId || !row.versionId || row.status !== 'PUBLISHED'
-      || !Number.isInteger(row.versionNo) || row.versionNo < 1) continue
-    const id = String(row.indicatorId)
-    const latest = latestByIndicatorId.get(id)
-    if (!latest || row.versionNo > latest.versionNo) latestByIndicatorId.set(id, row)
-  }
-  // 指标主列表提供目录信息；发布版本仅补充显示版本及同一版本的分析入口。
-  return indicatorRows.map(row => {
-    const latest = latestByIndicatorId.get(String(row.indicatorId))
-    return latest ? { ...row, version: latest.version, versionId: latest.versionId } : row
-  })
-}
 
 function toScenarioCount(value) {
   if (value === undefined || value === null || value === '') return null
@@ -395,7 +357,7 @@ const openAnalysis = row => {
 }
 const openDelete = row => { deleteTarget.value = row }
 const closeDelete = () => { deleteTarget.value = null }
-const reloadAfterDelete = async () => { closeDelete(); await loadBackendIndicators() }
+const reloadAfterDelete = async () => { closeDelete(); await Promise.all([loadBackendIndicators(), loadCategories()]) }
 
 const statusTone = status => ({
   '草稿': 'warning',
@@ -421,6 +383,7 @@ const labelPageSizeControl = async () => {
 
 onMounted(() => {
   loadBackendIndicators()
+  loadCategories()
   labelPageSizeControl()
 })
 </script>

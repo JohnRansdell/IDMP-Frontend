@@ -11,6 +11,10 @@ export function fetchIndicators(params = {}, options = {}) {
   return requestJson(withQuery('/indicators', params), options)
 }
 
+export function fetchIndicatorCategories(options = {}) {
+  return requestJson('/indicators/categories', options)
+}
+
 export function fetchIndicator(indicatorId) {
   return requestJson(`/indicators/${indicatorId}`)
 }
