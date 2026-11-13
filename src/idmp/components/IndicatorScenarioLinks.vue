@@ -1,78 +1,182 @@
 <template>
-  <section class="surface-card table-card">
-    <div class="section-title"><div><h2>场景关联（可选）</h2><p>不关联场景也可试算、即时运行和生成独立正式结果。场景用于按业务用途组织指标和上报要求。</p></div><el-button :disabled="loading || saving" @click="loadLinks">刷新</el-button></div>
-    <el-alert v-if="!published" title="指标版本发布后可以加入场景；无需先关联场景再发布指标。" type="info" :closable="false" />
-    <el-alert v-if="error" :title="error" type="error" :closable="false" />
-    <el-alert v-if="savedVersionId" title="已加入场景草稿。请进入场景编辑页核对覆盖规则、校验并发布，场景计算才会使用该配置。" type="success" :closable="false" />
-    <el-table :aria-busy="loading" :empty-text="loading ? '正在查询…' : '当前指标版本暂无关联场景'" v-loading="loading" :data="links" >
-      <el-table-column label="场景" min-width="200"><template #default="{ row }">{{ row.name || row.scenarioName || '未命名场景' }}</template></el-table-column>
-      <el-table-column prop="publicationStatus" label="状态" width="120" />
-      <el-table-column label="操作" width="150"><template #default="{ row }"><el-button link type="primary" @click="open(row.id || row.scenarioId, row.scenarioVersionId)">查看关联指标</el-button></template></el-table-column>
-    </el-table>
-    <div v-if="published" class="scenario-controls">
-      <el-select default-first-option v-model="scenarioId" filterable remote :remote-method="search" :loading="searching" placeholder="搜索可关联的场景" :disabled="saving" @visible-change="visible => visible && search('')" @change="loadVersions"><el-option v-for="row in options" :key="row.id" :value="String(row.id)" :label="row.name || '未命名场景'" /></el-select>
-      <el-select v-model="draftId" placeholder="选择场景草稿版本" :disabled="saving || versionsLoading" :loading="versionsLoading"><el-option v-for="row in drafts" :key="row.id" :value="String(row.id)" :label="`草稿版本 ${row.versionNo}`" /></el-select>
-      <el-button type="primary" :disabled="!draftId || saving" :loading="saving" @click="bind">加入场景草稿</el-button>
-      <el-button v-if="scenarioId" @click="open(scenarioId, savedVersionId || draftId)">进入场景编辑</el-button>
-    </div>
-    <p v-if="scenarioId && !versionsLoading && !drafts.length">该场景没有可编辑草稿，请进入场景编辑页创建新版本。已发布场景不会被直接修改。</p>
+  <section class="surface-card association-card" aria-label="指标关联场景">
+    <header class="association-header">
+      <div><h2>关联场景</h2><p>选择指标的使用场景；关联变更将在场景发布后生效。</p></div>
+      <div class="association-toolbar">
+        <el-button :disabled="loading || busy" @click="load">刷新</el-button>
+        <el-button v-if="published && canManage" type="primary" :disabled="loading || busy || !versionId" @click="openJoin">加入场景</el-button>
+      </div>
+    </header>
+    <el-alert v-if="!published" title="当前指标版本尚未发布，可查看关联；发布指标后再加入场景。" type="info" :closable="false" />
+    <el-alert v-if="notice" :title="notice" type="success" :closable="false" />
+    <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
+    <div v-if="loading" class="association-empty" role="status">正在核对正式关联和待发布变更…</div>
+    <template v-else>
+      <div v-if="!related.length && !error" class="association-empty">尚未关联场景。指标可以独立使用，也可加入业务场景。</div>
+      <div v-else class="association-list">
+        <article v-for="row in related" :key="row.scenario.id" class="association-row">
+          <div class="association-row-main">
+            <div class="association-name"><strong>{{ row.scenario.name || '未命名场景' }}</strong><el-tag :type="statusTone(row)" size="small">{{ row.error ? '待核对' : associationLabels[row.status] }}</el-tag></div>
+            <p>{{ row.error || stateDescription(row) }}</p>
+          </div>
+          <div class="association-row-actions">
+            <el-button link type="primary" :disabled="busy" @click="open(row)">{{ row.draft ? '查看变更' : '查看场景' }}</el-button>
+            <el-button v-if="published && canManage && !row.error" link :type="row.status === 'ACTIVE' ? 'danger' : 'primary'" :disabled="busy" @click="requestChange(row)">{{ actionLabel(row) }}</el-button>
+          </div>
+        </article>
+      </div>
+      <p v-if="pendingCount" class="association-footnote">有 {{ pendingCount }} 项待发布变更。请进入对应场景查看完整变更后发布。</p>
+    </template>
+
+    <el-dialog v-model="joinOpen" title="加入场景" width="min(680px, calc(100vw - 24px))" :close-on-click-modal="!busy" :close-on-press-escape="!busy" :show-close="!busy" destroy-on-close>
+      <p class="dialog-description">勾选目标场景即可。系统会保存待发布变更，你无需选择草稿版本。</p>
+      <el-input v-model="searchText" clearable placeholder="按场景名称搜索" aria-label="搜索场景" :disabled="busy" />
+      <el-alert v-if="joinError" :title="joinError" type="error" :closable="false" show-icon />
+      <div class="scenario-choices">
+        <div v-for="row in filteredChoices" :key="row.scenario.id" class="scenario-choice" :class="{ 'is-unavailable': !!choiceRestriction(row) }">
+          <el-checkbox :model-value="selectedScenarioIds.includes(String(row.scenario.id))" :disabled="busy || !!choiceRestriction(row)" :aria-label="`选择${row.scenario.name}`" @update:model-value="selected => selectScenario(row, selected)" />
+          <div><div class="choice-title"><strong>{{ row.scenario.name || '未命名场景' }}</strong><el-tag size="small" :type="row.published ? 'success' : 'info'">{{ row.published ? '已发布' : '未发布' }}</el-tag></div><p>{{ choiceRestriction(row) || (row.published ? '确认后保存为待加入，发布场景后生效。' : '加入未发布场景，发布后生效。') }}</p></div>
+        </div>
+        <div v-if="!filteredChoices.length" class="association-empty">没有匹配的场景</div>
+      </div>
+      <p class="dialog-description">已有场景变更会保留。加入场景不会自动发布，也不会改变指标公式。</p>
+      <template #footer><el-button :disabled="busy" @click="joinOpen = false">取消</el-button><el-button type="primary" :loading="busy" :disabled="!selectedScenarioIds.length || busy" @click="join">确认加入{{ selectedScenarioIds.length ? `（${selectedScenarioIds.length}）` : '' }}</el-button></template>
+    </el-dialog>
   </section>
 </template>
+
 <script setup>
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { fetchAllIndicatorScenarios } from '@/idmp/api/modules/indicators'
-import { fetchAllScenarios, fetchScenarioVersions, fetchScenarioVersion, replaceScenarioIndicators } from '@/idmp/api/modules/scenarios'
-import { appendScenarioIndicator } from '@/idmp/features/indicator/editorWorkflow'
+import { ElMessageBox } from 'element-plus'
+import { canRequest } from '@/idmp/auth/session'
+import { getRequestSessionRevision } from '@/idmp/api/request'
+import * as scenarioApi from '@/idmp/api/modules/scenarios'
+import { associationLabels, changeRestriction, createScenarioAssociationService } from '@/idmp/features/indicator/scenarioAssociations.js'
+
 const props = defineProps({ indicatorId: { type: String, default: '' }, versionId: { type: String, default: '' }, published: Boolean })
 const router = useRouter()
-const links = ref([]), options = ref([]), drafts = ref([]), scenarioId = ref(''), draftId = ref(''), savedVersionId = ref('')
-const loading = ref(false), searching = ref(false), versionsLoading = ref(false), saving = ref(false), error = ref('')
-let context = 0, searchRevision = 0, versionRevision = 0, linksRevision = 0
-const rows = result => Array.isArray(result) ? result : result.records || result.items || []
-function open(id, versionId) { router.push({ name: 'ScenarioEditor', params: { scenarioId: String(id) }, query: { ...(versionId ? { versionId: String(versionId) } : {}), tab: 'indicators' } }) }
-async function loadLinks() {
-  const revision = ++linksRevision
-  links.value = []; loading.value = !!props.indicatorId; error.value = ''
-  if (!props.indicatorId) return
+const service = createScenarioAssociationService(scenarioApi, canRequest)
+const states = ref([]), loading = ref(false), busy = ref(false), error = ref(''), notice = ref('')
+const joinOpen = ref(false), joinError = ref(''), searchText = ref(''), selectedScenarioIds = ref([])
+let context = 0, readRevision = 0
+const canManage = computed(() => canRequest('PUT', '/scenario-versions/1/indicators'))
+const related = computed(() => states.value.filter(row => row.status !== 'NONE' || row.error))
+const pendingCount = computed(() => related.value.filter(row => ['ADD', 'REMOVE'].includes(row.status)).length)
+const filteredChoices = computed(() => states.value.filter(row => !searchText.value || String(row.scenario.name || '').toLowerCase().includes(searchText.value.toLowerCase())))
+function choiceRestriction(row) {
+  if (row.status === 'REMOVE') return '已有待移出变更，请在关联列表中撤销移出'
+  if (row.status !== 'NONE') return row.status === 'ADD' ? '已在待加入列表中' : '已关联当前指标版本'
+  return changeRestriction(row, props.versionId, 'ADD', canRequest)
+}
+function stateDescription(row) {
+  if (row.status === 'REMOVE') return '正式版本仍在使用；发布本次变更后移出。'
+  if (row.status === 'ADD') return row.published ? '已保存加入操作，发布场景后生效。' : '已加入未发布场景，尚未正式生效。'
+  return row.draft ? '当前正式版本已生效；该场景还有待发布配置。' : '当前正式版本正在使用此指标。'
+}
+function statusTone(row) { return row.error ? 'danger' : row.status === 'ACTIVE' ? 'success' : 'warning' }
+function actionLabel(row) { return row.status === 'ADD' ? '撤销加入' : row.status === 'REMOVE' ? '撤销移出' : '移出场景' }
+function open(row) {
+  const version = row.draft || row.published
+  router.push({ name: 'ScenarioEditor', params: { scenarioId: String(row.scenario.id) }, query: { ...(version ? { versionId: String(version.id) } : {}), tab: 'indicators' } })
+}
+function assertContext(current, session) {
+  if (context !== current || getRequestSessionRevision() !== session) throw new Error('页面或账号已切换，已停止后续操作')
+}
+async function load() {
+  const revision = ++readRevision, current = context, session = getRequestSessionRevision()
+  if (!props.indicatorId || !props.versionId) { states.value = []; return }
+  loading.value = true; error.value = ''
   try {
-    const result = await fetchAllIndicatorScenarios(props.indicatorId)
-    if (revision === linksRevision) links.value = rows(result).filter(row => !row.references || row.references.some(ref => String(ref.indicatorVersionId) === props.versionId))
-  } catch (e) { if (revision === linksRevision) error.value = e.message }
-  finally { if (revision === linksRevision) loading.value = false }
+    const result = await service.catalog(props.versionId)
+    if (revision === readRevision && context === current && session === getRequestSessionRevision()) states.value = result
+  } catch (cause) {
+    if (revision === readRevision && context === current) { states.value = []; error.value = cause.message || '场景读取失败，请刷新重试' }
+  } finally { if (revision === readRevision && context === current) loading.value = false }
 }
-async function search(name) {
-  const revision = ++searchRevision; searching.value = true
-  try { const result = await fetchAllScenarios({ name }); if (revision === searchRevision) options.value = rows(result) }
-  catch (e) { if (revision === searchRevision) error.value = e.message }
-  finally { if (revision === searchRevision) searching.value = false }
+function openJoin() { selectedScenarioIds.value = []; searchText.value = ''; joinError.value = ''; joinOpen.value = true }
+function selectScenario(row, selected) {
+  const value = String(row.scenario.id)
+  selectedScenarioIds.value = selected ? [...new Set([...selectedScenarioIds.value, value])] : selectedScenarioIds.value.filter(id => id !== value)
 }
-async function loadVersions() {
-  const revision = ++versionRevision; drafts.value = []; draftId.value = ''; savedVersionId.value = ''; versionsLoading.value = true
-  try { const result = await fetchScenarioVersions(scenarioId.value); if (revision === versionRevision) drafts.value = rows(result).filter(row => (row.publicationStatus || row.status) === 'DRAFT') }
-  catch (e) { if (revision === versionRevision) error.value = e.message }
-  finally { if (revision === versionRevision) versionsLoading.value = false }
-}
-async function bind() {
-  if (!props.published || !draftId.value || saving.value) return
-  const current = context, target = draftId.value, indicatorVersionId = props.versionId
-  saving.value = true; error.value = ''
+async function join() {
+  if (busy.value || !props.published || !canManage.value || !selectedScenarioIds.value.length) return
+  const current = context, session = getRequestSessionRevision(), versionId = props.versionId
+  const targets = states.value.filter(row => selectedScenarioIds.value.includes(String(row.scenario.id)))
+  if (!targets.length || targets.some(row => choiceRestriction(row))) return
+  busy.value = true; joinError.value = ''; error.value = ''; notice.value = ''
+  const completed = []
   try {
-    const detail = await fetchScenarioVersion(target)
-    if (current !== context) return
-    const version = detail.version
-    if (version.publicationStatus !== 'DRAFT') throw new Error('场景版本已不是草稿，请重新选择')
-    await replaceScenarioIndicators(target, { resourceVersion: version.resourceVersion, indicators: appendScenarioIndicator(version.indicators || [], indicatorVersionId) })
-    if (current !== context) return
-    savedVersionId.value = target
-    await loadLinks()
-  } catch (e) { if (current === context) error.value = `${e.message}。未自动覆盖其他并发修改，请刷新后重试。` }
-  finally { if (current === context) saving.value = false }
+    for (const row of targets) {
+      assertContext(current, session)
+      await service.change(row, versionId, 'ADD', () => assertContext(current, session))
+      completed.push(String(row.scenario.id))
+    }
+    assertContext(current, session)
+    joinOpen.value = false
+    notice.value = `已为 ${completed.length} 个场景保存待加入变更，请查看变更并发布场景。`
+  } catch (cause) {
+    if (current === context) {
+      selectedScenarioIds.value = selectedScenarioIds.value.filter(id => !completed.includes(id))
+      joinError.value = `${completed.length ? `已完成 ${completed.length} 项；` : ''}${cause.message}`
+    }
+  } finally {
+    if (current === context) {
+      await load()
+      if (current === context) {
+        selectedScenarioIds.value = selectedScenarioIds.value.filter(id => states.value.some(row => String(row.scenario.id) === id && !choiceRestriction(row)))
+        busy.value = false
+      }
+    }
+  }
 }
-watch(() => [props.indicatorId, props.versionId, props.published], () => { context++; versionRevision++; searchRevision++; linksRevision++; scenarioId.value = ''; draftId.value = ''; savedVersionId.value = ''; drafts.value = []; saving.value = false; void loadLinks() }, { immediate: true })
-onBeforeUnmount(() => { context++; linksRevision++; searchRevision++; versionRevision++ })
+async function requestChange(row) {
+  if (busy.value || !props.published || !canManage.value) return
+  const action = row.status === 'REMOVE' ? 'ADD' : 'REMOVE'
+  const restriction = changeRestriction(row, props.versionId, action, canRequest)
+  if (restriction) { error.value = restriction; return }
+  const current = context, session = getRequestSessionRevision(), versionId = props.versionId
+  busy.value = true; error.value = ''; notice.value = ''
+  try {
+    const description = row.status === 'ADD' ? '撤销尚未生效的加入操作。' : row.status === 'REMOVE' ? '撤销待移出操作，并恢复正式版本中的关联设置。' : '将保存为待移出变更，发布场景后生效；历史结果保留。'
+    await ElMessageBox.confirm(`${actionLabel(row)}「${row.scenario.name}」？${description}场景中其他待发布变更将保留。`, actionLabel(row), { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消' })
+    assertContext(current, session)
+    await service.change(row, versionId, action, () => assertContext(current, session))
+    assertContext(current, session)
+    notice.value = row.status === 'ACTIVE' ? '已保存待移出变更，发布场景后生效。' : row.status === 'ADD' ? '已撤销待加入操作。' : '已撤销待移出操作。'
+  } catch (cause) { if (current === context && cause !== 'cancel' && cause !== 'close') error.value = cause.message || '操作失败，请刷新重试' }
+  finally { if (current === context) { await load(); busy.value = false } }
+}
+watch(() => [props.indicatorId, props.versionId, props.published], () => {
+  context++; readRevision++; states.value = []; error.value = ''; notice.value = ''; busy.value = false; joinOpen.value = false; selectedScenarioIds.value = []; void load()
+}, { immediate: true })
+onBeforeUnmount(() => { context++; readRevision++ })
 </script>
+
 <style scoped>
-.scenario-controls { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
-.scenario-controls .el-select { width: 260px; max-width: 100%; }
+.association-card { min-width:0; padding:20px; }
+.association-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px; }
+.association-header h2 { margin:0; font-size:16px; line-height:24px; }
+.association-header p, .association-row p, .scenario-choice p, .association-footnote, .dialog-description { margin:6px 0 0; color:var(--idmp-text-helper); font-size:13px; line-height:1.7; }
+.association-toolbar, .association-row-actions { display:flex; gap:12px; flex-shrink:0; align-items:center; }
+.association-toolbar .el-button + .el-button, .association-row-actions .el-button + .el-button { margin-left:0; }
+.association-list { border-top:1px solid var(--idmp-border-subtle); }
+.association-row { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px 0; border-bottom:1px solid var(--idmp-border-subtle); }
+.association-row-main { min-width:0; }
+.association-name, .choice-title { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.association-name strong, .choice-title strong { overflow-wrap:anywhere; font-size:14px; font-weight:500; }
+.association-empty { padding:20px 0; font-size:13px; color:var(--idmp-text-helper); line-height:1.7; }
+.association-card :deep(.el-alert) { margin-bottom:12px; }
+.dialog-description { margin:0 0 16px; }
+.scenario-choices { max-height:360px; overflow-y:auto; margin:16px 0; border-top:1px solid var(--idmp-border-subtle); }
+.scenario-choice { display:flex; gap:12px; padding:16px 4px; align-items:flex-start; border-bottom:1px solid var(--idmp-border-subtle); cursor:pointer; }
+.scenario-choice > div { min-width:0; }
+.scenario-choice.is-unavailable { cursor:default; }
+.scenario-choice.is-unavailable strong { color:var(--idmp-text-helper); }
+.scenario-choice :deep(.el-checkbox) { height:24px; }
+@media(max-width:640px) {
+  .association-card { padding:16px; }
+  .association-header, .association-row { align-items:stretch; flex-direction:column; }
+  .association-toolbar, .association-row-actions { justify-content:flex-end; }
+}
 </style>

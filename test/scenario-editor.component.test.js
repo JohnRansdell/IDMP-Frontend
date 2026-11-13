@@ -3,6 +3,7 @@ import test from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import { JSDOM } from 'jsdom'
+import { compareScenarioBindings } from '../src/idmp/features/indicator/scenarioAssociations.js'
 import * as adapters from '../src/idmp/api/adapters/scenario.js'
 import { toUserMessage } from '../src/idmp/utils/userMessage.js'
 
@@ -12,7 +13,7 @@ Object.defineProperty(globalThis, 'navigator', { configurable: true, value: dom.
 const vue = await import('vue')
 const { mount, flushPromises } = await import('@vue/test-utils')
 const source = await readFile(new URL('../src/idmp/views/ScenarioEditor.vue', import.meta.url), 'utf8')
-const { descriptor } = parse(source.replace('</script>', 'defineExpose({ form, saveAll, publish, saving, publishing, editable, pendingIndicatorId, availableIndicatorOptions, addIndicator, removeIndicator, openIndicator })\n</script>'))
+const { descriptor } = parse(source.replace('</script>', 'defineExpose({ form, saveAll, publish, saving, publishing, editable, pendingIndicatorId, availableIndicatorOptions, addIndicator, removeIndicator, openIndicator, reviewPublish, publishReviewOpen, associationChanges })\n</script>'))
 const compiled = compileScript(descriptor, { id: 'scenario-editor-test', inlineTemplate: true }).content
 const bindings = [...compiled.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]vue['"];?/g)].flatMap(([, names]) => names.split(',').map(name => {
   const [imported, local = imported] = name.trim().split(/\s+as\s+/)
@@ -33,10 +34,10 @@ function create(overrides = {}, status = 'DRAFT') {
   }
   const snapshot = () => JSON.parse(JSON.stringify(server))
   const deps = {
-    ...adapters, PageHeader: Header, CodeTooltip: Pass, IndicatorVersionPicker: Pass, toUserMessage,
+    ...adapters, compareScenarioBindings, PageHeader: Header, CodeTooltip: Pass, IndicatorVersionPicker: Pass, toUserMessage,
     useRoute: () => ({ params: { scenarioId: '10' }, query: { versionId: '11' } }),
     useRouter: () => ({ push: target => navigations.push(target), replace: async () => {} }),
-    ElMessage: { success: value => messages.push(value), error: value => messages.push(value) },
+    ElMessage: { success: value => messages.push(value), error: value => messages.push(value), warning: value => messages.push(value) },
     ElMessageBox: { confirm: async () => {} },
     fetchAllIndicatorVersions: async () => [
       { id: '100000000000000001', indicatorId: '40', indicatorName: '测试指标', versionNo: 1, publicationStatus: 'PUBLISHED' },
@@ -75,7 +76,7 @@ function create(overrides = {}, status = 'DRAFT') {
   }
   const Component = Function('vue', 'deps', `const { ${Object.keys(deps).join(',')} } = deps;\n${bindings}\n${code}`)(vue, deps)
   const wrapper = mount(Component, { global: {
-    components: { ElButton: Button, ElTabs: Pass, ElTabPane: Pane, ElForm: Pass, ElFormItem: Pass, ElInput: Pass, ElSelect: Pass, ElOption: Pass, ElDatePicker: Pass, ElAlert: Pass },
+    components: { ElButton: Button, ElTabs: Pass, ElTabPane: Pane, ElForm: Pass, ElFormItem: Pass, ElInput: Pass, ElSelect: Pass, ElOption: Pass, ElDatePicker: Pass, ElAlert: Pass, ElTag: Pass, ElDialog: { props: ['modelValue'], template: '<div v-if="modelValue"><slot/><slot name="footer"/></div>' } },
     stubs: { ElTable: true, ElTableColumn: true, ElSwitch: true }
   } })
   return { wrapper, calls, messages, navigations }
@@ -84,7 +85,7 @@ function create(overrides = {}, status = 'DRAFT') {
 test('scenario editing only exposes basic information and indicator tabs, and saves without rule requests', async () => {
   const { wrapper, calls } = create()
   await flushPromises()
-  assert.deepEqual(wrapper.findAll('section[aria-label]').map(pane => pane.attributes('aria-label')), ['基本信息', '关联指标'])
+  assert.deepEqual(wrapper.findAll('.scenario-tabs section[aria-label]').map(pane => pane.attributes('aria-label')), ['基本信息', '关联指标'])
   assert.equal(wrapper.findAll('button').some(button => button.text() === '校验'), false)
   wrapper.vm.form.name = '更新后的场景'
   await wrapper.vm.saveAll()
@@ -201,5 +202,31 @@ test('viewing a binding opens the selected indicator version and resolves older 
   await wrapper.vm.openIndicator({ indicatorVersionId: '100000000000000099' })
   assert.deepEqual(calls, [['indicatorVersion', '100000000000000099']])
   assert.equal(navigations[1].params.id, '42')
+  wrapper.unmount()
+})
+
+
+test('reviewing publication is read-only and changed form contents require a fresh review', async () => {
+  const { wrapper, calls, messages } = create()
+  await flushPromises()
+  wrapper.vm.reviewPublish()
+  assert.equal(wrapper.vm.publishReviewOpen, true)
+  assert.equal(wrapper.vm.associationChanges.added.length, 1)
+  assert.deepEqual(calls, [])
+  wrapper.vm.form.name = '复核后又修改'
+  await wrapper.vm.publish()
+  assert.deepEqual(calls, [])
+  assert.ok(messages.some(text => text.includes('重新核对')))
+  wrapper.unmount()
+})
+
+test('removing the last indicator explains the backend limit before altering the form', async () => {
+  const { wrapper, calls, messages } = create()
+  await flushPromises()
+  const before = JSON.stringify(wrapper.vm.form.indicators)
+  wrapper.vm.removeIndicator(wrapper.vm.form.indicators[0].indicatorVersionId)
+  assert.equal(JSON.stringify(wrapper.vm.form.indicators), before)
+  assert.deepEqual(calls, [])
+  assert.ok(messages.some(text => text.includes('最后一个指标')))
   wrapper.unmount()
 })

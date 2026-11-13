@@ -56,7 +56,7 @@ test('historical categories are selectable without changing their values or the 
   assert.equal(existing.filter(item => item.value === '医疗质量').length, 1)
 })
 
-test('detail edit entry carries the viewed version and scenario entry opens indicator associations without writes', () => {
+test('detail edit entry carries the viewed version', () => {
   const navigations = []
   const router = { push: target => navigations.push(target) }
   const openEditor = pageFunction('IndicatorDetail', 'openIndicatorEditor', {
@@ -64,9 +64,5 @@ test('detail edit entry carries the viewed version and scenario entry opens indi
   })
   openEditor()
   assert.deepEqual(navigations[0], { name: 'IndicatorEditor', params: { id: '100' }, query: { indicatorVersionId: oldId } })
-  const openScenario = pageFunction('IndicatorDetail', 'openScenario', { router })
-  openScenario({ id: '801', scenarioVersionId: '802' })
-  assert.deepEqual(navigations[1], { name: 'ScenarioEditor', params: { scenarioId: '801' }, query: { versionId: '802', tab: 'indicators' } })
-  openScenario({ id: '801' })
-  assert.deepEqual(navigations[2].query, { tab: 'indicators' })
+
 })

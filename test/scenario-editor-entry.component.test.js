@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import { JSDOM } from 'jsdom'
+import { compareScenarioBindings } from '../src/idmp/features/indicator/scenarioAssociations.js'
 import * as adapters from '../src/idmp/api/adapters/scenario.js'
 import { toUserMessage } from '../src/idmp/utils/userMessage.js'
 
@@ -43,15 +44,15 @@ function create({ published = false, tab = 'indicators', link = true, readDetail
     replaceScenarioOverrides: async (id, payload) => { writes.push({ kind: 'overrides', id, payload }); detail.version.overrides = payload.overrides; return copy(detail) },
     fetchScenarioMergedPreview: async () => ({}), publishScenarioVersion: async () => ({}), validateScenarioVersion: async () => ({ valid: true })
   }
-  const component = Function('vue', 'deps', `const IndicatorVersionPicker = 'div'; const { toUserMessage, useRoute, useRouter, ElMessageBox, ElMessage, PageHeader, ${Object.keys(api).join(',')}, ${Object.keys(adapters).join(',')} } = deps;\n${bindings}\n${code}`)(vue, {
-    ...api, ...adapters, toUserMessage, useRoute: () => route, useRouter: () => ({ push() {}, replace: async value => { route.query = value.query } }),
+  const component = Function('vue', 'deps', `const IndicatorVersionPicker = 'div'; const { compareScenarioBindings, toUserMessage, useRoute, useRouter, ElMessageBox, ElMessage, PageHeader, ${Object.keys(api).join(',')}, ${Object.keys(adapters).join(',')} } = deps;\n${bindings}\n${code}`)(vue, {
+    ...api, ...adapters, compareScenarioBindings, toUserMessage, useRoute: () => route, useRouter: () => ({ push() {}, replace: async value => { route.query = value.query } }),
     ElMessage: { error: message => { throw new Error(message) }, warning() {}, success() {} }, ElMessageBox: {},
     PageHeader: vue.defineComponent({ setup: (_, { slots }) => () => vue.h('div', slots.actions?.()) })
   })
   const wrapper = mount(component, { global: { components: { ElButton: Button, ElSelect: Select, ElTabs: Tabs, ElTable: Table },
     stubs: { ElTabPane: { template: '<div><slot/></div>' }, ElForm: { template: '<div><slot/></div>' }, ElFormItem: { template: '<div><slot/></div>' },
       ElInput: true, ElOption: true, ElDatePicker: true, ElAlert: true, ElEmpty: true, ElCollapse: true, ElCollapseItem: true,
-      ElSwitch: true, ElInputNumber: true, ElTableColumn: true }, directives: { loading() {} } } })
+      ElSwitch: true, ElInputNumber: true, ElTableColumn: true, ElTag: true, ElDialog: true }, directives: { loading() {} } } })
   return { wrapper, writes, route }
 }
 const button = (wrapper, label) => wrapper.findAll('button').find(item => item.text() === label)
@@ -115,7 +116,7 @@ test('published scenarios remain read-only until an editable draft is created', 
   await flushPromises()
   assert.deepEqual(selectedIds(wrapper), [OLD_ID])
   assert.equal(writes.length, 0)
-  await button(wrapper, '编辑场景').trigger('click')
+  await button(wrapper, '修改场景').trigger('click')
   await flushPromises()
   assert.deepEqual(selectedIds(wrapper), [OLD_ID, CURRENT_ID])
   assert.equal(writes.length, 0, 'opening an editor does not silently save associations')

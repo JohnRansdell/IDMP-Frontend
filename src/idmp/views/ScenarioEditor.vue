@@ -11,13 +11,17 @@
       <template #meta><span>当前版本：V{{ form.versionNo }}</span></template>
       <template #actions>
         <el-button @click="router.push({ name: 'ScenarioList' })">返回目录</el-button>
-        <el-button v-if="capabilities.canStartEdit" type="primary" :loading="startingEdit" @click="startEditing">编辑场景</el-button>
+        <el-button v-if="capabilities.canStartEdit" type="primary" :loading="startingEdit" @click="startEditing">修改场景</el-button>
         <el-button v-if="capabilities.canEdit" type="primary" :loading="saving" :disabled="publishing" @click="saveAll">保存草稿</el-button>
-        <el-button v-if="capabilities.canPublish" type="success" :loading="publishing" :disabled="saving" @click="publish">发布</el-button>
+        <el-button v-if="capabilities.canPublish" type="success" :loading="publishing" :disabled="saving || !comparisonReady" @click="reviewPublish">发布变更</el-button>
       </template>
     </PageHeader>
     <el-alert v-if="readOnlyMessage" :title="readOnlyMessage" :type="form.publicationStatus === 'UNKNOWN' ? 'warning' : 'info'" show-icon :closable="false" class="page-notice" />
 
+    <section v-if="capabilities.canEdit" class="scenario-change-summary" aria-label="待发布变更">
+      <div><strong>待发布变更</strong><p v-if="comparisonReady">本次将加入 {{ associationChanges.added.length }} 个指标、移出 {{ associationChanges.removed.length }} 个指标，调整 {{ associationChanges.changed.length }} 项关联设置。</p><p v-else>{{ comparisonError || '正在核对当前正式配置…' }}</p></div>
+      <el-tag type="warning" effect="plain">发布后生效</el-tag>
+    </section>
     <el-tabs v-model="activeTab" type="border-card" class="scenario-tabs">
       <el-tab-pane label="基本信息" name="basic">
         <el-form :model="form" label-position="top" class="basic-form">
@@ -41,17 +45,31 @@
         <el-table :data="boundIndicators" row-key="indicatorVersionId" table-layout="fixed" max-height="420" :empty-text="capabilities.canEdit ? '暂未关联指标，请选择已发布指标版本后添加。' : '当前场景暂无关联指标'">
           <el-table-column label="指标名称" min-width="220"><template #default="{ row }"><span class="indicator-name">{{ row.indicatorName || '未命名指标' }}</span></template></el-table-column>
           <el-table-column label="版本" width="100"><template #default="{ row }"><span>{{ row.indicatorVersionNo ? `V${row.indicatorVersionNo}` : '版本号未提供' }}</span></template></el-table-column>
+          <el-table-column v-if="capabilities.canEdit && comparisonReady" label="本次变更" width="100"><template #default="{ row }"><el-tag v-if="associationChanges.added.some(item => item.indicatorVersionId === row.indicatorVersionId)" size="small" type="warning">待加入</el-tag><span v-else>保留</span></template></el-table-column>
           <el-table-column label="必选" width="90"><template #default="{ row }"><el-switch v-if="capabilities.canEdit" v-model="row.required" :disabled="!editable" :aria-label="`${row.indicatorName || '未命名指标'}是否必选`" /><span v-else>{{ row.required ? '必选' : '可选' }}</span></template></el-table-column>
           <el-table-column label="上报要求" min-width="240"><template #default="{ row }"><el-input v-if="capabilities.canEdit" v-model="row.reportRequirementText" :disabled="!editable" placeholder="填写上报要求（可选）" /><span v-else class="report-text">{{ row.reportRequirementText || '—' }}</span></template></el-table-column>
-          <el-table-column label="操作" :width="capabilities.canEdit ? 140 : 80" fixed="right"><template #default="{ row }"><el-button link type="primary" :loading="openingIndicatorId === row.indicatorVersionId" @click="openIndicator(row)">查看</el-button><el-button v-if="capabilities.canEdit" link type="danger" :disabled="!editable" :aria-label="`移除${row.indicatorName || '未命名指标'}`" @click="removeIndicator(row.indicatorVersionId)">移除</el-button></template></el-table-column>
+          <el-table-column label="操作" :width="capabilities.canEdit ? 140 : 80" fixed="right"><template #default="{ row }"><el-button link type="primary" :loading="openingIndicatorId === row.indicatorVersionId" @click="openIndicator(row)">查看</el-button><el-button v-if="capabilities.canEdit" link type="danger" :disabled="!editable" :aria-label="`移除${row.indicatorName || '未命名指标'}`" @click="removeIndicator(row.indicatorVersionId)">移出</el-button></template></el-table-column>
         </el-table>
+        <div v-if="capabilities.canEdit && associationChanges.removed.length" class="pending-removals">
+          <h3>待移出的指标</h3>
+          <div v-for="row in associationChanges.removed" :key="row.indicatorVersionId"><span>{{ row.indicatorName || row.indicatorCode || '指标' }} · {{ row.indicatorVersionNo ? `V${row.indicatorVersionNo}` : row.indicatorVersionId }}</span><el-button link type="primary" :disabled="!editable" @click="restoreRemoved(row)">撤销移出</el-button></div>
+        </div>
       </el-tab-pane>
     </el-tabs>
+    <el-dialog v-model="publishReviewOpen" title="发布场景变更" width="min(640px, calc(100vw - 24px))" :close-on-click-modal="!publishing" :close-on-press-escape="!publishing" :show-close="!publishing">
+      <p>请核对「{{ form.name }}」的完整变更。确认发布后，新的场景配置正式生效，历史版本及计算结果保留。</p>
+      <div class="publish-review-counts"><span>加入 {{ associationChanges.added.length }} 项</span><span>移出 {{ associationChanges.removed.length }} 项</span><span>关联设置调整 {{ associationChanges.changed.length }} 项</span></div>
+      <div v-if="associationChanges.added.length" class="review-group"><h3>加入的指标</h3><p v-for="row in associationChanges.added" :key="row.indicatorVersionId">{{ row.indicatorName || row.indicatorCode || '指标' }} · {{ row.indicatorVersionNo ? `V${row.indicatorVersionNo}` : row.indicatorVersionId }}</p></div>
+      <div v-if="associationChanges.removed.length" class="review-group"><h3>移出的指标</h3><p v-for="row in associationChanges.removed" :key="row.indicatorVersionId">{{ row.indicatorName || row.indicatorCode || '指标' }} · {{ row.indicatorVersionNo ? `V${row.indicatorVersionNo}` : row.indicatorVersionId }}</p></div>
+      <el-alert title="本次发布包含此场景全部已保存和当前页面的修改，也可能包含其他人员保存的变更。请一并确认。" type="info" :closable="false" />
+      <template #footer><el-button :disabled="publishing" @click="publishReviewOpen = false">返回核对</el-button><el-button type="primary" :loading="publishing" :disabled="publishing || saving" @click="publish">确认发布</el-button></template>
+    </el-dialog>
     </template>
   </div>
 </template>
 
 <script setup>
+import { compareScenarioBindings } from '@/idmp/features/indicator/scenarioAssociations.js'
 import IndicatorVersionPicker from '@/idmp/components/IndicatorVersionPicker.vue'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
@@ -74,12 +92,26 @@ const loadError = ref('')
 const indicatorOptions = ref([])
 const pendingIndicatorId = ref('')
 const openingIndicatorId = ref('')
+const publishedBindings = ref([]), comparisonReady = ref(false), comparisonError = ref(''), publishReviewOpen = ref(false)
+let reviewedSignature = ''
+const associationChanges = computed(() => compareScenarioBindings(form.indicators, publishedBindings.value))
+function publicationSignature() { return JSON.stringify([form.versionId, form.resourceVersion, scenarioFormToPatch(form), form.indicators]) }
+function reviewPublish() {
+  if (!capabilities.value.canPublish || !comparisonReady.value || saving.value || publishing.value) return
+  if (!form.indicators.length) { ElMessage.warning('当前服务不支持发布空场景，请保留至少一个指标。'); return }
+  reviewedSignature = publicationSignature()
+  publishReviewOpen.value = true
+}
+function restoreRemoved(row) {
+  if (!editable.value || form.indicators.some(item => item.indicatorVersionId === row.indicatorVersionId)) return
+  form.indicators.push({ ...row })
+}
 let loadRevision = 0
 const form = reactive({ scenarioId: '', versionId: '', name: '', type: 'CUSTOM', description: '', governingOrgName: '', defaultPeriodType: 'MONTHLY', defaultParameters: {}, defaultDataSourcePriority: {}, displayText: '', effectiveStartDate: '', effectiveEndDate: '', effectiveRange: [], resourceVersion: 0, publicationStatus: 'UNKNOWN', versionNo: '-', indicators: [] })
 const capabilities = computed(() => scenarioVersionCapabilities(form.publicationStatus))
 const editable = computed(() => !loading.value && !loadError.value && capabilities.value.canEdit && !saving.value && !publishing.value)
 const readOnlyMessage = computed(() => ({
-  PUBLISHED: '当前为已发布版本，可以查看全部配置；如需修改，请点击“编辑场景”。',
+  PUBLISHED: '当前为已发布版本，可以查看全部配置；如需修改，请点击“修改场景”。',
   ARCHIVED: '当前版本已归档，仅支持查看，不能编辑或发布。',
   UNKNOWN: '服务端未返回可识别的版本状态，为避免误修改，当前仅支持查看。'
 }[form.publicationStatus] || ''))
@@ -98,6 +130,7 @@ function addIndicator() {
 }
 function removeIndicator(id) {
   if (!editable.value) return
+  if (form.indicators.length <= 1) { ElMessage.warning('这是最后一个指标。当前服务暂不支持清空或自动停用场景，请先加入其他指标。'); return }
   form.indicators = form.indicators.filter(item => normalizeResourceId(item.indicatorVersionId) !== normalizeResourceId(id))
   form.indicators.forEach((item, index) => { item.displayOrder = index })
 }
@@ -127,6 +160,7 @@ const boundIndicators = computed(() => form.indicators.map((binding) => {
 
 function applyDetail(detail) {
   const next = scenarioDetailToForm(detail)
+  if (next.publicationStatus === 'PUBLISHED') { publishedBindings.value = next.indicators.map(row => ({ ...row })); comparisonReady.value = true }
   Object.assign(form, next, { effectiveRange: next.effectiveStartDate && next.effectiveEndDate ? [next.effectiveStartDate, next.effectiveEndDate] : [] })
   pendingIndicatorId.value = ''
 }
@@ -134,6 +168,8 @@ async function load() {
   const request = ++loadRevision
   loading.value = true
   loadError.value = ''
+  publishReviewOpen.value = false
+  publishedBindings.value = []; comparisonReady.value = false; comparisonError.value = ''
   try {
     const options = await fetchAllIndicatorVersions({ publicationStatus: 'PUBLISHED' })
     if (request !== loadRevision) return
@@ -149,6 +185,17 @@ async function load() {
       const detail = await fetchScenarioVersion(versionId)
       if (request !== loadRevision) return
       applyDetail(detail)
+      try {
+        const publishedId = detail?.scenario?.currentPublishedVersionId
+        if (publishedId && String(publishedId) !== String(detail.version.id)) {
+          const baseline = await fetchScenarioVersion(publishedId)
+          if (request !== loadRevision) return
+          if (String(baseline.version?.scenarioId || detail.scenario.id) !== String(detail.scenario.id)
+            || String(baseline.version?.publicationStatus || baseline.version?.status) !== 'PUBLISHED') throw new Error('发布配置不匹配')
+          publishedBindings.value = (baseline.version.indicators || []).map(row => ({ ...row }))
+        }
+        comparisonReady.value = true
+      } catch { comparisonReady.value = false; comparisonError.value = '无法核对已发布配置，暂不能发布，请刷新后重试。' }
       loading.value = false
       applyEntryContext()
     }
@@ -189,7 +236,8 @@ async function saveAll() {
   } catch (error) { await handleError(error) } finally { saving.value = false }
 }
 async function publish() {
-  if (!capabilities.value.canPublish || publishing.value || saving.value) return
+  if (!capabilities.value.canPublish || !comparisonReady.value || publishing.value || saving.value) return
+  if (publishReviewOpen.value && reviewedSignature !== publicationSignature()) { publishReviewOpen.value = false; ElMessage.warning('页面配置已变化，请重新核对发布变更。'); return }
   publishing.value = true
   try {
     await persistDraft()
@@ -203,7 +251,8 @@ async function publish() {
     }
     const result = await publishScenarioVersion(form.versionId, form.resourceVersion, `scenario-publish-${form.versionId}-${form.resourceVersion}`)
     applyDetail(result)
-    ElMessage.success('场景版本已发布')
+    publishReviewOpen.value = false
+    ElMessage.success('场景变更已发布，正式配置已生效')
   } catch (error) { await handleError(error) } finally { publishing.value = false }
 }
 async function handleError(error) { if (error?.status === 409) { await ElMessageBox.confirm('服务端版本已变化，是否重新加载最新版本？', '版本冲突', { type: 'warning' }).then(() => load()).catch(() => {}) } else { ElMessage.error(error?.message || '操作失败') } }
@@ -226,6 +275,14 @@ onBeforeUnmount(() => { loadRevision++ })
 
 <style scoped>
 .scenario-editor { min-width: 0; }
+.scenario-change-summary { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:18px 20px; margin-bottom:16px; border:1px solid var(--idmp-border-subtle); background:var(--idmp-layer-01); }
+.scenario-change-summary p { margin:6px 0 0; color:var(--idmp-text-helper); font-size:13px; line-height:1.7; }
+.pending-removals { margin-top:20px; padding:16px; background:var(--idmp-layer-02); }
+.pending-removals h3, .review-group h3 { margin:0 0 10px; font-size:14px; }
+.pending-removals > div { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:8px 0; font-size:13px; }
+.publish-review-counts { display:flex; flex-wrap:wrap; gap:16px; padding:16px 0; color:var(--idmp-text-secondary); }
+.review-group { margin:16px 0; }
+.review-group p { font-size:13px; overflow-wrap:anywhere; }
 .scenario-loading { padding: 32px 0; color: var(--idmp-text-helper); }
 .page-notice { margin-bottom: 16px; }
 .scenario-tabs { min-width: 0; }

@@ -53,22 +53,8 @@
             <p v-if="formulaNotes.length" class="formula-notes">{{ formulaNotes.join('；') }}</p>
         </template>
       </article>
-      <article class="surface-card related-scenarios" aria-label="关联场景">
-        <div class="content-heading"><h2>关联场景</h2><el-button v-access="'scenario.read'" link type="primary" @click="router.push({ name: 'ScenarioList' })">场景管理</el-button></div>
-        <p class="section-title__description scene-entry-description">场景关联可直接进入查看和维护，无需重新配置指标。</p>
-        <StatePanel v-if="scenarioLoading" type="loading" title="正在加载关联场景" />
-        <StatePanel v-else-if="scenarioError" type="error" title="关联场景加载失败" :description="scenarioError"><template #actions><el-button @click="loadRelatedScenarios">重试</el-button></template></StatePanel>
-        <div v-else-if="!scenarioRows.length" class="content-empty">
-          <span>暂无关联场景</span>
-          <el-button v-access="'scenario.read'" type="primary" link size="small" @click="router.push({ name: 'ScenarioList' })">前往场景管理</el-button>
-        </div>
-        <el-table v-else :data="scenarioRows" size="small" table-layout="fixed" max-height="280">
-          <el-table-column label="场景名称" min-width="240"><template #default="{ row }"><span class="scene-name">{{ row.name || row.scenarioName || '-' }}</span><p v-if="row.description" class="scene-description">{{ row.description }}</p></template></el-table-column>
-
-          <el-table-column label="统计周期" width="110"><template #default="{ row }">{{ periodLabel(row.configuredPeriodType || row.defaultPeriodType) }}</template></el-table-column>
-          <el-table-column label="操作" width="140"><template #default="{ row }"><el-button v-access="'scenario.read'" link type="primary" @click="openScenario(row)">查看关联指标</el-button></template></el-table-column>
-        </el-table>
-      </article>
+      <IndicatorScenarioLinks v-if="selectedVersion && !versionLoading && !versionError && $can('GET', '/scenarios')"
+        :indicator-id="String(detail.id)" :version-id="selectedVersionId" :published="isPublishedVersion" />
     </section>
     <el-drawer v-model="relatedDrawerOpen" class="indicator-related-drawer" title="更多关联" size="min(760px, 100vw)" destroy-on-close>
       <div v-if="selectedVersion" class="related-drawer-content">
@@ -130,7 +116,6 @@ import StatePanel from '@/idmp/components/StatePanel.vue'
 import {
   fetchIndicator,
   fetchAllIndicators as fetchIndicators,
-  fetchAllIndicatorScenarios as fetchIndicatorScenarios,
   fetchIndicatorVersion,
   fetchIndicatorVersions
 } from '@/idmp/api/modules/indicators'
@@ -139,6 +124,7 @@ import { createPolicyReference, fetchMappingsByIndicatorVersion, fetchPolicyRefe
 import { POLICY_REFERENCE_ROLES } from '@/idmp/api/adapters/mapping'
 import { splitFormulaFraction, splitFormulaLinks } from '@/idmp/utils/formulaLinks'
 import { arithmeticFormulaError } from '@/idmp/features/indicator/arithmeticFormula'
+import IndicatorScenarioLinks from '@/idmp/components/IndicatorScenarioLinks.vue'
 import IndicatorFormulaExpression from '@/idmp/components/IndicatorFormulaExpression.vue'
 import { fetchFactorVersion } from '@/idmp/api/modules/factors'
 
@@ -156,9 +142,6 @@ const selectedVersion = ref(null)
 const versionLoading = ref(false)
 const versionError = ref('')
 let versionRevision = 0
-const scenarioRows = ref([])
-const scenarioLoading = ref(false)
-const scenarioError = ref('')
 const policyReferences = ref([])
 const policyReferenceLoading = ref(false)
 const policyReferenceError = ref('')
@@ -305,38 +288,13 @@ async function loadBackendDetail() {
   if (!target) return false
 
   hydrateDetail(target)
-  await Promise.allSettled([loadRelatedScenarios(), loadVersions(detail.id)])
+  await loadVersions(detail.id)
   return true
-}
-
-async function loadRelatedScenarios() {
-  if (!detail.id) return
-  scenarioLoading.value = true
-  scenarioError.value = ''
-  try {
-    const page = await fetchIndicatorScenarios(detail.id, { page: 1, size: 100 })
-    scenarioRows.value = normalizeList(page)
-  } catch (error) {
-    scenarioRows.value = []
-    scenarioError.value = error?.message || '关联场景加载失败，请重试。'
-  } finally {
-    scenarioLoading.value = false
-  }
-}
-
-function periodLabel(value) {
-  return ({ DAILY: '日', WEEKLY: '周', MONTHLY: '月', QUARTERLY: '季', YEARLY: '年' })[value] || value || '未设置'
 }
 
 function selectVersionById(id) {
   const version = versionRows.value.find(item => resolveIndicatorVersionId(item) === String(id))
   if (version) void selectVersion(version)
-}
-
-function openScenario(row) {
-  const scenarioId = row.id || row.scenarioId
-  if (!scenarioId) return
-  router.push({ name: 'ScenarioEditor', params: { scenarioId }, query: { ...(row.scenarioVersionId ? { versionId: String(row.scenarioVersionId) } : {}), tab: 'indicators' } })
 }
 
 async function loadVersions(indicatorId) {

@@ -23,5 +23,6 @@ test('all asynchronous tables distinguish pending queries from empty results', a
     }
     if (descriptor.template) walk(descriptor.template.ast)
   }
-  assert.ok(checked >= 16)
+  // Scenario associations now use cards; their pending/empty states have component coverage.
+  assert.ok(checked >= 15)
 })
