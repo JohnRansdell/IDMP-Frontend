@@ -320,7 +320,7 @@ export function normalizeSqlImportTask(payload = {}) {
     preview: normalizeSqlImportPreview(data.preview || {}), error: rawError == null ? null : readableSqlImportError(rawError, data.preview?.normalizedSql, '导入任务失败，请保留导入会话编号并联系管理员排查')?.message || rawError,
     metadata: data.metadata ? { ...data.metadata, drillPaths: serializeDrillPaths(data.metadata.drillPaths || []), dimensionGrain: normalizeDimensionGrain(data.metadata.dimensionGrain || []) } : null,
     resources: Array.isArray(data.resources) ? data.resources.map((resource) => ({
-      key: String(resource.key || ''), type: String(resource.type || ''), resourceId: toOpaqueId(resource.resourceId), versionId: toOpaqueId(resource.versionId),
+      resourceName: String(resource.resourceName || ''), type: String(resource.type || ''), resourceId: toOpaqueId(resource.resourceId), versionId: toOpaqueId(resource.versionId),
       artifactId: toOpaqueId(resource.artifactId), compiled: resource.compiled === true, published: resource.published === true,
       diagnostics: Array.isArray(resource.diagnostics) ? resource.diagnostics.map((diagnostic) => {
         const raw = typeof diagnostic === 'string' ? diagnostic : String(diagnostic?.message || '')

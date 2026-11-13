@@ -22,10 +22,12 @@ async function evaluate(expression) {
 }
 function mockBackend() {
   localStorage.setItem('idmp_access_token', 'sql-fields-fixture')
+  window.__sqlQueryRequests = []
   const realFetch = fetch.bind(window)
   window.fetch = async (input, init) => {
     const url = new URL(typeof input === 'string' ? input : input.url, location.href)
     if (!url.pathname.includes('/api/v1/')) return realFetch(input, init)
+    if (/\/factor-versions\/[^/]+\/query$/.test(url.pathname)) window.__sqlQueryRequests.push({ path: url.pathname, body: JSON.parse(init.body) })
     const data = url.pathname.endsWith('/auth/me') ? { user: { id: '1', username: 'tester' }, roles: ['SYSTEM_ADMIN'], permissions: [], menus: [] } : []
     return new Response(JSON.stringify({ code: '0', data }), { headers: { 'Content-Type': 'application/json' } })
   }
@@ -89,6 +91,38 @@ try {
   assert.equal(renamed.tab, '四级手术患者人数')
   assert.equal(renamed.key, 'stat___________')
   assert.equal(renamed.ref, 'stat___________')
+  const published = { ...chineseTask, status: 'SUCCEEDED', metadata: {
+    factors: chineseTask.preview.factors.map((draft, index) => ({ key: draft.key,
+      code: `FACTOR_${index}`, name: index === 0 ? '四级手术患者人数' : '全部手术患者人数',
+      calculationMode: 'TEMPORAL', timeField: 'b.In_Date',
+      parameters: index === 0 ? [{ code: 'minAge', displayName: '最低年龄', type: 'INTEGER' }] : [], })),
+  }, result: { indicatorVersionId: '102027642465828673', factors: chineseTask.preview.factors.map((draft, index) => ({
+    factorCode: `FACTOR_${index}`, factorName: index === 0 ? '四级手术患者人数' : '全部手术患者人数',
+    factorVersionId: `10202764246582865${index}`, status: 'PUBLISHED',
+  })) } }
+  await evaluate(`window.__sqlFields.factorMetadata=[]; window.__sqlFields.accept(${JSON.stringify(published)})`)
+  await waitFor(() => evaluate(`document.querySelector('.factor-query-actions .el-select')?.textContent.includes('四级手术患者人数')`))
+  const choices = await evaluate(`window.__sqlFields.publishedFactors.map(factor=>({label:factor.factorName,value:factor.factorVersionId}))`)
+  assert.deepEqual(choices, [
+    { label: '四级手术患者人数', value: '102027642465828650' },
+    { label: '全部手术患者人数', value: '102027642465828651' },
+  ])
+  await evaluate(`window.__sqlFields.trialPeriod=['2026-01-01','2026-01-31']; window.__sqlFields.runtimeParameterValues.minAge=65; window.__sqlFields.runRuntimeQuery('FACTOR')`)
+  const firstQuery = await evaluate(`window.__sqlQueryRequests.at(-1)`)
+  assert.match(firstQuery.path, /102027642465828650\/query$/)
+  assert.deepEqual(firstQuery.body.parameters, { minAge: 65 })
+  await evaluate(`window.__sqlFields.selectedFactorVersionId='102027642465828651'`)
+  await waitFor(() => evaluate(`document.querySelector('.factor-query-actions .el-select')?.textContent.includes('全部手术患者人数')`))
+  await evaluate(`window.__sqlFields.runRuntimeQuery('FACTOR')`)
+  const secondQuery = await evaluate(`window.__sqlQueryRequests.at(-1)`)
+  assert.match(secondQuery.path, /102027642465828651\/query$/)
+  assert.equal(secondQuery.body.parameters, undefined)
+  for (const width of [1440, 390]) {
+    await send('Emulation.setDeviceMetricsOverride', { width, height: 1000, mobile: width === 390, deviceScaleFactor: 1 })
+    await evaluate(`document.querySelector('.factor-query-actions').scrollIntoView({block:'center',behavior:'instant'})`)
+    assert.doesNotMatch(await evaluate(`document.querySelector('.factor-query-actions').textContent`), /stat_+/)
+    await writeFile(`.tmp/sql-import-field-labels/published-factor-${width}.png`, Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'))
+  }
   assert.deepEqual(errors, [])
-  console.log('PASS: SQL time and dimension selectors display real table names on desktop/mobile and preserve backend binding references')
+  console.log('PASS: SQL source and published factor selectors display business names on desktop/mobile and preserve backend references')
 } finally { socket?.close(); chrome.kill() }
