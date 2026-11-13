@@ -36,7 +36,7 @@
       </el-tab-pane>
       <el-tab-pane label="关联指标" name="indicators">
         <div class="indicator-heading">
-          <div><h2>已关联指标 <span>{{ boundIndicators.length }}</span></h2><p>维护指标版本、必选设置和上报要求。</p></div>
+          <div><h2>已关联指标 <span>{{ boundIndicators.length }}</span></h2><p>维护指标版本和上报要求。</p></div>
           <div v-if="capabilities.canEdit" class="indicator-add">
             <IndicatorVersionPicker v-model="pendingIndicatorId" :options="availableIndicatorOptions" :disabled="!editable" label="待添加指标" />
             <el-button type="primary" plain :disabled="!editable || !pendingIndicatorId" @click="addIndicator">添加指标</el-button>
@@ -46,7 +46,6 @@
           <el-table-column label="指标名称" min-width="220"><template #default="{ row }"><span class="indicator-name">{{ row.indicatorName || '未命名指标' }}</span></template></el-table-column>
           <el-table-column label="版本" width="100"><template #default="{ row }"><span>{{ row.indicatorVersionNo ? `V${row.indicatorVersionNo}` : '版本号未提供' }}</span></template></el-table-column>
           <el-table-column v-if="capabilities.canEdit && comparisonReady" label="本次变更" width="100"><template #default="{ row }"><el-tag v-if="associationChanges.added.some(item => item.indicatorVersionId === row.indicatorVersionId)" size="small" type="warning">待加入</el-tag><span v-else>保留</span></template></el-table-column>
-          <el-table-column label="必选" width="90"><template #default="{ row }"><el-switch v-if="capabilities.canEdit" v-model="row.required" :disabled="!editable" :aria-label="`${row.indicatorName || '未命名指标'}是否必选`" /><span v-else>{{ row.required ? '必选' : '可选' }}</span></template></el-table-column>
           <el-table-column label="上报要求" min-width="240"><template #default="{ row }"><el-input v-if="capabilities.canEdit" v-model="row.reportRequirementText" :disabled="!editable" placeholder="填写上报要求（可选）" /><span v-else class="report-text">{{ row.reportRequirementText || '—' }}</span></template></el-table-column>
           <el-table-column label="操作" :width="capabilities.canEdit ? 140 : 80" fixed="right"><template #default="{ row }"><el-button link type="primary" :loading="openingIndicatorId === row.indicatorVersionId" @click="openIndicator(row)">查看</el-button><el-button v-if="capabilities.canEdit" link type="danger" :disabled="!editable" :aria-label="`移除${row.indicatorName || '未命名指标'}`" @click="removeIndicator(row.indicatorVersionId)">移出</el-button></template></el-table-column>
         </el-table>
