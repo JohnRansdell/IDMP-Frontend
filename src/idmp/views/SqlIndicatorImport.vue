@@ -27,7 +27,7 @@
       <section class="surface-card section"><div class="section-heading"><div><h2>2. 确认治理元数据</h2><span>确认后才能试算。</span></div></div><el-form label-position="top"><el-radio-group v-model="scope"><el-radio label="FACTORS_ONLY">仅创建因子</el-radio><el-radio label="FACTORS_AND_INDICATOR">创建因子及指标</el-radio></el-radio-group><el-form-item label="业务分类"><el-input v-model.trim="category" maxlength="64" /></el-form-item></el-form>
         <div class="factor-list">
           <div v-for="factor in factorMetadata" :key="factor.key" class="factor">
-            <strong>{{ factor.key }}</strong><small>CTE 输出：{{ factorOutputAlias(factor.key) || '-' }}</small>
+            <strong class="factor-name">{{ factorLabel(factor) }}</strong><small v-if="factorSourceLabel(factor)">{{ factorSourceLabel(factor) }}</small>
             <div class="factor-fields"><el-input v-model.trim="factor.name" placeholder="因子名称（已按解析建议预填）" /><el-input v-model.trim="factor.description" placeholder="因子说明" /><el-select v-model="factor.missingRowPolicy" placeholder="缺行策略"><el-option label="保留空值" value="KEEP_NULL" /><el-option label="按零处理" value="ZERO" /></el-select><el-select v-model="factor.calculationMode" @change="onFactorModeChange(factor)"><el-option label="静态（全量一次计算）" value="STATIC" /><el-option label="时序（按周期计算）" value="TEMPORAL" /></el-select><div v-if="factor.calculationMode === 'TEMPORAL'" class="time-field-control"><el-select default-first-option v-if="timeFieldOptions(factor).length" v-model="factor.timeField" filterable placeholder="确认时间字段"><el-option v-for="field in timeFieldOptions(factor)" :key="field.fieldReference" :label="timeFieldOptionLabel(field, factor)" :value="field.fieldReference"><span>{{ timeFieldOptionLabel(field, factor) }}</span></el-option></el-select><el-input v-else v-model.trim="factor.timeField" placeholder="请选择物理时间字段" readonly /><el-button @click="openTimeFieldSelector(factor)">浏览全部字段</el-button></div><small v-if="factor.calculationMode === 'TEMPORAL' && selectedTimeFieldOption(factor)" class="time-field-hint">{{ timeFieldOptionDescription(selectedTimeFieldOption(factor)) }}</small><small v-else-if="factor.calculationMode === 'TEMPORAL'" class="time-field-hint">可从 SQL 涉及的物理表中选择时间字段，文本字段须包含有效日期或时间。</small></div>
             <div class="dynamic-parameters">
               <b>动态传入参数</b>
@@ -47,7 +47,7 @@
         <h2>组合粒度与业务下钻</h2>
         <SqlImportGroupingFields v-model:dimension-grain="indicator.dimensionGrain" v-model:drill-paths="indicator.drillPaths" v-model:factors="factorMetadata" :drafts="preview.factors" :catalog="drillPathCatalog" :loading="drillPathLoading" :error="drillPathError" @reload="loadDrillPathCatalog" />
       </section>
-      <section class="surface-card section"><h2>解析结果预览</h2><el-tabs><el-tab-pane v-for="factor in preview.factors" :key="factor.key" :label="factor.key"><JsonCodePreview :value="factor.dsl" :label="`${factor.key} 因子 DSL`" /></el-tab-pane><el-tab-pane label="指标公式"><JsonCodePreview :value="preview.formula?.template || {}" label="指标公式" /></el-tab-pane></el-tabs></section>
+      <section class="surface-card section"><h2>解析结果预览</h2><el-tabs><el-tab-pane v-for="factor in preview.factors" :key="factor.key" :label="factorLabel(factor)"><JsonCodePreview :value="factor.dsl" :label="`${factorLabel(factor)} 因子 DSL`" /></el-tab-pane><el-tab-pane label="指标公式"><JsonCodePreview :value="preview.formula?.template || {}" label="指标公式" /></el-tab-pane></el-tabs></section>
       <div class="action-bar"><el-button type="primary" :loading="metadataLoading" @click="submitMetadata">确认元数据并进入试算</el-button></div>
     </template>
 
@@ -154,7 +154,7 @@ import PageHeader from '@/idmp/components/PageHeader.vue'
 import JsonCodePreview from '@/idmp/components/JsonCodePreview.vue'
 import SqlImportGroupingFields from '@/idmp/components/SqlImportGroupingFields.vue'
 import { normalizeDimensionGrain, serializeDrillPaths, sqlImportGroupingFields, sqlImportGroupingFieldLabels, selectSqlDimensionBindings, validateSqlDimensionBindings } from '@/idmp/features/indicator/grouping'
-import { sqlPhysicalFieldLabel, sqlPhysicalFieldName, sqlTimeFieldDescription } from '@/idmp/features/indicator/sqlImportFields'
+import { sqlFactorLabel, sqlFactorSourceLabel, sqlPhysicalFieldLabel, sqlPhysicalFieldName, sqlTimeFieldDescription } from '@/idmp/features/indicator/sqlImportFields'
 import { buildSqlImportCreatePayload, buildSqlImportMetadataPayload, buildSqlImportTrialPayload, buildSqlRuntimeQueryPayload, canFinalizeSqlImport, canSubmitSqlImportMetadata, canTrialSqlImport, collectSqlRuntimeParameters, mergeSqlFactorMetadata, normalizeSqlImportOperationError, normalizeSqlImportTask, shouldPollSqlImport, sqlImportResourceTypeLabel, sqlImportStatusLabel, sqlImportStepLabel, validateSqlRuntimeParameterSyntax } from '@/idmp/api/adapters/sqlImport'
 import { abandonSqlImport, createSqlImport, fetchSqlImport, finalizeSqlImport, retrySqlImport, trialSqlImport, updateSqlImportMetadata } from '@/idmp/api/modules/sqlImports'
 import { fetchCalcBatchOverview as fetchCalcBatch } from '@/idmp/api/modules/calculation'
@@ -202,10 +202,10 @@ function validateGrouping() {
     if (bindingError) return bindingError
     if (fields.length) {
       for (const draft of preview.value?.factors || []) {
-        if (!draft.groupingSupported) return `因子 ${draft.key} 的 SQL 暂不支持组合粒度或业务下钻`
+        if (!draft.groupingSupported) return `因子“${factorLabel(draft)}”的 SQL 暂不支持组合粒度或业务下钻`
         const factor = factorMetadata.value.find(item => item.key === draft.key)
         for (const [code, binding] of Object.entries(selectSqlDimensionBindings(factor, fields))) {
-          if (!draft.dimensionFieldOptions.some(field => field.fieldReference === binding)) return `因子 ${draft.key} 的 ${code} 映射字段不属于当前 SQL，请重新选择`
+          if (!draft.dimensionFieldOptions.some(field => field.fieldReference === binding)) return `因子“${factorLabel(draft)}”的 ${code} 映射字段不属于当前 SQL，请重新选择`
         }
       }
     }
@@ -221,7 +221,10 @@ const importBusy = computed(() => createLoading.value || metadataLoading.value |
 const preview = computed(() => importTask.value?.preview || null); const canEditMetadata = computed(() => canSubmitSqlImportMetadata(importTask.value)); const canTrial = computed(() => canTrialSqlImport(importTask.value)); const canFinalize = computed(() => canFinalizeSqlImport(importTask.value)); const canStartNewImport = computed(() => ['ABANDONED', 'SUCCEEDED'].includes(String(importTask.value?.status || '').toUpperCase())); const hasTemporalFactors = computed(() => factorMetadata.value.some(x => x.calculationMode === 'TEMPORAL')); const mixedModes = computed(() => hasTemporalFactors.value && factorMetadata.value.some(x => x.calculationMode === 'STATIC')); const tagType = computed(() => ({ SUCCEEDED: 'success', FAILED: 'danger', TRIAL_SUCCEEDED: 'success', READY_FOR_TRIAL: 'warning', AWAITING_METADATA: 'info', ABANDONED: 'info', CLEANUP_FAILED: 'danger' })[importTask.value?.status] || 'warning')
 const filteredPhysicalTimeFields = computed(() => { const keyword = timeFieldSearch.value.trim().toLowerCase(); return keyword ? physicalTimeFields.value.filter(item => [item.physicalTable, item.columnName, item.columnType, item.comment].some(value => String(value || '').toLowerCase().includes(keyword))) : physicalTimeFields.value })
 const runtimeParameters = computed(() => collectSqlRuntimeParameters(factorMetadata.value)); const parameterConflicts = computed(() => runtimeParameters.value.filter(item => item.conflict)); const isSucceeded = computed(() => importTask.value?.status === 'SUCCEEDED'); const publishedFactors = computed(() => importTask.value?.result?.factors || []); const runtimeResultColumns = computed(() => [...new Set((runtimeQueryResult.value?.rows || []).flatMap(row => Object.keys(row || {})))]); const runtimeConditionHint = computed(() => isSucceeded.value ? '修改日期或业务参数后即时查询；临时参数会触发源数据重算。' : (hasTemporalFactors.value ? '' : '填写 SQL 运行参数；静态导入不传统计周期。'))
-function key(prefix) { return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}` }; function factorOutputAlias(id) { return preview.value?.factors?.find(x => x.key === id)?.outputAlias }; function timeFieldOptions(factor) { return preview.value?.factors?.find(x => x.key === factor.key)?.timeFieldOptions || [] }; function mappingPlaceholder(row) { return row.candidates?.length ? '请选择语义映射' : (tableMappings[row.physicalTable] ? '已自动确定' : '暂无可选映射') }
+function key(prefix) { return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}` }; function timeFieldOptions(factor) { return preview.value?.factors?.find(x => x.key === factor.key)?.timeFieldOptions || [] }; function mappingPlaceholder(row) { return row.candidates?.length ? '请选择语义映射' : (tableMappings[row.physicalTable] ? '已自动确定' : '暂无可选映射') }
+function factorDraft(factor) { return preview.value?.factors?.find(item => item.key === factor.key) || {} }
+function factorLabel(factor) { return sqlFactorLabel(factorMetadata.value.find(item => item.key === factor.key) || factor, factorDraft(factor)) }
+function factorSourceLabel(factor) { return sqlFactorSourceLabel(factorDraft(factor)) }
 function selectedTimeFieldOption(factor) { return timeFieldOptions(factor).find(item => item.fieldReference === factor.timeField) }
 function timeFieldOptionLabel(option, factor) { return `${option.recommended ? '推荐 · ' : ''}${sqlPhysicalFieldLabel(option, timeFieldOptions(factor))}` }
 function timeFieldOptionDescription(option) { return sqlTimeFieldDescription(option) }

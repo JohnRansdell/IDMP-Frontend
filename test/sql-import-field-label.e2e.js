@@ -65,6 +65,30 @@ try {
     await evaluate(`document.querySelector('.time-field-control').scrollIntoView({block:'center',behavior:'instant'})`)
     await writeFile(`.tmp/sql-import-field-labels/${viewport.mobile ? 'mobile' : 'desktop'}.png`, Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'))
   }
+  const chineseTask = { ...task, importId: '101', preview: { ...task.preview,
+    factors: ['四级手术患者', '全部手术患者'].map((cte, index) => ({
+      ...task.preview.factors[0], key: `stat___________${index || ''}`,
+      suggestedName: `${cte}.患者数`, outputAlias: `stat___________${index || ''}`,
+      dsl: { ...task.preview.factors[0].dsl, importSource: { type: 'SQL', cte, column: '患者数' } },
+    })), formula: { template: { root: { nodeType: 'FACTOR_REF', factorKey: 'stat___________' } } },
+  } }
+  await evaluate(`(() => { window.__sqlFields.factorMetadata=[]; window.__sqlFields.accept(${JSON.stringify(chineseTask)}) })()`)
+  await waitFor(() => evaluate(`document.querySelector('.factor-name')?.textContent==='四级手术患者.患者数'`))
+  for (const width of [1440, 390]) {
+    await send('Emulation.setDeviceMetricsOverride', { width, height: 1000, mobile: width === 390, deviceScaleFactor: 1 })
+    const names = await evaluate(`({titles:[...document.querySelectorAll('.factor-name')].map(x=>x.textContent),sources:[...document.querySelectorAll('.factor > small')].map(x=>x.textContent),tabs:[...document.querySelectorAll('.el-tabs__item')].map(x=>x.textContent)})`)
+    assert.deepEqual(names.titles, ['四级手术患者.患者数', '全部手术患者.患者数'])
+    assert.deepEqual(names.sources, ['CTE 输出：四级手术患者.患者数', 'CTE 输出：全部手术患者.患者数'])
+    assert.deepEqual(names.tabs, [...names.titles, '指标公式'])
+    await evaluate(`document.querySelector('.factor-name').scrollIntoView({block:'center',behavior:'instant'})`)
+    await writeFile(`.tmp/sql-import-field-labels/factor-names-${width}.png`, Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'))
+  }
+  await evaluate(`(() => { const input=document.querySelector('.factor-fields input'); input.value='四级手术患者人数'; input.dispatchEvent(new Event('input',{bubbles:true})); input.dispatchEvent(new Event('change',{bubbles:true})) })()`)
+  await waitFor(() => evaluate(`document.querySelector('.factor-name')?.textContent==='四级手术患者人数'`))
+  const renamed = await evaluate(`({tab:document.querySelector('.el-tabs__item').textContent,key:window.__sqlFields.metadataPayload().factors[0].key,ref:window.__sqlFields.preview.formula.template.root.factorKey})`)
+  assert.equal(renamed.tab, '四级手术患者人数')
+  assert.equal(renamed.key, 'stat___________')
+  assert.equal(renamed.ref, 'stat___________')
   assert.deepEqual(errors, [])
   console.log('PASS: SQL time and dimension selectors display real table names on desktop/mobile and preserve backend binding references')
 } finally { socket?.close(); chrome.kill() }

@@ -41,6 +41,22 @@ test('distinct custom path fields are not silently treated as aliases of a membe
   assert.deepEqual(normalizeReportFilters({ 行政区划: ['城区'] }, fields), { 行政区划: ['城区'] })
 })
 
+test('custom display fields use the configured level name while filter codes stay unchanged', () => {
+  for (const name of ['出院科室', '出院科室名称']) {
+    const fields = reportDimensionFields({ dimensionGrain: ['OUT_DEPT_CODE'], drillConfig: { drillPaths: [
+      { pathCode: 'CUSTOM_DEPT', maxLevel: 'CUSTOM_LEVEL', levels: [
+        { levelCode: 'CUSTOM_LEVEL', levelName: name, memberKeyFieldCode: 'OUT_DEPT_CODE',
+          dimensionFieldCode: 'OUT_DEPT_CODE', displayFieldCode: 'OUT_DEPT_NAME' }
+      ] },
+      { pathCode: 'ORGANIZATION', maxLevel: 'OUT_DEPT', levels: [
+        { levelCode: 'OUT_DEPT', levelName: '科室', memberKeyFieldCode: 'OUT_DEPT_CODE', displayFieldCode: 'OUT_DEPT_NAME' }
+      ] }
+    ] } })
+    assert.deepEqual(fields.map(field => [field.code, field.label]), [['OUT_DEPT_CODE', '科室'], ['OUT_DEPT_NAME', '出院科室名称']])
+    assert.deepEqual(normalizeReportFilters({ OUT_DEPT_NAME: ['骨科'] }, fields), { OUT_DEPT_NAME: ['骨科'] })
+  }
+})
+
 test('dashboard filter values retain multiple selections, zero and opaque codes; clearing removes a field', () => {
   const fields = [{ code: 'DEPT', aliases: [] }]
   assert.deepEqual(normalizeReportFilters({ dept: ['001', '002', '001'], DEPT: '003', 性别: 0, 诊断: [], 年龄: null }, fields), { DEPT: ['001', '002', '003'], 性别: ['0'] })

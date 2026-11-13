@@ -1,3 +1,21 @@
+export function sqlFactorSource(draft = {}) {
+  const source = draft.dsl?.importSource || {}
+  return [source.cte, source.column].filter(Boolean).join('.')
+}
+
+export function sqlFactorLabel(factor = {}, draft = {}) {
+  return [factor.name, factor.factorName, draft.suggestedName, sqlFactorSource(draft)]
+    .map(value => String(value || '').trim()).find(Boolean)
+    || (draft.outputAlias !== draft.key ? draft.outputAlias : '')
+    || '未命名因子'
+}
+
+export function sqlFactorSourceLabel(draft = {}) {
+  const source = sqlFactorSource(draft)
+  if (source) return `${draft.dsl?.importSource?.cte ? 'CTE 输出' : '查询输出'}：${source}`
+  return draft.outputAlias && draft.outputAlias !== draft.key ? `查询输出：${draft.outputAlias}` : ''
+}
+
 export function sqlPhysicalFieldName(field = {}) {
   const table = String(field.physicalTable || '').trim()
   const column = String(field.columnName || field.fieldReference || '').split('.').at(-1).trim()

@@ -21,7 +21,13 @@ export function reportDimensionFields(version = {}) {
       add(code, { label: level.levelName || code, role: keyOf(level.levelCode) })
       if (!dictionaryRoles.has(keyOf(level.levelCode))) {
         for (const extra of [level.dimensionFieldCode, level.displayFieldCode]) {
-          if (extra && keyOf(extra) !== keyOf(code)) add(extra)
+          if (extra && keyOf(extra) !== keyOf(code)) {
+            const name = String(level.levelName || '').trim()
+            const label = name && keyOf(extra) === keyOf(level.displayFieldCode)
+              ? name.endsWith('名称') ? name : `${name}名称`
+              : extra
+            add(extra, { label })
+          }
         }
       }
       if (keyOf(level.levelCode) === keyOf(path.maxLevel)) break
